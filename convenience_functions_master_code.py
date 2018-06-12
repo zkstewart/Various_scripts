@@ -6,9 +6,6 @@
 # functions (i.e., scripts that run as a double-click program rather than
 # on the command-line).
 
-# Load packages for main
-import os
-
 # Define functions
 def lineremover(functionList):
         # Set up
@@ -119,7 +116,7 @@ def core_loop(functionList):
                 elif cmdInput.lower() in functionList:
                         while True:
                                 try:
-                                        eval(cmdInput + '(functionList)')
+                                        eval(cmdInput.lower() + '(functionList)')
                                         break
                                 except KeyboardInterrupt:
                                         quit()
