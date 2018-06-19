@@ -6,7 +6,7 @@
 # and manipulating FASTA files.
 
 # Load packages for main
-import os, argparse
+import os, argparse, time
 
 # Define functions
 def fasta_ids(fastaFile):
@@ -173,6 +173,107 @@ def fasta_stripstringfseqid(fastaFile, removeString):
                 outFasta.append('>' + seqid + '\n' + str(record.seq))
         return outFasta
 
+def fasta_trim(fastaFile, trimString, prefix):
+        # Set up
+        import re
+        from Bio import SeqIO
+        outFasta = []
+        # Check the string to ensure it is correctly formatted
+        stringCheck = re.compile(r'^[Ss](\d{1,10})[Ee](\d{1,10})$')
+        result = stringCheck.match(trimString)
+        if result == None:
+                print('Format of the input trimming string is incorrect.')
+                print('Call this program with -H or -HELP for assistance.')
+                quit()
+        # Parse the input string
+        startTrim = int(result.group(1))
+        endTrim = int(result.group(2))
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        for record in records:
+                # Fasta handling
+                if seqType == 'fasta':
+                        if endTrim != 0:
+                                sequence = str(record.seq)[startTrim:-endTrim]
+                        else:
+                                sequence = str(record.seq)[startTrim:]
+                        # Output
+                        outFasta.append('>' + record.description + '\n' + sequence)
+                # Fastq handling
+                else:
+                        fqLines = record.format('fastq').split('\n')
+                        if endTrim != 0:
+                                fqLines[1] = fqLines[1][startTrim:-endTrim]
+                                fqLines[3] = fqLines[3][startTrim:-endTrim]
+                        else:
+                                fqLines[1] = fqLines[1][startTrim:]
+                                fqLines[3] = fqLines[3][startTrim:]
+                        outFasta.append('\n'.join(fqLines[:-1]))        # Remove the last '\n'
+        return outFasta, fastaFile, changed
+
+# Define general purpose functions
+def fasta_or_fastq(fastaFile, prefix):
+        changed = False
+        # Get the first letter
+        with open(fastaFile, 'r') as seqFile:
+                for line in seqFile:
+                        firstChar1 = line[0]
+                        break
+        # Check first letter to see if it conforms to fastq or fasta expected format
+        if firstChar1 == '@':
+                seqType = 'fastq'
+                # Check the file to see if Biopython is likely to accept it
+                fastaFile, changed = fastq_qual_fix(fastaFile, prefix)
+        elif firstChar1 == '>':
+                seqType = 'fasta'
+        else:
+                print('I don\'t recognise the input file! It should start with "@" (fastq) or ">" (fasta). Fix your inputs to continue.')
+                quit()
+        # Return value
+        return seqType, fastaFile, changed
+
+def fastq_qual_fix(fastaFile, prefix):
+        from Bio import SeqIO
+        # Check for errors
+        records = SeqIO.parse(fastaFile, 'fastq')
+        try:
+                for record in records:
+                        break
+                records.close   # Honestly not sure if this is necessary
+                return [fastaFile, False]
+        except ValueError:
+                # Create a temporary file with modified quality lines
+                tmpName = file_name_gen(str(prefix), '.fastq')
+                with open(fastaFile, 'r') as fileIn, open(tmpName, 'w') as fileOut:
+                        ongoingCount = 1
+                        for line in fileIn:
+                                if ongoingCount == 3:
+                                        if not line.startswith('+'):
+                                                print('Something is wrong with your fastq formatting.')
+                                                print('Line number ' + str(ongoingCount) + ' (1-based) should be a comment line, but it doesn\'t start with \'+\'')
+                                                print('Fix this file somehow and try again.')
+                                                quit()
+                                        fileOut.write('+\n')
+                                else:
+                                        fileOut.write(line.rstrip('\r\n') + '\n')
+                                ongoingCount += 1
+                                if ongoingCount == 5:
+                                        ongoingCount = 1       # Reset our count to correspond to the new fastq entry
+        return [tmpName, True]
+
+def file_name_gen(prefix, suffix):
+        ongoingCount = 2
+        while True:
+                if not os.path.isfile(prefix + '1' + suffix):
+                        return prefix + '1' + suffix
+                elif os.path.isfile(prefix + str(ongoingCount) + suffix):
+                        ongoingCount += 1
+                else:
+                        return prefix + str(ongoingCount) + suffix
+
 # Define functions for output
 def output_list(outList, outputFileName):
         with open(outputFileName, 'w') as fileOut:
@@ -241,6 +342,12 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 remove the specified string (case sensitive) from any sequence IDs
                 and produce a new output fasta file.
                 '''
+                trim = '''
+                The _trim_ function accepts a string input in format s{digit}e{digit}. This
+                function will remove {digit} from the start (s) and from the end (e)
+                and produce a new output fasta file. Specify {digit} as 0 for no trimming
+                to start or end - if {digit} is 1, the first or last character will be trimmed.
+                '''
                 printList = str(functionList).replace("'", "")
                 printList = eval(printList)
                 for entry in printList:
@@ -296,10 +403,14 @@ or float, 3) add the actual function above, and 4) enact the function below.
 '''
 
 # Function list - update as new ones are added
-stringFunctions = ['rename', 'removeseqwstring', 'removeseqidwstring', 'stripstringfseqid']
+stringFunctions = ['rename', 'removeseqwstring', 'removeseqidwstring', 'stripstringfseqid', 'trim']
 numberFunctions = ['single2multi', 'cullbelow', 'cullabove']
 basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single']
 functionList = stringFunctions + numberFunctions + basicFunctions
+
+# Hold onto program 'start' time for the purpose of temporary file generation
+startTime = time.time()
+changed = False         # Default this as false; if we do create a temporary file this will become True
 
 ##### USER INPUT SECTION
 usage = """%(prog)s handles fasta files, producing output according to the
@@ -323,6 +434,13 @@ p.add_argument("-H", "-HELP", dest="detailedHelp", action='store_true',
              help="Provide detailed help for each function")
 
 args = p.parse_args()
+
+# HARD CODED TEST
+#args.fastaFileName = 'test.fastq'
+#args.function = 'trim'
+#args.outputFileName = 'test_out.fastq'
+#args.string = 's1e0'
+
 listOutName, fastaOutName = validate_args(args, stringFunctions, numberFunctions, functionList)
 
 # Enact functions
@@ -337,6 +455,8 @@ if args.function == 'removeseqidwstring':
         outFasta = fasta_removeseqidwstring(args.fastaFileName, args.string)
 if args.function == 'stripstringfseqid':
         outFasta = fasta_stripstringfseqid(args.fastaFileName, args.string)
+if args.function == 'trim':
+        outFasta, args.fastaFileName, changed = fasta_trim(args.fastaFileName, args.string, startTime)       # We need to pass startTime for temp file generation if necessary; this is a fastq compliant function
 ## Number functions
 if args.function == 'single2multi':
         outFasta = fasta_single2multi(args.fastaFileName, args.number)
@@ -367,5 +487,12 @@ if outFasta != [] and outFasta != None:
                 output_list(outFasta, fastaOutName)
         else:
                 output_list(outFasta, args.outputFileName)
+
+# Remove tmp files if relevant
+if changed == True:
+        print('Note that the output file is a bit different than the original.')
+        if args.function == 'trim':
+                print('In this case, the input fastq file had its description lines replaced with just the \'+\' character.')
+        os.remove(args.fastaFileName)
 
 print('Program completed successfully!')
