@@ -434,13 +434,6 @@ p.add_argument("-H", "-HELP", dest="detailedHelp", action='store_true',
              help="Provide detailed help for each function")
 
 args = p.parse_args()
-
-# HARD CODED TEST
-#args.fastaFileName = 'test.fastq'
-#args.function = 'trim'
-#args.outputFileName = 'test_out.fastq'
-#args.string = 's1e0'
-
 listOutName, fastaOutName = validate_args(args, stringFunctions, numberFunctions, functionList)
 
 # Enact functions
