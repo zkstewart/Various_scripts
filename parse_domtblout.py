@@ -33,7 +33,14 @@ def validate_args(args, dom_prefixes):
         args.ovlCutoff = args.ovlCutoff / 100
         # Handle domain prefix selection
         if args.databaseSelect != False:
-                dom_prefixes = [args.databaseSelect]
+                args.databaseSelect = list(set(args.databaseSelect))    # Handle redundancy just in case
+                for db in args.databaseSelect:
+                        if db not in dom_prefixes:
+                                print(db + ' is not recognised as a database. Available choices are... (note: case sensitive!)')
+                                print(dom_prefixes)
+                                print('If you want to limit your results to one or more of these databases, provide them on the command-line correctly next time.')
+                                quit()
+                dom_prefixes = args.databaseSelect
                 args.hmmdbScript = False        # These options are incompatible, make sure it's turned off here
         # Handle file overwrites
         if os.path.isfile(args.outputFileName):
@@ -356,23 +363,26 @@ def hmm_db_download_domain_overlap_loop(domDict, dom_prefixes, ovlCutoff, databa
                                 # Add corrected individual models to collapsedIdentical list
                                 collapsedIdentical += modelGroup
                         # Process collapsedIdentical list to get our list of domains annotated against the sequence from each individual database
-                        if len(collapsedIdentical) == 1:
-                                if key not in finalDict:
-                                        if databaseSelect == False:
-                                                finalDict[key] = [collapsedIdentical]
-                                        else:                                           # If databaseSelect != False, we are only getting 1 database's output, and thus we want a single list item and not one for each database
-                                                finalDict[key] = collapsedIdentical
-                                else:
-                                        finalDict[key].append(collapsedIdentical)
-                        else:
+                        if len(collapsedIdentical) != 1:
                                 collapsedIdentical = ovl_resolver(ovlCutoff, collapsedIdentical)      # We've merged, joined, and trimmed identical domain models above. Now, we're looking at different domains from the same database.
-                                if key not in finalDict:                                                        # We employ a similar approach here, but it's focused on E-values rather than on overlap proportions.
-                                        if databaseSelect == False:
-                                                finalDict[key] = [collapsedIdentical]
-                                        else:
-                                                finalDict[key] = collapsedIdentical
-                                else:
+                        if key not in finalDict:
+                                if databaseSelect == False:
+                                        finalDict[key] = [collapsedIdentical]
+                                else:                                           # If databaseSelect != False, we are only getting 1 database's output, and thus we want a single list item and not one for each database
+                                        finalDict[key] = collapsedIdentical
+                        else:
+                                if databaseSelect == False:
                                         finalDict[key].append(collapsedIdentical)
+                                else:
+                                        finalDict[key] += collapsedIdentical
+        return finalDict
+
+def hmm_db_selection_flatten(finalDict, ovlCutoff):
+        for key, value in finalDict.items():
+                value.sort(key = lambda x: (x[1], x[2], x[3]))
+                if len(value) != 1:
+                        value = ovl_resolver(ovlCutoff, value)
+                finalDict[key] = value
         return finalDict
 
 ## Ensure accuracy
@@ -490,8 +500,8 @@ p.add_argument("-p", "-percOvl", dest="ovlCutoff", type=float,
                    help="Percentage overlap cutoff (below == trimming to prevent overlap, above = deletion of lower E-value hit, default == 25.0).", default=25.0)
 p.add_argument("-hmm", "-hmmdbScript", dest="hmmdbScript", action='store_true',
                    help="Optionally specify whether the HMM database was formatted by the hmm_db_download.py script and you want annotation table formatted results.", default=False)
-p.add_argument("-d", "-databaseSelect", dest="databaseSelect", choices=dom_prefixes,
-                   help="If the HMM database was formatted by the hmm_db_download.py script but you want to extract the results of just one database, choose here. Note that specifying this argument overrides -hmm", default=False)
+p.add_argument("-d", "-databaseSelect", dest="databaseSelect", nargs="+",
+                   help="If the HMM database was formatted by the hmm_db_download.py script but you want to extract the results of 1 or more databases, choose here. Note that specifying this argument overrides -hmm.", default=False)
 p.add_argument("-o", "-output", dest="outputFileName",
                    help="Output file name.")
 
@@ -506,6 +516,9 @@ if args.hmmdbScript == False and args.databaseSelect == False:
         finalDict = single_database_domain_overlap_loop(domDict, args.ovlCutoff)
 else:
         finalDict = hmm_db_download_domain_overlap_loop(domDict, dom_prefixes, args.ovlCutoff, args.databaseSelect)
+        # Extra handling if we are doing a database selection involving more than 1 database
+        if args.databaseSelect != False and len(dom_prefixes) != 1:
+                finalDict = hmm_db_selection_flatten(finalDict, args.ovlCutoff)
 
 # Check that the program worked correctly
 dom_dict_check(finalDict, args.hmmdbScript)
