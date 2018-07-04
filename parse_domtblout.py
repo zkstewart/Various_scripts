@@ -177,7 +177,7 @@ def join_models(modelGroup, y):
         del modelGroup[y+1]
         return modelGroup
 
-def single_database_domain_overlap_loop(domDict):
+def single_database_domain_overlap_loop(domDict, ovlCutoff):
         # Setup
         finalDict = {}
         extensCutoff = 20       # This is arbitrary; seems to work well, don't see any reason why this should be variable by the user
@@ -260,14 +260,14 @@ def single_database_domain_overlap_loop(domDict):
                         else:
                                 finalDict[key].append(collapsedIdentical)
                 else:
-                        collapsedIdentical = ovl_resolver(args.ovlCutoff, collapsedIdentical)           # We've merged, joined, and trimmed identical domain models above. Now, we're looking at different domains from the same database.
+                        collapsedIdentical = ovl_resolver(ovlCutoff, collapsedIdentical)           # We've merged, joined, and trimmed identical domain models above. Now, we're looking at different domains from the same database.
                         if key not in finalDict:                                                        # We employ a similar approach here, but it's focused on E-values rather than on overlap proportions.
                                 finalDict[key] = collapsedIdentical
                         else:
                                 finalDict[key].append(collapsedIdentical)
         return finalDict
 
-def hmm_db_download_domain_overlap_loop(domDict, dom_prefixes, databaseSelect):
+def hmm_db_download_domain_overlap_loop(domDict, dom_prefixes, ovlCutoff, databaseSelect):
         # Setup
         finalDict = {}
         extensCutoff = 20       # This is arbitrary; seems to work well, don't see any reason why this should be variable by the user
@@ -365,7 +365,7 @@ def hmm_db_download_domain_overlap_loop(domDict, dom_prefixes, databaseSelect):
                                 else:
                                         finalDict[key].append(collapsedIdentical)
                         else:
-                                collapsedIdentical = ovl_resolver(args.ovlCutoff, collapsedIdentical)      # We've merged, joined, and trimmed identical domain models above. Now, we're looking at different domains from the same database.
+                                collapsedIdentical = ovl_resolver(ovlCutoff, collapsedIdentical)      # We've merged, joined, and trimmed identical domain models above. Now, we're looking at different domains from the same database.
                                 if key not in finalDict:                                                        # We employ a similar approach here, but it's focused on E-values rather than on overlap proportions.
                                         if databaseSelect == False:
                                                 finalDict[key] = [collapsedIdentical]
@@ -459,7 +459,7 @@ def hmmdb_output_func(inputDict, outputFileName, ovlCutoff):
                                 seqHits += val
                         seqHits.sort(key = lambda x: (x[1], x[2], x[3]))
                         if len(seqHits) != 1:
-                                seqHits = ovl_resolver(args.ovlCutoff, seqHits)
+                                seqHits = ovl_resolver(ovlCutoff, seqHits)
                         hitReceptacle.insert(0, '; '.join(list(map(str, seqHits))))
                         # Write to file
                         fileOut.write(key + '\t' + '\t'.join(hitReceptacle) + '\n')
@@ -495,9 +495,9 @@ domDict = hmmer_parse(args.inputHmmer, args.evalue)
 
 # Delve into parsed hmmer dictionary and sort out overlapping domain hits from different databases
 if args.hmmdbScript == False and args.databaseSelect == False:
-        finalDict = single_database_domain_overlap_loop(domDict)
+        finalDict = single_database_domain_overlap_loop(domDict, args.ovlCutoff)
 else:
-        finalDict = hmm_db_download_domain_overlap_loop(domDict, dom_prefixes, args.databaseSelect)
+        finalDict = hmm_db_download_domain_overlap_loop(domDict, dom_prefixes, args.ovlCutoff, args.databaseSelect)
 
 # Check that the program worked correctly
 dom_dict_check(finalDict, args.hmmdbScript)
