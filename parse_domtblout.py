@@ -17,7 +17,7 @@ import argparse, os
 # Define functions for later use
 
 ## Validate arguments
-def validate_args(args):
+def validate_args(args, dom_prefixes):
         # Validate input file locations
         if not os.path.isfile(args.inputHmmer):
                 print('I am unable to locate the HMMER domtblout file (' + args.inputHmmer + ')')
@@ -30,12 +30,16 @@ def validate_args(args):
         if not 0 <= args.ovlCutoff <= 100.0:
                 print('Percentage overlap cutoff must be given as a value <= 0 and >= 100. Try again.')
                 quit()
-        args.ovlCutoff = args.ovlCutoff / 100  
+        args.ovlCutoff = args.ovlCutoff / 100
+        # Handle domain prefix selection
+        if args.databaseSelect != False:
+                dom_prefixes = [args.databaseSelect]
+                args.hmmdbScript = False        # These options are incompatible, make sure it's turned off here
         # Handle file overwrites
         if os.path.isfile(args.outputFileName):
                 print(args.outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
                 quit()
-        return args
+        return args, dom_prefixes
 
 ## Domain overlap handling
 def findMiddle(input_list):             # https://stackoverflow.com/questions/38130895/find-middle-of-a-list
@@ -263,9 +267,8 @@ def single_database_domain_overlap_loop(domDict):
                                 finalDict[key].append(collapsedIdentical)
         return finalDict
 
-def hmm_db_download_domain_overlap_loop(domDict):
+def hmm_db_download_domain_overlap_loop(domDict, dom_prefixes, databaseSelect):
         # Setup
-        dom_prefixes = ('cd', 'COG', 'KOG', 'LOAD', 'MTH', 'pfam', 'PHA', 'PRK', 'PTZ', 'sd', 'smart', 'TIGR', 'PLN', 'CHL', 'cath', 'SUPERFAMILY')    # These encompass the databases currently part of NCBI's CDD, and cath which I add to this resource. SUPERFAMILY is also included, but it is purely numbers so no prefix is applicable; if it lacks any of these prefixes, it's a SUPERFAMILY domain.
         finalDict = {}
         extensCutoff = 20       # This is arbitrary; seems to work well, don't see any reason why this should be variable by the user
         for key, value in domDict.items():
@@ -355,14 +358,19 @@ def hmm_db_download_domain_overlap_loop(domDict):
                         # Process collapsedIdentical list to get our list of domains annotated against the sequence from each individual database
                         if len(collapsedIdentical) == 1:
                                 if key not in finalDict:
-                                        finalDict[key] = [collapsedIdentical]
+                                        if databaseSelect == False:
+                                                finalDict[key] = [collapsedIdentical]
+                                        else:                                           # If databaseSelect != False, we are only getting 1 database's output, and thus we want a single list item and not one for each database
+                                                finalDict[key] = collapsedIdentical
                                 else:
                                         finalDict[key].append(collapsedIdentical)
                         else:
-                                #collapsedIdentical.sort(key = lambda x: (x[3], x[1], x[2]))
                                 collapsedIdentical = ovl_resolver(args.ovlCutoff, collapsedIdentical)      # We've merged, joined, and trimmed identical domain models above. Now, we're looking at different domains from the same database.
                                 if key not in finalDict:                                                        # We employ a similar approach here, but it's focused on E-values rather than on overlap proportions.
-                                        finalDict[key] = [collapsedIdentical]
+                                        if databaseSelect == False:
+                                                finalDict[key] = [collapsedIdentical]
+                                        else:
+                                                finalDict[key] = collapsedIdentical
                                 else:
                                         finalDict[key].append(collapsedIdentical)
         return finalDict
@@ -456,6 +464,9 @@ def hmmdb_output_func(inputDict, outputFileName, ovlCutoff):
                         # Write to file
                         fileOut.write(key + '\t' + '\t'.join(hitReceptacle) + '\n')
 
+# Set up values needed for rest of script
+dom_prefixes = ['cd', 'COG', 'KOG', 'LOAD', 'MTH', 'pfam', 'PHA', 'PRK', 'PTZ', 'sd', 'smart', 'TIGR', 'PLN', 'CHL', 'cath', 'SUPERFAMILY']    # These encompass the databases currently part of NCBI's CDD, and cath which I add to this resource. SUPERFAMILY is also included, but it is purely numbers so no prefix is applicable; if it lacks any of these prefixes, it's a SUPERFAMILY domain.
+
 #### USER INPUT SECTION
 usage = """%(prog)s reads .domtblout file and returns non-overlapped (or
 specified percent of overlapping) domains below given e-value.
@@ -469,28 +480,30 @@ p.add_argument("-e", "-evalue", dest="evalue", type=float,
                    help="E-value significance cut-off for domain predictions (default == 1e-3)", default=1e-3)
 p.add_argument("-p", "-percOvl", dest="ovlCutoff", type=float,
                    help="Percentage overlap cutoff (below == trimming to prevent overlap, above = deletion of lower E-value hit, default == 25.0).", default=25.0)
-p.add_argument("-d", "-domainScript", dest="domainScript", action='store_true',
+p.add_argument("-hmm", "-hmmdbScript", dest="hmmdbScript", action='store_true',
                    help="Optionally specify whether the HMM database was formatted by the hmm_db_download.py script and you want annotation table formatted results.", default=False)
+p.add_argument("-d", "-databaseSelect", dest="databaseSelect", choices=dom_prefixes,
+                   help="If the HMM database was formatted by the hmm_db_download.py script but you want to extract the results of just one database, choose here. Note that specifying this argument overrides -hmm", default=False)
 p.add_argument("-o", "-output", dest="outputFileName",
                    help="Output file name.")
 
 args = p.parse_args()
-args = validate_args(args)
+args, dom_prefixes = validate_args(args, dom_prefixes)
 
 # Parse hmmer domblout file
 domDict = hmmer_parse(args.inputHmmer, args.evalue)
 
 # Delve into parsed hmmer dictionary and sort out overlapping domain hits from different databases
-if args.domainScript == False:
+if args.hmmdbScript == False and args.databaseSelect == False:
         finalDict = single_database_domain_overlap_loop(domDict)
 else:
-        finalDict = hmm_db_download_domain_overlap_loop(domDict)
+        finalDict = hmm_db_download_domain_overlap_loop(domDict, dom_prefixes, args.databaseSelect)
 
 # Check that the program worked correctly
-dom_dict_check(finalDict, args.domainScript)
+dom_dict_check(finalDict, args.hmmdbScript)
 
 # Generate output
-if args.domainScript == False:
+if args.hmmdbScript == False:
         output_func(finalDict, args.outputFileName)
 else:
         hmmdb_output_func(finalDict, args.outputFileName, args.ovlCutoff)
