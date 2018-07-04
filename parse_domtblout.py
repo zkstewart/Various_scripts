@@ -468,8 +468,16 @@ def hmmdb_output_func(inputDict, outputFileName, ovlCutoff):
 dom_prefixes = ['cd', 'COG', 'KOG', 'LOAD', 'MTH', 'pfam', 'PHA', 'PRK', 'PTZ', 'sd', 'smart', 'TIGR', 'PLN', 'CHL', 'cath', 'SUPERFAMILY']    # These encompass the databases currently part of NCBI's CDD, and cath which I add to this resource. SUPERFAMILY is also included, but it is purely numbers so no prefix is applicable; if it lacks any of these prefixes, it's a SUPERFAMILY domain.
 
 #### USER INPUT SECTION
-usage = """%(prog)s reads .domtblout file and returns non-overlapped (or
-specified percent of overlapping) domains below given e-value.
+usage = """%(prog)s reads a HMMER domtblout file and returns non-overlapping
+domain predictions which pass user-specified E-value cut-off. Program can
+operate in two modes. Without providing -hmm or -d argument, the input file
+will be handled normally. Providing either of these two arguments will treat
+the domtblout file as if it was produced by the hmm_db_download.py script
+and can provide an alternative output format (-hmm; format is like that of
+an annotation table; first column is combined database result with subsequent
+columns being from individual databases) or produce output from a single
+database (-d; extracts the specified databases' results to a normally-formatted
+output file).
 """
 
 # Reqs
