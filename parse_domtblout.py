@@ -263,21 +263,139 @@ def single_database_domain_overlap_loop(domDict):
                                 finalDict[key].append(collapsedIdentical)
         return finalDict
 
+def hmm_db_download_domain_overlap_loop(domDict):
+        # Setup
+        dom_prefixes = ('cd', 'COG', 'KOG', 'LOAD', 'MTH', 'pfam', 'PHA', 'PRK', 'PTZ', 'sd', 'smart', 'TIGR', 'PLN', 'CHL', 'cath', 'SUPERFAMILY')    # These encompass the databases currently part of NCBI's CDD, and cath which I add to this resource. SUPERFAMILY is also included, but it is purely numbers so no prefix is applicable; if it lacks any of these prefixes, it's a SUPERFAMILY domain.
+        finalDict = {}
+        extensCutoff = 20       # This is arbitrary; seems to work well, don't see any reason why this should be variable by the user
+        for key, value in domDict.items():
+                # Compare models from within each domain database and handle overlaps
+                for prefix in dom_prefixes:
+                        prefixHits = []
+                        for val in value:
+                                if prefix == 'SUPERFAMILY':
+                                        if val[0].isdigit():    # Remember, as mentioned above, SUPERFAMILY models are just digits. No other database has the same model naming scheme so we can detect these with this check
+                                                prefixHits.append(val)
+                                else:
+                                        if val[0].startswith(prefix):
+                                                prefixHits.append(val)
+                        if prefixHits == []:
+                                continue
+                        # Figure out which domain models are associated with this gene model and this particular domain database
+                        uniqueModels = []
+                        for val in prefixHits:
+                                uniqueModels.append(val[0])
+                        uniqueModels = list(set(uniqueModels))
+                        # Collapse overlaps of identical domains
+                        collapsedIdentical = []
+                        for model in uniqueModels:
+                                modelGroup = []
+                                for val in prefixHits:
+                                        if val[0] == model:
+                                                modelGroup.append(val)
+                                modelGroup.sort(key = lambda x: (x[1], x[2]))                           # Technically this should not be needed - the HMMER domtblout file is pre-sorted - but it's useful to put here _just in case_, and to make it clear that this script operates on the basis of this sorting
+                                # Begin collapsing process
+                                overlapping = 'y'
+                                while True:
+                                        if len(modelGroup) == 1 or overlapping == 'n':
+                                                break
+                                        for y in range(len(modelGroup)-1):
+                                                if modelGroup[y+1][1] > modelGroup[y][2] and y != len(modelGroup)-2:    # i.e., if the start of seq2 > end of seq1, there is no overlap; we also want to skip this if it's the last pair we're inspecting since that will allow us to reach the final "else" condition and exit out of the loop
+                                                        continue
+                                                elif modelGroup[y+1][1] == modelGroup[y][2]:                            # i.e., if the start of seq2 == end of seq1, there is 1 bp of overlap to handle
+                                                        modelGroup[y+1][1] =  modelGroup[y+1][1] + 1                    # Consistent design choice: the most N-proximal domain gets the extra AA position for no particular reason, we just need to handle this
+                                                        continue
+                                                elif modelGroup[y+1][1] < modelGroup[y][2]:                             # i.e., if the start of seq2 < end of seq1, there is more than 1bp of overlap of handle
+                                                        # Calculate overlap proportion
+                                                        seq1Len = modelGroup[y][2] - modelGroup[y][1] + 1
+                                                        seq2Len = modelGroup[y+1][2] - modelGroup[y+1][1] + 1
+                                                        sharedPos = set(range(max(modelGroup[y][1], modelGroup[y+1][1]), min(modelGroup[y][2], modelGroup[y+1][2]) + 1))        # +1 to offset Python counting up-to but not including the last value in a range
+                                                        ovlLen = len(sharedPos)
+                                                        r1Perc = ovlLen / (seq1Len + 1)
+                                                        r2Perc = ovlLen / (seq2Len + 1)
+                                                        highest = max(r1Perc, r2Perc)
+                                                        lowest = min(r1Perc, r2Perc)
+                                                        # Determine the length of the sequence extension of the most-overlapped sequence
+                                                        if highest == 0.50:
+                                                                longest = max(seq1Len, seq2Len)
+                                                                if longest == seq1Len:
+                                                                        extension = seq2Len - ovlLen
+                                                                else:
+                                                                        extension = seq1Len - ovlLen
+                                                        elif highest == r1Perc:
+                                                                extension = seq1Len - ovlLen
+                                                        else:
+                                                                extension = seq2Len - ovlLen
+                                                        ## Handle the various scenarios indicated by the highest/lowest values
+                                                        # Scenario 1: (TRIM BASED ON E-VALUE) small overlap of both sequences
+                                                        if highest <= 0.20:
+                                                                if modelGroup[y][3] < modelGroup[y+1][3]:
+                                                                        # Trim y+1
+                                                                        modelGroup[y+1] = [modelGroup[y+1][0], modelGroup[y][2]+1, *modelGroup[y+1][2:]]
+                                                                elif modelGroup[y+1][3] < modelGroup[y][3]:
+                                                                        # Trim y
+                                                                        modelGroup[y] = [*modelGroup[y][0:2], modelGroup[y+1][1]-1, modelGroup[y][3]]
+                                                                else:
+                                                                        # If the two E-value are identical, we just split down the middle!
+                                                                        modelGroup = split_middle(sharedPos, modelGroup, y)
+                                                                continue
+                                                        # Scenario 2: (SPLIT MIDDLE) intermediate overlap of one sequence with a significant length of sequence extension beyond the overlap region
+                                                        elif extension > extensCutoff and lowest <= 0.80:
+                                                                modelGroup = split_middle(sharedPos, modelGroup, y)
+                                                                continue
+                                                        # Scenario 3: (JOIN) intermediate or large overlap of one sequence with a short length of sequence extension beyond the overlap region
+                                                        else:
+                                                                modelGroup = join_models(modelGroup, y)
+                                                                break
+                                                else:   # We need the y != check above since we need to set an exit condition when no more overlaps are present. The if/elif will always trigger depending on whether there is/is not an overlap UNLESS it's the second last entry and there is no overlap. In this case we finally reach this else clause, and we trigger an exit.
+                                                        overlapping = 'n'
+                                                        break
+                                # Add corrected individual models to collapsedIdentical list
+                                collapsedIdentical += modelGroup
+                        # Process collapsedIdentical list to get our list of domains annotated against the sequence from each individual database
+                        if len(collapsedIdentical) == 1:
+                                if key not in finalDict:
+                                        finalDict[key] = [collapsedIdentical]
+                                else:
+                                        finalDict[key].append(collapsedIdentical)
+                        else:
+                                #collapsedIdentical.sort(key = lambda x: (x[3], x[1], x[2]))
+                                collapsedIdentical = ovl_resolver(args.ovlCutoff, collapsedIdentical)      # We've merged, joined, and trimmed identical domain models above. Now, we're looking at different domains from the same database.
+                                if key not in finalDict:                                                        # We employ a similar approach here, but it's focused on E-values rather than on overlap proportions.
+                                        finalDict[key] = [collapsedIdentical]
+                                else:
+                                        finalDict[key].append(collapsedIdentical)
+        return finalDict
+
 ## Ensure accuracy
-def dom_dict_check(finalDict):
+def dom_dict_check(finalDict, hmmdbDict):
         for key, value in finalDict.items():
                 seqHits = value
-                for y in range(len(seqHits)-1):
-                        z = y + 1
-                        while True:
-                                # Exit condition
-                                if z >= len(seqHits):   # len(seqHits)-1 would correspond to the final entry, this means we've gone at least one step further beyond
-                                        break
-                                # Checks
-                                assert seqHits[y][2] != seqHits[z][1]
-                                assert seqHits[z][2] != seqHits[y][1]
-                                assert not (seqHits[y][2] > seqHits[z][1] and seqHits[z][2] > seqHits[y][1])
-                                z += 1
+                if hmmdbDict == True:
+                        for val in seqHits:
+                                for y in range(len(val)-1):
+                                        z = y + 1
+                                        while True:
+                                                # Exit condition
+                                                if z >= len(val):   # len(val)-1 would correspond to the final entry, this means we've gone at least one step further beyond
+                                                        break
+                                                # Checks
+                                                assert val[y][2] != val[z][1]
+                                                assert val[z][2] != val[y][1]
+                                                assert not (val[y][2] > val[z][1] and val[z][2] > val[y][1])
+                                                z += 1
+                else:
+                        for y in range(len(seqHits)-1):
+                                z = y + 1
+                                while True:
+                                        # Exit condition
+                                        if z >= len(seqHits):   # len(seqHits)-1 would correspond to the final entry, this means we've gone at least one step further beyond
+                                                break
+                                        # Checks
+                                        assert seqHits[y][2] != seqHits[z][1]
+                                        assert seqHits[z][2] != seqHits[y][1]
+                                        assert not (seqHits[y][2] > seqHits[z][1] and seqHits[z][2] > seqHits[y][1])
+                                        z += 1
 
 ## Domtblout parsing
 def hmmer_parse(domtbloutFile, evalueCutoff):
@@ -304,11 +422,39 @@ def hmmer_parse(domtbloutFile, evalueCutoff):
                                 domDict[pid].append([did, dstart, dend, evalue])
         return domDict
 
-## Output function
+## Output functions
 def output_func(inputDict, outputFileName):
         with open(outputFileName, 'w') as fileOut:
                 for key, value in inputDict.items():
                         fileOut.write(key + '\t' + '\t'.join(list(map(str, value))) + '\n')
+
+def hmmdb_output_func(inputDict, outputFileName, ovlCutoff):
+        # Set up
+        dom_prefixes = ('cd', 'COG', 'KOG', 'LOAD', 'MTH', 'pfam', 'PHA', 'PRK', 'PTZ', 'sd', 'smart', 'TIGR', 'PLN', 'CHL', 'cath', 'SUPERFAMILY')
+        # Main loop
+        with open(outputFileName, 'w') as fileOut:
+                for key, value in inputDict.items():
+                        # Format hit receptacle list
+                        hitReceptacle = ['-']*len(dom_prefixes)
+                        for i in range(len(dom_prefixes)):
+                                if dom_prefixes[i] != 'SUPERFAMILY':
+                                        for val in value:
+                                                if val[0][0].startswith(dom_prefixes[i]):
+                                                        hitReceptacle[i] = '; '.join(list(map(str, val)))
+                                else:
+                                        for val in value:
+                                                if val[0][0].isdigit():
+                                                        hitReceptacle[i] = '; '.join(list(map(str, val)))
+                        # Create a single column entry summarising all the different databases
+                        seqHits = []
+                        for val in value:
+                                seqHits += val
+                        seqHits.sort(key = lambda x: (x[1], x[2], x[3]))
+                        if len(seqHits) != 1:
+                                seqHits = ovl_resolver(args.ovlCutoff, seqHits)
+                        hitReceptacle.insert(0, '; '.join(list(map(str, seqHits))))
+                        # Write to file
+                        fileOut.write(key + '\t' + '\t'.join(hitReceptacle) + '\n')
 
 #### USER INPUT SECTION
 usage = """%(prog)s reads .domtblout file and returns non-overlapped (or
@@ -323,6 +469,8 @@ p.add_argument("-e", "-evalue", dest="evalue", type=float,
                    help="E-value significance cut-off for domain predictions (default == 1e-3)", default=1e-3)
 p.add_argument("-p", "-percOvl", dest="ovlCutoff", type=float,
                    help="Percentage overlap cutoff (below == trimming to prevent overlap, above = deletion of lower E-value hit, default == 25.0).", default=25.0)
+p.add_argument("-d", "-domainScript", dest="domainScript", action='store_true',
+                   help="Optionally specify whether the HMM database was formatted by the hmm_db_download.py script and you want annotation table formatted results.", default=False)
 p.add_argument("-o", "-output", dest="outputFileName",
                    help="Output file name.")
 
@@ -333,10 +481,19 @@ args = validate_args(args)
 domDict = hmmer_parse(args.inputHmmer, args.evalue)
 
 # Delve into parsed hmmer dictionary and sort out overlapping domain hits from different databases
-finalDict = single_database_domain_overlap_loop(domDict)
+if args.domainScript == False:
+        finalDict = single_database_domain_overlap_loop(domDict)
+else:
+        finalDict = hmm_db_download_domain_overlap_loop(domDict)
 
 # Check that the program worked correctly
-dom_dict_check(finalDict)
+dom_dict_check(finalDict, args.domainScript)
 
 # Generate output
-output_func(finalDict, args.outputFileName)
+if args.domainScript == False:
+        output_func(finalDict, args.outputFileName)
+else:
+        hmmdb_output_func(finalDict, args.outputFileName, args.ovlCutoff)
+
+# All done!
+print('Program completed successfully!')
