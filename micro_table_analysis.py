@@ -75,11 +75,16 @@ def micro_chunk_to_dict(chunks):
                 for i in range(len(line2)):
                         if len(line2[i]) == 1 and line2[i] != '\n':     # i.e., if we're looking at a single identifying letter
                                 if i < afterIndex - 1:                  # -1 since 'AFTER' is present 1 cell after the total plate count for after
-                                        #beforeCounts[line2[i]] = i
                                         beforeLetters[i] = line2[i]
                                 else:
-                                        #afterCounts[line2[i]] = i
                                         afterLetters[i] = line2[i]
+                        elif '/' in line2[i]:   # i.e., if we're handling a shared group - only found on plate CZ124
+                                letters = line2[i].split('/')
+                                for letter in letters:
+                                        if i < afterIndex - 1:                  # -1 since 'AFTER' is present 1 cell after the total plate count for after
+                                                beforeLetters[i] = letters
+                                        else:
+                                                afterLetters[i] = letters
                 # Colony morphology and counts - dict start and counts
                 line3 = chunk[2].split('\t')
                 beforeValues = {}
@@ -87,10 +92,12 @@ def micro_chunk_to_dict(chunks):
                 for i in range(len(line3)):
                         if i in beforeLetters:
                                 currLetter = beforeLetters[i]
-                                beforeValues[currLetter] = {'Count': line3[i]}
+                                for letter in currLetter:                       # This and similar lines of code are specifically to handle CZ124, but future cases might also crop up
+                                        beforeValues[letter] = {'Count': line3[i]}
                         elif i in afterLetters:
                                 currLetter = afterLetters[i]
-                                afterValues[currLetter] = {'Count': line3[i]}
+                                for letter in currLetter:
+                                        afterValues[letter] = {'Count': line3[i]}
                         elif i == 2:
                                 beforeValues['Total count'] = line3[i]
                         elif i == 8:
@@ -103,10 +110,12 @@ def micro_chunk_to_dict(chunks):
                         for i in range(len(lineX)):
                                 if i in beforeLetters:
                                         currLetter = beforeLetters[i]
-                                        beforeValues[currLetter][lineX[2]] = lineX[i]
+                                        for letter in currLetter:
+                                                beforeValues[letter][lineX[2]] = lineX[i]
                                 elif i in afterLetters:
                                         currLetter = afterLetters[i]
-                                        afterValues[currLetter][lineX[2]] = lineX[i]
+                                        for letter in currLetter:
+                                                afterValues[letter][lineX[2]] = lineX[i]
                 # Add colony morphology details to chunkDict
                 chunkDict[plateID]['Before'] = beforeValues
                 chunkDict[plateID]['After'] = afterValues
@@ -147,7 +156,7 @@ def fix_details(chunkDict):
         import copy
         for key, value in chunkDict.items():
                 ## HARD CODED - CONFIRM
-                if key == 'IX963':
+                if key == 'CZ124' or key == 'CA152' or key == 'FJ000' or key == 'K123M':
                         continue
                 ## Fix details
                 # Media - drop everything except A1, B1, etc.
@@ -173,8 +182,6 @@ def fix_details(chunkDict):
                                         value['Media'][mKey][i] = 'G-LF'
                                 elif value['Media'][mKey][i].lower() == 'pallet' or value['Media'][mKey][i].lower() == 'pallets':
                                         value['Media'][mKey][i] = 'pellet'     # Confirmed
-                                elif value['Media'][mKey][i].lower() == 'mf & nmf':
-                                        value['Media'][mKey][i] = 'MF'          ## CONFIRM IF THIS IS CORRECT
                                 # Handle specific typos encountered
                                 elif value['Media'][mKey][i].lower() == 'rturbid':
                                         value['Media'][mKey][i] = 'turbid'
@@ -223,22 +230,30 @@ def fix_details(chunkDict):
                         baKeys = list(value[group].keys())
                         for bKey in baKeys:
                                 if bKey == 'Total count':
+                                        if 'tntc' in value[group][bKey].lower():
+                                                value[group][bKey] = 'TNTC'
                                         continue
-                                #baVal = copy.deepcopy(value[group][bKey])       # Making a deepcopy lets us delete values in the original
-                                #for k, v in baVal.items():
-                                        #if k == 'Count':
                                 value[group][bKey]['Count'] = value[group][bKey]['Count'].strip('~ ')
                                 if 'tntc' in value[group][bKey]['Count'].lower():
-                                        value[group][bKey]['Count'] = 'TNTC'    ## CONFIRM IF THIS IS CORRECT - HANDLES CZ124
+                                        value[group][bKey]['Count'] = 'TNTC'    # Not strictly confirmed, but assumed correct - HANDLES CZ124
                 # Before/after - handle missing count numbers
                 for group in ['Before', 'After']:
                         baKeys = list(value[group].keys())
-                        for bKey in baKeys:
-                                if bKey == 'Total count':
-                                        continue
-                                if value[group][bKey]['Count'] == '' or value[group][bKey]['Count'] == 'ND':    # It will == 'ND' here since the replace blanks function comes first currently
+                        if 'Total count' in baKeys:
+                                del baKeys[baKeys.index('Total count')]
+                        for i in range(len(baKeys)):
+                                if value[group][baKeys[i]]['Count'] == '' or value[group][baKeys[i]]['Count'] == 'ND':    # It will == 'ND' here since the replace blanks function comes first currently
+                                        # TNTC in total count but empty data in individual counts
                                         if value[group]['Total count'] == 'TNTC':
-                                                value[group][bKey]['Count'] = 'TNTC'    ## CONFIRM IF THIS IS CORRECT
+                                                value[group][baKeys[i]]['Count'] = 'TNTC'    # Confirmed (for BM998)
+                                        # Integer in total count but empty data in individual counts
+                                        elif value[group]['Total count'].isdigit():
+                                                # Divide the total count across each morphology as evenly as possible
+                                                totalNum = int(value[group]['Total count'])
+                                                numGroups = len(baKeys)
+                                                valueList = divide_num_to_list(totalNum, numGroups)
+                                                # Update values
+                                                value[group][baKeys[i]]['Count'] = str(valueList[i])
                                         else:
                                                 print('Don\'t know how to handle this missing count cell.')
                                                 print(key)
@@ -279,17 +294,65 @@ def fix_details(chunkDict):
                         baKeys = list(value[group].keys())
                         for bKey in baKeys:
                                 if bKey == 'Total count':
-                                        continue
-                                if value[group][bKey]['Count'] == 'TNTC':
-                                        continue
-                                try:
-                                        int(value[group][bKey]['Count'])
-                                except:
-                                        print('Can\'t turn this into an integer.')
+                                        if value[group][bKey] == 'TNTC':
+                                                continue
+                                        else:
+                                                try:
+                                                        int(value[group][bKey])
+                                                except:
+                                                        print('Can\'t turn this into an integer.')
+                                                        print(key)
+                                                        print(value)
+                                                        stophere
+                                else:
+                                        if value[group][bKey]['Count'] == 'TNTC':
+                                                continue
+                                        else:
+                                                try:
+                                                        int(value[group][bKey]['Count'])
+                                                except:
+                                                        print('Can\'t turn this into an integer.')
+                                                        print(key)
+                                                        print(value)
+                                                        stophere
+                # Before/after - make sure individual numbers sum to total count
+                for group in ['Before', 'After']:
+                        baKeys = list(value[group].keys())
+                        if 'Total count' in baKeys:
+                                del baKeys[baKeys.index('Total count')]
+                        totalCount = value[group]['Total count']
+                        # Scenario 1: total count is TNTC
+                        if totalCount == 'TNTC':
+                                found = False
+                                for bKey in baKeys:
+                                        if value[group][bKey]['Count'] == 'TNTC':
+                                                found = True
+                                if found == False:
+                                        print('Doesn\'t add up to TNTC.')
+                                        print(key)
+                                        print(value)
+                                        stophere
+                        # Scenario 2: total count is an integer
+                        else:
+                                totalCount = int(totalCount)
+                                sumCount = 0
+                                for bKey in baKeys:
+                                        sumCount += int(value[group][bKey]['Count'])
+                                if sumCount != totalCount:
+                                        print('Doesn\'t add up to total count')
                                         print(key)
                                         print(value)
                                         stophere
         return chunkDict
+
+## Basic functions
+def divide_num_to_list(totalNum, numGroups):
+        baseNum = int(totalNum / numGroups)
+        remainder = totalNum % numGroups
+        valueList = [baseNum]*numGroups
+        for i in range(remainder):
+                valueList[i] += 1
+        return valueList
 
 ### USER INPUT
 usage = """%(prog)s
@@ -305,7 +368,7 @@ p.add_argument("-o", "--output", dest="outputFileName",
 args = p.parse_args()
 
 ## Hard coded for testing
-args.tableFile = r'E:\elise\RAW_LQB301_ProjectData25-06-2018(9673).txt'
+args.tableFile = r'E:\elise\RELABEL_LQB301_ProjectData25-06-2018(9673).txt'
 #args.tableFile = r'E:\elise\DELETED_LQB301_ProjectData25-06-2018(9673).txt'
 args.outputFileName = r'E:\elise\test_micro_parse.txt'
 validate_args(args)
