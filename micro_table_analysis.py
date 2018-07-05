@@ -145,7 +145,11 @@ def middle_size(inputSize):
         # Strip extra characters
         inputSize = inputSize.strip('<>')
         # Split range
-        lower, upper = inputSize.split('-')
+        if '-' in inputSize:
+                lower, upper = inputSize.split('-')
+        else:
+                lower, upper = inputSize.split('&')
+                lower, upper = lower.strip(' '), upper.strip(' ')
         lower, upper = float(lower), float(upper)
         # Find middle value
         middle = mean([lower, upper])
@@ -210,7 +214,7 @@ def fix_details(chunkDict):
                                         if 'size' in k.lower():
                                                 value[group][bKey]['Size phi (mm)'] = value[group][bKey].pop(k)
                                                 # Handle size ranges
-                                                if '-' in v:
+                                                if '-' in v or '&' in v:
                                                         ## HARD CODED HANDLE ##
                                                         if v == "2'0.5-3":
                                                                 v = '0.5-3'     # Confirmed
@@ -236,24 +240,39 @@ def fix_details(chunkDict):
                                 value[group][bKey]['Count'] = value[group][bKey]['Count'].strip('~ ')
                                 if 'tntc' in value[group][bKey]['Count'].lower():
                                         value[group][bKey]['Count'] = 'TNTC'    # Not strictly confirmed, but assumed correct - HANDLES CZ124
-                # Before/after - handle missing count numbers
+                # Before/after - add in missing numbers when a total is present
+                for group in ['Before', 'After']:
+                        baKeys = list(value[group].keys())
+                        if 'Total count' in baKeys:
+                                del baKeys[baKeys.index('Total count')]
+                        if value[group]['Total count'].isdigit():
+                                totalSum = 0
+                                numGroups = 0
+                                for i in range(len(baKeys)):
+                                        if value[group][baKeys[i]]['Count'] == '' or value[group][baKeys[i]]['Count'] == 'ND' or value[group][baKeys[i]]['Count'] == 'TNTC':
+                                                numGroups += 1
+                                        else:
+                                                totalSum += int(value[group][baKeys[i]]['Count'])
+                                if numGroups == 0:
+                                        continue
+                                # Divide the total count across each morphology as evenly as possible
+                                totalNum = int(value[group]['Total count']) - totalSum
+                                valueList = divide_num_to_list(totalNum, numGroups)
+                                # Update values
+                                ongoingCount = 0
+                                for i in range(len(baKeys)):
+                                        if value[group][baKeys[i]]['Count'] == '' or value[group][baKeys[i]]['Count'] == 'ND' or value[group][baKeys[i]]['Count'] == 'TNTC':
+                                                value[group][baKeys[i]]['Count'] = str(valueList[ongoingCount])
+                                                ongoingCount += 1
+                # Before/after - handle missing count numbers when total is TNTC
                 for group in ['Before', 'After']:
                         baKeys = list(value[group].keys())
                         if 'Total count' in baKeys:
                                 del baKeys[baKeys.index('Total count')]
                         for i in range(len(baKeys)):
                                 if value[group][baKeys[i]]['Count'] == '' or value[group][baKeys[i]]['Count'] == 'ND':    # It will == 'ND' here since the replace blanks function comes first currently
-                                        # TNTC in total count but empty data in individual counts
                                         if value[group]['Total count'] == 'TNTC':
                                                 value[group][baKeys[i]]['Count'] = 'TNTC'    # Confirmed (for BM998)
-                                        # Integer in total count but empty data in individual counts
-                                        elif value[group]['Total count'].isdigit():
-                                                # Divide the total count across each morphology as evenly as possible
-                                                totalNum = int(value[group]['Total count'])
-                                                numGroups = len(baKeys)
-                                                valueList = divide_num_to_list(totalNum, numGroups)
-                                                # Update values
-                                                value[group][baKeys[i]]['Count'] = str(valueList[i])
                                         else:
                                                 print('Don\'t know how to handle this missing count cell.')
                                                 print(key)
@@ -373,6 +392,8 @@ args.tableFile = r'E:\elise\RELABEL_LQB301_ProjectData25-06-2018(9673).txt'
 args.outputFileName = r'E:\elise\test_micro_parse.txt'
 validate_args(args)
 
+## PARSE AND PROCESS RAW DATA
+
 # Parse table file into chunks
 chunks = micro_table_chunks(args.tableFile)
 
@@ -384,6 +405,8 @@ chunkDict = micro_chunk_to_dict(chunks)
 
 # Fix details for the dictionary
 chunkDict = fix_details(chunkDict)
+
+## REFORMAT DATA FOR VARIOUS ANALYSES
 
 #### SCRIPT ALL DONE
 print('Program completed successfully!')
