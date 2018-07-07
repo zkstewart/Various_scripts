@@ -9,7 +9,8 @@
 # Load packages
 import os, argparse
 
-### Various functions to perform operations throughout the program
+# Various functions to perform operations throughout the program
+## Validate arguments
 def validate_args(args):
         # Validate input file locations
         if not os.path.isfile(args.tableFile):
@@ -21,6 +22,7 @@ def validate_args(args):
                 print(args.outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
                 quit()
 
+## Parse and process raw data
 def micro_table_chunks(tableFileName):
         # Split table file into chunks for parsing - each chunk should be separated by a completely empty line
         chunks = []
@@ -283,6 +285,16 @@ def fix_details(chunkDict):
                 for i in range(len(value['Survey data'])):
                         if value['Survey data'][i] == '?':
                                 value['Survey data'][i] = questionOthers[i]     # Variable name doubles as a deep insight into humanity
+                # Survey data - replace absent values with 0
+                for i in range(len(value['Survey data'])):
+                        if value['Survey data'][i] == '':
+                                value['Survey data'][i] = '0'
+                # Survey data - replace incorrect values with 'Other' value
+                for i in range(len(value['Survey data'])):
+                        if i == 0:
+                                continue
+                        if int(value['Survey data'][i]) > int(questionOthers[i]):
+                                value['Survey data'][i] = questionOthers[i]     # This handles MAC97, CONFIRM with Elise?
                 ## Validate details
                 # Media - check labeling for consistency
                 mediaKeys = list(value['Media'].keys())
@@ -364,6 +376,175 @@ def fix_details(chunkDict):
                                         stophere
         return chunkDict
 
+## Data extraction and reformating
+def count_categoriser(inputValue, returnType):
+        #categoriesLabel = ['ND', '0', '1-10', '11-50', '50-100', '100-200', '200-400', 'TNTC']
+        #categoriesRange = ['ND', 0, range(1,11), range(11,51), range(51,101), range(101,201), range(201,401), 'TNTC']
+        categoriesLabel = ['ND', '0', '1-10', '11-100', '100-340', 'TNTC']
+        categoriesAsNumeric = ['ND', '1', '2', '3', '4', '5']
+        categoriesRange = ['ND', 0, range(1,11), range(11,101), range(101,341), 'TNTC']
+        for i in range(len(categoriesRange)):
+                if inputValue == categoriesRange[i]:
+                        if returnType == 'label':
+                                return categoriesLabel[i]
+                        else:
+                                return categoriesAsNumeric[i]
+                elif inputValue.isdigit() and categoriesRange[i] != 'ND' and categoriesRange[i] != 'TNTC':
+                        # Handle 0 comparison
+                        if int(inputValue) == categoriesRange[i]:
+                                if returnType == 'label':
+                                        return categoriesLabel[i]
+                                else:
+                                        return categoriesAsNumeric[i]
+                        # Handle other number comparisons
+                        if categoriesRange[i] == 0:
+                                continue
+                        elif int(inputValue) in categoriesRange[i]:
+                                if returnType == 'label':
+                                        return categoriesLabel[i]
+                                else:
+                                        return categoriesAsNumeric[i]
+
+def total_count_quiz_response(chunkDict):
+        # Set up
+        questionOthers = ['', 6, 4, 6, 6, 6, 5, 5] # These are the numbers of responses possible for each quiz question
+        # Format a list to store values in
+        beforeFormatList = []
+        afterFormatList = []
+        for i in range(len(questionOthers)):
+                beforeFormatList.append({})
+                afterFormatList.append({})
+                if i == 0:
+                        mainMedItemDict, varMedItemDict = medical_item_dicts()
+                        for value in mainMedItemDict.values():
+                                beforeFormatList[i][value] = []
+                                afterFormatList[i][value] = []
+                else:
+                        for x in range(1, questionOthers[i] + 1):
+                                beforeFormatList[i][x] = []
+                                afterFormatList[i][x] = []
+        # Loop through our dictionary of values and extract relevant details
+        for key, value in chunkDict.items():
+                for i in range(len(value['Survey data'])):
+                        # Skip the item for now - another function will deal with this
+                        if i == 0:
+                                medItem = value['Survey data'][i]
+                                medItem = medical_item_categoriser(medItem)
+                                # Convert the count to a category
+                                countCatBefore = count_categoriser(value['Before']['Total count'], 'number')
+                                countCatAfter = count_categoriser(value['After']['Total count'], 'number')
+                                # Add it to our list
+                                if medItem != False and countCatBefore != 'ND' and countCatAfter != 'ND':
+                                        beforeFormatList[i][medItem].append(countCatBefore)        # This means we should have ordered lists
+                                        afterFormatList[i][medItem].append(countCatAfter)
+                        # Skip any samples which lack a response for this question
+                        elif value['Survey data'][i] == '0':
+                                continue
+                        else:
+                                # Convert the count to a category
+                                countCatBefore = count_categoriser(value['Before']['Total count'], 'number')
+                                countCatAfter = count_categoriser(value['After']['Total count'], 'number')
+                                # Add it to our respective list
+                                if countCatBefore != 'ND' and countCatAfter != 'ND':      # Skip anything which lacks values
+                                        beforeFormatList[i][int(value['Survey data'][i])].append(countCatBefore)        # This means we should have ordered lists
+                                        afterFormatList[i][int(value['Survey data'][i])].append(countCatAfter)
+        return beforeFormatList, afterFormatList
+
+def medical_item_dicts():
+        # Categorise and normalise naming for most abundant items
+        mainMedItemDict = {'STETHOSCOPE': 'STETHOSCOPE',
+                       'PEN': 'PEN', 'MARKER PEN': 'PEN', 'BIRO': 'PEN', 'INK PEN': 'PEN', 'WRITING PEN': 'PEN',
+                       'SAFETY GLASSES': 'SAFETY GLASSES',
+                       'PEN LIGHT': 'PEN LIGHT',
+                       'MOBILE PHONE': 'MOBILE PHONE', 'PHONE': 'MOBILE PHONE', 'MOBILE PHONE CASE': 'MOBILE PHONE',
+                       'GLASSES': 'GLASSES', 'EYE GLASSES': 'GLASSES', 'PRESCRIPTION GLASSES': 'GLASSES',
+                       'WORK SHOES': 'CLOTHES', 'COAT COLLAR': 'CLOTHES', 'LAB COAT': 'CLOTHES', 'WATCH': 'CLOTHES',
+                       'SCISSORS': 'SCISSORS', 'TRAUMA SCISSORS': 'SCISSORS', 'TRAUMA SHEERS': 'SCISSORS'}
+        # Categorise various items - unlikely we can do meaningful statistics with these items due to low count
+        varMedItemDict = {'LAPTOP': 'BACKPACK STORED', 'METAL RULER': 'BACKPACK STORED',
+                       'ID CARD': 'ID CARD',
+                       'EPIPEN': 'EPIPEN',
+                       'BLOOD PRESSURE CUFF': 'BLOOD PRESSURE CUFF',
+                       'STETHOSCOPE-VET': 'STETHOSCOPE-VET',
+                       'MICROPIPETTOR': 'MICROPIPETTOR',        # Drop this item - it isn't the students?
+                       'UNSPECIFIED': 'UNSPECIFIED', }
+        return mainMedItemDict, varMedItemDict
+
+def medical_item_categoriser(medItem):
+        mainMedItemDict, varMedItemDict = medical_item_dicts()
+        if medItem in mainMedItemDict:
+                return mainMedItemDict[medItem]
+        elif medItem in varMedItemDict:
+                return False
+        else:
+                print('Failed to find this item in the dictionary!')
+                print(medItem)
+                print('Need to fix the hard coding of this script to address this problem. Ask Zac if he\'s not the one using this and he\'s still around.')
+                quit()
+
+### Test 1
+def quiz_cats_to_csv(quizCatDict, suffix, resultDir):
+        import os
+        fileNames = []
+        for i in range(len(quizCatDict)):
+                #if i == 0:
+                #        continue
+                # Get the output directory
+                outDirPath = os.path.join(os.getcwd(), resultDir)
+                if not os.path.isdir(outDirPath):
+                        os.mkdir(outDirPath)
+                # Generate an output name
+                name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_' + suffix), '_' + str(i+1) + '.csv')
+                fileNames.append(name)
+                # Produce output file
+                with open(name, 'w') as fileOut:
+                        fileOut.write('quiz_response,count_category\n')
+                        for key, value in quizCatDict[i].items():
+                                for val in value:
+                                        fileOut.write(str(key) + ',' + val + '\n')
+
+### Test 2
+def compare_total_to_csv(chunkDict,  resultDir):
+        import os
+        # Get the output directory
+        outDirPath = os.path.join(os.getcwd(), resultDir)
+        if not os.path.isdir(outDirPath):
+                os.mkdir(outDirPath)
+        # Generate an output name
+        name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_overall'), '.csv')
+        with open(name, 'w') as fileOut:
+                fileOut.write('count_category_before,count_category_after\n')
+                for key, value in chunkDict.items():
+                        # Convert the count to a category
+                        countCatBefore = count_categoriser(value['Before']['Total count'], 'number')
+                        countCatAfter = count_categoriser(value['After']['Total count'], 'number')
+                        # Add it to our respective list
+                        if countCatBefore != 'ND' and countCatAfter != 'ND':      # Skip anything which lacks values
+                                fileOut.write(countCatBefore + ',' + countCatAfter + '\n')
+
+### Test 3
+def compare_quiz_cats_to_csv(quizCatDict1, quizCatDict2, resultDir):
+        import os
+        fileNames = []
+        for i in range(len(quizCatDict1)):
+                if i == 0:
+                        continue
+                # Get the output directory
+                outDirPath = os.path.join(os.getcwd(), resultDir)
+                if not os.path.isdir(outDirPath):
+                        os.mkdir(outDirPath)
+                # Generate an output name
+                name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_compare'), '_' + str(i+1) + '.csv')
+                fileNames.append(name)
+                # Produce output file
+                with open(name, 'w') as fileOut:
+                        fileOut.write('quiz_response,treatment,count_category\n')
+                        for key1, value1 in quizCatDict1[i].items():
+                                value2 = quizCatDict2[i][key1]
+                                for x in range(len(value1)):
+                                        fileOut.write(str(key1) + ',before,' + value1[x] + '\n')
+                                        fileOut.write(str(key1) + ',after,' + value2[x] + '\n')
+
 ## Basic functions
 def divide_num_to_list(totalNum, numGroups):
         baseNum = int(totalNum / numGroups)
@@ -372,6 +553,16 @@ def divide_num_to_list(totalNum, numGroups):
         for i in range(remainder):
                 valueList[i] += 1
         return valueList
+
+def file_name_gen(prefix, suffix):
+        ongoingCount = 2
+        while True:
+                if not os.path.isfile(prefix + suffix):
+                        return prefix + suffix
+                elif os.path.isfile(prefix + suffix + str(ongoingCount)):
+                        ongoingCount += 1
+                else:
+                        return prefix + suffix + str(ongoingCount)
 
 ### USER INPUT
 usage = """%(prog)s
@@ -406,7 +597,55 @@ chunkDict = micro_chunk_to_dict(chunks)
 # Fix details for the dictionary
 chunkDict = fix_details(chunkDict)
 
-## REFORMAT DATA FOR VARIOUS ANALYSES
+# REFORMAT DATA FOR VARIOUS ANALYSES
+
+## Prep: count by quiz response dictionary generation
+quizCatBefore, quizCatAfter = total_count_quiz_response(chunkDict)
+
+# PERFORM TESTS
+
+## Overall question: What information does comparing before and after total counts tell us?
+
+### Test 1: growth before / growth after for quiz responses [Q: Do students who provide certain answers have more/less growth before and/or after treatment? A: For medical items, yes.]
+#quiz_cats_to_csv(quizCatBefore, 'before', 'R_scripts')
+#quiz_cats_to_csv(quizCatAfter, 'after', 'R_scripts')
+
+### Test 2: growth before VERSUS after [Q: Does treatment work to kill microbes? A: Yes.]
+#compare_total_to_csv(chunkDict, 'R_scripts')
+
+### Test 3: growth before VERSUS after for quiz responses [Q: Is cleaning more effective/important for students who provide certain answers? - A: No.]
+#compare_quiz_cats_to_csv(quizCatBefore, quizCatAfter, 'R_scripts')     ## This is the better option, it fees into linear model generation well
+
+### Test 4: growth before VERSUS growth after for medical items [Q: Are certain medical items more difficult to clean than others?]
+
+
+
+
+
+
+# Junkyard
+## Test 3
+#compare_quiz_cats_to_csv_byresponse(quizCatBefore, quizCatAfter, 'R_scripts')
+#def compare_quiz_cats_to_csv_byresponse(quizCatDict1, quizCatDict2, resultDir):
+#        import os
+#        for i in range(len(quizCatDict1)):
+#                if i == 0:
+#                        continue
+#                # Get the output directory
+#                outDirPath = os.path.join(os.getcwd(), resultDir)
+#                if not os.path.isdir(outDirPath):
+#                        os.mkdir(outDirPath)
+#                # Produce output file per response
+#                for key1, value1 in quizCatDict1[i].items():
+#                        if len(value1) < 10:        # Skip values with insufficient response for proper statistics
+#                                continue
+#                        # Generate an output name
+#                        name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_compare'), '_q' + str(i+1) + '_r' + str(key1) + '.csv')
+#                        with open(name, 'w') as fileOut:
+#                                fileOut.write('quiz_response,count_category_before,count_category_after\n')
+#                                value2 = quizCatDict2[i][key1]
+#                                for x in range(len(value1)):
+#                                        fileOut.write(str(key1) + ',' + value1[x] + ',' + value2[x] + '\n')
 
 #### SCRIPT ALL DONE
 print('Program completed successfully!')
