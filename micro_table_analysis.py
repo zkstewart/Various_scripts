@@ -426,7 +426,7 @@ def total_count_quiz_response(chunkDict):
         # Loop through our dictionary of values and extract relevant details
         for key, value in chunkDict.items():
                 for i in range(len(value['Survey data'])):
-                        # Skip the item for now - another function will deal with this
+                        # Specifically handle medical items
                         if i == 0:
                                 medItem = value['Survey data'][i]
                                 medItem = medical_item_categoriser(medItem)
@@ -450,6 +450,48 @@ def total_count_quiz_response(chunkDict):
                                         afterFormatList[i][int(value['Survey data'][i])].append(countCatAfter)
         return beforeFormatList, afterFormatList
 
+def microbe_diversity_quiz_response(chunkDict):
+        # Set up
+        questionOthers = ['', 6, 4, 6, 6, 6, 5, 5] # These are the numbers of responses possible for each quiz question
+        # Format a list to store values in
+        beforeFormatList = []
+        afterFormatList = []
+        for i in range(len(questionOthers)):
+                beforeFormatList.append({})
+                afterFormatList.append({})
+                if i == 0:
+                        mainMedItemDict, varMedItemDict = medical_item_dicts()
+                        for value in mainMedItemDict.values():
+                                beforeFormatList[i][value] = []
+                                afterFormatList[i][value] = []
+                else:
+                        for x in range(1, questionOthers[i] + 1):
+                                beforeFormatList[i][x] = []
+                                afterFormatList[i][x] = []
+        # Loop through our dictionary of values and extract relevant details
+        for key, value in chunkDict.items():
+                for i in range(len(value['Survey data'])):
+                        # Specifically handle medical items
+                        if i == 0:
+                                medItem = value['Survey data'][i]
+                                medItem = medical_item_categoriser(medItem)
+                                # Compute the diversity count
+                                beforeDiv, afterDiv = diversity_number(value)
+                                # Add it to our list
+                                if medItem != False:
+                                        beforeFormatList[i][medItem].append(beforeDiv)        # This means we should have ordered lists
+                                        afterFormatList[i][medItem].append(afterDiv)
+                        # Skip any samples which lack a response for this question
+                        elif value['Survey data'][i] == '0':
+                                continue
+                        else:
+                                # Compute the diversity count
+                                beforeDiv, afterDiv = diversity_number(value)
+                                # Add it to our respective list
+                                beforeFormatList[i][int(value['Survey data'][i])].append(beforeDiv)        # This means we should have ordered lists
+                                afterFormatList[i][int(value['Survey data'][i])].append(afterDiv)
+        return beforeFormatList, afterFormatList
+
 def medical_item_dicts():
         # Categorise and normalise naming for most abundant items
         mainMedItemDict = {'STETHOSCOPE': 'STETHOSCOPE',
@@ -467,7 +509,7 @@ def medical_item_dicts():
                        'BLOOD PRESSURE CUFF': 'BLOOD PRESSURE CUFF',
                        'STETHOSCOPE-VET': 'STETHOSCOPE-VET',
                        'MICROPIPETTOR': 'MICROPIPETTOR',        # Drop this item - it isn't the students?
-                       'UNSPECIFIED': 'UNSPECIFIED', }
+                       'UNSPECIFIED': 'UNSPECIFIED'}
         return mainMedItemDict, varMedItemDict
 
 def medical_item_categoriser(medItem):
@@ -482,8 +524,13 @@ def medical_item_categoriser(medItem):
                 print('Need to fix the hard coding of this script to address this problem. Ask Zac if he\'s not the one using this and he\'s still around.')
                 quit()
 
-### Test 1
-def quiz_cats_to_csv(quizCatDict, suffix, resultDir):
+def diversity_number(chunkValue):
+        beforeDiv = len(chunkValue['Before'].keys()) - 1        # -1 for 'Total count' value
+        afterDiv = len(chunkValue['After'].keys()) - 1
+        return beforeDiv, afterDiv
+
+### Test 1 & 4
+def quiz_cats_to_csv(quizCatDict, prefix, suffix, header, resultDir):
         import os
         fileNames = []
         for i in range(len(quizCatDict)):
@@ -494,15 +541,14 @@ def quiz_cats_to_csv(quizCatDict, suffix, resultDir):
                 if not os.path.isdir(outDirPath):
                         os.mkdir(outDirPath)
                 # Generate an output name
-                name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_' + suffix), '_' + str(i+1) + '.csv')
+                name = file_name_gen(os.path.join(outDirPath, prefix + suffix), '_' + str(i+1) + '.csv')
                 fileNames.append(name)
                 # Produce output file
                 with open(name, 'w') as fileOut:
-                        fileOut.write('quiz_response,count_category\n')
+                        fileOut.write(header)
                         for key, value in quizCatDict[i].items():
                                 for val in value:
-                                        fileOut.write(str(key) + ',' + val + '\n')
-
+                                        fileOut.write(str(key) + ',' + str(val) + '\n')
 ### Test 2
 def compare_total_to_csv(chunkDict,  resultDir):
         import os
@@ -527,8 +573,8 @@ def compare_quiz_cats_to_csv(quizCatDict1, quizCatDict2, resultDir):
         import os
         fileNames = []
         for i in range(len(quizCatDict1)):
-                if i == 0:
-                        continue
+                #if i == 0:
+                #        continue
                 # Get the output directory
                 outDirPath = os.path.join(os.getcwd(), resultDir)
                 if not os.path.isdir(outDirPath):
@@ -544,6 +590,45 @@ def compare_quiz_cats_to_csv(quizCatDict1, quizCatDict2, resultDir):
                                 for x in range(len(value1)):
                                         fileOut.write(str(key1) + ',before,' + value1[x] + '\n')
                                         fileOut.write(str(key1) + ',after,' + value2[x] + '\n')
+
+## Test 5
+def compare_div_to_csv(chunkDict,  resultDir):
+        import os
+        # Get the output directory
+        outDirPath = os.path.join(os.getcwd(), resultDir)
+        if not os.path.isdir(outDirPath):
+                os.mkdir(outDirPath)
+        # Generate an output name
+        name = file_name_gen(os.path.join(outDirPath, 'quizcat_div_overall'), '.csv')
+        with open(name, 'w') as fileOut:
+                fileOut.write('div_before,div_after\n')
+                for key, value in chunkDict.items():
+                        # Compute the diversity count
+                        beforeDiv, afterDiv = diversity_number(value)
+                        fileOut.write(str(beforeDiv) + ',' + str(afterDiv) + '\n')
+
+## Test 6
+def compare_quiz_cats_div_to_csv(quizCatDict1, quizCatDict2, resultDir):
+        import os
+        fileNames = []
+        for i in range(len(quizCatDict1)):
+                #if i == 0:
+                #        continue
+                # Get the output directory
+                outDirPath = os.path.join(os.getcwd(), resultDir)
+                if not os.path.isdir(outDirPath):
+                        os.mkdir(outDirPath)
+                # Generate an output name
+                name = file_name_gen(os.path.join(outDirPath, 'quizcat_div_compare'), '_' + str(i+1) + '.csv')
+                fileNames.append(name)
+                # Produce output file
+                with open(name, 'w') as fileOut:
+                        fileOut.write('quiz_response,treatment,species_num\n')
+                        for key1, value1 in quizCatDict1[i].items():
+                                value2 = quizCatDict2[i][key1]
+                                for x in range(len(value1)):
+                                        fileOut.write(str(key1) + ',before,' + str(value1[x]) + '\n')
+                                        fileOut.write(str(key1) + ',after,' + str(value2[x]) + '\n')
 
 ## Basic functions
 def divide_num_to_list(totalNum, numGroups):
@@ -602,25 +687,34 @@ chunkDict = fix_details(chunkDict)
 ## Prep: count by quiz response dictionary generation
 quizCatBefore, quizCatAfter = total_count_quiz_response(chunkDict)
 
+## Prep: diversity by quiz response dictionary generation
+quizCatDivBefore, quizCatDivAfter = microbe_diversity_quiz_response(chunkDict)
+
 # PERFORM TESTS
 
 ## Overall question: What information does comparing before and after total counts tell us?
 
 ### Test 1: growth before / growth after for quiz responses [Q: Do students who provide certain answers have more/less growth before and/or after treatment? A: For medical items, yes.]
-#quiz_cats_to_csv(quizCatBefore, 'before', 'R_scripts')
-#quiz_cats_to_csv(quizCatAfter, 'after', 'R_scripts')
+#quiz_cats_to_csv(quizCatBefore, 'quizcat_totals_', 'before', 'quiz_response,count_category\n', 'R_scripts')
+#quiz_cats_to_csv(quizCatAfter, 'quizcat_totals_', 'after', 'quiz_response,count_category\n', 'R_scripts')
 
 ### Test 2: growth before VERSUS after [Q: Does treatment work to kill microbes? A: Yes.]
 #compare_total_to_csv(chunkDict, 'R_scripts')
 
-### Test 3: growth before VERSUS after for quiz responses [Q: Is cleaning more effective/important for students who provide certain answers? - A: No.]
+### Test 3: growth before VERSUS after for quiz responses [Q: Is cleaning more effective/important for students who provide certain answers? - A: For medical items, yes.]
 #compare_quiz_cats_to_csv(quizCatBefore, quizCatAfter, 'R_scripts')     ## This is the better option, it fees into linear model generation well
 
-### Test 4: growth before VERSUS growth after for medical items [Q: Are certain medical items more difficult to clean than others?]
+## Overall question: Is there any relationship between study variables and microbial diversity?
 
+### Test 4: microbial diversity before / after for quiz responses [Q: Do students who provide certain answers have more/less microbial diversity before and/or after treatment? A: Not technically.]
+#quiz_cats_to_csv(quizCatDivBefore, 'quizcat_div_', 'before', 'quiz_response,species_num\n', 'R_scripts')
+#quiz_cats_to_csv(quizCatDivAfter, 'quizcat_div_', 'after', 'quiz_response,species_num\n', 'R_scripts')
 
+### Test 5: microbial diversity before VERSUS after [Q: Does treatment work to reduce diversity? A: Yes.]
+#compare_div_to_csv(chunkDict, 'R_scripts')
 
-
+### Test 6: div before VERSUS after for quiz responses [Q: Does cleaning reduce diversity more for students who provide certain answers? - A: No.]
+#compare_quiz_cats_div_to_csv(quizCatDivBefore, quizCatDivAfter, 'R_scripts')
 
 
 # Junkyard
