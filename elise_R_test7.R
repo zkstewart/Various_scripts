@@ -4,6 +4,8 @@
 library(ggplot2)
 library(gridExtra)
 library(FSA)
+library(MASS)
+library(rcompanion)
 
 # Read data
 maindir = "E:/elise/R_scripts"
@@ -133,13 +135,16 @@ quizcat_stats_test7MCA = list()
 i = 1
 for (file in quizcat_files_NB){
   quizData = read.csv(file)
-  fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
+  tbl = table(quizData$quiz_response, quizData$reaction_cat)
+  #fit = fisher.test(tbl,workspace=2e+07)
+  fit = chisq.test(tbl)
+  #fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
   quizcat_stats_test7NB[[i]] = fit
   i = i + 1
 }
 i = 1
 for (stat in quizcat_stats_test7NB) {
-  tmpTable = as.data.frame(stat[1:5])
+  tmpTable = as.data.frame(stat[1:4])
   tmpTable$quiz_question = toString(i)
   if (i == 1) {
     mainDF = tmpTable
@@ -149,6 +154,23 @@ for (stat in quizcat_stats_test7NB) {
   }
   i = i + 1
 }
+          # Significance for quiz question 8! post hoc test time
+quizData = read.csv(quizcat_files_NB[[8]])
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
+result$a = 'NA'
+result$b = 'NA'
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
+tmpColNames = data.frame(as.list(colnames(result)))
+### Do stupid stuff to make R not be terrible
+mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
+colnames(tmpColNames) = colnames(mainDF)
+colnames(result) = colnames(mainDF)
+mainDF <- rbind(colnames(mainDF), mainDF)
+mainDF <- rbind(result, mainDF)
+
 write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_NB_before_stats.csv", sep=""), row.names = FALSE, col.names = FALSE)
 
 
@@ -156,13 +178,16 @@ write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_NB_before_s
 i = 1
 for (file in quizcat_files_HBA){
   quizData = read.csv(file)
-  fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
+  tbl = table(quizData$quiz_response, quizData$reaction_cat)
+  #fit = fisher.test(tbl,workspace=2e+07,hybrid = TRUE)
+  fit = chisq.test(tbl)
+  #fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
   quizcat_stats_test7HBA[[i]] = fit
   i = i + 1
 }
 i = 1
 for (stat in quizcat_stats_test7HBA) {
-  tmpTable = as.data.frame(stat[1:5])
+  tmpTable = as.data.frame(stat[1:4])
   tmpTable$quiz_question = toString(i)
   if (i == 1) {
     mainDF = tmpTable
@@ -171,14 +196,64 @@ for (stat in quizcat_stats_test7HBA) {
     mainDF <- rbind(tmpTable[1, ], mainDF)
   }
   i = i + 1
-}
+} #1,3,5,6,8
+# Significance for quiz question 1! post hoc test time
+quizData = read.csv(quizcat_files_HBA[[1]])
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
+result$a = 'NA'
+result$b = 'NA'
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
+tmpColNames = data.frame(as.list(colnames(result)))
+### Do stupid stuff to make R not be terrible
+mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
+colnames(tmpColNames) = colnames(mainDF)
+colnames(result) = colnames(mainDF)
+mainDF <- rbind(colnames(mainDF), mainDF)
+mainDF <- rbind(result, mainDF)
+# Significance for quiz question 3! post hoc test time
+quizData = read.csv(quizcat_files_HBA[[3]])
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
+result$a = 'NA'
+result$b = 'NA'
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
+tmpColNames = data.frame(as.list(colnames(result)))
+### Do stupid stuff to make R not be terrible
+mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
+colnames(tmpColNames) = colnames(mainDF)
+colnames(result) = colnames(mainDF)
+mainDF <- rbind(colnames(mainDF), mainDF)
+mainDF <- rbind(result, mainDF)
+            # Significance for quiz question 5! post hoc test time
+quizData = read.csv(quizcat_files_HBA[[5]])
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
+result$a = 'NA'
+result$b = 'NA'
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
+tmpColNames = data.frame(as.list(colnames(result)))
+### Do stupid stuff to make R not be terrible
+mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
+colnames(tmpColNames) = colnames(mainDF)
+colnames(result) = colnames(mainDF)
+mainDF <- rbind(colnames(mainDF), mainDF)
+mainDF <- rbind(result, mainDF)
           # Significance for quiz question 6! post hoc test time
 quizData = read.csv(quizcat_files_HBA[[6]])
-q1PH = dunnTest(reaction_cat ~ quiz_response, data=quizData)
-result = as.data.frame(q1PH$res)
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
 result$a = 'NA'
 result$b = 'NA'
-colnames(result) = c("Comparison","Z","P.unadj","P.adj",quizcat_files_HBA[[6]],quizcat_files_HBA[[6]])
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
 tmpColNames = data.frame(as.list(colnames(result)))
 ### Do stupid stuff to make R not be terrible
 mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
@@ -186,14 +261,15 @@ colnames(tmpColNames) = colnames(mainDF)
 colnames(result) = colnames(mainDF)
 mainDF <- rbind(colnames(mainDF), mainDF)
 mainDF <- rbind(result, mainDF)
-mainDF <- rbind(tmpColNames, mainDF)
         # Significance for quiz question 8! post hoc test time
 quizData = read.csv(quizcat_files_HBA[[8]])
-q1PH = dunnTest(reaction_cat ~ quiz_response, data=quizData)
-result = as.data.frame(q1PH$res)
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
 result$a = 'NA'
 result$b = 'NA'
-colnames(result) = c("Comparison","Z","P.unadj","P.adj",quizcat_files_HBA[[8]],quizcat_files_HBA[[8]])
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
 tmpColNames = data.frame(as.list(colnames(result)))
 ### Do stupid stuff to make R not be terrible
 mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
@@ -201,7 +277,6 @@ colnames(tmpColNames) = colnames(mainDF)
 colnames(result) = colnames(mainDF)
 mainDF <- rbind(colnames(mainDF), mainDF)
 mainDF <- rbind(result, mainDF)
-mainDF <- rbind(tmpColNames, mainDF)
 ### Write to file
 write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_HBA_before_stats.csv", sep=""), row.names = FALSE, col.names = FALSE)
 
@@ -209,13 +284,16 @@ write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_HBA_before_
 i = 1
 for (file in quizcat_files_MSA){
   quizData = read.csv(file)
-  fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
+  tbl = table(quizData$quiz_response, quizData$reaction_cat)
+  #fit = fisher.test(tbl,workspace=2e+07)
+  fit = chisq.test(tbl)
+  #fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
   quizcat_stats_test7MSA[[i]] = fit
   i = i + 1
 }
 i = 1
 for (stat in quizcat_stats_test7MSA) {
-  tmpTable = as.data.frame(stat[1:5])
+  tmpTable = as.data.frame(stat[1:4])
   tmpTable$quiz_question = toString(i)
   if (i == 1) {
     mainDF = tmpTable
@@ -224,29 +302,16 @@ for (stat in quizcat_stats_test7MSA) {
     mainDF <- rbind(tmpTable[1, ], mainDF)
   }
   i = i + 1
-}
-# Significance for quiz question 5! post hoc test time
-quizData = read.csv(quizcat_files_MSA[[5]])
-q1PH = dunnTest(reaction_cat ~ quiz_response, data=quizData)
-result = as.data.frame(q1PH$res)
-result$a = 'NA'
-result$b = 'NA'
-colnames(result) = c("Comparison","Z","P.unadj","P.adj",quizcat_files_MSA[[5]],quizcat_files_MSA[[5]])
-tmpColNames = data.frame(as.list(colnames(result)))
-### Do stupid stuff to make R not be terrible
-mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
-colnames(tmpColNames) = colnames(mainDF)
-colnames(result) = colnames(mainDF)
-mainDF <- rbind(colnames(mainDF), mainDF)
-mainDF <- rbind(result, mainDF)
-mainDF <- rbind(tmpColNames, mainDF)
+} #1,4,5
 # Significance for quiz question 1! post hoc test time
 quizData = read.csv(quizcat_files_MSA[[1]])
-q1PH = dunnTest(reaction_cat ~ quiz_response, data=quizData)
-result = as.data.frame(q1PH$res)
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
 result$a = 'NA'
 result$b = 'NA'
-colnames(result) = c("Comparison","Z","P.unadj","P.adj",quizcat_files_MSA[[1]],quizcat_files_MSA[[1]])
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
 tmpColNames = data.frame(as.list(colnames(result)))
 ### Do stupid stuff to make R not be terrible
 mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
@@ -254,7 +319,38 @@ colnames(tmpColNames) = colnames(mainDF)
 colnames(result) = colnames(mainDF)
 mainDF <- rbind(colnames(mainDF), mainDF)
 mainDF <- rbind(result, mainDF)
-mainDF <- rbind(tmpColNames, mainDF)
+# Significance for quiz question 4! post hoc test time
+quizData = read.csv(quizcat_files_MSA[[4]])
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
+result$a = 'NA'
+result$b = 'NA'
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
+tmpColNames = data.frame(as.list(colnames(result)))
+### Do stupid stuff to make R not be terrible
+mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
+colnames(tmpColNames) = colnames(mainDF)
+colnames(result) = colnames(mainDF)
+mainDF <- rbind(colnames(mainDF), mainDF)
+mainDF <- rbind(result, mainDF)
+# Significance for quiz question 5! post hoc test time
+quizData = read.csv(quizcat_files_MSA[[5]])
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
+result$a = 'NA'
+result$b = 'NA'
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
+tmpColNames = data.frame(as.list(colnames(result)))
+### Do stupid stuff to make R not be terrible
+mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
+colnames(tmpColNames) = colnames(mainDF)
+colnames(result) = colnames(mainDF)
+mainDF <- rbind(colnames(mainDF), mainDF)
+mainDF <- rbind(result, mainDF)
 ### Write to file
 write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_MSA_before_stats.csv", sep=""), row.names = FALSE, col.names = FALSE)
 
@@ -263,13 +359,16 @@ write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_MSA_before_
 i = 1
 for (file in quizcat_files_MCA){
   quizData = read.csv(file)
-  fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
+  tbl = table(quizData$quiz_response, quizData$reaction_cat)
+  #fit = fisher.test(tbl,workspace=2e+07)
+  fit = chisq.test(tbl)
+  #fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
   quizcat_stats_test7MCA[[i]] = fit
   i = i + 1
 }
 i = 1
 for (stat in quizcat_stats_test7MCA) {
-  tmpTable = as.data.frame(stat[1:5])
+  tmpTable = as.data.frame(stat[1:4])
   tmpTable$quiz_question = toString(i)
   if (i == 1) {
     mainDF = tmpTable
@@ -400,13 +499,16 @@ quizcat_stats_test7MCA = list()
 i = 1
 for (file in quizcat_files_NB){
   quizData = read.csv(file)
-  fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
+  tbl = table(quizData$quiz_response, quizData$reaction_cat)
+  #fit = fisher.test(tbl,workspace=2e+07)
+  fit = chisq.test(tbl)
+  #fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
   quizcat_stats_test7NB[[i]] = fit
   i = i + 1
 }
 i = 1
 for (stat in quizcat_stats_test7NB) {
-  tmpTable = as.data.frame(stat[1:5])
+  tmpTable = as.data.frame(stat[1:4])
   tmpTable$quiz_question = toString(i)
   if (i == 1) {
     mainDF = tmpTable
@@ -415,14 +517,16 @@ for (stat in quizcat_stats_test7NB) {
     mainDF <- rbind(tmpTable[1, ], mainDF)
   }
   i = i + 1
-}
-# Significance for quiz question 8! post hoc test time
-quizData = read.csv(quizcat_files_NB[[8]])
-q1PH = dunnTest(reaction_cat ~ quiz_response, data=quizData)
-result = as.data.frame(q1PH$res)
+} #4,8
+# Significance for quiz question 4! post hoc test time
+quizData = read.csv(quizcat_files_NB[[4]])
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
 result$a = 'NA'
 result$b = 'NA'
-colnames(result) = c("Comparison","Z","P.unadj","P.adj",quizcat_files_NB[[8]],quizcat_files_NB[[8]])
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
 tmpColNames = data.frame(as.list(colnames(result)))
 ### Do stupid stuff to make R not be terrible
 mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
@@ -430,7 +534,22 @@ colnames(tmpColNames) = colnames(mainDF)
 colnames(result) = colnames(mainDF)
 mainDF <- rbind(colnames(mainDF), mainDF)
 mainDF <- rbind(result, mainDF)
-mainDF <- rbind(tmpColNames, mainDF)
+# Significance for quiz question 8! post hoc test time
+quizData = read.csv(quizcat_files_NB[[8]])
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
+result$a = 'NA'
+result$b = 'NA'
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
+tmpColNames = data.frame(as.list(colnames(result)))
+### Do stupid stuff to make R not be terrible
+mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
+colnames(tmpColNames) = colnames(mainDF)
+colnames(result) = colnames(mainDF)
+#mainDF <- rbind(colnames(mainDF), mainDF)
+mainDF <- rbind(result, mainDF)
 ### Write to file
 write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_NB_after_stats.csv", sep=""), row.names = FALSE, col.names = FALSE)
 
@@ -438,13 +557,16 @@ write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_NB_after_st
 i = 1
 for (file in quizcat_files_HBA){
   quizData = read.csv(file)
-  fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
+  tbl = table(quizData$quiz_response, quizData$reaction_cat)
+  #fit = fisher.test(tbl,workspace=2e+07)
+  fit = chisq.test(tbl)
+  #fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
   quizcat_stats_test7HBA[[i]] = fit
   i = i + 1
 }
 i = 1
 for (stat in quizcat_stats_test7HBA) {
-  tmpTable = as.data.frame(stat[1:5])
+  tmpTable = as.data.frame(stat[1:4])
   tmpTable$quiz_question = toString(i)
   if (i == 1) {
     mainDF = tmpTable
@@ -453,14 +575,16 @@ for (stat in quizcat_stats_test7HBA) {
     mainDF <- rbind(tmpTable[1, ], mainDF)
   }
   i = i + 1
-}
-# Significance for quiz question 8! post hoc test time
-quizData = read.csv(quizcat_files_HBA[[8]])
-q1PH = dunnTest(reaction_cat ~ quiz_response, data=quizData)
-result = as.data.frame(q1PH$res)
+} #6
+# Significance for quiz question 6! post hoc test time
+quizData = read.csv(quizcat_files_HBA[[6]])
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
 result$a = 'NA'
 result$b = 'NA'
-colnames(result) = c("Comparison","Z","P.unadj","P.adj",quizcat_files_HBA[[8]],quizcat_files_HBA[[8]])
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
 tmpColNames = data.frame(as.list(colnames(result)))
 ### Do stupid stuff to make R not be terrible
 mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
@@ -468,22 +592,6 @@ colnames(tmpColNames) = colnames(mainDF)
 colnames(result) = colnames(mainDF)
 mainDF <- rbind(colnames(mainDF), mainDF)
 mainDF <- rbind(result, mainDF)
-mainDF <- rbind(tmpColNames, mainDF)
-# Significance for quiz question 2! post hoc test time
-quizData = read.csv(quizcat_files_HBA[[2]])
-q1PH = dunnTest(reaction_cat ~ quiz_response, data=quizData)
-result = as.data.frame(q1PH$res)
-result$a = 'NA'
-result$b = 'NA'
-colnames(result) = c("Comparison","Z","P.unadj","P.adj",quizcat_files_HBA[[2]],quizcat_files_HBA[[2]])
-tmpColNames = data.frame(as.list(colnames(result)))
-### Do stupid stuff to make R not be terrible
-mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
-colnames(tmpColNames) = colnames(mainDF)
-colnames(result) = colnames(mainDF)
-mainDF <- rbind(colnames(mainDF), mainDF)
-mainDF <- rbind(result, mainDF)
-mainDF <- rbind(tmpColNames, mainDF)
 ### Write to file
 write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_HBA_after_stats.csv", sep=""), row.names = FALSE, col.names = FALSE)
 
@@ -491,13 +599,16 @@ write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_HBA_after_s
 i = 1
 for (file in quizcat_files_MSA){
   quizData = read.csv(file)
-  fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
+  tbl = table(quizData$quiz_response, quizData$reaction_cat)
+  #fit = fisher.test(tbl,workspace=2e+07)
+  fit = chisq.test(tbl)
+  #fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
   quizcat_stats_test7MSA[[i]] = fit
   i = i + 1
 }
 i = 1
 for (stat in quizcat_stats_test7MSA) {
-  tmpTable = as.data.frame(stat[1:5])
+  tmpTable = as.data.frame(stat[1:4])
   tmpTable$quiz_question = toString(i)
   if (i == 1) {
     mainDF = tmpTable
@@ -514,13 +625,16 @@ write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_MSA_after_s
 i = 1
 for (file in quizcat_files_MCA){
   quizData = read.csv(file)
-  fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
+  tbl = table(quizData$quiz_response, quizData$reaction_cat)
+  #fit = fisher.test(tbl,workspace=2e+07)
+  fit = chisq.test(tbl)
+  #fit = kruskal.test(reaction_cat ~ quiz_response, data=quizData)
   quizcat_stats_test7MCA[[i]] = fit
   i = i + 1
 }
 i = 1
 for (stat in quizcat_stats_test7MCA) {
-  tmpTable = as.data.frame(stat[1:5])
+  tmpTable = as.data.frame(stat[1:4])
   tmpTable$quiz_question = toString(i)
   if (i == 1) {
     mainDF = tmpTable
@@ -529,14 +643,16 @@ for (stat in quizcat_stats_test7MCA) {
     mainDF <- rbind(tmpTable[1, ], mainDF)
   }
   i = i + 1
-}
+} #4
 # Significance for quiz question 4! post hoc test time
 quizData = read.csv(quizcat_files_MCA[[4]])
-q1PH = dunnTest(reaction_cat ~ quiz_response, data=quizData)
-result = as.data.frame(q1PH$res)
+tbl = table(quizData$quiz_response, quizData$reaction_cat)
+q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+result = as.data.frame(q1PH)
 result$a = 'NA'
 result$b = 'NA'
-colnames(result) = c("Comparison","Z","P.unadj","P.adj",quizcat_files_MCA[[4]],quizcat_files_MCA[[4]])
+result = rbind(colnames(result), result)
+colnames(result) = c("p.value","alternative","method","data.name","quiz_question")
 tmpColNames = data.frame(as.list(colnames(result)))
 ### Do stupid stuff to make R not be terrible
 mainDF <- data.frame(lapply(mainDF, as.character), stringsAsFactors=FALSE)
@@ -544,6 +660,5 @@ colnames(tmpColNames) = colnames(mainDF)
 colnames(result) = colnames(mainDF)
 mainDF <- rbind(colnames(mainDF), mainDF)
 mainDF <- rbind(result, mainDF)
-mainDF <- rbind(tmpColNames, mainDF)
 ### Write to file
 write.table(mainDF, sep=",", file = paste(outdir,"/", "TEST7_quizcat_MCA_after_stats.csv", sep=""), row.names = FALSE, col.names = FALSE)
