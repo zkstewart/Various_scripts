@@ -162,8 +162,8 @@ def fix_details(chunkDict):
         import copy
         for key, value in chunkDict.items():
                 ## HARD CODED - CONFIRM
-                if key == 'CZ124' or key == 'CA152' or key == 'FJ000' or key == 'K123M':
-                        continue
+                #if key == 'CZ124' or key == 'CA152' or key == 'FJ000' or key == 'K123M':
+                #        continue
                 ## Fix details
                 # Media - drop everything except A1, B1, etc.
                 mediaKeys = list(value['Media'].keys())
@@ -405,6 +405,61 @@ def count_categoriser(inputValue, returnType):
                                 else:
                                         return categoriesAsNumeric[i]
 
+def growth_categoriser(inputValue, mediaType):
+        nbCatLabels = ['ND', 'N/A', 'NG', 'turbid', 'clear', 'pellet']  # Need to handle plate 9K78A, mould has N/A value
+        nbCatAsNumeric = ['ND', '0', '1', '2', '3', '4']
+        hbaCatLabels = ['ND', 'NG', 'alpha', 'beta', 'gamma', 'spreader']
+        hbaCatAsNumeric = ['ND', '1', '2', '3', '4', '5']
+        msaCatLabels = ['ND', 'NG', 'NMF', 'MF']
+        msaCatAsNumeric = ['ND', '1', '2', '3']
+        mcaCatLabels = ['ND', 'NG', 'G', 'G-LF']
+        mcaCatAsNumeric = ['ND', '1', '2', '3']
+        if mediaType == 'NB':
+                for i in range(len(nbCatLabels)):
+                        if inputValue == nbCatLabels[i]:
+                                return nbCatAsNumeric[i]
+        elif mediaType == 'HBA':
+                for i in range(len(hbaCatLabels)):
+                        if inputValue == hbaCatLabels[i]:
+                                return hbaCatAsNumeric[i]
+        elif mediaType == 'MSA':
+                for i in range(len(msaCatLabels)):
+                        if inputValue == msaCatLabels[i]:
+                                return msaCatAsNumeric[i]
+        elif mediaType == 'MCA':
+                for i in range(len(mcaCatLabels)):
+                        if inputValue == mcaCatLabels[i]:
+                                return mcaCatAsNumeric[i]
+        else:
+                print('Something went wrong. Check this out (growth categoriser).')
+                stophere
+
+def growth_before_after_extract(dictValue):
+        # Figure out which letters are before/after
+        beforeKeys = list(dictValue['Before'].keys())
+        del beforeKeys[beforeKeys.index('Total count')]
+        afterKeys = list(dictValue['After'].keys())
+        del afterKeys[afterKeys.index('Total count')]
+        # Categorise media values by before/after
+        mediaDict = {'Before': {'NB': [], 'HBA': [], 'MSA': [], 'MCA': []}, 'After': {'NB': [], 'HBA': [], 'MSA': [], 'MCA': []}}
+        for key, value in dictValue['Media'].items():
+                letter = key[0]
+                if letter in beforeKeys:
+                        mediaDict['Before']['NB'].append(growth_categoriser(value[0], 'NB'))
+                        mediaDict['Before']['HBA'].append(growth_categoriser(value[1], 'HBA'))
+                        mediaDict['Before']['MSA'].append(growth_categoriser(value[2], 'MSA'))
+                        mediaDict['Before']['MCA'].append(growth_categoriser(value[3], 'MCA'))
+                elif letter in afterKeys:
+                        mediaDict['After']['NB'].append(growth_categoriser(value[0], 'NB'))
+                        mediaDict['After']['HBA'].append(growth_categoriser(value[1], 'HBA'))
+                        mediaDict['After']['MSA'].append(growth_categoriser(value[2], 'MSA'))
+                        mediaDict['After']['MCA'].append(growth_categoriser(value[3], 'MCA'))
+                else:
+                        print('Something went wrong. Check this out.')
+                        print(dictValue)
+                        print(key)
+        return mediaDict
+
 def total_count_quiz_response(chunkDict):
         # Set up
         questionOthers = ['', 6, 4, 6, 6, 6, 5, 5] # These are the numbers of responses possible for each quiz question
@@ -491,6 +546,65 @@ def microbe_diversity_quiz_response(chunkDict):
                                 beforeFormatList[i][int(value['Survey data'][i])].append(beforeDiv)        # This means we should have ordered lists
                                 afterFormatList[i][int(value['Survey data'][i])].append(afterDiv)
         return beforeFormatList, afterFormatList
+
+def media_reaction_quiz_response(chunkDict):
+        # Set up
+        questionOthers = ['', 6, 4, 6, 6, 6, 5, 5] # These are the numbers of responses possible for each quiz question
+        # Format a dict to store values in
+        beforeFormatDict = {'NB': [], 'HBA': [], 'MSA': [], 'MCA': []}
+        afterFormatDict = {'NB': [], 'HBA': [], 'MSA': [], 'MCA': []}
+        for x in beforeFormatDict.keys():
+                for i in range(len(questionOthers)):
+                        beforeFormatDict[x].append({})
+                        afterFormatDict[x].append({})
+                        if i == 0:
+                                mainMedItemDict, varMedItemDict = medical_item_dicts()
+                                for value in mainMedItemDict.values():
+                                        beforeFormatDict[x][i][value] = []
+                                        afterFormatDict[x][i][value] = []
+                        else:
+                                for y in range(1, questionOthers[i] + 1):
+                                        beforeFormatDict[x][i][y] = []
+                                        afterFormatDict[x][i][y] = []
+        # Loop through our dictionary of values and extract relevant details
+        for key, value in chunkDict.items():
+                # Pull out relevant details for before/after
+                mediaDict = growth_before_after_extract(value)
+                beforeKeys = list(beforeFormatDict.keys())
+                for x in range(len(beforeKeys)):
+                        for i in range(len(value['Survey data'])):
+                                # Extract data from media dict
+                                beforeMedia = mediaDict['Before'][beforeKeys[x]]
+                                afterMedia = mediaDict['After'][beforeKeys[x]]
+                                if None in beforeMedia or None in afterMedia:
+                                        print('ayy')
+                                        stophere
+                                # Remove ND entries
+                                while 'ND' in beforeMedia:
+                                        del beforeMedia[beforeMedia.index('ND')]
+                                while 'ND' in afterMedia:
+                                        del afterMedia[afterMedia.index('ND')]
+                                # Skip entries with no media results
+                                #if beforeMedia == [] or afterMedia == []:
+                                #        continue
+                                # Specifically handle medical items
+                                if i == 0:
+                                        medItem = value['Survey data'][i]
+                                        medItem = medical_item_categoriser(medItem)
+                                        # Add it to our list
+                                        if medItem != False:
+                                                beforeFormatDict[beforeKeys[x]][i][medItem] += beforeMedia        # This means we should have ordered lists
+                                                afterFormatDict[beforeKeys[x]][i][medItem] += afterMedia
+                                # Skip any samples which lack a response for this question
+                                elif value['Survey data'][i] == '0':
+                                        continue
+                                else:
+                                        # Compute the diversity count
+                                        beforeDiv, afterDiv = diversity_number(value)
+                                        # Add it to our respective list
+                                        beforeFormatDict[beforeKeys[x]][i][int(value['Survey data'][i])] += beforeMedia        # This means we should have ordered lists
+                                        afterFormatDict[beforeKeys[x]][i][int(value['Survey data'][i])] += afterMedia
+        return beforeFormatDict, afterFormatDict
 
 def medical_item_dicts():
         # Categorise and normalise naming for most abundant items
@@ -630,6 +744,25 @@ def compare_quiz_cats_div_to_csv(quizCatDict1, quizCatDict2, resultDir):
                                         fileOut.write(str(key1) + ',before,' + str(value1[x]) + '\n')
                                         fileOut.write(str(key1) + ',after,' + str(value2[x]) + '\n')
 
+## Test 7
+def media_quiz_cats_to_csv(quizCatDict, prefix, suffix, header, resultDir):
+        import os
+        mediaKeys = list(quizCatDict.keys())
+        for x in mediaKeys:
+                for i in range(len(quizCatDict[x])):
+                        # Get the output directory
+                        outDirPath = os.path.join(os.getcwd(), resultDir)
+                        if not os.path.isdir(outDirPath):
+                                os.mkdir(outDirPath)
+                        # Generate an output name
+                        name = file_name_gen(os.path.join(outDirPath, prefix + suffix), '_' + x + '_' + str(i+1) + '.csv')
+                        # Produce output file
+                        with open(name, 'w') as fileOut:
+                                fileOut.write(header)
+                                for key, value in quizCatDict[x][i].items():
+                                        for val in value:
+                                                fileOut.write(str(key) + ',' + str(val) + '\n')
+
 ## Basic functions
 def divide_num_to_list(totalNum, numGroups):
         baseNum = int(totalNum / numGroups)
@@ -690,6 +823,9 @@ quizCatBefore, quizCatAfter = total_count_quiz_response(chunkDict)
 ## Prep: diversity by quiz response dictionary generation
 quizCatDivBefore, quizCatDivAfter = microbe_diversity_quiz_response(chunkDict)
 
+## Prep: media reaction by quiz response dictionary generation
+quizCatMediaBefore, quizCatMediaAfter = media_reaction_quiz_response(chunkDict)
+
 # PERFORM TESTS
 
 ## Overall question: What information does comparing before and after total counts tell us?
@@ -716,30 +852,11 @@ quizCatDivBefore, quizCatDivAfter = microbe_diversity_quiz_response(chunkDict)
 ### Test 6: div before VERSUS after for quiz responses [Q: Does cleaning reduce diversity more for students who provide certain answers? - A: No.]
 #compare_quiz_cats_div_to_csv(quizCatDivBefore, quizCatDivAfter, 'R_scripts')
 
+## Overall question: Is there any relationship between study variables and media results?
 
-# Junkyard
-## Test 3
-#compare_quiz_cats_to_csv_byresponse(quizCatBefore, quizCatAfter, 'R_scripts')
-#def compare_quiz_cats_to_csv_byresponse(quizCatDict1, quizCatDict2, resultDir):
-#        import os
-#        for i in range(len(quizCatDict1)):
-#                if i == 0:
-#                        continue
-#                # Get the output directory
-#                outDirPath = os.path.join(os.getcwd(), resultDir)
-#                if not os.path.isdir(outDirPath):
-#                        os.mkdir(outDirPath)
-#                # Produce output file per response
-#                for key1, value1 in quizCatDict1[i].items():
-#                        if len(value1) < 10:        # Skip values with insufficient response for proper statistics
-#                                continue
-#                        # Generate an output name
-#                        name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_compare'), '_q' + str(i+1) + '_r' + str(key1) + '.csv')
-#                        with open(name, 'w') as fileOut:
-#                                fileOut.write('quiz_response,count_category_before,count_category_after\n')
-#                                value2 = quizCatDict2[i][key1]
-#                                for x in range(len(value1)):
-#                                        fileOut.write(str(key1) + ',' + value1[x] + ',' + value2[x] + '\n')
+### Test 7: media results before / after for quiz responses [Q: Are students who provide certain answers more likely to obtain specific media results before and/or after treatment? A: .]
+#media_quiz_cats_to_csv(quizCatMediaBefore, 'quizcat_media_', 'before', 'quiz_response,reaction_cat\n', 'R_scripts')
+#media_quiz_cats_to_csv(quizCatMediaAfter, 'quizcat_media_', 'after', 'quiz_response,reaction_cat\n', 'R_scripts')
 
 #### SCRIPT ALL DONE
 print('Program completed successfully!')
