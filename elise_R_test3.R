@@ -42,7 +42,7 @@ for (file in quizcat_files){
   quizData = read.csv(file)
   #fit = wilcox.test(quizData$count_category_before, quizData$count_category_after, paired=TRUE, alternative="greater")
   mdl = lm(count_category ~ treatment*quiz_response, data = quizData)
-  quizcat_wcx_test2[[i]] = fit
+  #quizcat_wcx_test2[[i]] = fit
   quizcat_lm_test2[[i]] = mdl
   i = i + 1
 }
