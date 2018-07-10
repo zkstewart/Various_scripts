@@ -123,6 +123,7 @@ def micro_chunk_to_dict(chunks):
                 chunkDict[plateID]['After'] = afterValues
                 # Colony survey data
                 line3 = chunk[2].rstrip('\t\r\n').split('\t')
+                assert len(line3[13:]) == 8     # Make sure the data was entered correctly
                 chunkDict[plateID]['Survey data'] = line3[13:]
                 # Media reactions
                 chunkDict[plateID]['Media'] = {}
@@ -576,9 +577,6 @@ def media_reaction_quiz_response(chunkDict):
                                 # Extract data from media dict
                                 beforeMedia = mediaDict['Before'][beforeKeys[x]]
                                 afterMedia = mediaDict['After'][beforeKeys[x]]
-                                if None in beforeMedia or None in afterMedia:
-                                        print('ayy')
-                                        stophere
                                 # Remove ND entries
                                 while 'ND' in beforeMedia:
                                         del beforeMedia[beforeMedia.index('ND')]
@@ -642,6 +640,209 @@ def diversity_number(chunkValue):
         beforeDiv = len(chunkValue['Before'].keys()) - 1        # -1 for 'Total count' value
         afterDiv = len(chunkValue['After'].keys()) - 1
         return beforeDiv, afterDiv
+
+
+### Overview of data for tabulation
+def tabulate_data(chunkDict):
+        # Set up
+        responseOccurrence = {1: {'OTHER': 0}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}}
+        countOccurBefore = {'ND': 0, '0': 0, '1-10': 0, '11-100': 0, '100-340': 0, 'TNTC': 0}
+        countOccurAfter = {'ND': 0, '0': 0, '1-10': 0, '11-100': 0, '100-340': 0, 'TNTC': 0}
+        medItemCountBefore = {'OTHER': {'0': 0, '1-10': 0, '100-340': 0, '11-100': 0, 'TNTC': 0}}
+        medItemCountAfter = {'OTHER': {'0': 0, '1-10': 0, '100-340': 0, '11-100': 0, 'TNTC': 0}}
+        for key, value in chunkDict.items():
+                # Extract relevant details for tabulation
+                ## Quiz responses
+                survey = value['Survey data']
+                #### R1
+                medicalItem = medical_item_categoriser(survey[0])
+                if medicalItem == False:
+                        responseOccurrence[1]['OTHER'] += 1
+                elif medicalItem not in responseOccurrence[1]:
+                        responseOccurrence[1][medicalItem] = 1
+                else:
+                        responseOccurrence[1][medicalItem] += 1
+                #### R2
+                if survey[1] not in responseOccurrence[2]:
+                        responseOccurrence[2][survey[1]] = 1
+                else:
+                        responseOccurrence[2][survey[1]] += 1
+                #### R3
+                if survey[2] not in responseOccurrence[3]:
+                        responseOccurrence[3][survey[2]] = 1
+                else:
+                        responseOccurrence[3][survey[2]] += 1
+                #### R4
+                if survey[3] not in responseOccurrence[4]:
+                        responseOccurrence[4][survey[3]] = 1
+                else:
+                        responseOccurrence[4][survey[3]] += 1
+                #### R5
+                if survey[4] not in responseOccurrence[5]:
+                        responseOccurrence[5][survey[4]] = 1
+                else:
+                        responseOccurrence[5][survey[4]] += 1
+                #### R6
+                if survey[5] not in responseOccurrence[6]:
+                        responseOccurrence[6][survey[5]] = 1
+                else:
+                        responseOccurrence[6][survey[5]] += 1
+                #### R7
+                if survey[6] not in responseOccurrence[7]:
+                        responseOccurrence[7][survey[6]] = 1
+                else:
+                        responseOccurrence[7][survey[6]] += 1
+                #### R8
+                if survey[7] not in responseOccurrence[8]:
+                        responseOccurrence[8][survey[7]] = 1
+                else:
+                        responseOccurrence[8][survey[7]] += 1
+                # Microbial counts
+                countCatBefore = count_categoriser(value['Before']['Total count'], 'label')
+                countOccurBefore[countCatBefore] += 1
+                countCatAfter = count_categoriser(value['After']['Total count'], 'label')
+                countOccurAfter[countCatAfter] += 1
+                # Other format
+                if medicalItem == False:
+                        if countCatBefore not in medItemCountBefore['OTHER']:
+                                medItemCountBefore['OTHER'][countCatBefore] = 1
+                        else:
+                                medItemCountBefore['OTHER'][countCatBefore] += 1
+                        if countCatAfter not in medItemCountAfter['OTHER']:
+                                medItemCountAfter['OTHER'][countCatAfter] = 1
+                        else:
+                                medItemCountAfter['OTHER'][countCatAfter] += 1
+                else:
+                        # Establish key-value pairs for medical items
+                        if medicalItem not in medItemCountBefore:
+                                medItemCountBefore[medicalItem] = {'0': 0, '1-10': 0, '100-340': 0, '11-100': 0, 'TNTC': 0}     # used to be {}
+                        if medicalItem not in medItemCountAfter:
+                                medItemCountAfter[medicalItem] = {'0': 0, '1-10': 0, '100-340': 0, '11-100': 0, 'TNTC': 0}
+                        # Add counts to medical items
+                        #if countCatBefore not in medItemCountBefore[medicalItem]:
+                        #        medItemCountBefore[medicalItem][countCatBefore] = 1
+                        #else:
+                        medItemCountBefore[medicalItem][countCatBefore] += 1
+                        #if countCatAfter not in medItemCountAfter[medicalItem]:
+                        #        medItemCountAfter[medicalItem][countCatAfter] = 1
+                        #else:
+                        medItemCountAfter[medicalItem][countCatAfter] += 1
+        # Format data
+        ## Quiz response
+        ### R1
+        r1Table = dict_tabulate(responseOccurrence[1], None)
+        ### R2
+        r2four5sixText = {'0': 'No response', '1': 'Never', '2': 'Once a year', '3': 'Once a week', '4': 'Daily', '5': 'After each patient', '6': 'Other'}
+        r2Table = dict_tabulate(responseOccurrence[2], r2four5sixText)
+        ### R3
+        r3Text = {'0': 'No response', '1': 'Water only', '2': 'Soap and water', '3': '70% ethanol/isopropanol', '4': 'Other'}
+        r3Table = dict_tabulate(responseOccurrence[3], r3Text)
+        ### R4
+        r4Table = dict_tabulate(responseOccurrence[4], r2four5sixText)
+        ### R5
+        r5Table = dict_tabulate(responseOccurrence[5], r2four5sixText)
+        ### R6
+        r6Table = dict_tabulate(responseOccurrence[6], r2four5sixText)
+        ### R7
+        r7eightText = {'0': 'No response', '1': 'Strongly disagree', '2': 'Disagree', '3': 'Neutral', '4': 'Agree', '5': 'Strongly agree'}
+        r7Table = dict_tabulate(responseOccurrence[7], r7eightText)
+        ### R8
+        r8Table = dict_tabulate(responseOccurrence[8], r7eightText)
+        ### Combine
+        quizROut = ['Variable\tn=\t%', 'Medical equipment item\t\t']
+        quizROut += r1Table
+        quizROut += ['Frequency of medical item disinfection\t\t']
+        quizROut += r2Table
+        quizROut += ['Agents used for cleaning medical equipment\t\t']
+        quizROut += r3Table
+        quizROut += ['Frequency of medical equipment item disinfection of components in direct contact with patients\t\t']
+        quizROut += r4Table
+        quizROut += ['Frequency of medical equipment item disinfection of components in indirect contact with patients\t\t']
+        quizROut += r5Table
+        quizROut += ['Frequency of medical equipment item disinfection of components in direct contact with myself\t\t']
+        quizROut += r6Table
+        quizROut += ['Infection control practice is critical to protecting me from infectious diseases\t\t']
+        quizROut += r7Table
+        quizROut += ['Infection control practice is critical to protecting my patients/clients from infectious diseases\t\t']
+        quizROut += r8Table
+        ## Microbial counts
+        microOut = micro_count_tabulate(medItemCountBefore, medItemCountAfter)
+        # Join results tables
+        combinedOut = ['Table 1. Infection control perceptions and practices of student HCWs'] + quizROut + ['Table 2. Microbial enumeration before and after prescribed medical equipment disinfection'] + microOut
+        combinedOut = '\n'.join(combinedOut)
+        # Return results
+        return combinedOut
+
+def micro_count_tabulate(medItemCountBefore, medItemCountAfter):
+        outList = ['Medical equipment item\tNo growth\t1-10\t11-100\t100-340\tTNTC']
+        order = ['CLOTHES', 'MOBILE PHONE', 'PEN', 'STETHOSCOPE', 'SCISSORS', 'SAFETY GLASSES', 'GLASSES', 'PEN LIGHT', 'OTHER']
+        for key in order:
+                beforeRow = dict_tabulate(medItemCountBefore[key], None)
+                afterRow = dict_tabulate(medItemCountAfter[key], None)
+                # Reformat rows a bit
+                outRow = [['Before'], ['After']]
+                for entry in beforeRow:
+                        splitEntry = entry.split('\t')
+                        outRow[0].append(splitEntry[1] + ' (' + splitEntry[2] + ')')
+                for entry in afterRow:
+                        splitEntry = entry.split('\t')
+                        outRow[1].append(splitEntry[1] + ' (' + splitEntry[2] + ')')
+                outList.append(key)
+                # Format the outrow a bit more
+                for i in range(len(outRow)):
+                        outRow[i] = '\t'.join(outRow[i])
+                outList += outRow
+        return outList
+
+def dict_tabulate(inputDict, replaceDict):
+        pairList = []
+        # Preliminary format
+        for key, value in inputDict.items():
+                pairList.append([key, str(value)])
+        pairList.sort()
+        # Replace keys with their proper values
+        if replaceDict != None:
+                pairList = pair_replace(pairList, replaceDict)
+        else:
+                # Handle dict_tabulate calls for quiz responses
+                otherEntry = None
+                for entry in pairList:
+                        if entry[0] == 'OTHER':
+                                otherEntry = entry
+                pairList.sort(key = lambda x: -int(x[1]))
+                if otherEntry != None:
+                        del pairList[pairList.index(otherEntry)]
+                        pairList.append(otherEntry)
+                # Handle dict_tabulate calls for medical item counts
+                else:
+                        order = ['0', '1-10', '11-100', '100-340', 'TNTC']
+                        newPairList = []
+                        for entry in order:
+                                for pair in pairList:
+                                        if pair[0] == entry:
+                                                newPairList.append(pair)
+                        pairList = newPairList
+        # Tally count
+        total = 0
+        for i in range(len(pairList)):
+                total += int(pairList[i][1])
+        # Reformat list and compute percent proportions
+        for i in range(len(pairList)):
+                proportion = round(round(int(pairList[i][1]) / total, 3) * 100, 2)      # Python is REALLY weird here - has to be some sort of a bug...
+                pairList[i] = '\t'.join([pairList[i][0], str(pairList[i][1]), str(proportion) + '%'])
+        return pairList
+
+#def key_replace(inputDict, replaceDict):
+#        newDict = {}
+#        for key, value in inputDict.items():
+#                newKey = replaceDict[key]
+#                newDict[newKey] = value
+#        return newDict
+
+def pair_replace(pairList, replaceDict):
+        for i in range(len(pairList)):
+                pairList[i][0] = replaceDict[pairList[i][0]]
+        return pairList
 
 ### Test 1 & 4
 def quiz_cats_to_csv(quizCatDict, prefix, suffix, header, resultDir):
@@ -763,6 +964,22 @@ def media_quiz_cats_to_csv(quizCatDict, prefix, suffix, header, resultDir):
                                         for val in value:
                                                 fileOut.write(str(key) + ',' + str(val) + '\n')
 
+## Test 8
+def compare_media_to_csv(chunkDict,  resultDir):
+        import os
+        # Get the output directory
+        outDirPath = os.path.join(os.getcwd(), resultDir)
+        if not os.path.isdir(outDirPath):
+                os.mkdir(outDirPath)
+        # Generate an output name
+        name = file_name_gen(os.path.join(outDirPath, 'quizcat_media_overall'), '.csv')
+        with open(name, 'w') as fileOut:
+                fileOut.write('media_before,media_after\n')
+                for key, value in chunkDict.items():
+                        # Compute the diversity count
+                        beforeDiv, afterDiv = diversity_number(value)
+                        fileOut.write(str(beforeDiv) + ',' + str(afterDiv) + '\n')
+
 ## Basic functions
 def divide_num_to_list(totalNum, numGroups):
         baseNum = int(totalNum / numGroups)
@@ -781,6 +998,10 @@ def file_name_gen(prefix, suffix):
                         ongoingCount += 1
                 else:
                         return prefix + suffix + str(ongoingCount)
+
+def write_text_to_file(fileName, text):
+        with open(fileName, 'w') as fileOut:
+                fileOut.write(text)
 
 ### USER INPUT
 usage = """%(prog)s
@@ -826,6 +1047,10 @@ quizCatDivBefore, quizCatDivAfter = microbe_diversity_quiz_response(chunkDict)
 ## Prep: media reaction by quiz response dictionary generation
 quizCatMediaBefore, quizCatMediaAfter = media_reaction_quiz_response(chunkDict)
 
+# GENERATE AN OVERVIEW OF THE DATA
+tabulatedData = tabulate_data(chunkDict)
+#write_text_to_file('micro_data_table.txt', tabulatedData)
+
 # PERFORM TESTS
 
 ## Overall question: What information does comparing before and after total counts tell us?
@@ -854,9 +1079,13 @@ quizCatMediaBefore, quizCatMediaAfter = media_reaction_quiz_response(chunkDict)
 
 ## Overall question: Is there any relationship between study variables and media results?
 
-### Test 7: media results before / after for quiz responses [Q: Are students who provide certain answers more likely to obtain specific media results before and/or after treatment? A: .]
+### Test 7: media results before / after for quiz responses [Q: Are students who provide certain answers more likely to obtain specific media results before and/or after treatment? A: Yes.]
 #media_quiz_cats_to_csv(quizCatMediaBefore, 'quizcat_media_', 'before', 'quiz_response,reaction_cat\n', 'R_scripts')
 #media_quiz_cats_to_csv(quizCatMediaAfter, 'quizcat_media_', 'after', 'quiz_response,reaction_cat\n', 'R_scripts')
+
+### NOT TESTING: media results before VERSUS after [Q: Does treatment work to reduce the occurrence of certain reactions? A: Not appropriate test.]
+
+### Test 8: Subset - of the colonies that grow, are there substantive differences in the type of reaction identified based on quiz responses? [A: .]
 
 #### SCRIPT ALL DONE
 print('Program completed successfully!')
