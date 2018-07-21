@@ -31,11 +31,15 @@ def validate_args(args):
         elif args.threads < 1:
                 print('CPUs cannot be less than 1. Specify any number >= 1 and try again.')
                 quit()
-        elif args.num_iterations < 0:
-                print('Num_iterations cannot be a negative value. Specify any number >= 0 and try again.')
+        elif args.num_iterations < 1:
+                print('Num_iterations cannot be less than 1. Specify any number >= 1 and try again.')
                 quit()
         elif args.alt_ali < 0:
                 print('Alt_ali cannot be a negative value. Specify any number >= 0 and try again.')
+                quit()
+        # Handle conflicting arguments
+        if args.alt_ali > 0 and args.num_iterations > 1:
+                print('MMseqs doesn\'t support alternative alignments for profile searches. You\'re going to need to choose one or the other - there\'s no way around this.')
                 quit()
 
 ## Log file related functions
