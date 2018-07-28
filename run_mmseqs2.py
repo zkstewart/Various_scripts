@@ -13,9 +13,20 @@ def validate_args(args):
                 print('I am unable to locate the query file (' + args.query + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
-        elif not os.path.isfile(args.target):
+        args.querydir = os.path.dirname(os.path.abspath(args.query))    # Provides an easy way to handle directories without needing to specify these as separate arguments
+        args.query = os.path.basename(args.query)                       # Finalises the separation
+        if not os.path.isfile(args.target):
                 print('I am unable to locate the target file (' + args.target + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
+                quit()
+        args.targetdir = os.path.dirname(os.path.abspath(args.target))
+        args.target = os.path.basename(args.target)
+        # Validate output file location
+        args.outputdir = os.path.dirname(os.path.abspath(args.output))
+        args.output = os.path.basename(args.output)
+        if not os.path.isdir(args.outputdir):
+                print('The specified output directory does not exist (i.e., "' + args.outputdir + ')".')
+                print('Create this directory first and then try again.')
                 quit()
         # Validate mmseqs location
         if args.mmseqs2dir != '':
@@ -41,6 +52,7 @@ def validate_args(args):
         if args.alt_ali > 0 and args.num_iterations > 1:
                 print('MMseqs doesn\'t support alternative alignments for profile searches. You\'re going to need to choose one or the other - there\'s no way around this.')
                 quit()
+        return args
 
 ## Log file related functions
 def temp_file_name_gen(prefix):
@@ -59,13 +71,14 @@ def log_update(logName, text):
                 logFile.write(text + '\n')
 
 ## MMseqs2 related functions
-def makemms2db(args, which):
+def makemms2db(mmseqs2dir, query, target, which):
         import os, subprocess
         # Format command
-        dbname1 = args.query + '_queryDB'
-        dbname2 = args.target + '_targetDB'
-        cmd1 = os.path.join(args.mmseqs2dir, 'mmseqs') + ' createdb "' + args.query + '" "' + dbname1 + '"'
-        cmd2 = os.path.join(args.mmseqs2dir, 'mmseqs') + ' createdb "' + args.target + '" "' + dbname2 + '"'
+        dbname1 = query + '_queryDB'
+        cmd1 = os.path.join(mmseqs2dir, 'mmseqs') + ' createdb "' + query + '" "' + dbname1 + '"'
+        if target != None:
+                dbname2 = target + '_targetDB'
+                cmd2 = os.path.join(mmseqs2dir, 'mmseqs') + ' createdb "' + target + '" "' + dbname2 + '"'
         # Query DB generation
         if which == 'query' or which == 'both':
                 run_makedb = subprocess.Popen(cmd1, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -73,21 +86,21 @@ def makemms2db(args, which):
                 if makedberr.decode("utf-8") != '':
                         raise Exception('Make MMseqs2 query db error text below\n' + makedberr.decode("utf-8"))
         # Run target DB generation if target != query
-        if args.query != args.target:
+        if query != target and target != None:  # This lets us use this function when we know we don't have a target; we can just specify None as a more intuitive way of producing the expected behaviour of only working with a single query
                 if which == 'target' or which == 'both':
                         run_makedb = subprocess.Popen(cmd2, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
                         makedbout, makedberr = run_makedb.communicate()
                         if makedberr.decode("utf-8") != '':
                                 raise Exception('Make MMseqs2 target db error text below\n' + makedberr.decode("utf-8"))
 
-def indexmms2(args, which):
+def indexmms2(mmseqs2dir, query, target, tmpdir, threads, which):
         import os, subprocess
         # Format command
-        dbname1 = args.query + '_queryDB'
-        dbname2 = args.target + '_targetDB'
-        tmpdir = os.path.join(os.getcwd(), 'mms2tmp')
-        cmd1 = os.path.join(args.mmseqs2dir, 'mmseqs') + ' createindex "' + dbname1 + '" "' + tmpdir + '" --threads ' + str(args.threads)
-        cmd2 = os.path.join(args.mmseqs2dir, 'mmseqs') + ' createindex "' + dbname2 + '" "' + tmpdir + '" --threads ' + str(args.threads)
+        dbname1 = query + '_queryDB'
+        cmd1 = os.path.join(mmseqs2dir, 'mmseqs') + ' createindex "' + dbname1 + '" "' + tmpdir + '" --threads ' + str(threads)
+        if target != None:
+                dbname2 = target + '_targetDB'
+                cmd2 = os.path.join(mmseqs2dir, 'mmseqs') + ' createindex "' + dbname2 + '" "' + tmpdir + '" --threads ' + str(threads)
         # Run query index
         if which == 'query' or which == 'both':
                 run_index = subprocess.Popen(cmd1, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -95,24 +108,22 @@ def indexmms2(args, which):
                 if indexerr.decode("utf-8") != '':
                         raise Exception('Indexing MMseqs2 query db error text below\n' + indexerr.decode("utf-8"))
         # Run target DB indexing if target != query
-        if args.query != args.target:
+        if query != target and target != None:
                 if which == 'target' or which == 'both':
                         run_index = subprocess.Popen(cmd2, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
                         indexout, indexerr = run_index.communicate()
                         if indexerr.decode("utf-8") != '':
                                 raise Exception('Indexing MMseqs2 target db error text below\n' + indexerr.decode("utf-8"))
 
-def runmms2(args):
+def runmms2(mmseqs2dir, query, target, tmpdir, searchName, params):
         import os, subprocess
         # Format command
-        dbname1 = args.query + '_queryDB'
-        if args.query != args.target:
-                dbname2 = args.target + '_targetDB'
+        dbname1 = query + '_queryDB'
+        if query != target and target != None:
+                dbname2 = target + '_targetDB'
         else:
-                dbname2 = args.query + '_queryDB'
-        tmpdir = os.path.join(os.getcwd(), 'mms2tmp')
-        searchName = os.path.basename(args.output) + '_mms2SEARCH'
-        cmd = os.path.join(args.mmseqs2dir, 'mmseqs') + ' search "' + dbname1 + '" "' + dbname2 + '" "' + searchName + '" "' + tmpdir + '" -e ' + str(args.evalue) + ' --threads ' + str(args.threads) + ' --num-iterations ' + str(args.num_iterations) + ' -s ' + str(args.sensitivity) + ' --alt-ali ' + str(args.alt_ali)
+                dbname2 = query + '_queryDB'
+        cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' search "' + dbname1 + '" "' + dbname2 + '" "' + searchName + '" "' + tmpdir + '" -e {} --threads {} --num-iterations {} -s {} --alt-ali {}'.format(*params)
         print(cmd)
         # Run query
         run_mms2 = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -120,32 +131,28 @@ def runmms2(args):
         if mms2err.decode("utf-8") != '':
                 raise Exception('MMseqs2 search error text below\n' + mms2err.decode("utf-8"))
 
-def mms2tab(args):
+def mms2tab(mmseqs2dir, query, target, tmpdir, searchName, threads):
         import os, subprocess
         # Get file details
-        dbname1 = args.query + '_queryDB'
-        if args.query != args.target:
-                dbname2 = args.target + '_targetDB'
+        dbname1 = query + '_queryDB'
+        if query != target and target != None:
+                dbname2 = target + '_targetDB'
         else:
-                dbname2 = args.query + '_queryDB'
-        tmpdir = os.path.join(os.getcwd(), 'mms2tmp')
-        searchName = os.path.basename(args.output) + '_mms2SEARCH'
+                dbname2 = query + '_queryDB'
         # Create tab-delim BLAST-like output
-        cmd = os.path.join(args.mmseqs2dir, 'mmseqs') + ' convertalis "' + dbname1 + '" "' + dbname2 + '" "' + searchName + '" "' + searchName + '.m8" "' + tmpdir + '" --threads ' + str(args.threads)
+        cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' convertalis "' + dbname1 + '" "' + dbname2 + '" "' + searchName + '" "' + searchName + '.m8" "' + tmpdir + '" --threads ' + str(threads)
         run_mms2 = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         mms2out, mms2err = run_mms2.communicate()
         if mms2err.decode("utf-8") != '':
                 raise Exception('MMseqs2 tabular output generation error text below\n' + mms2err.decode("utf-8"))
 
-def mms2sort(args):
-        import os
+def mms2sort(searchName):
         from itertools import groupby
         # Get file names
-        fileName = os.path.basename(args.output) + '_mms2SEARCH.m8'
-        outName = os.path.basename(args.output) + '_mms2SEARCH_sorted.m8'
+        outName = searchName.rsplit('.', maxsplit=1)[0] + '_sorted.' + searchName.rsplit('.', maxsplit=1)[1]
         # Parse file
         grouper = lambda x: x.split('\t')[0]
-        with open(fileName, 'r') as fileIn, open(outName, 'w') as fileOut:
+        with open(searchName, 'r') as fileIn, open(outName, 'w') as fileOut:
                 for key, group in groupby(fileIn, grouper):
                         group = list(group)
                         # Sort group if relevant
@@ -161,6 +168,18 @@ def mms2sort(args):
                         for entry in group:
                                 fileOut.write(entry + '\n')
 
+def index_exists(fileNamePrefix, directory):
+        import re
+        # Make regex
+        indexRegex = re.compile(fileNamePrefix + '.sk' + r'\d')
+        index = False
+        for file in os.listdir(directory):
+                hit = indexRegex.findall(file)
+                if hit != []:
+                        index = True
+                        break
+        return index
+
 #### USER INPUT SECTION
 usage = """Wrapper script to perform MMseqs2 search. Provide the arguments below.
 """
@@ -172,7 +191,7 @@ p.add_argument("-query", "-q", dest="query", type = str,
 p.add_argument("-target", "-t", dest="target", type = str,
                   help="Specify the file to be used as a target; this can be the same as the query.")
 p.add_argument("-output", "-o", dest="output", type = str,
-                  help="Specify the prefix of the output files")
+                  help="Specify the prefix of the output files (can include the path to direct intermediate and output files to a specific location e.g., /home/example_dir/mmseqsout)")
 p.add_argument("-mmseqs2dir", "-m", dest="mmseqs2dir", type = str, default = "",
                   help="Specify the directory where the MMseqs2 executable is located; if it is accessible from your PATH, you can leave this blank")
 p.add_argument("-evalue", "-e", dest="evalue", type = float, default = 10,
@@ -185,43 +204,41 @@ p.add_argument("-sensitivity", "-s", dest="sensitivity", type = int, choices = [
                   help="Specify the sensitivity number to be provided as an argument (default == 7)")
 p.add_argument("-alt-ali", "-a", dest="alt_ali", type = int, default = 0,
                   help="Specify the number of alternative alignments (similar to BLAST's HSPs) to be provided as an argument (default == 0)")
+p.add_argument("-skip_index", "-i", dest="skip_index", action="store_true", default=False,
+                  help="Optionally specify whether you want to skip the indexing step")
 p.add_argument("-blast_sort", "-bs", dest="blast_sort", action="store_true", default=False,
                   help="Optionally specify whether you want the output file to be sorted by E-value similar to BLAST")
 p.add_argument("-resume", "-r", dest="resume", action="store_true", default=False,
                   help="Optionally specify whether you want the program to check for files and skip processing steps")
 
 args = p.parse_args()
-validate_args(args)
+args = validate_args(args)
 print('Program arguments appear to be OK. If you have any errors, try deleting the mms2tmp folder and try again.')
 
 # Make temporary folder
-if not os.path.isdir(os.path.join(os.getcwd(), 'mms2tmp')):
-        os.mkdir(os.path.join(os.getcwd(), 'mms2tmp'))
+tmpdir = os.path.join(args.outputdir, 'mms2tmp')
+if not os.path.isdir(tmpdir):
+        os.mkdir(tmpdir)
 
 # Make a log file for peace of mind when running BIG jobs to know that things are still happening
-logName = temp_file_name_gen(os.path.basename(args.output) + '.mms2log')
+logName = temp_file_name_gen(os.path.join(args.outputdir, args.output + '.mms2log'))
 open(logName, 'w').close()
 
 # Perform MMseqs2 search
 if args.resume:
         print('You\'ve specified that you want to resume the run. I will attempt to do that.')
         log_update(logName, 'You\'ve specified that you want to resume the run. I will attempt to do that.')
-        currdir = os.listdir()
-        # Query dir details
-        tmp_qdir = os.path.dirname(args.query)          # We use a temporary value just to check if os.path.dirname == '', in which case we've specified a file in the current directory without its full path.
-        if tmp_qdir == '':
-                tmp_qdir = '.'
-        querydir = os.listdir(tmp_qdir)
-        # Target dir details
-        tmp_tdir = os.path.dirname(args.target)
-        if tmp_tdir == '':
-                tmp_tdir = '.'
-        targetdir = os.listdir(tmp_tdir)
+        # Query, target, and output dir details
+        querydir = os.listdir(args.querydir)
+        targetdir = os.listdir(args.targetdir)
+        outputdir = os.listdir(args.outputdir)
+        # Format parameters for later MMseqs2 search function
+        params = [args.evalue, args.threads, args.num_iterations, args.sensitivity, args.alt_ali]
         # Make query db
-        if os.path.basename(args.query) + '_queryDB' not in querydir:
+        if args.query + '_queryDB' not in querydir:
                 print('Running query DB generation...')
                 log_update(logName, 'Running query DB generation...')
-                makemms2db(args, 'query')
+                makemms2db(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), 'query')
         else:
                 print('Skipping query DB generation...')
                 log_update(logName, 'Skipping query DB generation...')
@@ -229,77 +246,79 @@ if args.resume:
         if args.query != args.target and os.path.basename(args.target) + '_targetDB' not in targetdir:
                 print('Running target DB generation...')
                 log_update(logName, 'Running target DB generation...')
-                makemms2db(args, 'target')
+                makemms2db(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), 'target')
         else:
                 print('Skipping target DB generation...')
                 log_update(logName, 'Skipping target DB generation...')
-        # Index query db
-        present = 'n'
-        for entry in querydir:
-                if entry.startswith(os.path.basename(args.query) + '_queryDB.sk'):
-                        present = 'y'
-        if present == 'n':
-                print('Indexing query DB...')
-                log_update(logName, 'Indexing query DB...')
-                indexmms2(args, 'query')
-        else:
-                print('Skipping query DB indexing...')
-                log_update(logName, 'Skipping query DB indexing...')
-        # Index target db
-        present = 'n'
-        if args.query != args.target:
-                for entry in targetdir:
-                        if entry.startswith(os.path.basename(args.target) + '_targetDB.sk'):
-                                present = 'y'
-                if present == 'y':
-                        print('Skipping target DB indexing...')
-                        log_update(logName, 'Skipping target DB indexing...')
+        # Index query and/or target db
+        if not args.skip_index:
+                index = index_exists(os.path.basename(args.query) + '_queryDB.sk', args.querydir)
+                if index == False:
+                        print('Indexing query DB...')
+                        log_update(logName, 'Indexing query DB...')
+                        indexmms2(args.mmseqs2dir, args.query, args.target, tmpdir, args.threads, 'query')
                 else:
-                        print('Indexing target DB...')
-                        log_update(logName, 'Indexing target DB...')
-                        indexmms2(args, 'target')
+                        print('Skipping query DB indexing...')
+                        log_update(logName, 'Skipping query DB indexing...')
+                # Index target db
+                if args.query != args.target:
+                        index = index_exists(os.path.basename(args.target) + '_targetDB.sk', args.targetdir)
+                        if index == False:
+                                print('Indexing target DB...')
+                                log_update(logName, 'Indexing target DB...')
+                                indexmms2(args.mmseqs2dir, args.query, args.target, tmpdir, args.threads, 'target')
+                        else:
+                                print('Skipping target DB indexing...')
+                                log_update(logName, 'Skipping target DB indexing...')
+        else:
+                print('Indexing step is being skipped due to argument flag...')
+                log_update(logName, 'Indexing step is being skipped due to argument flag...')
         # Run MMseqs2 search
-        if os.path.basename(args.output) + '_mms2SEARCH' not in currdir:
+        if os.path.basename(args.output) + '_mms2SEARCH' not in outputdir:
                 print('Running MMseqs2 search...')
                 log_update(logName, 'Running MMseqs2 search...')
-                runmms2(args)
+                runmms2(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), params)
         else:  
-                print('Skipping MMseqs2 search...[If you want to re-run the search, delete the previous file (' + os.path.basename(args.output) + '_mms2SEARCH) and the mms2tmp directory]')
-                log_update(logName, 'Skipping MMseqs2 search...[If you want to re-run the search, delete the previous file (' + os.path.basename(args.output) + '_mms2SEARCH) and the mms2tmp directory]')
+                print('Skipping MMseqs2 search...[If you want to re-run the search, delete the previous file (' + os.path.join(args.outputdir, args.output) + '_mms2SEARCH) and the mms2tmp directory]')
+                log_update(logName, 'Skipping MMseqs2 search...[If you want to re-run the search, delete the previous file (' + os.path.join(args.outputdir, args.output) + '_mms2SEARCH) and the mms2tmp directory]')
         # Generate tabular output
-        if os.path.basename(args.output) + '_mms2SEARCH.m8' not in currdir:
+        if os.path.join(args.outputdir, args.output) + '_mms2SEARCH.m8' not in outputdir:
                 print('Generating MMseqs2 tabular output...')
                 log_update(logName, 'Generating MMseqs2 tabular output...')
-                mms2tab(args)
+                mms2tab(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.threads)
         else:
                 print('Skipping MMseqs2 table generation...')
                 log_update(logName, 'Skipping MMseqs2 table generation...')
         # Sort if necessary
-        if os.path.basename(args.output) + '_mms2SEARCH_sorted.m8' not in currdir:
+        if os.path.join(args.outputdir, args.output) + '_mms2SEARCH_sorted.m8' not in outputdir:
                 if args.blast_sort:
                         print('Sorting MMseqs2 output file...')
                         log_update(logName, 'Sorting MMseqs2 output file...')
-                        mms2sort(args)
+                        mms2sort(os.path.join(args.outputdir, args.output + '_mms2SEARCH.m8'))
         else:
                 print('Skipping MMseqs2 sorting...')
                 log_update(logName, 'Skipping MMseqs2 sorting...')
 else:
         print('Running DB generation...')
         log_update(logName, 'Running DB generation...')
-        makemms2db(args, 'both')
-        print('Indexing query and target DB...')
-        log_update(logName, 'Indexing query and target DB...')
-        indexmms2(args, 'both')
+        makemms2db(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), 'both')
+        if not args.skip_index:
+                print('Indexing query and target DB...')
+                log_update(logName, 'Indexing query and target DB...')
+                indexmms2(args.mmseqs2dir, args.query, args.target, tmpdir, args.threads, 'both')
+        else:
+                print('Indexing step is being skipped due to argument flag...')
+                log_update(logName, 'Indexing step is being skipped due to argument flag...')
         print('Running MMseqs2 search...')
         log_update(logName, 'Running MMseqs2 search...')
-        runmms2(args)
+        runmms2(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), params)
         print('Generating MMseqs2 tabular output...')
         log_update(logName, 'Generating MMseqs2 tabular output...')
-        mms2tab(args)
+        mms2tab(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.threads)
         if args.blast_sort:
                 print('Sorting MMseqs2 output file...')
                 log_update(logName, 'Sorting MMseqs2 output file...')
-                mms2sort(args)
+                mms2sort(os.path.join(args.outputdir, args.output + '_mms2SEARCH.m8'))
 
 # Done!
 print('Program completed successfully!')
