@@ -9,10 +9,6 @@ def validate_args(args):
                 print('I am unable to locate the tab-delimited annotation table file (' + args.inputTable + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
-        # Validate program argument
-        if args.agalmaDir == None:
-                args.agalmaDir = ''
-        program_execution(os.path.join(args.agalmaDir, 'agalma -h'))
 
 def program_execution(cmd):
         import subprocess
@@ -76,13 +72,9 @@ and able to be repeated easily
 p = argparse.ArgumentParser(description=usage)
 p.add_argument("-i", "-inputTable", dest="inputTable",
                   help="Input tab-delimited information table file name.")
-p.add_argument("-a", "-agalmaDir", dest="agalmaDir", type = str,
-                  help="Specify the directory where AGALMA executables are located.")
 
 args = p.parse_args()
-## HARD CODED TESTING
-args.inputTable = r'E:\phylogeny\agalma\catalog_entry_agalma.txt'
-#args = validate_args(args)
+validate_args(args)
 
 # Parse information table
 speciesReads = agalma_info_table_parse_sp_read_dict('', args.inputTable)

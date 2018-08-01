@@ -36,15 +36,21 @@ def agalma_info_table_parse(agalmaDir, fileName):
                                 continue
                         sl = line.rstrip('\r\n').split('\t')
                         # Extract information
-                        readID = sl[1].split('.trimmed')[0]
+                        species = sl[3]
+                        catID = species.replace(' ', '_')
+                        # Format reads string
                         readsList = sl[1].split(' ')
-                        readsString = ''
-                        for i in range(len(readsList)):
-                                if i != 0:
-                                        readsString += ' '
-                                readsString += os.path.join(sl[0], readsList[i])
+                        fileExt = ''
+                        if '.fq' or '.fastq' in readsList[0]:
+                                fileExt += '.fastq'
+                        if '.gz' or '.gzip' in readsList[0]:
+                                fileExt += '.gz'
+                        if len(readsList) > 1:
+                                readsString = catID + '_1' + fileExt + ' ' + catID + '_2' + fileExt
+                        else:
+                                readsString = catID + '_SE' + fileExt
                         # Format catalog command
-                        cmd = os.path.join(agalmaDir, 'agalma') + ' catalog insert --id ' + readID + ' --paths ' + readsString + ' --species "' + sl[3] + '"'
+                        cmd = os.path.join(agalmaDir, 'agalma') + ' catalog insert --id ' + catID + ' --paths ' + readsString + ' --species "' + sl[3] + '"'
                         if sl[4] != '.':
                                 sl[4] = sl[4].strip(' ')
                                 cmd += ' -n ' + sl[4]
@@ -52,6 +58,7 @@ def agalma_info_table_parse(agalmaDir, fileName):
                                 sl[5] = sl[5].strip(' ')
                                 cmd += ' -d ' + sl[5]
                         outCmds.append(cmd)
+        outCmds = list(set(outCmds))
         return outCmds
 
 #### USER INPUT SECTION
@@ -66,8 +73,6 @@ p.add_argument("-a", "-agalmaDir", dest="agalmaDir", type = str,
                   help="Specify the directory where AGALMA executables are located.")
 
 args = p.parse_args()
-## HARD CODED TESTING
-args.inputTable = r'E:\phylogeny\agalma\catalog_entry_agalma.txt'
 args = validate_args(args)
 
 # Parse information table
