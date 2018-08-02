@@ -32,13 +32,18 @@ def program_execution(cmd):
         import subprocess
         run_cmd = subprocess.Popen(cmd, stdout = subprocess.PIPE, stderr = subprocess.PIPE, shell = True)
         cmdout, cmderr = run_cmd.communicate()
-        if cmderr.decode("utf-8") != '' and not cmderr.decode("utf-8").startswith('Usage'):     # Need this extra check for seg since it puts its usage information into stderr rather than stdout
-                print('Failed to execute program "' + cmd + '". Is this executable in the location specified/discoverable in your PATH, or does the executable even exist? I won\'t be able to run properly if I can\'t execute this program.')
-                print('---')
-                print('stderr is below for debugging purposes.')
-                print(cmderr.decode("utf-8"))
-                print('Program closing now.')
-                quit()
+        if cmderr.decode("utf-8") != '':     # Need this extra check for seg since it puts its usage information into stderr rather than stdout
+                # Check if this is actually failed
+                for line in cmderr.decode("utf-8").split('\n'):
+                        if line.startswith('biolite.config.parse_env_resources: database='):
+                                continue
+                else:
+                        print('Failed to execute program "' + cmd + '". Is this executable in the location specified/discoverable in your PATH, or does the executable even exist? I won\'t be able to run properly if I can\'t execute this program.')
+                        print('---')
+                        print('stderr is below for debugging purposes.')
+                        print(cmderr.decode("utf-8"))
+                        print('Program closing now.')
+                        quit()
 
 def agalma_info_table_parse(agalmaDir, fileName, threads, mem):
         # Set up
