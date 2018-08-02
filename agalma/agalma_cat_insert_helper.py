@@ -13,6 +13,20 @@ def validate_args(args):
         if args.agalmaDir == None:
                 args.agalmaDir = ''
         program_execution(os.path.join(args.agalmaDir, 'agalma -h'))
+        # Validate numeric arguments
+        if args.threads < 1:
+                print('Threads argument must be at least 1.')
+                quit()
+        elif args.threads == None:
+                print('Threads argument must be specified.')
+                quit()
+        if args.memory < 1:
+                print('Memory argument must be at least 1.')
+                quit()
+        elif args.memory == None:
+                print('Memory argument must be specified.')
+                quit()
+        return args
 
 def program_execution(cmd):
         import subprocess
@@ -26,7 +40,7 @@ def program_execution(cmd):
                 print('Program closing now.')
                 quit()
 
-def agalma_info_table_parse(agalmaDir, fileName):
+def agalma_info_table_parse(agalmaDir, fileName, threads, mem):
         # Set up
         outCmds = []
         # Main function
@@ -50,7 +64,7 @@ def agalma_info_table_parse(agalmaDir, fileName):
                         else:
                                 readsString = catID + '_SE' + fileExt
                         # Format catalog command
-                        cmd = os.path.join(agalmaDir, 'agalma') + ' catalog insert --id ' + catID + ' --paths ' + readsString + ' --species "' + sl[3] + '"'
+                        cmd = os.path.join(agalmaDir, 'agalma') + ' -t ' + str(threads) + ' -m ' + str(mem) + 'G' + ' catalog insert --id ' + catID + ' --paths ' + readsString + ' --species "' + sl[3] + '"'
                         if sl[4] != '.':
                                 sl[4] = sl[4].strip(' ')
                                 cmd += ' -n ' + sl[4]
@@ -71,15 +85,20 @@ p.add_argument("-i", "-inputTable", dest="inputTable",
                   help="Input tab-delimited information table file name.")
 p.add_argument("-a", "-agalmaDir", dest="agalmaDir", type = str,
                   help="Specify the directory where AGALMA executables are located.")
+p.add_argument("-t", "-threads", dest="threads", type = int,
+                  help="Specify the number of threads to provide to AGALMA.")
+p.add_argument("-m", "-memory", dest="memory", type = int,
+                  help="Specify the amount of memory (in Gb) to provide to AGALMA.")
 
 args = p.parse_args()
 args = validate_args(args)
 
 # Parse information table
-cmds = agalma_info_table_parse('', args.inputTable)
+cmds = agalma_info_table_parse(args.agalmaDir, args.inputTable, args.threads, args.memory)
 
 # Run catalog commands
 for cmd in cmds:
+        print(cmd)
         program_execution(cmd)
 
 # Done!

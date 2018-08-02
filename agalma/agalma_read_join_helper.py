@@ -22,7 +22,7 @@ def program_execution(cmd):
                 print('Program closing now.')
                 quit()
 
-def agalma_info_table_parse_sp_read_dict(agalmaDir, fileName):
+def agalma_info_table_parse_sp_read_dict(fileName):
         # Set up
         speciesReads = {}
         # Main function
@@ -77,7 +77,7 @@ args = p.parse_args()
 validate_args(args)
 
 # Parse information table
-speciesReads = agalma_info_table_parse_sp_read_dict('', args.inputTable)
+speciesReads = agalma_info_table_parse_sp_read_dict(args.inputTable)
 
 # Generate cat commands
 cmds = file_cat_cmds_by_dict(speciesReads)
@@ -86,6 +86,7 @@ cmds = file_cat_cmds_by_dict(speciesReads)
 for cmd in cmds:
         outFile = cmd.split('> ')[1]
         if not os.path.isfile(outFile):
+                print(cmd)
                 program_execution(cmd)
 
 # Done!
