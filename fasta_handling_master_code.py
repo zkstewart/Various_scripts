@@ -310,6 +310,67 @@ def fasta_removeseqidwstring(fastaFile, removeString, prefix):
                         outFasta.append('@' + record.description + '\n' + seq + '\n+\n' + qual) #fq
         return outFasta, fastaFile, changed
 
+def fasta_chunk(fastaFile, threads, prefix):
+        # Set up
+        import math
+        from Bio import SeqIO
+        outFasta = []
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Count number of sequences in file
+        with open(fastaFile, 'r') as fileIn:
+                if seqType == 'fasta':
+                        numSeqs = 0
+                        for line in fileIn:
+                                if line.startswith('>'):
+                                        numSeqs += 1
+                else:
+                        ongoingCount = 0
+                        for line in fileIn:
+                                ongoingCount += 1
+                        numSeqs = ongoingCount / 4      # Fastq doesn't have multi-line, so it's easy to derive number of sequences this way
+        # Find out where we are chunking the file
+        rawNum = numSeqs / threads                              # In cases where threads > numSeqs, rawNum will be less than 1. numRoundedUp will equal the number of threads, and so we'll end up rounding these to 1. Yay!
+        numRoundedUp = round((rawNum % 1) * threads, 0)         # By taking the decimal place and multiplying it by the num of threads, we can figure out how many threads need to be rounded up to process every sequence
+        chunkPoints = []
+        ongoingCount = 0
+        for i in range(threads):
+                if i+1 <= numRoundedUp:                 # i.e., if two threads are being rounded up, we'll round up the first two loops of this
+                        chunkPoints.append(math.ceil(rawNum) + ongoingCount)    # Round up the rawNum, and also add our ongoingCount which corresponds to the number of sequences already put into a chunk
+                        ongoingCount += math.ceil(rawNum)
+                else:
+                        chunkPoints.append(math.floor(rawNum) + ongoingCount)
+                        ongoingCount += math.floor(rawNum)
+                if ongoingCount >= numSeqs:             # Without this check, if we have more threads than sequences, we can end up with "extra" numbers in the list (e.g., [1, 2, 3, 4, 5, 6, 6, 6, 6, 6]).
+                        break                           # This doesn't actually affect program function, but for aesthetic reasons and for clarity of how this function works, I prevent this from occurring.
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        ongoingCount = 0    # This will keep track of what sequence number we are on
+        for i in range(threads):
+                # Flow control
+                if ongoingCount == numSeqs: # This lets us stop making new files if we have more threads than we do sequences
+                        break
+                # Format sequences to list of lists
+                outFasta.append([])
+                for record in records:      # We'll run out of records if we get to a point where ongoingCount == numSeqs
+                        # Extract relevant details regardless of fasta or fastq
+                        if seqType == 'fasta':
+                                seq = str(record.seq)
+                                qual = ''
+                        else:
+                                seq, qual = fastq_format_extract(record)
+                        # Output
+                        if seqType == 'fasta':
+                                outFasta[-1].append('>' + record.description + '\n' + seq)                  #fa
+                        else:
+                                outFasta[-1].append('@' + record.description + '\n' + seq + '\n+\n' + qual) #fq
+                        # Main function action
+                        ongoingCount += 1
+                        if ongoingCount in chunkPoints:
+                                break
+        return outFasta, fastaFile, changed
+
 # Define general purpose functions
 def fasta_or_fastq(fastaFile, prefix):
         changed = False
@@ -381,11 +442,17 @@ def output_list(outList, outputFileName):
         with open(outputFileName, 'w') as fileOut:
                 fileOut.write('\n'.join(outList))
 
+def output_list_of_lists(outList, outputPrefix, outputSuffix):
+        for i in range(len(outList)):
+                with open(outputPrefix + '_' + str(i+1) + '.' + outputSuffix, 'w') as fileOut:
+                        fileOut.write('\n'.join(outList[i]))
+
 # Define function for validating arguments
 def validate_args(args, stringFunctions, numberFunctions, functionList):
         # Provide detailed help if specified
         if args.detailedHelp:
                 import textwrap
+                ## No input
                 ids = '''
                 The _ids_ function requires no special input. This function will
                 produce an output text file listing sequence IDs (as parsed by Biopython
@@ -405,11 +472,7 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 will produce an output text file with a single line depicting the number
                 of sequences in the fasta file.
                 '''
-                rename = '''
-                The _rename_ function accepts a string input. This acts as prefix for 
-                sequence IDs. For example, providing 'seq' as string input will result
-                in an output fasta file containing 'seq1', 'seq2', etc., sequence IDs.
-                '''
+                ## Number input
                 multi2single = '''
                 The _multi2single_ function requires no special input. The output is 
                 a singleline formatted fasta file.
@@ -428,6 +491,18 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 The _cullabove_ function accepts a number input. This number refers
                 to the maximum length of sequence that will be present in the output
                 fasta file.
+                '''
+                chunk = '''
+                The _chunk_ function accepts a number input. This number refers
+                to the number of files to divide the original into as evenly as possible.
+                Behaviour example: if you specify 10 chunks from a file with 8
+                sequences, only 8 output files will be created.
+                '''
+                ## String input
+                rename = '''
+                The _rename_ function accepts a string input. This acts as prefix for 
+                sequence IDs. For example, providing 'seq' as string input will result
+                in an output fasta file containing 'seq1', 'seq2', etc., sequence IDs.
                 '''
                 removeseqwstring = '''
                 The _removeseqwstring_ function accepts a string input. Any sequence
@@ -504,7 +579,7 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 # Float-based functions
                 #None yet
                 # Integer-based functions
-                if args.function == 'single2multi' or args.function == 'cullbelow' or args.function == 'cullabove':
+                if args.function == 'single2multi' or args.function == 'cullbelow' or args.function == 'cullabove' or args.function == 'chunk':
                         try:
                                 args.number = int(args.number)
                         except:
@@ -521,7 +596,7 @@ and 5) enact the function below.
 
 # Function list - update as new ones are added
 stringFunctions = ['rename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'stripstringfseqid', 'trim']
-numberFunctions = ['single2multi', 'cullbelow', 'cullabove']
+numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk']
 basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single']
 functionList = stringFunctions + numberFunctions + basicFunctions
 
@@ -578,6 +653,9 @@ if args.function == 'cullbelow':
         outFasta = fasta_cullbelow(args.fastaFileName, args.number)
 if args.function == 'cullabove':
         outFasta = fasta_cullabove(args.fastaFileName, args.number)
+## Number functions - FAST(A/Q) compatible
+if args.function == 'chunk':
+        outFasta, args.fastaFileName, changed = fasta_chunk(args.fastaFileName, args.number, startTime)
 ## Basic functions
 if args.function == 'ids':
         outList = fasta_ids(args.fastaFileName)
@@ -592,12 +670,18 @@ if args.function == 'multi2single':
 
 # Output results
 if outList != [] and outList != None:
+        ## Special handling for specific functions
+        # None yet
         if outFasta != [] and outFasta != None:
                 output_list(outList, listOutName)
         else:
                 output_list(outList, args.outputFileName)
 if outFasta != [] and outFasta != None:
-        if outList != [] and outList != None:
+        ## Special handling for specific functions
+        if args.function == 'chunk':
+                fastaPrefix, fastaSuffix = args.outputFileName.rsplit('.', maxsplit=1)[0], args.outputFileName.rsplit('.', maxsplit=1)[1]
+                output_list_of_lists(outFasta, fastaPrefix, fastaSuffix)
+        elif outList != [] and outList != None:
                 output_list(outFasta, fastaOutName)
         else:
                 output_list(outFasta, args.outputFileName)
