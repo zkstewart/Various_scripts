@@ -28,7 +28,7 @@ def validate_args(args, dom_prefixes):
                 print('E-value cannot be < 0. Try again.')
                 quit()
         if not 0 <= args.ovlCutoff <= 100.0:
-                print('Percentage overlap cutoff must be given as a value <= 0 and >= 100. Try again.')
+                print('Percentage overlap cutoff must be given as a value >= 0 and <= 100. Try again.')
                 quit()
         args.ovlCutoff = args.ovlCutoff / 100
         # Handle domain prefix selection
