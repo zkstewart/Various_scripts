@@ -31,13 +31,13 @@ def validate_args(inputHmmer, evalue, ovlCutoff, hmmdbScript, databaseSelect, ou
                                 print(dom_prefixes)
                                 print('If you want to limit your results to one or more of these databases, provide them on the command-line correctly next time.')
                                 quit()
-                prefixes = databaseSelect
+                dom_prefixes = databaseSelect
                 hmmdbScript = False        # These options are incompatible, make sure it's turned off here
         # Handle file overwrites
         if os.path.isfile(outputFileName):
                 print(outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
                 quit()
-        return ovlCutoff, databaseSelect, prefixes, hmmdbScript
+        return ovlCutoff, databaseSelect, dom_prefixes, hmmdbScript
 
 ## Main parsing functions
 def findMiddle(input_list):             # https://stackoverflow.com/questions/38130895/find-middle-of-a-list
