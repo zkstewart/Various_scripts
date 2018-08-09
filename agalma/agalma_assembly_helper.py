@@ -36,9 +36,12 @@ def program_execution(cmd):
                 print('Program returned stderr; check for any possible debugging purposes.')
                 print(cmderr.decode("utf-8"))
 
-def agalma_info_table_parse(agalmaDir, fileName, threads, mem):
+def agalma_info_table_parse(agalmaDir, fileName, threads, mem, startSp):
         # Set up
         outCmds = []
+        skip = True
+        if startSp == None:
+                skip = False
         # Main function
         with open(fileName, 'r') as agalmaFile:
                 for line in agalmaFile:
@@ -47,11 +50,15 @@ def agalma_info_table_parse(agalmaDir, fileName, threads, mem):
                         sl = line.rstrip('\r\n').split('\t')
                         # Extract information
                         species = sl[3]
+                        if skip == True and startSp != species:
+                                continue
+                        elif skip == True and startSp == species:
+                                skip = False
                         catID = species.replace(' ', '_')
                         # Format assembly command
                         cmd = os.path.join(agalmaDir, 'agalma') + ' -t ' + str(threads) + ' -m ' + str(mem) + 'G' + ' transcriptome --id ' + catID
-                        outCmds.append(cmd)
-        outCmds = list(set(outCmds))
+                        if cmd not in outCmds:
+                                outCmds.append(cmd)
         return outCmds
 
 #### USER INPUT SECTION
@@ -67,12 +74,14 @@ p.add_argument("-t", "-threads", dest="threads", type = int,
                   help="Specify the number of threads to provide to AGALMA.")
 p.add_argument("-m", "-memory", dest="memory", type = int,
                   help="Specify the amount of memory (in Gb) to provide to AGALMA.")
+p.add_argument("-s", "-startSp", dest="startSpecies", type = str,
+                  help="Optionally specify the first species to start at in the table (all ones prior to this will be skipped).")
 
 args = p.parse_args()
 args = validate_args(args)
 
 # Parse information table
-cmds = agalma_info_table_parse(args.agalmaDir, args.inputTable, args.threads, args.memory)
+cmds = agalma_info_table_parse(args.agalmaDir, args.inputTable, args.threads, args.memory, args.startSpecies)
 
 # Run catalog commands
 for cmd in cmds:
