@@ -381,7 +381,7 @@ def fix_details(chunkDict):
 def count_categoriser(inputValue, returnType):
         #categoriesLabel = ['ND', '0', '1-10', '11-50', '50-100', '100-200', '200-400', 'TNTC']
         #categoriesRange = ['ND', 0, range(1,11), range(11,51), range(51,101), range(101,201), range(201,401), 'TNTC']
-        categoriesLabel = ['ND', '0', '1-10', '11-100', '100-340', 'TNTC']
+        categoriesLabel = ['ND', '0', '1-10', '11-100', '101-340', 'TNTC']
         categoriesAsNumeric = ['ND', '1', '2', '3', '4', '5']
         categoriesRange = ['ND', 0, range(1,11), range(11,101), range(101,341), 'TNTC']
         for i in range(len(categoriesRange)):
@@ -646,10 +646,10 @@ def diversity_number(chunkValue):
 def tabulate_data(chunkDict):
         # Set up
         responseOccurrence = {1: {'OTHER': 0}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}}
-        countOccurBefore = {'ND': 0, '0': 0, '1-10': 0, '11-100': 0, '100-340': 0, 'TNTC': 0}
-        countOccurAfter = {'ND': 0, '0': 0, '1-10': 0, '11-100': 0, '100-340': 0, 'TNTC': 0}
-        medItemCountBefore = {'OTHER': {'0': 0, '1-10': 0, '100-340': 0, '11-100': 0, 'TNTC': 0}}
-        medItemCountAfter = {'OTHER': {'0': 0, '1-10': 0, '100-340': 0, '11-100': 0, 'TNTC': 0}}
+        countOccurBefore = {'ND': 0, '0': 0, '1-10': 0, '11-100': 0, '101-340': 0, 'TNTC': 0}
+        countOccurAfter = {'ND': 0, '0': 0, '1-10': 0, '11-100': 0, '101-340': 0, 'TNTC': 0}
+        medItemCountBefore = {'OTHER': {'0': 0, '1-10': 0, '101-340': 0, '11-100': 0, 'TNTC': 0}}
+        medItemCountAfter = {'OTHER': {'0': 0, '1-10': 0, '101-340': 0, '11-100': 0, 'TNTC': 0}}
         for key, value in chunkDict.items():
                 # Extract relevant details for tabulation
                 ## Quiz responses
@@ -715,17 +715,11 @@ def tabulate_data(chunkDict):
                 else:
                         # Establish key-value pairs for medical items
                         if medicalItem not in medItemCountBefore:
-                                medItemCountBefore[medicalItem] = {'0': 0, '1-10': 0, '100-340': 0, '11-100': 0, 'TNTC': 0}     # used to be {}
+                                medItemCountBefore[medicalItem] = {'0': 0, '1-10': 0, '101-340': 0, '11-100': 0, 'TNTC': 0}     # used to be {}
                         if medicalItem not in medItemCountAfter:
-                                medItemCountAfter[medicalItem] = {'0': 0, '1-10': 0, '100-340': 0, '11-100': 0, 'TNTC': 0}
+                                medItemCountAfter[medicalItem] = {'0': 0, '1-10': 0, '101-340': 0, '11-100': 0, 'TNTC': 0}
                         # Add counts to medical items
-                        #if countCatBefore not in medItemCountBefore[medicalItem]:
-                        #        medItemCountBefore[medicalItem][countCatBefore] = 1
-                        #else:
                         medItemCountBefore[medicalItem][countCatBefore] += 1
-                        #if countCatAfter not in medItemCountAfter[medicalItem]:
-                        #        medItemCountAfter[medicalItem][countCatAfter] = 1
-                        #else:
                         medItemCountAfter[medicalItem][countCatAfter] += 1
         # Format data
         ## Quiz response
@@ -766,7 +760,7 @@ def tabulate_data(chunkDict):
         quizROut += ['Infection control practice is critical to protecting my patients/clients from infectious diseases\t\t']
         quizROut += r8Table
         ## Microbial counts
-        microOut = micro_count_tabulate(medItemCountBefore, medItemCountAfter)
+        microOut = micro_count_tabulate_transpose(medItemCountBefore, medItemCountAfter, True)  # True makes this sort by reversed order i.e., highest to lowest values
         # Join results tables
         combinedOut = ['Table 1. Infection control perceptions and practices of student HCWs'] + quizROut + ['Table 2. Microbial enumeration before and after prescribed medical equipment disinfection'] + microOut
         combinedOut = '\n'.join(combinedOut)
@@ -774,7 +768,7 @@ def tabulate_data(chunkDict):
         return combinedOut
 
 def micro_count_tabulate(medItemCountBefore, medItemCountAfter):
-        outList = ['Medical equipment item\tNo growth\t1-10\t11-100\t100-340\tTNTC']
+        outList = ['Medical equipment item\tNo growth\t1-10\t11-100\t101-340\tTNTC']
         order = ['CLOTHES', 'MOBILE PHONE', 'PEN', 'STETHOSCOPE', 'SCISSORS', 'SAFETY GLASSES', 'GLASSES', 'PEN LIGHT', 'OTHER']
         for key in order:
                 beforeRow = dict_tabulate(medItemCountBefore[key], None)
@@ -792,6 +786,62 @@ def micro_count_tabulate(medItemCountBefore, medItemCountAfter):
                 for i in range(len(outRow)):
                         outRow[i] = '\t'.join(outRow[i])
                 outList += outRow
+        return outList
+
+def micro_count_tabulate_transpose(medItemCountBefore, medItemCountAfter, reverse):      # Alternative formating style for this table
+        order = ['CLOTHES', 'MOBILE PHONE', 'PEN', 'STETHOSCOPE', 'SCISSORS', 'SAFETY GLASSES', 'GLASSES', 'PEN LIGHT', 'OTHER']
+        outList = ['Medical equipment item\tGrowth category\tBefore\tAfter']
+        totals = [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
+        for key in order:
+                beforeRow = dict_tabulate(medItemCountBefore[key], None)
+                afterRow = dict_tabulate(medItemCountAfter[key], None)
+                # Reformat rows and allow for specification of order from highest -> lowest (reversed) or lowest -> highest (default)
+                if reverse == True:
+                        outRow = [['TNTC'], ['101-340'], ['11-100'], ['1-10'], ['No growth']]
+                        beforeRow.reverse()
+                        afterRow.reverse()
+                # Reformat rows a bit
+                else:
+                        outRow = [['No growth'], ['1-10'], ['11-100'], ['101-340'], ['TNTC']]
+                for row in [beforeRow, afterRow]:
+                        for i in range(len(row)):
+                                srow = row[i].split('\t')
+                                outRow[i].append(srow[1] + ' (' + srow[2] + ')')
+                                if row == beforeRow:
+                                        totals[0][i] += int(srow[1])
+                                elif row == afterRow:
+                                        totals[1][i] += int(srow[1])
+                                else:
+                                        print('Something went wrong at tabulate transpose. Needs a fix!')
+                                        #quit()
+                #outList.append(key)
+                # Format the outrow a bit more
+                for i in range(len(outRow)):
+                        outRow[i] = '\t'.join(outRow[i])
+                        if i == 0:
+                                outRow[i] = key + '\t' + outRow[i]
+                        else:
+                                outRow[i] = '\t' + outRow[i]
+                outList += outRow
+        # Format the totals values
+        if reverse == True:
+                outRow = [['TNTC'], ['101-340'], ['11-100'], ['1-10'], ['No growth']]
+        else:
+                outRow = [['No growth'], ['1-10'], ['11-100'], ['101-340'], ['TNTC']]
+        for row in totals:
+                # Calculate proportions
+                totalNum = sum(row)
+                for i in range(len(row)):
+                        proportion = round(round(int(row[i]) / totalNum, 3) * 100, 2)      # Python is REALLY weird here - has to be some sort of a bug...
+                        outRow[i].append(str(row[i]) + ' (' +  str(proportion) + '%)')
+        # Format the totals outrow a bit more
+        for i in range(len(outRow)):
+                outRow[i] = '\t'.join(outRow[i])
+                if i == 0:
+                        outRow[i] = 'Total' + '\t' + outRow[i]
+                else:
+                        outRow[i] = '\t' + outRow[i]
+        outList += outRow
         return outList
 
 def dict_tabulate(inputDict, replaceDict):
@@ -815,7 +865,7 @@ def dict_tabulate(inputDict, replaceDict):
                         pairList.append(otherEntry)
                 # Handle dict_tabulate calls for medical item counts
                 else:
-                        order = ['0', '1-10', '11-100', '100-340', 'TNTC']
+                        order = ['0', '1-10', '11-100', '101-340', 'TNTC']
                         newPairList = []
                         for entry in order:
                                 for pair in pairList:
@@ -845,7 +895,7 @@ def pair_replace(pairList, replaceDict):
         return pairList
 
 ### Test 1 & 4
-def quiz_cats_to_csv(quizCatDict, prefix, suffix, header, resultDir):
+def quiz_cats_to_csv(quizCatDict, prefix, suffix, header, resultDir, overwrite):
         import os
         fileNames = []
         for i in range(len(quizCatDict)):
@@ -856,7 +906,10 @@ def quiz_cats_to_csv(quizCatDict, prefix, suffix, header, resultDir):
                 if not os.path.isdir(outDirPath):
                         os.mkdir(outDirPath)
                 # Generate an output name
-                name = file_name_gen(os.path.join(outDirPath, prefix + suffix), '_' + str(i+1) + '.csv')
+                if overwrite == False:
+                        name = file_name_gen(os.path.join(outDirPath, prefix + suffix), '_' + str(i+1) + '.csv')
+                else:
+                        name = os.path.join(outDirPath, prefix + suffix) +  '_' + str(i+1) + '.csv'
                 fileNames.append(name)
                 # Produce output file
                 with open(name, 'w') as fileOut:
@@ -865,14 +918,17 @@ def quiz_cats_to_csv(quizCatDict, prefix, suffix, header, resultDir):
                                 for val in value:
                                         fileOut.write(str(key) + ',' + str(val) + '\n')
 ### Test 2
-def compare_total_to_csv(chunkDict,  resultDir):
+def compare_total_to_csv(chunkDict,  resultDir, overwrite):
         import os
         # Get the output directory
         outDirPath = os.path.join(os.getcwd(), resultDir)
         if not os.path.isdir(outDirPath):
                 os.mkdir(outDirPath)
         # Generate an output name
-        name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_overall'), '.csv')
+        if overwrite == False:
+                name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_overall'), '.csv')
+        else:
+                name = os.path.join(outDirPath, 'quizcat_totals_overall') + '.csv'
         with open(name, 'w') as fileOut:
                 fileOut.write('count_category_before,count_category_after\n')
                 for key, value in chunkDict.items():
@@ -884,7 +940,7 @@ def compare_total_to_csv(chunkDict,  resultDir):
                                 fileOut.write(countCatBefore + ',' + countCatAfter + '\n')
 
 ### Test 3
-def compare_quiz_cats_to_csv(quizCatDict1, quizCatDict2, resultDir):
+def compare_quiz_cats_to_csv(quizCatDict1, quizCatDict2, resultDir, overwrite):
         import os
         fileNames = []
         for i in range(len(quizCatDict1)):
@@ -895,7 +951,10 @@ def compare_quiz_cats_to_csv(quizCatDict1, quizCatDict2, resultDir):
                 if not os.path.isdir(outDirPath):
                         os.mkdir(outDirPath)
                 # Generate an output name
-                name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_compare'), '_' + str(i+1) + '.csv')
+                if overwrite == False:
+                        name = file_name_gen(os.path.join(outDirPath, 'quizcat_totals_compare'), '_' + str(i+1) + '.csv')
+                else:
+                        name = os.path.join(outDirPath, 'quizcat_totals_compare') + '_' + str(i+1) + '.csv'
                 fileNames.append(name)
                 # Produce output file
                 with open(name, 'w') as fileOut:
@@ -907,14 +966,17 @@ def compare_quiz_cats_to_csv(quizCatDict1, quizCatDict2, resultDir):
                                         fileOut.write(str(key1) + ',after,' + value2[x] + '\n')
 
 ## Test 5
-def compare_div_to_csv(chunkDict,  resultDir):
+def compare_div_to_csv(chunkDict,  resultDir, overwrite):
         import os
         # Get the output directory
         outDirPath = os.path.join(os.getcwd(), resultDir)
         if not os.path.isdir(outDirPath):
                 os.mkdir(outDirPath)
         # Generate an output name
-        name = file_name_gen(os.path.join(outDirPath, 'quizcat_div_overall'), '.csv')
+        if overwrite == False:
+                name = file_name_gen(os.path.join(outDirPath, 'quizcat_div_overall'), '.csv')
+        else:
+                name = os.path.join(outDirPath, 'quizcat_div_overall') + '.csv'
         with open(name, 'w') as fileOut:
                 fileOut.write('div_before,div_after\n')
                 for key, value in chunkDict.items():
@@ -923,7 +985,7 @@ def compare_div_to_csv(chunkDict,  resultDir):
                         fileOut.write(str(beforeDiv) + ',' + str(afterDiv) + '\n')
 
 ## Test 6
-def compare_quiz_cats_div_to_csv(quizCatDict1, quizCatDict2, resultDir):
+def compare_quiz_cats_div_to_csv(quizCatDict1, quizCatDict2, resultDir, overwrite):
         import os
         fileNames = []
         for i in range(len(quizCatDict1)):
@@ -934,7 +996,10 @@ def compare_quiz_cats_div_to_csv(quizCatDict1, quizCatDict2, resultDir):
                 if not os.path.isdir(outDirPath):
                         os.mkdir(outDirPath)
                 # Generate an output name
-                name = file_name_gen(os.path.join(outDirPath, 'quizcat_div_compare'), '_' + str(i+1) + '.csv')
+                if overwrite == False:
+                        name = file_name_gen(os.path.join(outDirPath, 'quizcat_div_compare'), '_' + str(i+1) + '.csv')
+                else:
+                        name = os.path.join(outDirPath, 'quizcat_div_compare') + '_' + str(i+1) + '.csv'
                 fileNames.append(name)
                 # Produce output file
                 with open(name, 'w') as fileOut:
@@ -1049,43 +1114,45 @@ quizCatMediaBefore, quizCatMediaAfter = media_reaction_quiz_response(chunkDict)
 
 # GENERATE AN OVERVIEW OF THE DATA
 tabulatedData = tabulate_data(chunkDict)
-#write_text_to_file('micro_data_table.txt', tabulatedData)
+write_text_to_file('micro_data_table.txt', tabulatedData)
 
 # PERFORM TESTS
 
 ## Overall question: What information does comparing before and after total counts tell us?
-
-### Test 1: growth before / growth after for quiz responses [Q: Do students who provide certain answers have more/less growth before and/or after treatment? A: For medical items, yes.]
-#quiz_cats_to_csv(quizCatBefore, 'quizcat_totals_', 'before', 'quiz_response,count_category\n', 'R_scripts')
-#quiz_cats_to_csv(quizCatAfter, 'quizcat_totals_', 'after', 'quiz_response,count_category\n', 'R_scripts')
-
-### Test 2: growth before VERSUS after [Q: Does treatment work to kill microbes? A: Yes.]
-#compare_total_to_csv(chunkDict, 'R_scripts')
-
-### Test 3: growth before VERSUS after for quiz responses [Q: Is cleaning more effective/important for students who provide certain answers? - A: For medical items, yes.]
-#compare_quiz_cats_to_csv(quizCatBefore, quizCatAfter, 'R_scripts')     ## This is the better option, it fees into linear model generation well
-
-## Overall question: Is there any relationship between study variables and microbial diversity?
-
-### Test 4: microbial diversity before / after for quiz responses [Q: Do students who provide certain answers have more/less microbial diversity before and/or after treatment? A: Not technically.]
-#quiz_cats_to_csv(quizCatDivBefore, 'quizcat_div_', 'before', 'quiz_response,species_num\n', 'R_scripts')
-#quiz_cats_to_csv(quizCatDivAfter, 'quizcat_div_', 'after', 'quiz_response,species_num\n', 'R_scripts')
-
-### Test 5: microbial diversity before VERSUS after [Q: Does treatment work to reduce diversity? A: Yes.]
-#compare_div_to_csv(chunkDict, 'R_scripts')
-
-### Test 6: div before VERSUS after for quiz responses [Q: Does cleaning reduce diversity more for students who provide certain answers? - A: No.]
-#compare_quiz_cats_div_to_csv(quizCatDivBefore, quizCatDivAfter, 'R_scripts')
-
-## Overall question: Is there any relationship between study variables and media results?
-
-### Test 7: media results before / after for quiz responses [Q: Are students who provide certain answers more likely to obtain specific media results before and/or after treatment? A: Yes.]
-#media_quiz_cats_to_csv(quizCatMediaBefore, 'quizcat_media_', 'before', 'quiz_response,reaction_cat\n', 'R_scripts')
-#media_quiz_cats_to_csv(quizCatMediaAfter, 'quizcat_media_', 'after', 'quiz_response,reaction_cat\n', 'R_scripts')
-
-### NOT TESTING: media results before VERSUS after [Q: Does treatment work to reduce the occurrence of certain reactions? A: Not appropriate test.]
-
-### Test 8: Subset - of the colonies that grow, are there substantive differences in the type of reaction identified based on quiz responses? [A: .]
+rerun = True
+if rerun:
+        ### Test 1: growth before / growth after for quiz responses [Q: Do students who provide certain answers have more/less growth before and/or after treatment? A: For medical items, yes.]
+        quiz_cats_to_csv(quizCatBefore, 'quizcat_totals_', 'before', 'quiz_response,count_category\n', 'R_scripts', True)
+        quiz_cats_to_csv(quizCatAfter, 'quizcat_totals_', 'after', 'quiz_response,count_category\n', 'R_scripts', True)
+        
+        ### Test 2: growth before VERSUS after [Q: Does treatment work to kill microbes? A: Yes.]
+        compare_total_to_csv(chunkDict, 'R_scripts', True)
+        
+        ### Test 3: growth before VERSUS after for quiz responses [Q: Is cleaning more effective/important for students who provide certain answers? - A: For medical items, yes.]
+        compare_quiz_cats_to_csv(quizCatBefore, quizCatAfter, 'R_scripts', True)     ## This is the better option, it feeds into linear model generation well
+        
+        ## Overall question: Is there any relationship between study variables and microbial diversity?
+        
+        ### Test 4: microbial diversity before / after for quiz responses [Q: Do students who provide certain answers have more/less microbial diversity before and/or after treatment? A: Not technically.]
+        quiz_cats_to_csv(quizCatDivBefore, 'quizcat_div_', 'before', 'quiz_response,species_num\n', 'R_scripts', True)
+        quiz_cats_to_csv(quizCatDivAfter, 'quizcat_div_', 'after', 'quiz_response,species_num\n', 'R_scripts', True)
+        
+        ### Test 5: microbial diversity before VERSUS after [Q: Does treatment work to reduce diversity? A: Yes.]
+        compare_div_to_csv(chunkDict, 'R_scripts', True)
+        
+        ### Test 6: div before VERSUS after for quiz responses [Q: Does cleaning reduce diversity more for students who provide certain answers? - A: No.]
+        compare_quiz_cats_div_to_csv(quizCatDivBefore, quizCatDivAfter, 'R_scripts', True)
+        
+        ## Overall question: Is there any relationship between study variables and media results?
+        
+        ### Test 7: media results before / after for quiz responses [Q: Are students who provide certain answers more likely to obtain specific media results before and/or after treatment? A: Yes.]
+        ### This test isn't really appropriate with the current data set; ignore for now
+        #media_quiz_cats_to_csv(quizCatMediaBefore, 'quizcat_media_', 'before', 'quiz_response,reaction_cat\n', 'R_scripts', True)
+        #media_quiz_cats_to_csv(quizCatMediaAfter, 'quizcat_media_', 'after', 'quiz_response,reaction_cat\n', 'R_scripts', True)
+        
+        ### NOT TESTING: media results before VERSUS after [Q: Does treatment work to reduce the occurrence of certain reactions? A: Not appropriate test.]
+        
+        ### Test 8: Subset - of the colonies that grow, are there substantive differences in the type of reaction identified based on quiz responses? [A: .]
 
 #### SCRIPT ALL DONE
 print('Program completed successfully!')
