@@ -406,7 +406,7 @@ def count_categoriser(inputValue, returnType):
                                 else:
                                         return categoriesAsNumeric[i]
 
-def growth_categoriser(inputValue, mediaType):
+def growth_categoriser(inputValue, mediaType, conversionDirection):
         nbCatLabels = ['ND', 'N/A', 'NG', 'turbid', 'clear', 'pellet']  # Need to handle plate 9K78A, mould has N/A value
         nbCatAsNumeric = ['ND', '0', '1', '2', '3', '4']
         hbaCatLabels = ['ND', 'NG', 'alpha', 'beta', 'gamma', 'spreader']
@@ -415,25 +415,46 @@ def growth_categoriser(inputValue, mediaType):
         msaCatAsNumeric = ['ND', '1', '2', '3']
         mcaCatLabels = ['ND', 'NG', 'G', 'G-LF']
         mcaCatAsNumeric = ['ND', '1', '2', '3']
-        if mediaType == 'NB':
-                for i in range(len(nbCatLabels)):
-                        if inputValue == nbCatLabels[i]:
-                                return nbCatAsNumeric[i]
-        elif mediaType == 'HBA':
-                for i in range(len(hbaCatLabels)):
-                        if inputValue == hbaCatLabels[i]:
-                                return hbaCatAsNumeric[i]
-        elif mediaType == 'MSA':
-                for i in range(len(msaCatLabels)):
-                        if inputValue == msaCatLabels[i]:
-                                return msaCatAsNumeric[i]
-        elif mediaType == 'MCA':
-                for i in range(len(mcaCatLabels)):
-                        if inputValue == mcaCatLabels[i]:
-                                return mcaCatAsNumeric[i]
-        else:
-                print('Something went wrong. Check this out (growth categoriser).')
-                stophere
+        if conversionDirection == 'word2num':
+                if mediaType == 'NB':
+                        for i in range(len(nbCatLabels)):
+                                if inputValue == nbCatLabels[i]:
+                                        return nbCatAsNumeric[i]
+                elif mediaType == 'HBA':
+                        for i in range(len(hbaCatLabels)):
+                                if inputValue == hbaCatLabels[i]:
+                                        return hbaCatAsNumeric[i]
+                elif mediaType == 'MSA':
+                        for i in range(len(msaCatLabels)):
+                                if inputValue == msaCatLabels[i]:
+                                        return msaCatAsNumeric[i]
+                elif mediaType == 'MCA':
+                        for i in range(len(mcaCatLabels)):
+                                if inputValue == mcaCatLabels[i]:
+                                        return mcaCatAsNumeric[i]
+                else:
+                        print('Something went wrong. Check this out (growth categoriser).')
+                        stophere
+        elif conversionDirection == 'num2word':
+                if mediaType == 'NB':
+                        for i in range(len(nbCatAsNumeric)):
+                                if inputValue == nbCatAsNumeric[i]:
+                                        return nbCatLabels[i]
+                elif mediaType == 'HBA':
+                        for i in range(len(hbaCatAsNumeric)):
+                                if inputValue == hbaCatAsNumeric[i]:
+                                        return hbaCatLabels[i]
+                elif mediaType == 'MSA':
+                        for i in range(len(msaCatAsNumeric)):
+                                if inputValue == msaCatAsNumeric[i]:
+                                        return msaCatLabels[i]
+                elif mediaType == 'MCA':
+                        for i in range(len(mcaCatAsNumeric)):
+                                if inputValue == mcaCatAsNumeric[i]:
+                                        return mcaCatLabels[i]
+                else:
+                        print('Something went wrong. Check this out (growth categoriser).')
+                        stophere
 
 def growth_before_after_extract(dictValue):
         # Figure out which letters are before/after
@@ -446,15 +467,15 @@ def growth_before_after_extract(dictValue):
         for key, value in dictValue['Media'].items():
                 letter = key[0]
                 if letter in beforeKeys:
-                        mediaDict['Before']['NB'].append(growth_categoriser(value[0], 'NB'))
-                        mediaDict['Before']['HBA'].append(growth_categoriser(value[1], 'HBA'))
-                        mediaDict['Before']['MSA'].append(growth_categoriser(value[2], 'MSA'))
-                        mediaDict['Before']['MCA'].append(growth_categoriser(value[3], 'MCA'))
+                        mediaDict['Before']['NB'].append(growth_categoriser(value[0], 'NB', 'word2num'))
+                        mediaDict['Before']['HBA'].append(growth_categoriser(value[1], 'HBA', 'word2num'))
+                        mediaDict['Before']['MSA'].append(growth_categoriser(value[2], 'MSA', 'word2num'))
+                        mediaDict['Before']['MCA'].append(growth_categoriser(value[3], 'MCA', 'word2num'))
                 elif letter in afterKeys:
-                        mediaDict['After']['NB'].append(growth_categoriser(value[0], 'NB'))
-                        mediaDict['After']['HBA'].append(growth_categoriser(value[1], 'HBA'))
-                        mediaDict['After']['MSA'].append(growth_categoriser(value[2], 'MSA'))
-                        mediaDict['After']['MCA'].append(growth_categoriser(value[3], 'MCA'))
+                        mediaDict['After']['NB'].append(growth_categoriser(value[0], 'NB', 'word2num'))
+                        mediaDict['After']['HBA'].append(growth_categoriser(value[1], 'HBA', 'word2num'))
+                        mediaDict['After']['MSA'].append(growth_categoriser(value[2], 'MSA', 'word2num'))
+                        mediaDict['After']['MCA'].append(growth_categoriser(value[3], 'MCA', 'word2num'))
                 else:
                         print('Something went wrong. Check this out.')
                         print(dictValue)
@@ -789,6 +810,7 @@ def micro_count_tabulate(medItemCountBefore, medItemCountAfter):
         return outList
 
 def micro_count_tabulate_transpose(medItemCountBefore, medItemCountAfter, reverse):      # Alternative formating style for this table
+        from decimal import Decimal
         order = ['CLOTHES', 'MOBILE PHONE', 'PEN', 'STETHOSCOPE', 'SCISSORS', 'SAFETY GLASSES', 'GLASSES', 'PEN LIGHT', 'OTHER']
         outList = ['Medical equipment item\tGrowth category\tBefore\tAfter']
         totals = [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
@@ -832,7 +854,8 @@ def micro_count_tabulate_transpose(medItemCountBefore, medItemCountAfter, revers
                 # Calculate proportions
                 totalNum = sum(row)
                 for i in range(len(row)):
-                        proportion = round(round(int(row[i]) / totalNum, 3) * 100, 2)      # Python is REALLY weird here - has to be some sort of a bug...
+                        #proportion = round(round(int(row[i]) / totalNum, 3) * 100, 2)      # Python is REALLY weird here - has to be some sort of a bug...
+                        proportion = round(Decimal(int(row[i]) / totalNum) * 100, 2)            # It seems like using Decimal objects provides more sensible rounding operations
                         outRow[i].append(str(row[i]) + ' (' +  str(proportion) + '%)')
         # Format the totals outrow a bit more
         for i in range(len(outRow)):
@@ -843,6 +866,101 @@ def micro_count_tabulate_transpose(medItemCountBefore, medItemCountAfter, revers
                         outRow[i] = '\t' + outRow[i]
         outList += outRow
         return outList
+
+def tabulate_div_data(beforeDict, afterDict):
+        outList = ['Table 3. Microbial diversity before and after prescribed medical equipment disinfection\nMedical equipment item\tBefore\tAfter\n']
+        keyOrder = ['CLOTHES', 'MOBILE PHONE', 'PEN', 'STETHOSCOPE', 'SCISSORS', 'SAFETY GLASSES', 'PEN LIGHT']
+        for key in keyOrder:
+                outList.append(key)
+                for i in range(len(beforeDict[key])):
+                        outList[-1] += '\t' + str(beforeDict[key][i]) + '\t' + str(afterDict[key][i]) + '\n'
+        return ''.join(outList)
+
+def tabulate_media_data(beforeDict, afterDict):
+        # Set up
+        import copy
+        from decimal import Decimal
+        #nbCatLabels = ['ND', 'N/A', 'NG', 'turbid', 'clear', 'pellet']  # Need to handle plate 9K78A, mould has N/A value
+        #nbDict = {'ND': [0,0], 'N/A': [0,0], 'NG': [0,0], 'turbid': [0,0], 'clear': [0,0], 'pellet': [0,0]}
+        #hbaCatLabels = ['ND', 'NG', 'alpha', 'beta', 'gamma', 'spreader']       # We need these lists here since we need to know what the possible responses are
+        #hbaDict = {'ND': [0,0], 'NG': [0,0], 'alpha': [0,0], 'beta': [0,0], 'gamma': [0,0], 'spreader': [0,0]}
+        #msaCatLabels = ['ND', 'NG', 'NMF', 'MF']
+        #msaDict = {'ND': [0,0], 'NG': [0,0], 'NMF': [0,0], 'MF': [0,0]}
+        #mcaCatLabels = ['ND', 'NG', 'G', 'G-LF']
+        #mcaDict = {'ND': [0,0], 'NG': [0,0], 'G': [0,0], 'G-LF': [0,0]}
+        #growth_categoriser(inputValue, mediaType, conversionDirection)
+        nbCatLabels = ['ND', 'N/A', 'NG', 'turbid', 'clear', 'pellet']  # Need to handle plate 9K78A, mould has N/A value
+        nbDict = {'ND': 0, 'N/A': 0, 'NG': 0, 'turbid': 0, 'clear': 0, 'pellet': 0}
+        hbaCatLabels = ['ND', 'NG', 'alpha', 'beta', 'gamma', 'spreader']       # We need these lists here since we need to know what the possible responses are
+        hbaDict = {'ND': 0, 'NG': 0, 'alpha': 0, 'beta': 0, 'gamma': 0, 'spreader': 0}
+        msaCatLabels = ['ND', 'NG', 'NMF', 'MF']
+        msaDict = {'ND': 0, 'NG': 0, 'NMF': 0, 'MF': 0}
+        mcaCatLabels = ['ND', 'NG', 'G', 'G-LF']
+        mcaDict = {'ND': 0, 'NG': 0, 'G': 0, 'G-LF': 0}
+        
+        beforeDict, afterDict = quizCatMediaBefore, quizCatMediaAfter
+        outList = ['Table 4. Media reactions before and after prescribed medical equipment disinfection\nMedical equipment item\tReaction type\tBefore\tAfter\n']
+        # Loop through before and after dicts and format results into nested dictionaries [I see you... alone... and a lot of nested dictionaries... Jesus that's a lot of nested dictionaries...]
+        mainDict = {'Before': {}, 'After': {}}
+        mainIndex = ['Before', 'After'] # This is so we can use i to refer to a string value
+        for i in range(len([beforeDict, afterDict])):
+                dictObj = [beforeDict, afterDict][i]
+                # Loop through our keys: these refer to agar types
+                for key in dictObj.keys():
+                        value = dictObj[key]
+                        # Add blank value into mainDict for storing agar key:value pairs
+                        mainDict[mainIndex[i]][key] = {}
+                        # Loop through the entries within value: these are our question numbers
+                        for x in range(len(value)):
+                                # Add blank value into mainDict for storing question number key:value pairs
+                                mainDict[mainIndex[i]][key][x] = {}
+                                # Loop through our question responses, converting the number back to a text
+                                for subkey in value[x].keys():
+                                        for y in range(len(value[x][subkey])):
+                                                #print(growth_categoriser(value[x][subkey][y], key, 'num2word'))
+                                                value[x][subkey][y] = growth_categoriser(value[x][subkey][y], key, 'num2word')
+                                        # Get our tally dict object
+                                        if key == 'NB':
+                                                tallyDict = copy.deepcopy(nbDict)
+                                        elif key == 'HBA':
+                                                tallyDict = copy.deepcopy(hbaDict)
+                                        elif key == 'MSA':
+                                                tallyDict = copy.deepcopy(msaDict)
+                                        elif key == 'MCA':
+                                                tallyDict = copy.deepcopy(mcaDict)
+                                        # Handle question responses which no one chose
+                                        if value[x][subkey] == []:
+                                                for growth, count in tallyDict.items():
+                                                        tallyDict[growth] = 'N/A'
+                                                mainDict[mainIndex[i]][key][x][subkey] = tallyDict
+                                                continue
+                                        # Tally question response counts and calculate proportions
+                                        totalTally = 0
+                                        for entry in value[x][subkey]:
+                                                tallyDict[entry] += 1
+                                                totalTally += 1
+                                        for growth, count in tallyDict.items():
+                                                proportion = round(Decimal(count / totalTally) * 100, 2)
+                                                tallyDict[growth] = str(count) + ' (' + str(proportion) + '%)'
+                                        # Add our question responses for this agar type into our mainDict smaller dictionaries we've been preparing
+                                        mainDict[mainIndex[i]][key][x][subkey] = tallyDict
+        # Convert our nested dictionary structure into something that can be presented as a table [Can he do it? Find out below]
+        loopHelper = {'NB': nbCatLabels, 'HBA': hbaCatLabels, 'MSA': msaCatLabels, 'MCA': mcaCatLabels} # This makes it easier to get our looping order
+        outList = []
+        for firstLevel, firstValue in mainDict.items(): # First level is Before/After
+                outList.append(firstLevel)
+                for secondLevel, secondValue in firstValue.items():       # Second level is agar types
+                        outList.append('\t' + secondLevel)
+                        for thirdLevel, thirdValue in secondValue.items():         # Third level is question numbers
+                                outList.append('\t\tQuestion #' + str(thirdLevel + 1) + '\tResponse\tReaction type\tReaction count and proportion')
+                                for fourthLevel, fourthValue in thirdValue.items():  # Fourth level is question responses
+                                        outList.append('\t\t\t' + str(fourthLevel))
+                                        for i in range(len(loopHelper[secondLevel])):
+                                                if i == 0:
+                                                        outList[-1] += '\t' + loopHelper[secondLevel][i] + '\t' +  fourthValue[loopHelper[secondLevel][i]]
+                                                else:
+                                                        outList.append('\t\t\t\t' + loopHelper[secondLevel][i] + '\t' +  fourthValue[loopHelper[secondLevel][i]])
+        return '\n'.join(outList)
 
 def dict_tabulate(inputDict, replaceDict):
         pairList = []
@@ -1082,8 +1200,7 @@ p.add_argument("-o", "--output", dest="outputFileName",
 args = p.parse_args()
 
 ## Hard coded for testing
-args.tableFile = r'E:\elise\RELABEL_LQB301_ProjectData25-06-2018(9673).txt'
-#args.tableFile = r'E:\elise\DELETED_LQB301_ProjectData25-06-2018(9673).txt'
+args.tableFile = r'E:\elise\CURATED_LQB301_ProjectData25-06-2018(9673).txt'
 args.outputFileName = r'E:\elise\test_micro_parse.txt'
 validate_args(args)
 
@@ -1113,13 +1230,20 @@ quizCatDivBefore, quizCatDivAfter = microbe_diversity_quiz_response(chunkDict)
 quizCatMediaBefore, quizCatMediaAfter = media_reaction_quiz_response(chunkDict)
 
 # GENERATE AN OVERVIEW OF THE DATA
+## Colony count
 tabulatedData = tabulate_data(chunkDict)
+## Colony diversity
+tabulatedDivData = tabulate_div_data(quizCatDivBefore[0], quizCatDivAfter[0])
+tabulatedData += '\n' + tabulatedDivData
+## Media results
+tabulatedMediaData = tabulate_media_data(quizCatMediaBefore, quizCatMediaAfter)
+tabulatedData += '\n' + tabulatedMediaData
 write_text_to_file('micro_data_table.txt', tabulatedData)
 
 # PERFORM TESTS
 
 ## Overall question: What information does comparing before and after total counts tell us?
-rerun = True
+rerun = False
 if rerun:
         ### Test 1: growth before / growth after for quiz responses [Q: Do students who provide certain answers have more/less growth before and/or after treatment? A: For medical items, yes.]
         quiz_cats_to_csv(quizCatBefore, 'quizcat_totals_', 'before', 'quiz_response,count_category\n', 'R_scripts', True)
