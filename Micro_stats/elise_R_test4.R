@@ -36,11 +36,12 @@ i = 1
 for (file in quizcat_files){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(species_num)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Species number"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test1[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test1[1:length(quizcat_files)])
-ggsave(file=paste(outdir,"/", 'TEST4_quizcat_div_before.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test1[1:length(quizcat_files)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST4_quizcat_div_before.pdf', sep=""), g, width=15, height=10, units="in")
 
 ### Loop through files and perform statistics
 quizcat_stats_test4 = list()
@@ -104,11 +105,12 @@ i = 1
 for (file in quizcat_files){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(species_num)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Species number"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test1[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test1[1:length(quizcat_files)])
-ggsave(file=paste(outdir,"/", 'TEST4_quizcat_div_after.pdf',sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test1[1:length(quizcat_files)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST4_quizcat_div_after.pdf',sep=""), g, width=15, height=10, units="in")
 
 ### Loop through files and perform statistics
 quizcat_stats_test4 = list()

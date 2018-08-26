@@ -39,11 +39,12 @@ for (file in quizcat_files){
   #quizData$count_category <- factor(quizData$count_category, levels = c(1, 2, 3, 4, 5))
   quizData$count_category <- factor(quizData$count_category, levels = c("1", "2", "3", "4", "5"))
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(count_category)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Size category"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test1[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test1[1:length(quizcat_files)])
-ggsave(file=paste(outdir,"/", 'TEST1_quizcat_totals_before.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test1[1:length(quizcat_files)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST1_quizcat_totals_before.pdf', sep=""), g, width=15, height=10, units="in")
 
 ### Loop through files and perform statistics
 quizcat_stats_test1 = list()
@@ -108,11 +109,12 @@ for (file in quizcat_files){
   #quizData$count_category <- factor(quizData$count_category, levels = c("0", "1-10", "11-100", "100-340", "TNTC"))
   quizData$count_category <- factor(quizData$count_category, levels = c("1", "2", "3", "4", "5"))
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(count_category)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Size category"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test1[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test1[1:length(quizcat_files)])
-ggsave(file=paste(outdir,"/", 'TEST1_quizcat_totals_after.pdf',sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test1[1:length(quizcat_files)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST1_quizcat_totals_after.pdf',sep=""), g, width=15, height=10, units="in")
 
 ### Loop through files and perform statistics
 quizcat_stats_test1 = list()

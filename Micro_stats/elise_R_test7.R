@@ -86,44 +86,48 @@ i = 1
 for (file in quizcat_files_NB){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(reaction_cat)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Number of reaction type"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test7NB[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test7NB[1:length(quizcat_files_NB)])
-ggsave(file=paste(outdir,"/", 'TEST7_quizcat_NB_before.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test7NB[1:length(quizcat_files_NB)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST7_quizcat_NB_before.pdf', sep=""), g, width=15, height=10, units="in")
 
 #### HBA LOOP
 i = 1
 for (file in quizcat_files_HBA){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(reaction_cat)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Number of reaction type"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test7HBA[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test7HBA[1:length(quizcat_files_HBA)])
-ggsave(file=paste(outdir,"/", 'TEST7_quizcat_HBA_before.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test7HBA[1:length(quizcat_files_HBA)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST7_quizcat_HBA_before.pdf', sep=""), g, width=15, height=10, units="in")
 
 #### MSA LOOP
 i = 1
 for (file in quizcat_files_MSA){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(reaction_cat)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Number of reaction type"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test7MSA[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test7MSA[1:length(quizcat_files_MSA)])
-ggsave(file=paste(outdir,"/", 'TEST7_quizcat_MSA_before.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test7MSA[1:length(quizcat_files_MSA)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST7_quizcat_MSA_before.pdf', sep=""), g, width=15, height=10, units="in")
 
 #### MCA LOOP
 i = 1
 for (file in quizcat_files_MCA){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(reaction_cat)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Number of reaction type"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test7MCA[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test7MCA[1:length(quizcat_files_MCA)])
-ggsave(file=paste(outdir,"/", 'TEST7_quizcat_MCA_before.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test7MCA[1:length(quizcat_files_MCA)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST7_quizcat_MCA_before.pdf', sep=""), g, width=15, height=10, units="in")
 
 
 ### Loop through files and perform statistics
@@ -157,7 +161,7 @@ for (stat in quizcat_stats_test7NB) {
           # Significance for quiz question 8! post hoc test time
 quizData = read.csv(quizcat_files_NB[[8]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_8 = 'NA'
 result$b = 'NA'
@@ -200,7 +204,7 @@ for (stat in quizcat_stats_test7HBA) {
 # Significance for quiz question 1! post hoc test time
 quizData = read.csv(quizcat_files_HBA[[1]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_1 = 'NA'
 result$b = 'NA'
@@ -216,7 +220,7 @@ mainDF <- rbind(result, mainDF)
 # Significance for quiz question 3! post hoc test time
 quizData = read.csv(quizcat_files_HBA[[3]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_3 = 'NA'
 result$b = 'NA'
@@ -232,7 +236,7 @@ mainDF <- rbind(result, mainDF)
             # Significance for quiz question 5! post hoc test time
 quizData = read.csv(quizcat_files_HBA[[5]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_5 = 'NA'
 result$b = 'NA'
@@ -248,7 +252,7 @@ mainDF <- rbind(result, mainDF)
           # Significance for quiz question 6! post hoc test time
 quizData = read.csv(quizcat_files_HBA[[6]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_6 = 'NA'
 result$b = 'NA'
@@ -264,7 +268,7 @@ mainDF <- rbind(result, mainDF)
         # Significance for quiz question 8! post hoc test time
 quizData = read.csv(quizcat_files_HBA[[8]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_8 = 'NA'
 result$b = 'NA'
@@ -306,7 +310,7 @@ for (stat in quizcat_stats_test7MSA) {
 # Significance for quiz question 1! post hoc test time
 quizData = read.csv(quizcat_files_MSA[[1]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_1 = 'NA'
 result$b = 'NA'
@@ -322,7 +326,7 @@ mainDF <- rbind(result, mainDF)
 # Significance for quiz question 5! post hoc test time
 quizData = read.csv(quizcat_files_MSA[[5]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_5 = 'NA'
 result$b = 'NA'
@@ -434,44 +438,48 @@ i = 1
 for (file in quizcat_files_NB){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(reaction_cat)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Number of reaction type"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test7NB[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test7NB[1:length(quizcat_files_NB)])
-ggsave(file=paste(outdir,"/", 'TEST7_quizcat_NB_after.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test7NB[1:length(quizcat_files_NB)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST7_quizcat_NB_after.pdf', sep=""), g, width=15, height=10, units="in")
 
 #### HBA LOOP
 i = 1
 for (file in quizcat_files_HBA){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(reaction_cat)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Number of reaction type"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test7HBA[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test7HBA[1:length(quizcat_files_HBA)])
-ggsave(file=paste(outdir,"/", 'TEST7_quizcat_HBA_after.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test7HBA[1:length(quizcat_files_HBA)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST7_quizcat_HBA_after.pdf', sep=""), g, width=15, height=10, units="in")
 
 #### MSA LOOP
 i = 1
 for (file in quizcat_files_MSA){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(reaction_cat)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Number of reaction type"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test7MSA[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test7MSA[1:length(quizcat_files_MSA)])
-ggsave(file=paste(outdir,"/", 'TEST7_quizcat_MSA_after.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test7MSA[1:length(quizcat_files_MSA)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST7_quizcat_MSA_after.pdf', sep=""), g, width=15, height=10, units="in")
 
 #### MCA LOOP
 i = 1
 for (file in quizcat_files_MCA){
   quizData = read.csv(file)
   plot = ggplot(quizData) + geom_bar(aes(x = factor(quiz_response), fill = factor(reaction_cat)), position = "fill") + xlab("Quiz response number") + ylab("Proportion of answers") + ggtitle(paste("Quiz question #", toString(i))) + guides(fill=guide_legend(title="Number of reaction type"))
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
   quizcat_plots_test7MCA[[i]] = plot
   i = i + 1
 }
-g=grid.arrange(grobs = quizcat_plots_test7MCA[1:length(quizcat_files_MCA)])
-ggsave(file=paste(outdir,"/", 'TEST7_quizcat_MCA_after.pdf', sep=""), g, width=25, height=10, units="in")
+g=grid.arrange(grobs = quizcat_plots_test7MCA[1:length(quizcat_files_MCA)], ncol = 2)
+ggsave(file=paste(outdir,"/", 'TEST7_quizcat_MCA_after.pdf', sep=""), g, width=15, height=10, units="in")
 
 
 ### Loop through files and perform statistics
@@ -505,7 +513,7 @@ for (stat in quizcat_stats_test7NB) {
 # Significance for quiz question 4! post hoc test time
 quizData = read.csv(quizcat_files_NB[[4]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_4 = 'NA'
 result$b = 'NA'
@@ -547,7 +555,7 @@ for (stat in quizcat_stats_test7HBA) {
 # Significance for quiz question 6! post hoc test time
 quizData = read.csv(quizcat_files_HBA[[6]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_6 = 'NA'
 result$b = 'NA'
@@ -615,7 +623,7 @@ for (stat in quizcat_stats_test7MCA) {
 # Significance for quiz question 4! post hoc test time
 quizData = read.csv(quizcat_files_MCA[[4]])
 tbl = table(quizData$quiz_response, quizData$reaction_cat)
-q1PH = pairwiseNominalIndependence(tbl,fisher = FALSE,gtest = FALSE,chisq = TRUE,digits = 3)
+q1PH = pairwiseNominalIndependence(tbl,fisher = TRUE,gtest = FALSE,chisq = FALSE,digits = 3)
 result = as.data.frame(q1PH)
 result$quiz_q_4 = 'NA'
 result$b = 'NA'
