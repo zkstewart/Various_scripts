@@ -139,7 +139,7 @@ def fasta_rename(fastaFile, seqidprefix, prefix):
                 ongoingCount += 1
         return outList, outFasta, fastaFile, changed
 
-def fasta_stripstringfseqid(fastaFile, removeString, prefix):
+def fasta_removestringfseqid(fastaFile, removeString, prefix):
         # Set up
         from Bio import SeqIO
         outFasta = []
@@ -158,6 +158,32 @@ def fasta_stripstringfseqid(fastaFile, removeString, prefix):
                 # Main function action
                 seqid = record.description
                 seqid = seqid.replace(removeString, '')
+                # Output
+                if seqType == 'fasta':
+                        outFasta.append('>' + seqid + '\n' + seq)                  #fa
+                else:
+                        outFasta.append('@' + seqid + '\n' + seq + '\n+\n' + qual) #fq
+        return outFasta, fastaFile, changed
+
+def fasta_splitseqidatstring(fastaFile, splitString, prefix):
+        # Set up
+        from Bio import SeqIO
+        outFasta = []
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        for record in records:
+                # Extract relevant details regardless of fasta or fastq
+                if seqType == 'fasta':
+                        seq = str(record.seq)
+                        qual = ''
+                else:
+                        seq, qual = fastq_format_extract(record)
+                # Main function action
+                seqid = record.description
+                seqid = seqid.split(splitString)[0]
                 # Output
                 if seqType == 'fasta':
                         outFasta.append('>' + seqid + '\n' + seq)                  #fa
@@ -524,10 +550,15 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 which contains the specified string (case sensitive) will be present
                 in the output fasta file.
                 '''
-                stripstringfseqid = '''
-                The _stripstringfseqid_ function accepts a string input. This function will
+                removestringfseqid = '''
+                The _removestringfseqid_ function accepts a string input. This function will
                 remove the specified string (case sensitive) from any sequence IDs
                 and produce a new output fasta file.
+                '''
+                splitseqidatstring = '''
+                The _splitseqidatstring_ function accepts a string input. This function will
+                edit sequence IDs to remove any text that comes after the specified string
+                (case sensitive) and produce a new output fasta file.
                 '''
                 trim = '''
                 The _trim_ function accepts a string input in format s{digit}e{digit}. This
@@ -595,7 +626,7 @@ and 5) enact the function below.
 '''
 
 # Function list - update as new ones are added
-stringFunctions = ['rename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'stripstringfseqid', 'trim']
+stringFunctions = ['rename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring', 'trim']
 numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk']
 basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single']
 functionList = stringFunctions + numberFunctions + basicFunctions
@@ -634,8 +665,10 @@ outFasta = []
 ## String functions - FAST(A/Q) compatible - startTime is used for temporary file generation if the FASTQ file is faulty
 if args.function == 'rename':
         outList, outFasta, args.fastaFileName, changed = fasta_rename(args.fastaFileName, args.string, startTime)
-if args.function == 'stripstringfseqid':
-        outFasta, args.fastaFileName, changed  = fasta_stripstringfseqid(args.fastaFileName, args.string, startTime)
+if args.function == 'removestringfseqid':
+        outFasta, args.fastaFileName, changed  = fasta_removestringfseqid(args.fastaFileName, args.string, startTime)
+if args.function == 'splitseqidatstring':
+        outFasta, args.fastaFileName, changed  = fasta_splitseqidatstring(args.fastaFileName, args.string, startTime)
 if args.function == 'retrieveseqwstring':
         outFasta, args.fastaFileName, changed = fasta_retrieveseqwstring(args.fastaFileName, args.string, startTime)
 if args.function == 'retrieveseqidwstring':
