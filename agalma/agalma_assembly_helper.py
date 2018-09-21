@@ -6,7 +6,7 @@ import os, argparse
 def validate_args(args):
         # Validate input file location
         if not os.path.isfile(args.inputTable):
-                print('I am unable to locate the tab-delimited annotation table file (' + args.inputTable + ')')
+                print('I am unable to locate the tab-delimited table file (' + args.inputTable + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
         # Validate program argument
@@ -62,7 +62,7 @@ def agalma_info_table_parse(agalmaDir, fileName, threads, mem, startSp):
         return outCmds
 
 #### USER INPUT SECTION
-usage = """%(prog)s will help with running AGALMA transcriptome commands
+usage = """%(prog)s will help with running AGALMA transcriptome assembly commands.
 """
 
 p = argparse.ArgumentParser(description=usage)

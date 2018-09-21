@@ -6,7 +6,7 @@ import os, argparse
 def validate_args(args):
         # Validate input file location
         if not os.path.isfile(args.inputTable):
-                print('I am unable to locate the tab-delimited annotation table file (' + args.inputTable + ')')
+                print('I am unable to locate the tab-delimited table file (' + args.inputTable + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
 
@@ -66,7 +66,8 @@ def file_cat_cmds_by_dict(inputDict):
 
 #### USER INPUT SECTION
 usage = """%(prog)s will help with formatting AGALMA catalog inserts in a way that is consistent
-and able to be repeated easily
+and able to be repeated easily. Specifically, this code will facilitate the concatenation
+of multiple separate paired-end read sets into a single paired-end set (which is what AGALMA requires).
 """
 
 p = argparse.ArgumentParser(description=usage)
