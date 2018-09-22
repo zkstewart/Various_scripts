@@ -118,10 +118,11 @@ def trimmomatic_reads_table_to_cmds(fileName, javaDir, trimmomaticJar, SECmd, PE
                         # Make sure our reads files can be located
                         for readsFile in readsList:
                                 if not os.path.isfile(readsFile):
-                                        print(line)
-                                        print(sl)
                                         print('trimmomatic_reads_table_to_cmds: I am unable to locate the reads file "' + readsFile + '".')
-                                        print('This was formatted by concatenating column 1 and 2 of a line in your input file. Make sure these values are correct and try again.')
+                                        print('This was formatted by concatenating column 1 and 2 of a line in your input file (shown below). Make sure these values are correct and try again.')
+                                        print('##')
+                                        print(line)
+                                        print('##')
                                         quit()
                         # Format our output prefix and cmd, then store it
                         if readType == 'SE':

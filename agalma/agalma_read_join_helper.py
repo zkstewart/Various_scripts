@@ -15,7 +15,7 @@ def program_execution(cmd):
         run_cmd = subprocess.Popen(cmd, stdout = subprocess.PIPE, stderr = subprocess.PIPE, shell = True)
         cmdout, cmderr = run_cmd.communicate()
         if cmderr.decode("utf-8") != '' and not cmderr.decode("utf-8").startswith('Usage'):     # Need this extra check for seg since it puts its usage information into stderr rather than stdout
-                print('Failed to execute program "' + cmd + '". Is this executable in the location specified/discoverable in your PATH, or does the executable even exist? I won\'t be able to run properly if I can\'t execute this program.')
+                print('Failed to execute "' + cmd + '".')
                 print('---')
                 print('stderr is below for debugging purposes.')
                 print(cmderr.decode("utf-8"))
@@ -31,6 +31,9 @@ def agalma_info_table_parse_sp_read_dict(fileName):
                         if line.startswith('#'):
                                 continue
                         sl = line.rstrip('\r\n').split('\t')
+                        # Check to see if we should be skipping this value
+                        if sl[6].lower() == 'y':
+                                continue
                         # Extract information
                         readsList = sl[1].split(' ')
                         for i in range(len(readsList)):

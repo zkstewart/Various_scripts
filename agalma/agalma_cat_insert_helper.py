@@ -54,6 +54,9 @@ def agalma_info_table_parse(agalmaDir, fileName, threads, mem):
                         if line.startswith('#'):
                                 continue
                         sl = line.rstrip('\r\n').split('\t')
+                        # Check to see if we should be skipping this value
+                        if sl[7].lower() == 'y':
+                                continue
                         # Extract information
                         species = sl[3]
                         catID = species.replace(' ', '_')
@@ -82,7 +85,8 @@ def agalma_info_table_parse(agalmaDir, fileName, threads, mem):
 
 #### USER INPUT SECTION
 usage = """%(prog)s will help with formatting AGALMA catalog inserts in a way that is consistent
-and able to be repeated easily.
+and able to be repeated easily. Note that this script assumes the working directory
+is the same location as the reads files produced by agalma_read_join_helper.py.
 """
 
 p = argparse.ArgumentParser(description=usage)
