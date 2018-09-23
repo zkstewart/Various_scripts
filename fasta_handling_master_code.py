@@ -638,9 +638,8 @@ changed = False         # Default this as false; if we do create a temporary fil
 ##### USER INPUT SECTION
 usage = """%(prog)s handles fasta files, producing output according to the
 selected function. For most functions, an input and output are all that is
-required. A string or number is required for other functions. String input
-is required for 'rename'. Number input is required for 'multi2single',
-'single2multi'.
+required; some require a string and/or number input as well. Call program
+with -H tag for a detailed description of each function.
 """
 p = argparse.ArgumentParser(description=usage)
 p.add_argument("-i", "-input", dest="fastaFileName",
