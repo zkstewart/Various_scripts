@@ -683,49 +683,43 @@ outFasta = []
 if args.function == 'rename':
         fasta_rename(args.fastaFileName, args.string, startTime, args.outputFileName, listOutName)
 if args.function == 'removestringfseqid':
-        outFasta, args.fastaFileName, changed  = fasta_removestringfseqid(args.fastaFileName, args.string, startTime, args.outputFileName)
+        fasta_removestringfseqid(args.fastaFileName, args.string, startTime, args.outputFileName)
 if args.function == 'splitseqidatstring':
-        outFasta, args.fastaFileName, changed  = fasta_splitseqidatstring(args.fastaFileName, args.string, startTime, args.outputFileName)
+        fasta_splitseqidatstring(args.fastaFileName, args.string, startTime, args.outputFileName)
 if args.function == 'retrieveseqwstring':
-        outFasta, args.fastaFileName, changed = fasta_retrieveseqwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
+        fasta_retrieveseqwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
 if args.function == 'retrieveseqidwstring':
-        outFasta, args.fastaFileName, changed = fasta_retrieveseqidwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
+        fasta_retrieveseqidwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
 if args.function == 'removeseqwstring':
-        outFasta, args.fastaFileName, changed = fasta_removeseqwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
+        fasta_removeseqwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
 if args.function == 'removeseqidwstring':
-        outFasta, args.fastaFileName, changed = fasta_removeseqidwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
+        fasta_removeseqidwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
 if args.function == 'trim':
-        outFasta, args.fastaFileName, changed = fasta_trim(args.fastaFileName, args.string, startTime, args.outputFileName)
+        fasta_trim(args.fastaFileName, args.string, startTime, args.outputFileName)
 ## Number functions
 if args.function == 'single2multi':
-        outFasta = fasta_single2multi(args.fastaFileName, args.number)
+        fasta_single2multi(args.fastaFileName, args.number)
 if args.function == 'cullbelow':
-        outFasta = fasta_cullbelow(args.fastaFileName, args.number)
+        fasta_cullbelow(args.fastaFileName, args.number)
 if args.function == 'cullabove':
-        outFasta = fasta_cullabove(args.fastaFileName, args.number)
+        fasta_cullabove(args.fastaFileName, args.number)
 ## Number functions - FAST(A/Q) compatible
 if args.function == 'chunk':
-        outFasta, args.fastaFileName, changed = fasta_chunk(args.fastaFileName, args.number, startTime)
+        fasta_chunk(args.fastaFileName, args.number, startTime)
 ## Basic functions
 if args.function == 'ids':
-        outList = fasta_ids(args.fastaFileName)
+        fasta_ids(args.fastaFileName)
 if args.function == 'descriptions':
-        outList = fasta_descriptions(args.fastaFileName)
+        fasta_descriptions(args.fastaFileName)
 if args.function == 'lengths':
-        outList = fasta_lengths(args.fastaFileName)
+        fasta_lengths(args.fastaFileName)
 if args.function == 'count':
-        outList = fasta_count(args.fastaFileName)
+        fasta_count(args.fastaFileName)
 if args.function == 'multi2single':
-        outFasta = fasta_multi2single(args.fastaFileName)
+        fasta_multi2single(args.fastaFileName)
 
 # Let the user know about null results
 if (outList == [] or outList == None) and (outFasta == [] or outFasta == None):
         print('Looks like there is no output from this function. No output files will be generated.')
-
-# Remove tmp files if relevant
-if changed == True:
-        print('Note that the output file is a bit different than the original.')
-        print('In this case, the input fastq file had its description lines replaced with just the \'+\' character.') # For the time being, this print statement is correct, so we don't need specific reference to function name
-        os.remove(args.fastaFileName)
 
 print('Program completed successfully!')
