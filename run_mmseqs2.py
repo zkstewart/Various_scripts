@@ -256,7 +256,7 @@ if args.resume:
                 if index == False:
                         print('Indexing query DB...')
                         log_update(logName, 'Indexing query DB...')
-                        indexmms2(args.mmseqs2dir, args.query, args.target, tmpdir, args.threads, 'query')
+                        indexmms2(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, args.threads, 'query')
                 else:
                         print('Skipping query DB indexing...')
                         log_update(logName, 'Skipping query DB indexing...')
@@ -266,7 +266,7 @@ if args.resume:
                         if index == False:
                                 print('Indexing target DB...')
                                 log_update(logName, 'Indexing target DB...')
-                                indexmms2(args.mmseqs2dir, args.query, args.target, tmpdir, args.threads, 'target')
+                                indexmms2(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, args.threads, 'target')
                         else:
                                 print('Skipping target DB indexing...')
                                 log_update(logName, 'Skipping target DB indexing...')
@@ -305,7 +305,7 @@ else:
         if not args.skip_index:
                 print('Indexing query and target DB...')
                 log_update(logName, 'Indexing query and target DB...')
-                indexmms2(args.mmseqs2dir, args.query, args.target, tmpdir, args.threads, 'both')
+                indexmms2(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, args.threads, 'both')
         else:
                 print('Indexing step is being skipped due to argument flag...')
                 log_update(logName, 'Indexing step is being skipped due to argument flag...')
