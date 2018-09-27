@@ -718,8 +718,4 @@ if args.function == 'count':
 if args.function == 'multi2single':
         fasta_multi2single(args.fastaFileName)
 
-# Let the user know about null results
-if (outList == [] or outList == None) and (outFasta == [] or outFasta == None):
-        print('Looks like there is no output from this function. No output files will be generated.')
-
 print('Program completed successfully!')
