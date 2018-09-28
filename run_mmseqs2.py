@@ -252,7 +252,7 @@ if args.resume:
                 log_update(logName, 'Skipping target DB generation...')
         # Index query and/or target db
         if not args.skip_index:
-                index = index_exists(os.path.basename(args.query) + '_queryDB.sk', args.querydir)
+                index = index_exists(os.path.basename(args.query) + '_queryDB', args.querydir)
                 if index == False:
                         print('Indexing query DB...')
                         log_update(logName, 'Indexing query DB...')
@@ -262,7 +262,7 @@ if args.resume:
                         log_update(logName, 'Skipping query DB indexing...')
                 # Index target db
                 if args.query != args.target:
-                        index = index_exists(os.path.basename(args.target) + '_targetDB.sk', args.targetdir)
+                        index = index_exists(os.path.basename(args.target) + '_targetDB', args.targetdir)
                         if index == False:
                                 print('Indexing target DB...')
                                 log_update(logName, 'Indexing target DB...')
