@@ -9,48 +9,7 @@
 import os, argparse, time
 
 # Define functions
-def fasta_ids(fastaFile, outputFileName):
-        # Set up
-        from Bio import SeqIO
-        # Load fasta file
-        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
-        # Perform function
-        with open(outputFileName, 'w') as listOut:
-                for record in records:
-                        listOut.write(record.id + '\n')
-
-def fasta_descriptions(fastaFile, outputFileName):
-        # Set up
-        from Bio import SeqIO
-        # Load fasta file
-        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
-        # Perform function
-        with open(outputFileName, 'w') as listOut:
-                for record in records:
-                        listOut.write(record.description + '\n')
-
-def fasta_lengths(fastaFile, outputFileName):
-        # Set up
-        from Bio import SeqIO
-        # Load fasta file
-        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
-        # Perform function
-        with open(outputFileName, 'w') as listOut:
-                for record in records:
-                        listOut.write(str(len(record)) + '\n')
-
-def fasta_count(fastaFile, outputFileName):
-        # Set up
-        from Bio import SeqIO
-        # Load fasta file
-        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
-        # Perform function
-        ongoingCount = 0
-        for record in records:
-                ongoingCount += 1
-        with open(outputFileName, 'w') as listOut:
-                listOut.write(str(ongoingCount))
-
+## Fasta ONLY functions
 def fasta_multi2single(fastaFile, outputFileName):
         # Set up
         from Bio import SeqIO
@@ -73,35 +32,129 @@ def fasta_single2multi(fastaFile, multilineLength, outputFileName):
                         sequence = '\n'.join([sequence[i:i+multilineLength] for i in range(0, len(sequence), multilineLength)])
                         fastaOut.write('>' + record.description + '\n' + sequence + '\n')
 
-def fasta_cullbelow(fastaFile, length, outputFileName):
-        # Set up
-        from Bio import SeqIO
-        # Load fasta file
-        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
-        # Perform function
-        with open(outputFileName, 'w') as fastaOut:
-                for record in records:
-                        sequence = str(record.seq)
-                        if len(sequence) < int(length):
-                                continue
-                        # Output
-                        fastaOut.write('>' + record.description + '\n' + sequence + '\n')
-
-def fasta_cullabove(fastaFile, length, outputFileName):
-        # Set up
-        from Bio import SeqIO
-        # Load fasta file
-        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
-        # Perform function
-        with open(outputFileName, 'w') as fastaOut:
-                for record in records:
-                        sequence = str(record.seq)
-                        if len(sequence) > int(length):
-                                continue
-                        # Output
-                        fastaOut.write('>' + record.description + '\n' + sequence + '\n')
-
 ## Fasta and fastq compatible functions
+def fasta_ids(fastaFile, prefix, outputFileName):
+        # Set up
+        import os
+        from Bio import SeqIO
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        with open(outputFileName, 'w') as listOut:
+                for record in records:
+                        listOut.write(record.id + '\n')
+        # Clean temp file if relevant
+        if changed == True:
+                os.remove(fastaFile)
+
+def fasta_descriptions(fastaFile, prefix, outputFileName):
+        # Set up
+        import os
+        from Bio import SeqIO
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        with open(outputFileName, 'w') as listOut:
+                for record in records:
+                        listOut.write(record.description + '\n')
+        # Clean temp file if relevant
+        if changed == True:
+                os.remove(fastaFile)
+
+def fasta_lengths(fastaFile, prefix, outputFileName):
+        # Set up
+        import os
+        from Bio import SeqIO
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        with open(outputFileName, 'w') as listOut:
+                for record in records:
+                        listOut.write(str(len(record)) + '\n')
+        # Clean temp file if relevant
+        if changed == True:
+                os.remove(fastaFile)
+
+def fasta_count(fastaFile, prefix, outputFileName):
+        # Set up
+        import os
+        from Bio import SeqIO
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        ongoingCount = 0
+        for record in records:
+                ongoingCount += 1
+        with open(outputFileName, 'w') as listOut:
+                listOut.write(str(ongoingCount))
+        # Clean temp file if relevant
+        if changed == True:
+                os.remove(fastaFile)
+
+def fasta_cullbelow(fastaFile, length, prefix, outputFileName):
+        # Set up
+        import os
+        from Bio import SeqIO
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        with open(outputFileName, 'w') as fastaOut:
+                for record in records:
+                        # Extract relevant details regardless of fasta or fastq
+                        if seqType == 'fasta':
+                                seq = str(record.seq)
+                                qual = ''
+                        else:
+                                seq, qual = fastq_format_extract(record)
+                        if len(seq) < int(length):
+                                continue
+                        # Output
+                        if seqType == 'fasta':
+                                fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
+                        else:
+                                fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
+        # Clean temp file if relevant
+        if changed == True:
+                os.remove(fastaFile)
+
+def fasta_cullabove(fastaFile, length, prefix, outputFileName):
+        # Set up
+        import os
+        from Bio import SeqIO
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        with open(outputFileName, 'w') as fastaOut:
+                for record in records:
+                        # Extract relevant details regardless of fasta or fastq
+                        if seqType == 'fasta':
+                                seq = str(record.seq)
+                                qual = ''
+                        else:
+                                seq, qual = fastq_format_extract(record)
+                        if len(seq) > int(length):
+                                continue
+                        # Output
+                        if seqType == 'fasta':
+                                fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
+                        else:
+                                fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
+        # Clean temp file if relevant
+        if changed == True:
+                os.remove(fastaFile)
+
 def fasta_rename(fastaFile, stringInput, prefix, outputFileName, listFileName):
         # Set up
         import os
@@ -654,7 +707,7 @@ startTime = time.time()
 changed = False         # Default this as false; if we do create a temporary file this will become True
 
 ##### USER INPUT SECTION
-usage = """%(prog)s handles fasta files, producing output according to the
+usage = """%(prog)s handles FASTA/Q files, producing output according to the
 selected function. For most functions, an input and output are all that is
 required; some require a string and/or number input as well. Call program
 with -H tag for a detailed description of each function.
@@ -677,9 +730,8 @@ args = p.parse_args()
 listOutName, args.outputFileName = validate_args(args, stringFunctions, numberFunctions, functionList)
 
 # Enact functions
-outList = []    # Blank lists so we can determine what needs to be output
-outFasta = []
-## String functions - FAST(A/Q) compatible - startTime is used for temporary file generation if the FASTQ file is faulty
+'''Note: startTime is used for temporary file generation if the FASTQ file is faulty'''
+## String functions
 if args.function == 'rename':
         fasta_rename(args.fastaFileName, args.string, startTime, args.outputFileName, listOutName)
 if args.function == 'removestringfseqid':
@@ -698,24 +750,24 @@ if args.function == 'trim':
         fasta_trim(args.fastaFileName, args.string, startTime, args.outputFileName)
 ## Number functions
 if args.function == 'single2multi':
-        fasta_single2multi(args.fastaFileName, args.number)
+        fasta_single2multi(args.fastaFileName, args.number, args.outputFileName)
 if args.function == 'cullbelow':
-        fasta_cullbelow(args.fastaFileName, args.number)
+        fasta_cullbelow(args.fastaFileName, startTime, args.number, args.outputFileName)
 if args.function == 'cullabove':
-        fasta_cullabove(args.fastaFileName, args.number)
+        fasta_cullabove(args.fastaFileName, startTime, args.number, args.outputFileName)
 ## Number functions - FAST(A/Q) compatible
 if args.function == 'chunk':
-        fasta_chunk(args.fastaFileName, args.number, startTime)
+        fasta_chunk(args.fastaFileName, args.number, startTime, args.outputFileName)
 ## Basic functions
 if args.function == 'ids':
-        fasta_ids(args.fastaFileName)
+        fasta_ids(args.fastaFileName, startTime, args.outputFileName)
 if args.function == 'descriptions':
-        fasta_descriptions(args.fastaFileName)
+        fasta_descriptions(args.fastaFileName, startTime, args.outputFileName)
 if args.function == 'lengths':
-        fasta_lengths(args.fastaFileName)
+        fasta_lengths(args.fastaFileName, startTime, args.outputFileName)
 if args.function == 'count':
-        fasta_count(args.fastaFileName)
+        fasta_count(args.fastaFileName, startTime, args.outputFileName)
 if args.function == 'multi2single':
-        fasta_multi2single(args.fastaFileName)
+        fasta_multi2single(args.fastaFileName, startTime, args.outputFileName)
 
 print('Program completed successfully!')
