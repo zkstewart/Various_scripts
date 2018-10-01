@@ -1,6 +1,7 @@
 #! python3
 # fastaContigGrabber
-# Multifunctional fasta contig grabber program
+# Multifunctional fasta contig grabber program; the name is not entirely accurate
+# since it not only grabs but also removes, but this name is catchy
 
 import pyperclip, os, argparse
 from pyfaidx import Fasta
@@ -9,13 +10,8 @@ from pyfaidx import Fasta
 ## Argument validation
 def validate_args(args):
         # Check if this is running as a command-line program or in CMD window
-        allNone = True
-        for key, value in vars(args).items():
-                if value == None:
-                        continue
-                else:
-                        allNone = False
-        if allNone == True:
+        if args.fastaFileName == None and args.outputFileName == None:
+                print('No input or output file names were provided; we will run as an iterative sequence retrieval program\n')
                 return 'CMD'
         # Validate input FASTA locations
         if args.fastaFileName == None:
@@ -42,9 +38,9 @@ def validate_args(args):
                 print('You must specify an output file name with -o field; we otherwise have no file to write to.')
                 print('Fix your inputs and try again.')
                 quit()
-        #if os.path.isfile(args.outputFileName):
-        #        print(args.outputFileName + ' already exists. Specify a different output file name or delete, move, or rename this file and run the program again.')
-        #        quit()
+        if os.path.isfile(args.outputFileName):
+                print(args.outputFileName + ' already exists. Specify a different output file name or delete, move, or rename this file and run the program again.')
+                quit()
         return 'command-line'
 
 def fasta_or_fastq(fastaFile):
@@ -91,20 +87,23 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList
                                                 if len(matchMatches) == 1:
                                                         cleanMatches.append(match)
                                                 elif len(matchMatches) > 1:
-                                                        print('fasta_retrieve_remove_tofile: sequence ID within the ID list provided via text file or string input "' + match + '" partially matches more than one sequence ID in your FASTA file.')
-                                                        print('This means that some of your ID list entries don\'t exactly match any sequence IDs in your FASTA file and aren\'t able to uniquely partially match sequence IDs in your FASTA file.') 
-                                                        print('Debug info: Sequence ID = "' + record.long_name + '", partial match list = "' + str(cleanMatches) + '"... Program will exit now.')
+                                                        print('fasta_retrieve_remove_tofile: sequence ID within the ID list (text file and/or string input) partially matches more than one sequence ID in your FASTA file with no exact matches.')
+                                                        if len(matchMatches) < 10:
+                                                                print('Debug info: ID file entry = "' + match + '", partial match list = "' + str(matchMatches) + '"; Program will exit now.')
+                                                        else:
+                                                                print('Debug info: ID file entry = "' + match + '", partial match list = "' + str(matchMatches[0:10]) + '... [more results hidden]"; Program will exit now.')
                                                         quit()
                                 if cleanMatches != []:
                                         if len(cleanMatches) == 1:
-                                                #seqid = cleanMatches[0]
                                                 seqid = record.name                     # This is probably the best way to handle partial matches through effort; it's likely to be a shortened version of the seqid if truncated, so we won't use the long_name
                                                 foundList.append(cleanMatches[0])       # We want the match ID here since that'll let us check if we found all IDs in our list later
                                                 effortPairs[cleanMatches[0]] = seqid
                                         if len(cleanMatches) > 1:
-                                                print('fasta_retrieve_remove_tofile: sequence ID within the provided FASTA file "' + record.long_name + '" has multiple partial matches within the ID list provided via text file or string input.')
-                                                print('This means that some of your ID list entries don\'t exactly match any sequence IDs in your FASTA file and aren\'t able to uniquely partially match sequence IDs in your FASTA file.')
-                                                print('Debug info: Sequence ID = "' + record.long_name + '", partial match list = "' + str(cleanMatches) + '"... Program will exit now.')
+                                                print('fasta_retrieve_remove_tofile: sequence IDs within the ID list (text file and/or string input) match multiple times against the same sequence ID in your FASTA file with no exact matches.')
+                                                if len(cleanMatches) < 10:
+                                                        print('Debug info: Sequence ID = "' + record.long_name + '", partial match list = "' + str(cleanMatches) + '"; Program will exit now.')
+                                                else:
+                                                        print('Debug info: Sequence ID = "' + record.long_name + '", partial match list = "' + str(cleanMatches[0:10]) + '... [more results hidden]"; Program will exit now.')
                                                 quit()
                         # If we found the seqid, handle output according to behaviour
                         if seqid == None:                       # If seqid == None, we did not find it in our list
@@ -136,7 +135,7 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList
         if effortPairs != {}:
                 print('Effort was used to find some sequences; below are listed pairings of the value in your ID list and the match found in your FASTA when effort was required')
                 for key, value in effortPairs.items():
-                        print(key + ':' + value)
+                        print(key + ' : ' + value)
 
 ## Pyfaidx-related functions
 def pyfaidx_long_indexing(pyfaidxRecords):
@@ -157,12 +156,12 @@ def text_file_to_list(textFile):
 
 #### USER INPUT SECTION
 usage = """%(prog)s reads in FASTA files and allows various operations to extract
-sequences. These include running this program via double-click to open a CMD window
-which will allow for ongoing retrieval of sequences, or as a command-line program
-where sequence IDs are specified as arguments or a text file can be used as input,
-returning an output FASTA file where we 1) retrieved those sequences, or 2) excluded
-those sequences. At least one sequence ID input argument (i.e., -t OR -s) must be used;
-providing both will combine these into a single list.
+sequences. These include running this program via double-click or with no arguments to operate
+within the CMD window allowing for ongoing retrieval of sequences, or as a command-line program
+where sequence IDs are specified as arguments (-s) or as a text file listing these values (-t),
+returning an output FASTA file where we 1) retrieved those sequences or 2) excluded
+those sequences (dictated by -behaviour). At least one sequence ID input argument (i.e., -t
+and/or -s) must be used; providing both will combine these into a single list.
 """
 
 # Reqs
@@ -195,6 +194,9 @@ if operationType == 'CMD':
                         print('FASTA file located successfully')
                         print('')
                         break
+                except KeyboardInterrupt:
+                        print('KeyboardInterrupt received; program will exit now.')
+                        quit()
                 except:
                         print('Failed to locate the FASTA file. If you misspelt the name, try again. If the name is correct but still won\'t work, make sure the file is in the same directory as this program OR provide its full path')
                         continue
@@ -210,9 +212,15 @@ if args.textFileName != None:
 if args.idString == None or args.idString == '' or args.idString == []:
         args.idString = set()
 idList = list(set(textIds).union(set(args.idString)))
+# Strip > characters if they exist in our idList
+for i in range(len(idList)):
+        if idList[i].startswith('>'):
+                idList[i] = idList[i].lstrip('>')       # Hopefully no one uses sequence IDs like ">>>>>>>>>1_contig"; these shouldn't be legal FASTA format IDs anyway AFAIK
+# Remove blank entries if they exist in our idList
+while '' in idList:
+        del idList[idList.index('')]
 
 # Extract sequences if handling command-line argument
-operationType = 'CMD'
 if operationType == 'command-line':
         if args.effort == True:
                 fasta_retrieve_remove_tofile(records, longIndex, args.outputFileName, idList, args.behaviour, args.effort)
@@ -247,6 +255,10 @@ elif operationType == 'CMD':
                 else:
                         idList = buttonPress    # This program expects inputs to be present in the clipboard, but if the user typed something in then we'll assume this takes priority
                 idList = idList.replace('\r', '').rstrip('\n').split('\n')
+                # Strip > characters if they exist in our idList
+                for i in range(len(idList)):
+                        if idList[i].startswith('>'):
+                                idList[i] = idList[i].lstrip('>')
                 # Retrieve sequences to list
                 clipboardList = []
                 for entry in idList:
