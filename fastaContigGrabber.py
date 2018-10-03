@@ -68,7 +68,7 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList
         # Main function
         foundList = []          # foundList will let us keep track of which entries we encountered; if we found none or just a handful of these, we'll report that later
         with open(outputFileName, 'w') as fileOut:
-                for record in records:
+                for record in fastaRecords:
                         # Find if sequence ID is in our idList
                         seqid = None
                         if record.name in idList:
@@ -82,8 +82,8 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList
                                 idMatches = [seqid for seqid in idList if record.long_name.startswith(seqid)]                   # This will return all entries in the idList that partially match the current record's long name
                                 cleanMatches = []
                                 for match in idMatches:                                                                         # Here we begin to look through our partial idList matches
-                                        if not match in records and not match in longIndex:                                     # Firstly, we make sure this ID doesn't already have a perfect match; if it does, it belongs to that entry and we ignore it
-                                                matchMatches = [seqid for seqid in records.keys() if seqid.startswith(match)]   # Next we check to see if this ID matches more than one sequence in the FASTA; if it does, our program can't work
+                                        if not match in fastaRecords and not match in longIndex:                                     # Firstly, we make sure this ID doesn't already have a perfect match; if it does, it belongs to that entry and we ignore it
+                                                matchMatches = [seqid for seqid in fastaRecords.keys() if seqid.startswith(match)]   # Next we check to see if this ID matches more than one sequence in the FASTA; if it does, our program can't work
                                                 if len(matchMatches) == 1:
                                                         cleanMatches.append(match)
                                                 elif len(matchMatches) > 1:
@@ -170,7 +170,7 @@ p.add_argument("-i", "-input", dest="fastaFileName",
                help="Input fasta file name")
 p.add_argument("-t", "-textFile", dest="textFileName",
                help="Optionally specify the name of a text file listing sequence IDs")
-p.add_argument("-s", "-idString", dest="idString", nargs = "+",
+p.add_argument("-s", "-string", dest="idString", nargs = "+",
                help="Optionally input sequence IDs as text here; entries will be separated at space characters")
 p.add_argument("-e", "-effort", dest="effort", action = "store_true", default = False,
                help="Optionally put in extra effort to find ID matches; only do this if your input sequence IDs have been truncated and don't match the full sequence ID (including descriptions) in the FASTA exactly.")
@@ -222,8 +222,8 @@ while '' in idList:
 
 # Extract sequences if handling command-line argument
 if operationType == 'command-line':
-        if args.effort == True:
-                fasta_retrieve_remove_tofile(records, longIndex, args.outputFileName, idList, args.behaviour, args.effort)
+        fasta_retrieve_remove_tofile(records, longIndex, args.outputFileName, idList, args.behaviour, args.effort)
+                
 # Open CMD window and allow for ongoing sequence retrieval otherwise
 elif operationType == 'CMD':
         rcMode = False
