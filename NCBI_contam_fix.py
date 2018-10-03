@@ -194,7 +194,7 @@ with open(args.outputFileName, 'w') as fileOut:
                         print('Trimmed ' + record.description)
                 # Handle sequences that, after trimming, cannot have bits >= 200bp in length
                 elif recordSeqs == None:
-                        print('Excluded ' + record.description + ' after trimming reduced length >200bp)
+                        print('Excluded ' + record.description + ' after trimming reduced length >200bp')
                         continue
                 # Output untouched sequences
                 else:
