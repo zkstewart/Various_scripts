@@ -183,7 +183,7 @@ with open(args.outputFileName, 'w') as fileOut:
                         continue
                 # Handle trimmed sequence output
                 recordSeqs = fasta_trim_split_withinloop(record, trimDict)
-                if recordSeqs != False:
+                if recordSeqs != False and recordSeqs != None:
                         if len(recordSeqs) == 1:
                                 seqid = '>' + record.description + '_ncbiTrim'
                                 fileOut.write(seqid + '\n' + recordSeqs[0] + '\n')
@@ -192,6 +192,10 @@ with open(args.outputFileName, 'w') as fileOut:
                                         seqid = '>' + record.description + '_ncbiSplit_fragment' + str(i+1)
                                         fileOut.write(seqid + '\n' + recordSeqs[i] + '\n')
                         print('Trimmed ' + record.description)
+                # Handle sequences that, after trimming, cannot have bits >= 200bp in length
+                elif recordSeqs == None:
+                        print('Excluded ' + record.description + ' after trimming reduced length >200bp)
+                        continue
                 # Output untouched sequences
                 else:
                         fileOut.write(record.description + '\n' + str(record.seq) + '\n')
