@@ -198,7 +198,7 @@ with open(args.outputFileName, 'w') as fileOut:
                         continue
                 # Output untouched sequences
                 else:
-                        fileOut.write(record.description + '\n' + str(record.seq) + '\n')
+                        fileOut.write('>' + record.description + '\n' + str(record.seq) + '\n')
 
 # All done
 print('Program completed successfully!')
