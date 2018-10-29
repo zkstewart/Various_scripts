@@ -656,6 +656,9 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
         # Handle output file name & possibility that we are producing both list and fasta output
+        if args.outputFileName == None:
+                print('-o argument must be provided, fix your inputs and try again.')
+                quit()
         outPrefix = args.outputFileName.rsplit('.', maxsplit=1)
         if len(outPrefix) == 1: # This probably means the user specified a prefix only; in this case we can get the suffix from the input file
                 outSuffix = args.fastaFileName.rsplit('.', maxsplit=1)[-1]
