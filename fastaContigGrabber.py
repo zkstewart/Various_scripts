@@ -272,6 +272,7 @@ elif operationType == 'CMD':
                                 print(entry + ' stored in clipboard.')
                                 clipboardList.append(str(records[entry]))
                         elif entry in longIndex:
+                                print(entry + ' stored in clipboard.')
                                 clipboardList.append(str(records[longIndex[entry]]))
                         # If relevant, put more effort into finding ID in our idList
                         elif args.effort == True:
