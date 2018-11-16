@@ -36,7 +36,7 @@ separate each value with a comma e.g., -s species1,species2
 p = argparse.ArgumentParser(description=usage)
 p.add_argument("-c", "-csv", dest="orthogroups",
                help="Specify the orthogroup file")
-p.add_argument("-p", "-output", dest="outputFileName",
+p.add_argument("-o", "-output", dest="outputFileName",
                help="Output file name")
 p.add_argument("-s", "-soi", dest="soi", nargs="+",
                help="Column name(s) of the species of interest (SOI)")
