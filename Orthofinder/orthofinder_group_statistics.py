@@ -165,7 +165,7 @@ for symbol in ['<', '>', '=']:
 # Tabulate results in human-readable format
 with open(args.outputFileName, 'w') as fileOut:
         # Header information
-        fileOut.write('#%(prog)s output statistics file for: ' + os.path.abspath(args.orthogroups) + '\n')
+        fileOut.write('#orthofinder_group_statistics.py output statistics file for: ' + os.path.abspath(args.orthogroups) + '\n')
         fileOut.write('#total orthogroups = ' + str(len(orthoDictNum)) + '\n')
         # Write counts details
         fileOut.write('#column_comparison\tnumber_of_groups\t%_of_total\n')
