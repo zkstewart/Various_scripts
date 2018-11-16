@@ -67,3 +67,6 @@ with open(args.orthogroups, 'r') as fileIn, open(args.outputFileName, 'w') as fi
                         for index in soiIndices:
                                 if sl[index+1] != '':           # Add +1 since these lines have the OG# at the start, whereas we got rid of the blank space in the header that corresponds to this column
                                         fileOut.write(line)
+
+# Done!
+print('Program completed successfully!')
