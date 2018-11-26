@@ -32,6 +32,38 @@ def fasta_single2multi(fastaFile, multilineLength, outputFileName):
                         sequence = '\n'.join([sequence[i:i+multilineLength] for i in range(0, len(sequence), multilineLength)])
                         fastaOut.write('>' + record.description + '\n' + sequence + '\n')
 
+## Fastq ONLY functions
+def fasta_q_to_a(fastqFile, outputFileName):
+        # Set up
+        import os
+        ongoingCount = 1
+        cleanExit = False
+        # Perform function
+        with open(fastqFile, 'r') as fileIn, open(outputFileName, 'w') as fileOut:
+                for line in fileIn:
+                        if ongoingCount == 1:
+                                if not line.startswith('@'):
+                                        print('Something is wrong with your fastq formatting.')
+                                        print('Line number ' + str(ongoingCount) + ' (1-based) should be an ID line, but it doesn\'t start with \'@\'')
+                                        print('Fix this file somehow and try again.')
+                                        cleanExit = True
+                                        break
+                                fileOut.write('>' + line[1:])
+                        elif ongoingCount == 2:
+                                fileOut.write(line)
+                        elif ongoingCount == 3:
+                                if not line.startswith('+'):
+                                        print('Something is wrong with your fastq formatting.')
+                                        print('Line number ' + str(ongoingCount) + ' (1-based) should be a comment line, but it doesn\'t start with \'+\'')
+                                        print('Fix this file somehow and try again.')
+                                        cleanExit = True
+                                        break
+                        ongoingCount += 1
+                        if ongoingCount == 5:
+                                ongoingCount = 1       # Reset our count to correspond to the new fastq entry
+        if cleanExit == True:
+                os.unlink(outputFileName)
+
 ## Fasta and fastq compatible functions
 def fasta_ids(fastaFile, prefix, outputFileName):
         # Set up
@@ -570,6 +602,9 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 will produce an output text file with a single line depicting the number
                 of sequences in the fasta file.
                 '''
+                q_to_a = '''The _q_to_a_ function requires no special input. This function
+                will produce an output fasta file when a fastq input is provided.
+                '''
                 ## Number input
                 multi2single = '''
                 The _multi2single_ function requires no special input. The output is 
@@ -702,7 +737,7 @@ and 5) enact the function below.
 # Function list - update as new ones are added
 stringFunctions = ['rename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring', 'trim']
 numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk']
-basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single']
+basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a']
 functionList = stringFunctions + numberFunctions + basicFunctions
 
 # Hold onto program 'start' time for the purpose of temporary file generation
@@ -772,5 +807,6 @@ if args.function == 'count':
         fasta_count(args.fastaFileName, startTime, args.outputFileName)
 if args.function == 'multi2single':
         fasta_multi2single(args.fastaFileName, startTime, args.outputFileName)
-
+if args.function == 'q_to_a':
+        fasta_q_to_a(args.fastaFileName, args.outputFileName)
 print('Program completed successfully!')
