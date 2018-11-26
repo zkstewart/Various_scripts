@@ -18,7 +18,7 @@ def validate_args(args):
                         quit()
         # Validate Orthogroup file location
         if not os.path.isfile(args.orthogroups):
-                print('I am unable to locate the Orthogroups file (' + args.orthogroup + ')')
+                print('I am unable to locate the Orthogroups file (' + args.orthogroups + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
         # Handle file overwrites
@@ -79,6 +79,12 @@ validate_args(args)
 # Parse orthogroup file
 orthoDict, header = parse_orthogroups_csv(args.orthogroups)
 
+# Ensure that the SOI was located
+if args.soi not in header:
+        print('The specified SOI "' + args.soi + '" was not located within the provided input file. Make sure this was typed correctly, or that the file you have specified is the correct one.')
+        print('Program will exit now.')
+        quit()
+
 # Count the copy number present in each orthogroup for later manipulation
 orthoDictNum = {}
 for key, value in orthoDict.items():
@@ -91,6 +97,7 @@ for key, value in orthoDict.items():
 
 # Compare orthogroup(s) to assess similarity in copy number
 orthoStats = {}
+largestIncrease = [[[0, ''] for x in range(len(header))] for x in range(len(header))]
 for key, value in orthoDictNum.items():
         # Extract values for handling
         enumeratedValue = list(enumerate(value.items()))
@@ -122,8 +129,27 @@ for key, value in orthoDictNum.items():
                                 orthoStats[xval[1][0] + '_=_' + yval[1][0]] += 1
                         elif xval[1][1] > yval[1][1]:
                                 orthoStats[xval[1][0] + '_>_' + yval[1][0]] += 1
+                                # Additional stat: largest group difference
+                                increase = xval[1][1] - yval[1][1]
+                                if increase > largestIncrease[x][y][0] and yval[1][1] != 0:     ## TBD: Ensure that orthogroups are actually expanded by GGF
+                                        # Ensure that orthogroups are actually expanded by GGF
+                                        '''I didn't want to do this, but I need to hard-code this program a bit to get output that is sensible
+                                        for its current application. In the future I might find a way to handle this problem automatically (e.g.,
+                                        comparing sequence IDs in a group to see if they are present in the other one and thus have just been
+                                        shuffled somewhere else) but for now I'll just hard-code it here and do a bit of manual inspection of results'''
+                                        for tmpMrna in orthoDict[key]['pasa_ggf']:
+                                                if '.mrna' in tmpMrna:
+                                                        largestIncrease[x][y] = [increase, key] # key corresponds to the orthogroup ID
+                                                        break
                         else:
                                 orthoStats[xval[1][0] + '_<_' + yval[1][0]] += 1
+                                # Additional stat: largest group difference
+                                increase = yval[1][1] - xval[1][1]
+                                if increase > largestIncrease[y][x][0] and xval[1][1]:
+                                        for tmpMrna in orthoDict[key]['pasa_ggf']:
+                                                if '.mrna' in tmpMrna:
+                                                        largestIncrease[x][y] = [increase, key] # key corresponds to the orthogroup ID
+                                                        break
 
 # Compute additional proportion values
 orthoProp = {}
@@ -177,6 +203,14 @@ with open(args.outputFileName, 'w') as fileOut:
         fileOut.write('#column_comparison\tcomparison_direction\tnumeric_difference\tpercentage_difference\n')
         for line in orthoComps:
                 fileOut.write(line + '\n')
+        # Write largest difference matrix
+        fileOut.write('#largest difference matrix\n')
+        fileOut.write('\t' + '\t'.join(header) + '\n')
+        for i in range(len(largestIncrease)):
+                fileOut.write(header[i] + ' is greater than ^')
+                for pair in largestIncrease[i]:
+                        fileOut.write('\t' + str(pair[0]) + ',' + pair[1])
+                fileOut.write('\n')
 
 # Done!
 print('Program completed successfully!')

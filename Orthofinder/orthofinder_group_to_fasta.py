@@ -54,7 +54,9 @@ def validate_args(args):
                 print('The specified output location "' + args.outputLocation + '" is a file. You should be specifying a directory (that may or may not exist); fix your input and try again.')
                 quit()
         elif not os.path.isdir(args.outputLocation):
-                pathSplit = os.path.split(args.outputLocation)
+                pathSplit = list(os.path.split(args.outputLocation))
+                if pathSplit[0] == '':
+                        pathSplit[0] = os.getcwd()
                 if not os.path.isdir(pathSplit[0]):
                         print('The specified output location "' + args.outputLocation + '" is not a directory.')
                         print('The location one directory up i.e., "' + pathSplit[0] + '" is also not a directory.')
