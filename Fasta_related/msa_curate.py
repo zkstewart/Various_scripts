@@ -983,74 +983,75 @@ def msa_start_find(msaFastaIn, outType, msaFastaOut):
                                 break
         # Identify the most common start site(s)
         startSiteCount.sort(key = lambda x: -x[1])
-        if startSiteCount[0][1] == 1:
-                startSiteCount = None   # We'll note this as None so we can skip any processes that rely on comparison to the most common start site
-        if startSiteCount != None:
-                commonStarts = []
-                for startSite in startSiteCount:
-                        if commonStarts == []:
+        ## TBD: Skip downstream if startSiteCount[0][1] == 1
+        commonStarts = []
+        for startSite in startSiteCount:
+                if commonStarts == []:
+                        commonStarts.append([startSite[0]])
+                        prevStartNum = startSite[1]
+                else:
+                        if startSite[1] == prevStartNum:
                                 commonStarts.append([startSite[0]])
-                                prevStartNum = startSite[1]
                         else:
-                                if startSite[1] == prevStartNum:
-                                        commonStarts.append([startSite[0]])
-                                else:
-                                        break
-                # Associate the amino acid for these starts
-                for i in range(len(commonStarts)):
-                        col = msa[:,commonStarts[i][0]].replace('-', '')
-                        aaCount = Counter(col)
-                        maxCount = list(aaCount.most_common(1)[0])[1]
-                        chars = ''
-                        for aa, count in aaCount.items():
-                                if count == maxCount:
-                                        chars += aa
-                        commonStarts[i].append(chars)
-        # Reformat commonStarts to be more useable
-        #commonStartIndex = []
-        #commonStartAA = []
-        #for commonStart in commonStarts:
-        #        commonStartIndex.append(commonStart[0])
-        #        for aa in commonStart[1]:
-        #                commonStartAA.append(aa)
-        #commonStartAA = list(set(commonStartAA))
+                                break
+        # Associate the amino acid for these starts
+        for i in range(len(commonStarts)):
+                col = msa[:,commonStarts[i][0]].replace('-', '')
+                aaCount = Counter(col)
+                maxCount = list(aaCount.most_common(1)[0])[1]
+                chars = ''
+                for aa, count in aaCount.items():
+                        if count == maxCount:
+                                chars += aa
+                commonStarts[i].append(chars)
+        # Extract information from commonStarts in more useable format
+        commonStartAA = ''
+        for commonPair in commonStarts:
+                if commonPair[1] not in commonStartAA:
+                        commonStartAA += commonPair[1]
         # Loop through each sequence and identify its start position with ranked checking system
         startSiteCount.sort()                   # We want this sorted by index again
-        origMsa = copy.deepcopy(msa)            # Since we're going to be making changes to the msa from here on but still might want to return the unedited msa, we need to create a backup
+        #origMsa = copy.deepcopy(msa)            # Since we're going to be making changes to the msa from here on but still might want to return the unedited msa, we need to create a backup
         newMsa = MultipleSeqAlignment([])
-        for i in range(len(msa)):
-                msaSeq = msa[i].seq
-                # Collect information from sequence for determining the optimal start site
-                ## Info 1: Sequence start site
-                for x in range(len(msaSeq)):
-                        if msaSeq[x] == '-':
-                                continue
-                        else:
-                                startSite = x
-                                break
-                ## Info 2: Proportion of other start sites that agree with this one
-                startProp = (startSiteCount[x][1] - 1) / len(msa)       # -1 since we don't want to include this sequence in the proportion
-                ## Info 3: Number of positions that have an equivalent AA at this position
-                col = msa[:,x]
-                aaProp = (col.count(msaSeq[0]) - 1) / len(msa)          # -1 as before
-                ## Info 4: Potential start site candidates
-                startCandidates = []
-                ### 4.1: Possibility to match a commonStartIndex
-                #for commonPair in commonStarts:
-                #        if msaSeq[commonPair[0]] in commonPair[1]:
-                #                startCandidates.append(commonPair[0])
-                ### 4.2: Other possible start sites with evidence
-                for x in range(len(msaSeq)):
-                        if x in startCandidates:
-                                continue
-                        # 4.2.1: Start position of other sequences?
-                        if startSiteCount[x][1] - 1 > 0:
-                                startCandidates.append(x)
-                        # 4.2.2: Methionine position?
-                        elif msaSeq[x] == 'M':
-                                startCandidates.append(x)
-                # Identify and assess potential start sites
-                ## Check 1: If this sequence shares a most common start site, no changes are necessary
+        
+        while True:
+                # Loop exit condition: no changes were made
+                if newMsa == prevMsa:
+                        break
+                # Loop through MSA, identifying start sites for changing and doing this
+                for i in range(len(msa)):
+                        msaSeq = str(msa[i].seq)
+                        # Identify the sequence start site
+                        for x in range(len(msaSeq)):
+                                if msaSeq[x] == '-':
+                                        continue
+                                else:
+                                        startSite = x
+                                        break
+                        # Identify start site candidates with associated evidence
+                        startCandidates = []
+                        for x in range(len(msaSeq)):
+                                if (startSiteCount[x][1] - 1 > 0 and msaSeq[x] in commonStartAA) or msaSeq[x] == 'M' or x == startSite: # i.e., if this position is the same AA as others at a common start site OR it's an M OR it's the original start site
+                                        col = msa[:,x]
+                                        # Calculate the proportion of start sites that support this one
+                                        if x == startSite:
+                                                startProp = (startSiteCount[x][1] - 1) / len(msa)       # -1 since we don't want to include this sequence in its own proportion calculation
+                                        else:
+                                                startProp = (startSiteCount[x][1]) / len(msa)
+                                        # Calculate the proportion of methionines at this position
+                                        aaProp = (col.count(msaSeq[x]) - 1) / len(msa)          # -1 as before
+                                        # Store results
+                                        startCandidates.append([x, startProp, aaProp])
+                        # Sort candidates based on weighting of ranks in order of priority startProp > aaProp > length
+                        startCandidates.sort(key = lambda x: (-x[1], -x[2], x[0]))
+                        # Generate new sequence
+                        ## TBD: Generate sequence as a str, then make new Bio.Seq object and reiterate
+                        newSeq = Seq(str(msa[y].seq)[i:x], SingleLetterAlphabet())
+                        if len(newMsa) == 0:
+                                for x in range(len(msaSeq)):
+                
+                # Assess potential start sites
+                ## Check 1: If this sequence already starts with a most common start site, no changes are necessary
                 noChange = False
                 for commonPair in commonStarts:
                         if startSite == commonPair[0]:
