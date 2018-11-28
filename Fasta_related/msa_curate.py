@@ -801,12 +801,14 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
         def common_start_find(msa):
                 # Loop through each sequence and find its start site
                 startSiteCount = [[i, 0] for i in range(len(msa[0]))]
+                startSiteReference = {}
                 for i in range(len(msa)):
                         for x in range(len(msa[i])):
                                 if msa[i][x] == '-':
                                         continue
                                 else:
                                         startSiteCount[x][1] += 1
+                                        startSiteReference[i] = x
                                         break
                 # Identify the most common start site(s)
                 startSiteCount.sort(key = lambda x: -x[1])
@@ -816,19 +818,25 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
                                 commonStarts.append([startSite[0]])
                                 prevStartNum = startSite[1]
                         else:
-                                if startSite[1] == prevStartNum:
+                                if startSite[1] >= prevStartNum*0.5 and startSite[1] >= (prevStartNum*0.5) + 0.5:   # This allows
                                         commonStarts.append([startSite[0]])
                                 else:
                                         break
                 startSiteCount.sort()   # We want this sorted by index again
                 # Associate the amino acid for these starts
                 for i in range(len(commonStarts)):
-                        col = msa[:,commonStarts[i][0]].replace('-', '')
-                        aaCount = Counter(col)
+                        col = msa[:,commonStarts[i][0]]
+                        # Extract positions that correspond to starts
+                        startCol = ''
+                        for x in range(len(col)):
+                                if startSiteReference[x] == commonStarts[i][0]:
+                                        startCol += col[x]
+                        # Count start positions
+                        aaCount = Counter(startCol)
                         maxCount = list(aaCount.most_common(1)[0])[1]
                         chars = ''
                         for aa, count in aaCount.items():
-                                if count == maxCount:
+                                if count >= maxCount*0.5:
                                         chars += aa
                         commonStarts[i].append(chars)
                 # Extract information from commonStarts in more useable format
