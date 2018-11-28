@@ -836,7 +836,7 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
                         maxCount = list(aaCount.most_common(1)[0])[1]
                         chars = ''
                         for aa, count in aaCount.items():
-                                if count >= maxCount*0.5:
+                                if count >= maxCount*0.5 + 0.5:
                                         chars += aa
                         commonStarts[i].append(chars)
                 # Extract information from commonStarts in more useable format
@@ -903,25 +903,37 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
                                         for letter in list(set(commonStartAA + 'M')):                   # We always want M to be considered as a common start at this point
                                                 tmpCount += col.count(letter)
                                         aaProp = (tmpCount - 1) / len(msa)                              # -1 as before
-                                        # Calculate the distance of this from a common start site
-                                        dist = None
+                                        # Calculate the distance of this from a common start site & the current start site
+                                        commonDist = None
+                                        startDist = None
                                         for commonPair in commonStarts:
-                                                if dist == None:
-                                                        dist = abs(x-commonPair[0])
+                                                if commonDist == None:
+                                                        commonDist = abs(x-commonPair[0])
+                                                        startDist = abs(x-startSite)
                                                 else:
-                                                        tmpDist = abs(x-commonPair[0])
-                                                        if tmpDist < dist:
-                                                                dist = tmpDist
+                                                        tmpCommon = abs(x-commonPair[0])
+                                                        tmpStart = abs(x-startSite)
+                                                        if tmpCommon < commonDist:
+                                                                commonDist = tmpCommon
+                                                        if tmpStart < commonDist:
+                                                                startDist = tmpStart
+                                        # Calculate the distance from its current start site
                                         # Store results
-                                        #startCandidates.append([x, startProp, aaProp, dist])
-                                        startCandidates.append([x, startProp, dist, aaProp])
-                        ### Sort candidates based on weighting of ranks in order of priority startProp > aaProp > dist > length
-                        # Sort candidates based on weighting of ranks in order of priority startProp > dist > aaProp > length
-                        #startCandidates.sort(key = lambda x: (-x[1], -x[2], x[3], x[0]))
-                        startCandidates.sort(key = lambda x: (-x[1], x[2], -x[3], x[0]))
-                        # Generate new sequence & store as MSA
-                        msaSeq = Seq('-' * startCandidates[0][0] + msaSeq[startCandidates[0][0]:], SingleLetterAlphabet())
-                        #newSeq = SeqRecord(Seq(msaSeq, SingleLetterAlphabet()), id=msa[i].id, name=msa[i].name, description=msa[i].description)
+                                        startCandidates.append([x, commonDist, startDist, startProp, aaProp])
+                        # Sort candidates based on weighting of ranks in order of priority commonDist > startDist > startProp > aaProp > length
+                        startCandidates.sort(key = lambda x: (x[1], x[2], -x[3], -x[4], x[0]))
+                        # Select best candidate using final additional heuristic measures
+                        bestCandidate = startCandidates[0]
+                        for candidate in startCandidates:
+                                if candidate == bestCandidate:
+                                        continue
+                                # Check 1: Unsupported vs. supported start site
+                                if bestCandidate[3] == 0.0 and candidate[3] > 0.0:
+                                        # Check 2: Non-significant change in distance from original start site
+                                        if candidate[2] <= (bestCandidate[2]*0.25) + 5:                  # This is a bit arbitrary, but we don't want the distance from a common start to change dramatically; 5 AA is a good spot for short differences, and for large differences no more than roughly 25% greater is a good goal
+                                                bestCandidate = candidate
+                        # Generate new sequence & store in our MSA
+                        msaSeq = Seq('-' * bestCandidate[0] + msaSeq[bestCandidate[0]:], SingleLetterAlphabet())
                         msa[i].seq = msaSeq
                 # New common start details for iteration
                 startSiteCount, commonStarts, commonStartAA = common_start_find(msa)
