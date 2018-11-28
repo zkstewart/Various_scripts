@@ -72,22 +72,23 @@ def validate_args(args):
                         args.rscriptdir = ''
                 # Validate program execution is successful
                 program_execution_check(os.path.join(args.rscriptdir, 'Rscript'))
-        elif args.mode == 'start_trim':
+        if args.mode == 'start_trim':
                 placeholder = True      # Currently there are no special handling for these functions, but this might change if the functions evolve
-        elif args.mode == 'full_trim':
+        if args.mode == 'full_trim':
                 # Validate that propTrim is sensible
                 if not 0 <= args.propTrim <= 1:
                         print('-p value must be greater than or equal to 0, and less than or equal to 1; it is a proportion value.')
                         print('Fix your input and try again.')
                         quit()
-                # Validate that lengthMin is sensible
-                if 0 > args.lengthMin:
-                        print('-l value must be greater than or equal to 0; it is either a proportion value like "0 <= lengthMin <= 1" or an absolute integer value > 1.')
-                        print('Fix your input and try again.')
-                        quit()
                 # Validate that dropProp is sensible
                 if not 0 <= args.dropProp <= 1:
                         print('-d value must be greater than or equal to 0, and less than or equal to 1; it is a proportion value.')
+                        print('Fix your input and try again.')
+                        quit()
+        if args.mode == 'full_trim' or args.mode == 'start_trim':
+                # Validate that lengthMin is sensible
+                if 0 > args.lengthMin:
+                        print('-l value must be greater than or equal to 0; it is either a proportion value like "0 <= lengthMin <= 1" or an absolute integer value > 1.')
                         print('Fix your input and try again.')
                         quit()
         return args
@@ -788,6 +789,166 @@ def curate_msa_from_outlier_dict(outlierDict, msaFileNameList):
                 with open(msaFileNameList[i], 'w') as fileOut:
                         fileOut.write(newMsa.format('fasta'))
 
+## start_trim
+def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
+        # Set up
+        import copy
+        from collections import Counter
+        from Bio import AlignIO
+        from Bio.Seq import Seq
+        from Bio.Alphabet import SingleLetterAlphabet
+        # Define functions integral to this one
+        def common_start_find(msa):
+                # Loop through each sequence and find its start site
+                startSiteCount = [[i, 0] for i in range(len(msa[0]))]
+                for i in range(len(msa)):
+                        for x in range(len(msa[i])):
+                                if msa[i][x] == '-':
+                                        continue
+                                else:
+                                        startSiteCount[x][1] += 1
+                                        break
+                # Identify the most common start site(s)
+                startSiteCount.sort(key = lambda x: -x[1])
+                commonStarts = []
+                for startSite in startSiteCount:
+                        if commonStarts == []:
+                                commonStarts.append([startSite[0]])
+                                prevStartNum = startSite[1]
+                        else:
+                                if startSite[1] == prevStartNum:
+                                        commonStarts.append([startSite[0]])
+                                else:
+                                        break
+                startSiteCount.sort()   # We want this sorted by index again
+                # Associate the amino acid for these starts
+                for i in range(len(commonStarts)):
+                        col = msa[:,commonStarts[i][0]].replace('-', '')
+                        aaCount = Counter(col)
+                        maxCount = list(aaCount.most_common(1)[0])[1]
+                        chars = ''
+                        for aa, count in aaCount.items():
+                                if count == maxCount:
+                                        chars += aa
+                        commonStarts[i].append(chars)
+                # Extract information from commonStarts in more useable format
+                commonStartAA = ''
+                for commonPair in commonStarts:
+                        if commonPair[1] not in commonStartAA:
+                                commonStartAA += commonPair[1]
+                return startSiteCount, commonStarts, commonStartAA
+        # Ensure outType is sensible
+        if outType.lower() not in ['obj', 'file', 'both']:
+                print('msa_trim: This function requires an outType to be specified with a specific format.')
+                print('Your provided value "' + outType + '" should instead be "obj", to return the Biopython MSA object, "file" to produce an output file which uses the string provided as msaFastaOut, or "both" to do both aforementioned things.')
+                print('Format this correctly and try again.')
+                quit()
+        if (outType.lower() == 'file' or outType.lower() == 'both') and not type(msaFastaOut) == str:
+                print('msa_trim: You specified a file output but didn\'t provide a string for msaFasta out - the file output name.')
+                print('Format this correctly and try again.')
+                quit()
+        # Process minLength and ensure it is sensible
+        try:
+                int(minLength)
+        except:
+                print('msa_start_find: minLength must be an integer or capable of conversion to integer.')
+                print('Format this correctly and try again.')
+                quit()
+        if minLength < 0:
+                print('msa_start_find: minLength must be greater than 0.')
+                print('Format this correctly and try again.')
+                quit()
+        # Load in fasta file as MSA object
+        msa = AlignIO.read(msaFastaIn, 'fasta')
+        # Count start sites and identify common starts
+        startSiteCount, commonStarts, commonStartAA = common_start_find(msa)
+        # Loop through each sequence and identify its start position with ranked checking system
+        prevMsa = None
+        while True:
+                # Loop exit condition: no changes were made
+                if prevMsa != None:
+                        if prevMsa.format('fasta') == prevMsa.format('fasta'):
+                                break
+                prevMsa = copy.deepcopy(msa)
+                # Loop through MSA, identifying start sites for changing and doing this
+                for i in range(len(msa)):
+                        msaSeq = str(msa[i].seq)
+                        # Identify the sequence start site
+                        for x in range(len(msaSeq)):
+                                if msaSeq[x] == '-':
+                                        continue
+                                else:
+                                        startSite = x
+                                        break
+                        # Identify start site candidates with associated evidence
+                        startCandidates = []
+                        for x in range(len(msaSeq)):
+                                if (startSiteCount[x][1] - 1 > 0 and msaSeq[x] in commonStartAA) or msaSeq[x] == 'M' or x == startSite: # i.e., if this position is the same AA as others at a common start site OR it's an M OR it's the original start site
+                                        col = prevMsa[:,x]      # We want to work with the MSA as a snapshot of what it was at the start of the iteration rather than have changes effect results internally
+                                        # Calculate the proportion of start sites that support this one
+                                        if x == startSite:
+                                                startProp = (startSiteCount[x][1] - 1) / len(msa)       # -1 since we don't want to include this sequence in its own proportion calculation
+                                        else:
+                                                startProp = (startSiteCount[x][1]) / len(msa)
+                                        # Calculate the proportion of common start AAs at this position
+                                        tmpCount = 0
+                                        for letter in list(set(commonStartAA + 'M')):                   # We always want M to be considered as a common start at this point
+                                                tmpCount += col.count(letter)
+                                        aaProp = (tmpCount - 1) / len(msa)                              # -1 as before
+                                        # Calculate the distance of this from a common start site
+                                        dist = None
+                                        for commonPair in commonStarts:
+                                                if dist == None:
+                                                        dist = abs(x-commonPair[0])
+                                                else:
+                                                        tmpDist = abs(x-commonPair[0])
+                                                        if tmpDist < dist:
+                                                                dist = tmpDist
+                                        # Store results
+                                        #startCandidates.append([x, startProp, aaProp, dist])
+                                        startCandidates.append([x, startProp, dist, aaProp])
+                        ### Sort candidates based on weighting of ranks in order of priority startProp > aaProp > dist > length
+                        # Sort candidates based on weighting of ranks in order of priority startProp > dist > aaProp > length
+                        #startCandidates.sort(key = lambda x: (-x[1], -x[2], x[3], x[0]))
+                        startCandidates.sort(key = lambda x: (-x[1], x[2], -x[3], x[0]))
+                        # Generate new sequence & store as MSA
+                        msaSeq = Seq('-' * startCandidates[0][0] + msaSeq[startCandidates[0][0]:], SingleLetterAlphabet())
+                        #newSeq = SeqRecord(Seq(msaSeq, SingleLetterAlphabet()), id=msa[i].id, name=msa[i].name, description=msa[i].description)
+                        msa[i].seq = msaSeq
+                # New common start details for iteration
+                startSiteCount, commonStarts, commonStartAA = common_start_find(msa)
+        # Update the MSA to remove any empty columns
+        for a in range(len(msa[0].seq), 0, -1):
+                col = msa[:,a-1]
+                if set(col) == {'-'}:
+                        for b in range(len(msa)):
+                                msa[b].seq = Seq(str(msa[b].seq)[0:a-1] + str(msa[b].seq)[a:], SingleLetterAlphabet())
+        # Compare our MSA length post-trimming to our specified cut-offs to determine whether we're doing anything to this sequence or not
+        seqLen = len(msa[0])
+        if minLength < 1:
+                ratio = seqLen / len(msa[0])
+                if ratio < minLength:
+                        if skipOrDrop.lower() == 'skip':
+                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than minLength proportion cut-off; no trimming will be performed.')
+                                return msa      # We're not going to make any changes if trimming shortens it too much
+                        elif skipOrDrop.lower() == 'drop':
+                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than minLength proportion cut-off; msa will be dropped.')
+                                return None
+        else:
+                if seqLen < minLength:
+                        if skipOrDrop.lower() == 'skip':
+                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than absolute minLength cut-off; no trimming will be performed.')
+                                return msa      # As above
+                        elif skipOrDrop.lower() == 'drop':
+                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than absolute minLength cut-off; msa will be dropped.')
+                                return None
+        # Return results either as the MSA object, as an output file, or as both
+        if outType.lower() == 'file' or outType.lower() == 'both':
+                with open(msaFastaOut, 'w') as fileOut:
+                        fileOut.write(msa.format('fasta'))
+        if outType.lower() == 'obj' or outType.lower() == 'both':
+                return msa
+
 ## General purpose funtions
 def file_name_gen(prefix, suffix):
         import os
@@ -862,25 +1023,25 @@ p.add_argument("-p", "-propTrim", dest="propTrim", type=float, default=0.7,
                sequences (rather than gaps) to mark the start and end positions for trimming
                (default == 0.7)"""
                if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
-p.add_argument("-l", "-lengthMin", dest="lengthMin", type=float, default=0.25,
-               help="""full_trim: Specify the minimum length a MSA must be for trimming to occur;
-               providing an integer > 1 will enforce a minimum length as a value, whereas providing
-               a 0 < float >= 1 value enforce a minimum proportion relative to the original MSA
-               (default == 0.25)"""
-               if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
 p.add_argument("-d", "-dropProp", dest="dropProp", type=float, default=0.5,
                help="""full_trim: Specify the proportion of a sequence allowed to disagree with
                consensus (i.e., whether a column is a gap or a sequence) before removal of the sequence
                (default == 0.5)"""
                if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
-### start_trim
+### start_trim & full_trim
+p.add_argument("-l", "-lengthMin", dest="lengthMin", type=float, default=0.25,
+               help="""full_trim: Specify the minimum length a MSA must be for trimming to occur;
+               providing an integer > 1 will enforce a minimum length as a value, whereas providing
+               a 0 < float >= 1 value enforce a minimum proportion relative to the original MSA
+               (default == 0.25)"""
+               if (modeHandling == 'full_trim' or modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
 ## signalP functionality on/off
 
 args = p.parse_args()
 ## HARDCODED TESTING
 args.inputLocation = ['E:\genome\small_peptide_annot\orthofinder\manually_curated_aligns']
 args.outputLocation = r'E:\genome\small_peptide_annot\orthofinder\manually_curated_aligns\outliers'
-args.mode = 'outliers'
+args.mode = 'start_trim'
 #args.rscriptdir
 args = validate_args(args)
 
@@ -946,204 +1107,7 @@ elif args.mode == 'full_trim':
         for msaFileName in finalMsaFileList:
                 msa_trim(msaFileName, args.propTrim, args.lengthMin, 'file', msaFileName, args.dropProp, 'skip')
 elif args.mode == 'start_trim':
-        #for msaFileName in finalMsaFileList:
-        #        msa_trim(msaFileName, args.propTrim, args.lengthMin, 'file', msaFileName, args.dropProp, 'skip')
-        asdf
+        for msaFileName in finalMsaFileList:
+                msa_start_find(msaFileName, args.lengthMin, 'file', msaFileName, 'skip')
 
-#msa_start_find(msaFileName, 'file', msaFileName)
-msaFastaIn, outType, msaFastaOut=msaFileName, 'file', msaFileName
-def msa_start_find(msaFastaIn, outType, msaFastaOut):
-        # Set up
-        import os
-        from collections import Counter
-        from Bio import AlignIO
-        from Bio.Seq import Seq
-        from Bio.Alphabet import SingleLetterAlphabet
-        from Bio.Align import MultipleSeqAlignment
-        # Ensure outType is sensible
-        if outType.lower() not in ['obj', 'file', 'both']:
-                print('msa_trim: This function requires an outType to be specified with a specific format.')
-                print('Your provided value "' + outType + '" should instead be "obj", to return the Biopython MSA object, "file" to produce an output file which uses the string provided as msaFastaOut, or "both" to do both aforementioned things.')
-                print('Format this correctly and try again.')
-                quit()
-        if (outType.lower() == 'file' or outType.lower() == 'both') and not type(msaFastaOut) == str:
-                print('msa_trim: You specified a file output but didn\'t provide a string for msaFasta out - the file output name.')
-                print('Format this correctly and try again.')
-                quit()
-        # Load in fasta file as MSA object
-        msa = AlignIO.read(msaFastaIn, 'fasta')
-        # Loop through each sequence and find its start site
-        startSiteCount = [[i, 0] for i in range(len(msa[0]))]
-        for i in range(len(msa)):
-                for x in range(len(msa[i])):
-                        if msa[i][x] == '-':
-                                continue
-                        else:
-                                startSiteCount[x][1] += 1
-                                break
-        # Identify the most common start site(s)
-        startSiteCount.sort(key = lambda x: -x[1])
-        ## TBD: Skip downstream if startSiteCount[0][1] == 1
-        commonStarts = []
-        for startSite in startSiteCount:
-                if commonStarts == []:
-                        commonStarts.append([startSite[0]])
-                        prevStartNum = startSite[1]
-                else:
-                        if startSite[1] == prevStartNum:
-                                commonStarts.append([startSite[0]])
-                        else:
-                                break
-        # Associate the amino acid for these starts
-        for i in range(len(commonStarts)):
-                col = msa[:,commonStarts[i][0]].replace('-', '')
-                aaCount = Counter(col)
-                maxCount = list(aaCount.most_common(1)[0])[1]
-                chars = ''
-                for aa, count in aaCount.items():
-                        if count == maxCount:
-                                chars += aa
-                commonStarts[i].append(chars)
-        # Extract information from commonStarts in more useable format
-        commonStartAA = ''
-        for commonPair in commonStarts:
-                if commonPair[1] not in commonStartAA:
-                        commonStartAA += commonPair[1]
-        # Loop through each sequence and identify its start position with ranked checking system
-        startSiteCount.sort()                   # We want this sorted by index again
-        #origMsa = copy.deepcopy(msa)            # Since we're going to be making changes to the msa from here on but still might want to return the unedited msa, we need to create a backup
-        newMsa = MultipleSeqAlignment([])
-        
-        while True:
-                # Loop exit condition: no changes were made
-                if newMsa == prevMsa:
-                        break
-                # Loop through MSA, identifying start sites for changing and doing this
-                for i in range(len(msa)):
-                        msaSeq = str(msa[i].seq)
-                        # Identify the sequence start site
-                        for x in range(len(msaSeq)):
-                                if msaSeq[x] == '-':
-                                        continue
-                                else:
-                                        startSite = x
-                                        break
-                        # Identify start site candidates with associated evidence
-                        startCandidates = []
-                        for x in range(len(msaSeq)):
-                                if (startSiteCount[x][1] - 1 > 0 and msaSeq[x] in commonStartAA) or msaSeq[x] == 'M' or x == startSite: # i.e., if this position is the same AA as others at a common start site OR it's an M OR it's the original start site
-                                        col = msa[:,x]
-                                        # Calculate the proportion of start sites that support this one
-                                        if x == startSite:
-                                                startProp = (startSiteCount[x][1] - 1) / len(msa)       # -1 since we don't want to include this sequence in its own proportion calculation
-                                        else:
-                                                startProp = (startSiteCount[x][1]) / len(msa)
-                                        # Calculate the proportion of methionines at this position
-                                        aaProp = (col.count(msaSeq[x]) - 1) / len(msa)          # -1 as before
-                                        # Store results
-                                        startCandidates.append([x, startProp, aaProp])
-                        # Sort candidates based on weighting of ranks in order of priority startProp > aaProp > length
-                        startCandidates.sort(key = lambda x: (-x[1], -x[2], x[0]))
-                        # Generate new sequence
-                        ## TBD: Generate sequence as a str, then make new Bio.Seq object and reiterate
-                        newSeq = Seq(str(msa[y].seq)[i:x], SingleLetterAlphabet())
-                        if len(newMsa) == 0:
-                                for x in range(len(msaSeq)):
-                
-                # Assess potential start sites
-                ## Check 1: If this sequence already starts with a most common start site, no changes are necessary
-                noChange = False
-                for commonPair in commonStarts:
-                        if startSite == commonPair[0]:
-                                noChange = True
-                                break
-                if noChange == True:
-                        continue
-                ## Check 2: 
-                                
-                        
-        
-
-        # Check our values to ensure they're sensible
-        if i >= x:      # If i >= x, that means we'd be trimming the sequence to 1bp or a negative value; in other words, we can't trim it at this pctTrim as printed below
-                if skipOrDrop.lower() == 'skip':
-                        print('#"' + os.path.basename(msaFastaIn) + '" can\'t be trimmed at this pctTrim value since no columns contain this proportion of sequences; no trimming will be performed.')
-                        return msa              # If the user isn't expecting a returned object this should just disappear; if they want a file out, we won't modify it
-                elif skipOrDrop.lower() == 'drop':
-                        print('#"' + os.path.basename(msaFastaIn) + '" can\'t be trimmed at this pctTrim value since no columns contain this proportion of sequences; msa will be dropped.')
-                        return None
-        # Compare our MSA length post-trimming to our specified cut-offs to determine whether we're doing anything to this sequence or not
-        seqLen = x - i          # This works out fine in 1-based notation
-        if minLength < 1:
-                ratio = seqLen / len(msa[0])
-                if ratio < minLength:
-                        if skipOrDrop.lower() == 'skip':
-                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than minLength proportion cut-off; no trimming will be performed.')
-                                return msa      # We're not going to make any changes if trimming shortens it too much
-                        elif skipOrDrop.lower() == 'drop':
-                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than minLength proportion cut-off; msa will be dropped.')
-                                return None
-        else:
-                if seqLen < minLength:
-                        if skipOrDrop.lower() == 'skip':
-                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than absolute minLength cut-off; no trimming will be performed.')
-                                return msa      # As above
-                        elif skipOrDrop.lower() == 'drop':
-                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than absolute minLength cut-off; msa will be dropped.')
-                                return None
-        # Check MSA columns to see what the most common character is for each position i.e., whether they are gap or sequence
-        charType = ''
-        for z in range(i, x):
-                col = msa[:,z]
-                pctBases = 1 - (col.count('-') / len(col))
-                if pctBases >= 0.50:
-                        charType += 'N'
-                else:
-                        charType += '-'
-        # Trim our MSA object
-        origMsa = copy.deepcopy(msa)    # Since we're going to be making changes to the msa from here on but still might want to return the unedited msa, we need to create a backup
-        newMsa = MultipleSeqAlignment([])
-        for y in range(len(msa)):       # Don't overwrite i from above! I made this mistake...
-                msa[y].seq = Seq(str(msa[y].seq)[i:x], SingleLetterAlphabet())
-                # Optionally remove sequences that don't appear to "fit" the alignment [i.e., contain a lot of gaps] according to user-specified gap proportion cut-off
-                if indivSeqDrop != None:
-                        indivGapRepresentation = ''
-                        for z in range(len(msa[y].seq)):
-                                if msa[y].seq[z] != '-' and charType[z] != '-':         # i.e., if it agrees with consensus, we don't count it as a gap
-                                        indivGapRepresentation += 'N'
-                                elif msa[y].seq[z] == '-' and charType[z] == '-':       # i.e., if it agrees with consensus, we don't count it as a gap
-                                        indivGapRepresentation += 'N'
-                                else:
-                                        indivGapRepresentation += '-'                   # i.e., if it differs from consensus, it's treated as a gap/gap-inducer
-                        gapCount = indivGapRepresentation.count('-')
-                        gapProp = gapCount / len(indivGapRepresentation)
-                        if gapProp > indivSeqDrop:
-                                continue
-                        newMsa.append(msa[y])
-        # If we dropped sequences, make sure we don't have any blank columns now
-        if indivSeqDrop != None and len(newMsa) > 1:
-                for a in range(len(newMsa[0].seq), 0, -1):
-                        col = newMsa[:,a-1]
-                        if set(col) == {'-'}:
-                                for b in range(len(newMsa)):
-                                        newMsa[b].seq = Seq(str(newMsa[b].seq)[0:a-1] + str(newMsa[b].seq)[a:], SingleLetterAlphabet())
-        # If we dropped sequences, ensure that our newMsa still has more than one entry in it
-        if indivSeqDrop != None:
-                if len(newMsa) < 2:
-                        if skipOrDrop.lower() == 'skip':
-                                print('#"' + os.path.basename(msaFastaIn) + '" removing gappy sequences according to indivSeqDrop cut-off means we do not have >= 2 sequences in this msa; no trimming will be performed.')
-                                return origMsa
-                        elif skipOrDrop.lower() == 'drop':
-                                print('#"' + os.path.basename(msaFastaIn) + '" removing gappy sequences according to indivSeqDrop cut-off means we do not have >= 2 sequences in this msa; msa will be dropped.')
-                                return None
-                msa = newMsa
-        # Return results either as the MSA object, as an output file, or as both
-        if outType.lower() == 'file' or outType.lower() == 'both':
-                with open(msaFastaOut, 'w') as fileOut:
-                        fileOut.write(msa.format('fasta'))
-        if outType.lower() == 'obj' or outType.lower() == 'both':
-                return msa
-        
-        
-        
         
