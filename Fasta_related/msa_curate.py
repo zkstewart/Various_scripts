@@ -1,9 +1,8 @@
 #! python3
 # msa_curate.py
-# Program to assist in the curation of multiple sequence alignments. This is 
-# in very early development, but I expect this program to eventually have
-# a few different "modes" which will enable different curation behaviour
-# to take place.
+# Program to assist in the curation of multiple sequence alignments. Currently,
+# this supports three modes with a few parameters to tweak their behaviour.
+# Some of the edges are a bit rough, but the outputs appear sensible.
 
 # Import external packages
 import os, argparse, shutil, sys
@@ -67,6 +66,12 @@ def validate_args(args):
                 except:
                         print('numpy is a prerequisite of the "outliers" function; install this then try again.')
                         quit()
+                if args.strictness == 'relaxed':
+                        try:
+                                from alfpy import word_pattern, word_vector, word_distance
+                        except:
+                                print('alfpy is a prerequisite of the "outliers" function when running with "relaxed" parameter; install this then try again.')
+                                quit()
                 # Replace value if necessary
                 if args.rscriptdir == None:
                         args.rscriptdir = ''
@@ -107,7 +112,7 @@ def program_execution_check(cmd):
 
 ## MSA curation-related
 ### full_trim
-def msa_trim(msaFastaIn, pctTrim, minLength, outType, msaFastaOut, indivSeqDrop, skipOrDrop):
+def msa_trim(msaFastaIn, pctTrim, minLength, outType, msaFastaOut, indivSeqDrop, skipOrDrop, onlyDrop):
         '''
         msaFastaIn is the path to the aligned MSA FASTA file to be trimmed
         pctTrim refers to the minimum proportion of sequences present in a single column to demarcate the start and end of an alignment
@@ -161,6 +166,9 @@ def msa_trim(msaFastaIn, pctTrim, minLength, outType, msaFastaOut, indivSeqDrop,
                 print('msa_trim: skipOrDrop must equal "skip" or "drop"; I don\'t recognise ' + skipOrDrop + '.')
                 print('Format this correctly and try again.')
                 quit()
+        # Setup values for logging
+        logList = ['##']
+        logged = False
         # Load in fasta file as MSA object
         msa = AlignIO.read(msaFastaIn, 'fasta')
         # Loop through aligned columns and find the first position from the 5' end that meets our pctTrim value
@@ -180,30 +188,30 @@ def msa_trim(msaFastaIn, pctTrim, minLength, outType, msaFastaOut, indivSeqDrop,
         # Check our values to ensure they're sensible
         if i >= x:      # If i >= x, that means we'd be trimming the sequence to 1bp or a negative value; in other words, we can't trim it at this pctTrim as printed below
                 if skipOrDrop.lower() == 'skip':
-                        print('#"' + os.path.basename(msaFastaIn) + '" can\'t be trimmed at this pctTrim value since no columns contain this proportion of sequences; no trimming will be performed.')
-                        return msa              # If the user isn't expecting a returned object this should just disappear; if they want a file out, we won't modify it
+                        logList.append('"' + os.path.basename(msaFastaIn) + '" can\'t be trimmed at this pctTrim value since no columns contain this proportion of sequences; untrimmed file was produced.')
+                        return msa, logList                     # If the user isn't expecting a returned object this should just disappear; if they want a file out, we won't modify it
                 elif skipOrDrop.lower() == 'drop':
-                        print('#"' + os.path.basename(msaFastaIn) + '" can\'t be trimmed at this pctTrim value since no columns contain this proportion of sequences; msa will be dropped.')
-                        return None
+                        logList.append('"' + os.path.basename(msaFastaIn) + '" can\'t be trimmed at this pctTrim value since no columns contain this proportion of sequences; no file was produced.')
+                        return None, logList
         # Compare our MSA length post-trimming to our specified cut-offs to determine whether we're doing anything to this sequence or not
         seqLen = x - i          # This works out fine in 1-based notation
         if minLength < 1:
                 ratio = seqLen / len(msa[0])
                 if ratio < minLength:
                         if skipOrDrop.lower() == 'skip':
-                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than minLength proportion cut-off; no trimming will be performed.')
-                                return msa      # We're not going to make any changes if trimming shortens it too much
+                                logList.append('"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than minLength proportion cut-off; no trimming will be performed.')
+                                return msa, logList             # We're not going to make any changes if trimming shortens it too much
                         elif skipOrDrop.lower() == 'drop':
-                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than minLength proportion cut-off; msa will be dropped.')
-                                return None
+                                logList.append('"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than minLength proportion cut-off; msa will be dropped.')
+                                return None, logList
         else:
                 if seqLen < minLength:
                         if skipOrDrop.lower() == 'skip':
-                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than absolute minLength cut-off; no trimming will be performed.')
-                                return msa      # As above
+                                logList.append('"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than absolute minLength cut-off; no trimming will be performed.')
+                                return msa, logList             # As above
                         elif skipOrDrop.lower() == 'drop':
-                                print('#"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than absolute minLength cut-off; msa will be dropped.')
-                                return None
+                                logList.append('"' + os.path.basename(msaFastaIn) + '" trimming reduces length more than absolute minLength cut-off; msa will be dropped.')
+                                return None, logList
         # Check MSA columns to see what the most common character is for each position i.e., whether they are gap or sequence
         charType = ''
         for z in range(i, x):
@@ -216,6 +224,7 @@ def msa_trim(msaFastaIn, pctTrim, minLength, outType, msaFastaOut, indivSeqDrop,
         # Trim our MSA object
         origMsa = copy.deepcopy(msa)    # Since we're going to be making changes to the msa from here on but still might want to return the unedited msa, we need to create a backup
         newMsa = MultipleSeqAlignment([])
+        onlyDropMsa = MultipleSeqAlignment([])
         for y in range(len(msa)):       # Don't overwrite i from above! I made this mistake...
                 msa[y].seq = Seq(str(msa[y].seq)[i:x], SingleLetterAlphabet())
                 # Optionally remove sequences that don't appear to "fit" the alignment [i.e., contain a lot of gaps] according to user-specified gap proportion cut-off
@@ -231,8 +240,12 @@ def msa_trim(msaFastaIn, pctTrim, minLength, outType, msaFastaOut, indivSeqDrop,
                         gapCount = indivGapRepresentation.count('-')
                         gapProp = gapCount / len(indivGapRepresentation)
                         if gapProp > indivSeqDrop:
+                                logList.append(msaFastaIn + '\t' + msa[y].description + '\tgappy_sequence_removed')
+                                logged = True
                                 continue
                         newMsa.append(msa[y])
+                        if onlyDrop == True:
+                                onlyDropMsa.append(origMsa[y])
         # If we dropped sequences, make sure we don't have any blank columns now
         if indivSeqDrop != None and len(newMsa) > 1:
                 for a in range(len(newMsa[0].seq), 0, -1):
@@ -240,88 +253,40 @@ def msa_trim(msaFastaIn, pctTrim, minLength, outType, msaFastaOut, indivSeqDrop,
                         if set(col) == {'-'}:
                                 for b in range(len(newMsa)):
                                         newMsa[b].seq = Seq(str(newMsa[b].seq)[0:a-1] + str(newMsa[b].seq)[a:], SingleLetterAlphabet())
+        # Repeat the same for our onlyDropMsa if relevant
+        if onlyDrop == True and indivSeqDrop != None and len(newMsa) > 1:
+                for a in range(len(onlyDropMsa[0].seq), 0, -1):
+                        col = onlyDropMsa[:,a-1]
+                        if set(col) == {'-'}:
+                                for b in range(len(onlyDropMsa)):
+                                        onlyDropMsa[b].seq = Seq(str(onlyDropMsa[b].seq)[0:a-1] + str(onlyDropMsa[b].seq)[a:], SingleLetterAlphabet())
         # If we dropped sequences, ensure that our newMsa still has more than one entry in it
         if indivSeqDrop != None:
                 if len(newMsa) < 2:
                         if skipOrDrop.lower() == 'skip':
-                                print('#"' + os.path.basename(msaFastaIn) + '" removing gappy sequences according to indivSeqDrop cut-off means we do not have >= 2 sequences in this msa; no trimming will be performed.')
-                                return origMsa
+                                logList.append('"' + os.path.basename(msaFastaIn) + '" removing gappy sequences according to indivSeqDrop cut-off means we do not have >= 2 sequences in this msa; no trimming will be performed.')
+                                return origMsa, logList
                         elif skipOrDrop.lower() == 'drop':
-                                print('#"' + os.path.basename(msaFastaIn) + '" removing gappy sequences according to indivSeqDrop cut-off means we do not have >= 2 sequences in this msa; msa will be dropped.')
-                                return None
+                                logList.append('"' + os.path.basename(msaFastaIn) + '" removing gappy sequences according to indivSeqDrop cut-off means we do not have >= 2 sequences in this msa; msa will be dropped.')
+                                return None, logList
                 msa = newMsa
+        if logged == False:
+                logList = []
         # Return results either as the MSA object, as an output file, or as both
         if outType.lower() == 'file' or outType.lower() == 'both':
-                with open(msaFastaOut, 'w') as fileOut:
-                        fileOut.write(msa.format('fasta'))
-        if outType.lower() == 'obj' or outType.lower() == 'both':
-                return msa
-
-def msa_score(msa, scoringMethod, cutoff):
-        # Set up
-        import os
-        from Bio import AlignIO
-        import Bio.Align
-        # Define functions integral to this one
-        def blosum_score(pair):
-                # Set up
-                from Bio.SubsMat import MatrixInfo
-                blosum = MatrixInfo.blosum62    # blosum62 seems to be the most commonly used matrix, I'll lean on consensus w/r/t which one is probably best here
-                # Make sure pair is formatted correctly
-                pair = (pair[0].upper(), pair[1].upper())
-                if pair not in blosum:
-                        pair = tuple(reversed(pair))
-                # Return the score
-                return blosum[pair]
-        def sumpairs_score(pair):
-                if pair[0].upper() == pair[1].upper():
-                        return 1
+                if onlyDrop == True:
+                        with open(msaFastaOut, 'w') as fileOut:
+                                fileOut.write(onlyDropMsa.format('fasta'))
                 else:
-                        return 0
-        # Determine what input we are receiving
-        if type(msa) == Bio.Align.MultipleSeqAlignment:
-                fileType = 'obj'
-        elif type(msa) == str:
-                if not os.path.isfile(msa):
-                        print('msa_score: You\'ve provided a string input but it isn\'t detected as a file.')
-                        print('Did you type the file name correctly, or do you need to provide the full path to it? Fix your input and try again.')
-                        quit()
-                fileType = 'file'
-        else:
-                print('msa_score: You\'ve provided an input type I am not compatible with.')
-                print('The input should be a Bio.Align.MultipleSeqAlignment object or a string indicating the file location. Fix your input and try again.')
-                quit()
-        # If we're working with a file input, load it as an obj
-        if fileType == 'file':
-                msa = AlignIO.read(msa, 'fasta')
-        # Loop through msa columns and perform pairwise scoring
-        overallScores = []
-        for i in range(len(msa[0].seq)):
-                col = msa[:,i]
-                colScores = []
-                # Column scores based on possible pairs exclusive of '-'
-                for x in range(len(col)-1):
-                        for y in range(x+1, len(col)):
-                                pair = (col[x].upper(), col[y].upper())
-                                if pair[0] != '-' and pair[1] != '-':
-                                        if scoringMethod == 'blosum':
-                                                colScores.append(blosum_score(pair))
-                                        elif scoringMethod == 'sp':
-                                                colScores.append(sumpairs_score(pair))
-                                else:
-                                        continue
-                # Average column score with penalty for gaps
-                if colScores != []:
-                        colScore = (sum(colScores) / len(colScores)) * (1 - (col.count('-') / len(col)))
+                        with open(msaFastaOut, 'w') as fileOut:
+                                fileOut.write(msa.format('fasta'))
+        if outType.lower() == 'file':
+                return None, logList
+        elif outType.lower() == 'obj' or outType.lower() == 'both':
+                if onlyDrop == True:
+                        return onlyDropMsa, logList
                 else:
-                        colScore = 0    # If there is only a single letter, it receives no score
-                overallScores.append(colScore)
-        # Compare our overall score against cutoff and determine if this alignment is "good enough"
-        finalScore = sum(overallScores) / len(overallScores)
-        if finalScore >= cutoff:
-                return True
-        else:
-                return False
+                        return msa, logList
 
 def odseq_outlier_detect(msaFileNameList, rScriptDir, tmpDir, threshold, distMetric, bootStraps):
         # Set up
@@ -759,8 +724,11 @@ def curate_msa_from_outlier_dict(outlierDict, msaFileNameList):
                 print('Fix your input and try again. A bit of debug info is below.')
                 print('Len outlierDict = ' + str(len(outlierDict)) + '. Len msaFileNameList = ' + str(len(msaFileNameList)) + '.')
                 quit()
+        # Setup values for logging
+        logList = ['##']
         # Loop through msaFileNameList and make modifications to MSAs in place
         for i in range(len(msaFileNameList)):
+                logged = False
                 # Parse MSA and make sure it corresponds to outlierDict correctly
                 msa = AlignIO.read(msaFileNameList[i], 'fasta')
                 outlierList = outlierDict[os.path.basename(msaFileNameList[i])]
@@ -772,6 +740,9 @@ def curate_msa_from_outlier_dict(outlierDict, msaFileNameList):
                 for y in range(len(msa)):
                         if outlierList[y] == False:
                                 newMsa.append(msa[y])
+                        else:
+                                logList.append(msaFileNameList[i] + '\t' + msa[y].description + '\toutlier')
+                                logged = True
                 # If we dropped sequences, ensure that our newMsa still has more than one entry in it [Note: this should technically never happen]
                 if len(newMsa) < 2:
                         print('curate_msa_from_outlier_dict: MSA file "' + msaFileNameList[i] + '" after outlier removal has less than two entries. This shouldn\'t be possible, so something is wrong with the code.')
@@ -788,6 +759,9 @@ def curate_msa_from_outlier_dict(outlierDict, msaFileNameList):
                 # Produce our updated MSA fasta file
                 with open(msaFileNameList[i], 'w') as fileOut:
                         fileOut.write(newMsa.format('fasta'))
+                if logged == True:
+                        logList.append('##')
+        return logList
 
 ## start_trim
 def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
@@ -847,12 +821,12 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
                 return startSiteCount, commonStarts, commonStartAA
         # Ensure outType is sensible
         if outType.lower() not in ['obj', 'file', 'both']:
-                print('msa_trim: This function requires an outType to be specified with a specific format.')
+                print('msa_start_find: This function requires an outType to be specified with a specific format.')
                 print('Your provided value "' + outType + '" should instead be "obj", to return the Biopython MSA object, "file" to produce an output file which uses the string provided as msaFastaOut, or "both" to do both aforementioned things.')
                 print('Format this correctly and try again.')
                 quit()
         if (outType.lower() == 'file' or outType.lower() == 'both') and not type(msaFastaOut) == str:
-                print('msa_trim: You specified a file output but didn\'t provide a string for msaFasta out - the file output name.')
+                print('msa_start_find: You specified a file output but didn\'t provide a string for msaFasta out - the file output name.')
                 print('Format this correctly and try again.')
                 quit()
         # Process minLength and ensure it is sensible
@@ -991,28 +965,34 @@ elif '-m full_trim' in ' '.join(sys.argv) or '-mode full_trim' in ' '.join(sys.a
         modeHandling = 'full_trim'
 
 #### USER INPUT SECTION
-usage = """%(prog)s will curate multiple sequence alignments (MSAs)...
+usage = """%(prog)s is a multi-functional program for the curation of multiple sequence
+alignments (MSAs). Required arguments include -i, -o, and -m; the rest are optional
+and some are used only for certain "modes"; call this program with the -m option
+specified and -h to only see arguments required for that mode.
 
 If a single -i value is provided, this program assumes that any file in this
 directory with contents starting with the '>' character is a FASTA MSA file; if
 this proves untrue, errors will occur. If multiple values are provided to -i,
 it is assumed that you have specified FASTA MSA files individually.
 
-Mode information: 'outliers' will automatically detect and remove outlier sequences
+Mode information: 
+        'outliers' will automatically detect and remove outlier sequences
 from provided FASTA MSA files; a detailed log will be produced in the output
-directory indicating what changes were made. 'start_trim' will attempt to trim protein
-sequences to equalise their start amino acid relative to each other; this is useful
-when trying to identify the correct CDS start positions in a MSA. 'full_trim' will
-attempt to trim all sequences in a MSA to capture the most "central" or "conserved"
-region within the MSA; this function is likely performed better by some other
-available programs, have a look online before trying this.
+directory indicating what changes were made. 
+        'start_trim' will attempt to trim protein sequences to equalise their
+start amino acid relative to each other; this is useful when trying to identify
+the correct CDS start positions in a MSA. 
+        'full_trim' will attempt to trim all sequences in a MSA to capture the
+most "central" or "conserved" region within the MSA; this function is useful when
+trying to identify domains in an alignment, but it is likely performed better by
+some other available programs, have a look online before trying this.
 
 Note that 'start_trim' is designed specifically to handle proteins, whereas the
 other systems will handle the underlying sequence agnostically to whether it is
 protein or DNA.
 
-Tips and tricks: "full_trim" with stricter dropDrop (-d) value can be used as an
-alternative to "outliers"
+Tips and tricks: "full_trim" with stricter dropProp (-d) value can be used as an
+alternative to "outliers" if you want to remove gappy sequences from a MSA.
 """
 
 # Reqs
@@ -1023,9 +1003,6 @@ p.add_argument("-o", "-output", dest="outputLocation",
                help="Specify the location to write output files to")
 p.add_argument("-m", "-mode", dest="mode", choices=['outliers', 'start_trim', 'full_trim'],
                help="Specify the program mode to run in; details are provided above")
-## Opts
-p.add_argument("-t", "-threads", dest="threads", type=int, default=1,
-               help="Optionally specify the number of threads to run functions with (default == 1).")
 ## Opts with visibility settings
 ### outliers
 p.add_argument("-r", "-rscriptdir", dest="rscriptdir", type=str,
@@ -1035,7 +1012,7 @@ p.add_argument("-r", "-rscriptdir", dest="rscriptdir", type=str,
 p.add_argument("-s", "-strictness", dest="strictness", choices=['relaxed', 'strict'], default='relaxed',
                help="""outliers: Specify the strictness with which outliers will be removed; 'relaxed' settings
                require two different lines of evidence to suggest a sequence is an outlier, whereas 'strict'
-               settings only require one, thus removing more sequences"""
+               settings only require one, thus removing more sequences (default == relaxed)"""
                if (modeHandling == 'outliers' or modeHandling == None) else argparse.SUPPRESS)
 ### full_trim
 p.add_argument("-p", "-propTrim", dest="propTrim", type=float, default=0.7,
@@ -1048,9 +1025,13 @@ p.add_argument("-d", "-dropProp", dest="dropProp", type=float, default=0.5,
                consensus (i.e., whether a column is a gap or a sequence) before removal of the sequence
                (default == 0.5)"""
                if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
+p.add_argument("-onlydrop", dest="onlydrop", action='store_true', default = False,
+               help="""full_trim: Optionally prevent trimming from occurring and only produce outputs
+               minus dropped sequences (read tips and tricks above)"""
+               if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
 ### start_trim & full_trim
 p.add_argument("-l", "-lengthMin", dest="lengthMin", type=float, default=0.25,
-               help="""full_trim: Specify the minimum length a MSA must be for trimming to occur;
+               help="""full_trim / start_trim: Specify the minimum length a MSA must be for trimming to occur;
                providing an integer > 1 will enforce a minimum length as a value, whereas providing
                a 0 < float >= 1 value enforce a minimum proportion relative to the original MSA
                (default == 0.25)"""
@@ -1059,9 +1040,9 @@ p.add_argument("-l", "-lengthMin", dest="lengthMin", type=float, default=0.25,
 
 args = p.parse_args()
 ## HARDCODED TESTING
-args.inputLocation = ['E:\genome\small_peptide_annot\orthofinder\manually_curated_aligns']
-args.outputLocation = r'E:\genome\small_peptide_annot\orthofinder\manually_curated_aligns\outliers'
-args.mode = 'start_trim'
+#args.inputLocation = ['E:\genome\small_peptide_annot\orthofinder\manually_curated_aligns']
+#args.outputLocation = r'E:\genome\small_peptide_annot\orthofinder\manually_curated_aligns\outliers'
+#args.mode = 'start_trim'
 #args.rscriptdir
 args = validate_args(args)
 
@@ -1117,17 +1098,27 @@ for file in msaFileNameList:
         finalMsaFileList.append(os.path.join(args.outputLocation, os.path.basename(file)))
 
 # Enact relevant function
+logList = []
 ## Outliers
 if args.mode == 'outliers':
         odSeqResults = odseq_outlier_detect(msaFileNameList, args.rscriptdir, args.outputLocation, 0.01, 'affine', 1000)        # Values are somewhat arbitrary; 0.01 refers to ODseq threshold and seems to be appropriate, 'affine' means we will penalise gaps, and 1000 is the number of bootstrap replicates - it seems to be fast enough so the large number isn't a concern
         spOutResults = msa_outlier_detect(msaFileNameList, True, True, 'alfree')                                                # The first True here means we use basic distribution statistics to justify HDBSCAN's outlier prediction; it helps to temper HDBSCAN and should thus be turned on
         mergedOutlierResults = outlier_dict_merge(odSeqResults, spOutResults, args.strictness)                                  # The second True above removes identical sequences for the purpose of calculating distribution statistics; this helps to prevent a domain being overwhelmed by identicality (it's a word, look it up)
-        curate_msa_from_outlier_dict(mergedOutlierResults, finalMsaFileList)
+        logList = curate_msa_from_outlier_dict(mergedOutlierResults, finalMsaFileList)
 elif args.mode == 'full_trim':
         for msaFileName in finalMsaFileList:
-                msa_trim(msaFileName, args.propTrim, args.lengthMin, 'file', msaFileName, args.dropProp, 'skip')
+                msa, tmpLog = msa_trim(msaFileName, args.propTrim, args.lengthMin, 'file', msaFileName, args.dropProp, 'skip', args.onlydrop)
+                logList += tmpLog
 elif args.mode == 'start_trim':
         for msaFileName in finalMsaFileList:
                 msa_start_find(msaFileName, args.lengthMin, 'file', msaFileName, 'skip')
 
-        
+# Produce output file for the log
+if logList != []:
+        logFileName = file_name_gen(os.path.join(args.outputLocation, 'msa_curate_log'), '.tsv')
+        with open(logFileName, 'w') as fileOut:
+                fileOut.write('\n'.join(logList))
+        print('Log file created at "' + logFileName + '"')
+
+# All done!
+print('Program completed successfully!')
