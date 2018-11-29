@@ -5,11 +5,13 @@
 # Some of the edges are a bit rough, but the outputs appear sensible.
 
 # Import external packages
-import os, argparse, shutil, sys
+import os, argparse, shutil, sys, platform
 
 # Define functions for later use
 ## Validate arguments
 def validate_args(args):
+        # Setup
+        import platform
         # Validate that necessary arguments have been provided
         if args.inputLocation == None:
                 print('-i argument must be provided; fix your input and try again.')
@@ -48,6 +50,10 @@ def validate_args(args):
                         print('This program won\'t create new directories that aren\'t contained within an existing one.')
                         print('Either specify a new location or create one of the above two mentioned locations and try again.')
                         quit()
+                # Update output location value
+                args.outputLocation = os.path.join(*pathSplit)
+                if not os.path.isdir(args.outputLocation):
+                        os.mkdir(args.outputLocation)
         # Handle arguments specific to modes
         if args.mode == 'outliers':
                 # Ensure that necessary prerequisites are installed
@@ -78,7 +84,18 @@ def validate_args(args):
                 # Validate program execution is successful
                 program_execution_check(os.path.join(args.rscriptdir, 'Rscript'))
         if args.mode == 'start_trim':
-                placeholder = True      # Currently there are no special handling for these functions, but this might change if the functions evolve
+                # Modify relevant arguments if None
+                if args.cygwindir == None:
+                        args.cygwindir = ''
+                if args.signalpdir == None:
+                        args.signalpdir = ''
+                # Check that cygwin and signalP works if relevant
+                if args.signalp_trim != False:
+                        if platform.system() == 'Windows':
+                                program_execution_check(os.path.join(args.cygwindir, 'bash.exe --version'))
+                                cygwin_program_execution_check(args.outputLocation, args.cygwindir, args.signalpdir, 'signalp -h')
+                        else:
+                                program_execution_check(os.path.join(args.signalpdir, 'signalp -h'))
         if args.mode == 'full_trim':
                 # Validate that propTrim is sensible
                 if not 0 <= args.propTrim <= 1:
@@ -104,6 +121,29 @@ def program_execution_check(cmd):
         cmdout, cmderr = run_cmd.communicate()
         if cmderr.decode("utf-8") != '' and not cmderr.decode("utf-8").startswith('Usage'):
                 print('Failed to execute program "' + cmd + '". Is this executable in the location specified/discoverable in your PATH, or does the executable even exist? I won\'t be able to run properly if I can\'t execute this program.')
+                print('---')
+                print('stderr is below for debugging purposes.')
+                print(cmderr.decode("utf-8"))
+                print('Program closing now.')
+                quit()
+
+def cygwin_program_execution_check(outDir, cygwinDir, exeDir, exeFile):
+        import subprocess, os
+        # Format script for cygwin execution
+        scriptText = os.path.join(exeDir, exeFile)
+        scriptFile = file_name_gen('tmpscript', '.sh')
+        with open(os.path.join(outDir, scriptFile), 'w') as fileOut:
+                fileOut.write(scriptText)
+        # Format cmd for execution
+        cmd = os.path.join(cygwinDir, 'bash') + ' -l -c ' + os.path.join(outDir, scriptFile).replace('\\', '/')
+        run_cmd = subprocess.Popen(cmd, stdout = subprocess.PIPE, stderr = subprocess.PIPE, shell = True)
+        cmdout, cmderr = run_cmd.communicate()
+        os.remove(os.path.join(outDir, scriptFile))   # Clean up temporary file
+        if cmderr.decode("utf-8") != '' and not 'perl: warning: falling back to the standard locale' in cmderr.decode("utf-8").lower():
+                '''Need the above extra check for signalP since, on Windows at least, you can receive perl warnings which don't impact
+                program operations. I think if that 'falling back' line is in stderr, nothing more serious will be present in stderr -
+                this isn't completely tested, however.'''
+                print('Failed to execute ' + exeFile + ' program via Cygwin using "' + cmd + '". Is this executable in the location specified/discoverable in your PATH, or does the executable even exist? I won\'t be able to run properly if I can\'t execute this program.')
                 print('---')
                 print('stderr is below for debugging purposes.')
                 print(cmderr.decode("utf-8"))
@@ -764,7 +804,7 @@ def curate_msa_from_outlier_dict(outlierDict, msaFileNameList):
         return logList
 
 ## start_trim
-def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
+def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop, signalPdir, cygwinDir, organism):
         # Set up
         import copy
         from collections import Counter
@@ -891,20 +931,25 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
                                                                 commonDist = tmpCommon
                                                         if tmpStart < commonDist:
                                                                 startDist = tmpStart
-                                        # Calculate the distance from its current start site
+                                        # If relevant, perform signalP prediction for this sequence
+                                        sigpResult = 0          # This will be our default, and if we're not performing signalP then the results won't be affected
+                                        if signalPdir != None:
+                                                sigpPredictions = run_signalp_sequence(signalPdir, cygwinDir, organism, os.path.dirname(msaFastaOut), prevMsa[i].id.replace('|', '_'), str(prevMsa[i].seq).replace('-', ''))    # Need to sanitise file names that contain | as FASTA sequences are wont to do
+                                                if sigpPredictions != {}:
+                                                        sigpResult = 1
                                         # Store results
-                                        startCandidates.append([x, commonDist, startDist, startProp, aaProp])
+                                        startCandidates.append([x, sigpResult, commonDist, startDist, startProp, aaProp])
                         # Sort candidates based on weighting of ranks in order of priority commonDist > startDist > startProp > aaProp > length
-                        startCandidates.sort(key = lambda x: (x[1], x[2], -x[3], -x[4], x[0]))
+                        startCandidates.sort(key = lambda x: (-x[1], x[2], x[3], -x[4], -x[5], x[0]))
                         # Select best candidate using final additional heuristic measures
                         bestCandidate = startCandidates[0]
                         for candidate in startCandidates:
                                 if candidate == bestCandidate:
                                         continue
                                 # Check 1: Unsupported vs. supported start site
-                                if bestCandidate[3] == 0.0 and candidate[3] > 0.0:
+                                if bestCandidate[4] < candidate[4]:
                                         # Check 2: Non-significant change in distance from original start site
-                                        if candidate[2] <= (bestCandidate[2]*0.25) + 5:                  # This is a bit arbitrary, but we don't want the distance from a common start to change dramatically; 5 AA is a good spot for short differences, and for large differences no more than roughly 25% greater is a good goal
+                                        if candidate[3] <= (bestCandidate[3]*0.25) + 5:                  # This is a bit arbitrary, but we don't want the distance from a common start to change dramatically; 5 AA is a good spot for short differences, and for large differences no more than roughly 25% greater is a good goal
                                                 bestCandidate = candidate
                         # Generate new sequence & store in our MSA
                         msaSeq = Seq('-' * bestCandidate[0] + msaSeq[bestCandidate[0]:], SingleLetterAlphabet())
@@ -942,6 +987,69 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop):
                         fileOut.write(msa.format('fasta'))
         if outType.lower() == 'obj' or outType.lower() == 'both':
                 return msa
+
+## signalP-related
+def signalp_unthreaded(signalpdir, cygwindir, organism, tmpDir, fastaFile, sigpResultFile):
+        import os, subprocess, platform
+        # Get the full fasta file location
+        fastaFile = os.path.abspath(fastaFile)
+        # Format signalP script text
+        scriptText = '"' + os.path.join(signalpdir, 'signalp') + '" -t ' + organism + ' -f short -n "' + sigpResultFile + '" "' + fastaFile + '"'
+        # Generate a script for use with cygwin (if on Windows)
+        if platform.system() == 'Windows':
+                sigpScriptFile = os.path.join(tmpDir, file_name_gen('tmp_sigpScript_' + os.path.basename(fastaFile), '.sh'))
+                with open(sigpScriptFile, 'w') as fileOut:
+                        fileOut.write(scriptText.replace('\\', '/'))
+        # Run signalP depending on operating system
+        if platform.system() == 'Windows':
+                cmd = os.path.join(cygwindir, 'bash') + ' -l -c "' + sigpScriptFile.replace('\\', '/') + '"'
+                runsigP = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
+                sigpout, sigperr = runsigP.communicate()
+                os.remove(sigpScriptFile)       # Clean up temporary file
+        else:
+                runsigP = subprocess.Popen(scriptText, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
+                sigpout, sigperr = runsigP.communicate()
+        # Process output
+        okayLines = ['is an unknown amino amino acid', 'perl: warning:', 'LC_ALL =', 'LANG =', 'are supported and installed on your system']
+        for line in sigperr.decode("utf-8").split('\n'):
+                # If sigperr indicates null result, create an output file we can skip later
+                if line.rstrip('\n') == '# No sequences predicted with a signal peptide':
+                        with open(sigpResultFile, 'w') as fileOut:
+                                fileOut.write(line)
+                        break
+                # Check if this line has something present within okayLines
+                okay = 'n'
+                for entry in okayLines:
+                        if entry in line or line == '':
+                                okay = 'y'
+                                break
+                if okay == 'y':
+                        continue
+                # If nothing matches the okayLines list, we have a potentially true error
+                else:
+                        raise Exception('SignalP error occurred when processing file name ' + fastaFile + '. Error text below\n' + sigperr.decode("utf-8"))
+
+def run_signalp_sequence(signalpdir, cygwindir, organism, tmpDir, seqID, protString):
+        # Generate temporary file for sequence
+        tmpFileName = file_name_gen(os.path.join(tmpDir, 'tmp_sigpInput_' + seqID + '_'), '.fasta')
+        with open(tmpFileName, 'w') as fileOut:
+                fileOut.write('>' + seqID.lstrip('>') + '\n' + protString + '\n')      # lstrip any > characters just in case they're already present
+        # Run signalP
+        sigpResultFile = file_name_gen(os.path.join(tmpDir, 'tmp_sigpResults_' + seqID + '_'), '.txt')
+        signalp_unthreaded(signalpdir, cygwindir, organism, tmpDir, tmpFileName, sigpResultFile)
+        # Join and parse signalP results files
+        sigPredictions = {}
+        with open(sigpResultFile, 'r') as fileIn:
+                for line in fileIn:
+                        if line.startswith('#'):
+                                continue
+                        sl = line.split('\t')
+                        sigPredictions[sl[0]] = [int(sl[3]), int(sl[4])]
+        # Clean up temporary 
+        os.remove(tmpFileName)
+        os.remove(sigpResultFile)
+        # Return signalP prediction dictionary
+        return sigPredictions
 
 ## General purpose funtions
 def file_name_gen(prefix, suffix):
@@ -981,7 +1089,9 @@ from provided FASTA MSA files; a detailed log will be produced in the output
 directory indicating what changes were made. 
         'start_trim' will attempt to trim protein sequences to equalise their
 start amino acid relative to each other; this is useful when trying to identify
-the correct CDS start positions in a MSA. 
+the correct CDS start positions in a MSA. SignalP can be used to weight start
+sites with signal peptide prediction above those without, but it _significantly_
+slows the program down - be warned!
         'full_trim' will attempt to trim all sequences in a MSA to capture the
 most "central" or "conserved" region within the MSA; this function is useful when
 trying to identify domains in an alignment, but it is likely performed better by
@@ -992,7 +1102,10 @@ other systems will handle the underlying sequence agnostically to whether it is
 protein or DNA.
 
 Tips and tricks: "full_trim" with stricter dropProp (-d) value can be used as an
-alternative to "outliers" if you want to remove gappy sequences from a MSA.
+alternative to "outliers" if you want to remove gappy sequences from a MSA by 
+providing the -onlydrop argument;... this program is not threaded, so if you want
+to use signalP start_trim-ming, you might consider calling this program multiple
+times for each input file.
 """
 
 # Reqs
@@ -1025,7 +1138,7 @@ p.add_argument("-d", "-dropProp", dest="dropProp", type=float, default=0.5,
                consensus (i.e., whether a column is a gap or a sequence) before removal of the sequence
                (default == 0.5)"""
                if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
-p.add_argument("-onlydrop", dest="onlydrop", action='store_true', default = False,
+p.add_argument("-onlydrop", dest="onlydrop", action='store_true', default=False,
                help="""full_trim: Optionally prevent trimming from occurring and only produce outputs
                minus dropped sequences (read tips and tricks above)"""
                if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
@@ -1036,14 +1149,25 @@ p.add_argument("-l", "-lengthMin", dest="lengthMin", type=float, default=0.25,
                a 0 < float >= 1 value enforce a minimum proportion relative to the original MSA
                (default == 0.25)"""
                if (modeHandling == 'full_trim' or modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
-## signalP functionality on/off
+### start_trim
+p.add_argument("-signalp_trim", dest="signalp_trim", action='store_true', default=False,
+               help="""start_trim: Optionally use signalP evidence for determining the optimal
+               start site for sequences when these sequences are expected to begin with a signal peptide"""
+               if (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
+p.add_argument("-g", "-signalpdir", dest="signalpdir", type=str,
+               help="""start_trim: If -signalp_trim is provided, specify the directory where signalp executables are located.
+               If this is already in your PATH, you can leave this blank."""
+               if (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
+p.add_argument("-sigporg", dest="signalporg", type = str, choices = ['euk', 'gram-', 'gram+'], default='euk',
+               help="""start_trim: If -signalp_trim is provided, specify the type of organism for SignalP from the available
+               options. Refer to the SignalP manual if unsure what these mean (default == 'euk')."""
+               if (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
+p.add_argument("-c", "-cygwindir", dest="cygwindir", type=str,
+               help="""start_trim: If -signalp_trim is provided, Cygwin is required since you are running this program on a Windows computer.
+               Specify the location of the bin directory here or, if this is already in your PATH, you can leave this blank."""
+               if platform.system() == 'Windows' and (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
 
 args = p.parse_args()
-## HARDCODED TESTING
-#args.inputLocation = ['E:\genome\small_peptide_annot\orthofinder\manually_curated_aligns']
-#args.outputLocation = r'E:\genome\small_peptide_annot\orthofinder\manually_curated_aligns\outliers'
-#args.mode = 'start_trim'
-#args.rscriptdir
 args = validate_args(args)
 
 # Find FASTA files depending on how inputLocation was specified
@@ -1080,16 +1204,12 @@ else:
                                 break
                 msaFileNameList.append(os.path.abspath(file))
 
-# Make the output directory if it doesn't exist
-if not os.path.isdir(args.outputLocation):
-        os.mkdir(args.outputLocation)
-else:
-        # Ensure that file overwrites won't happen
-        for file in msaFileNameList:
-                if os.path.isfile(os.path.join(args.outputLocation, os.path.basename(file))):
-                        print('"' + os.path.basename(file) + '" file already exists in output directory "' + os.path.abspath(args.outputLocation) + '"')
-                        print('This program will not overwrite existing files; delete/rename/move this existing file or specify a new output directory location and try again.')
-                        quit()
+# Ensure that file overwrites won't happen
+for file in msaFileNameList:
+        if os.path.isfile(os.path.join(args.outputLocation, os.path.basename(file))):
+                print('"' + os.path.basename(file) + '" file already exists in output directory "' + os.path.abspath(args.outputLocation) + '"')
+                print('This program will not overwrite existing files; delete/rename/move this existing file or specify a new output directory location and try again.')
+                quit()
 
 # Make output files for later modification in place
 finalMsaFileList = []
@@ -1111,7 +1231,10 @@ elif args.mode == 'full_trim':
                 logList += tmpLog
 elif args.mode == 'start_trim':
         for msaFileName in finalMsaFileList:
-                msa_start_find(msaFileName, args.lengthMin, 'file', msaFileName, 'skip')
+                if args.signalp_trim:
+                        msa_start_find(msaFileName, args.lengthMin, 'file', msaFileName, 'skip', args.signalpdir, args.cygwindir, args.signalporg)
+                else:
+                        msa_start_find(msaFileName, args.lengthMin, 'file', msaFileName, 'skip', None, None, None)
 
 # Produce output file for the log
 if logList != []:
