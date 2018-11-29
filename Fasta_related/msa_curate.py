@@ -859,6 +859,16 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop, sign
                         if commonPair[1] not in commonStartAA:
                                 commonStartAA += commonPair[1]
                 return startSiteCount, commonStarts, commonStartAA
+        def best_candidate(bestCandidate, startCandidates):
+                for candidate in startCandidates:
+                        if candidate[0] == bestCandidate[0]:
+                                continue
+                        # Check 1: Unsupported vs. supported start site
+                        if bestCandidate[4] < candidate[4]:
+                                # Check 2: Closer to original start OR non-significant increase in distance from original start site
+                                if candidate[3] < bestCandidate[3] or abs(candidate[3] - bestCandidate[3]) <= (bestCandidate[3]*0.25) + 5:      # This is very arbitrary, but we don't want the distance from a common start to change dramatically; 5 AA is a good spot for short differences, and for large differences no more than roughly 25% greater is a good goal
+                                        bestCandidate = candidate
+                return bestCandidate
         # Ensure outType is sensible
         if outType.lower() not in ['obj', 'file', 'both']:
                 print('msa_start_find: This function requires an outType to be specified with a specific format.')
@@ -886,10 +896,11 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop, sign
         startSiteCount, commonStarts, commonStartAA = common_start_find(msa)
         # Loop through each sequence and identify its start position with ranked checking system
         prevMsa = None
+        storedSigpDict = {}
         while True:
                 # Loop exit condition: no changes were made
                 if prevMsa != None:
-                        if prevMsa.format('fasta') == prevMsa.format('fasta'):
+                        if prevMsa.format('fasta') == msa.format('fasta'):
                                 break
                 prevMsa = copy.deepcopy(msa)
                 # Loop through MSA, identifying start sites for changing and doing this
@@ -931,26 +942,40 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop, sign
                                                                 commonDist = tmpCommon
                                                         if tmpStart < commonDist:
                                                                 startDist = tmpStart
-                                        # If relevant, perform signalP prediction for this sequence
-                                        sigpResult = 0          # This will be our default, and if we're not performing signalP then the results won't be affected
-                                        if signalPdir != None:
-                                                sigpPredictions = run_signalp_sequence(signalPdir, cygwinDir, organism, os.path.dirname(msaFastaOut), prevMsa[i].id.replace('|', '_'), str(prevMsa[i].seq).replace('-', ''))    # Need to sanitise file names that contain | as FASTA sequences are wont to do
-                                                if sigpPredictions != {}:
-                                                        sigpResult = 1
                                         # Store results
-                                        startCandidates.append([x, sigpResult, commonDist, startDist, startProp, aaProp])
+                                        startCandidates.append([x, 0, commonDist, startDist, startProp, aaProp])        # The 0 relates to the signalP prediction evidence; we'll decide if we need to run signalP below
                         # Sort candidates based on weighting of ranks in order of priority commonDist > startDist > startProp > aaProp > length
                         startCandidates.sort(key = lambda x: (-x[1], x[2], x[3], -x[4], -x[5], x[0]))
                         # Select best candidate using final additional heuristic measures
                         bestCandidate = startCandidates[0]
-                        for candidate in startCandidates:
-                                if candidate == bestCandidate:
-                                        continue
-                                # Check 1: Unsupported vs. supported start site
-                                if bestCandidate[4] < candidate[4]:
-                                        # Check 2: Non-significant change in distance from original start site
-                                        if candidate[3] <= (bestCandidate[3]*0.25) + 5:                  # This is a bit arbitrary, but we don't want the distance from a common start to change dramatically; 5 AA is a good spot for short differences, and for large differences no more than roughly 25% greater is a good goal
-                                                bestCandidate = candidate
+                        bestCandidate = best_candidate(bestCandidate, startCandidates)
+                        # Perform testing to see if adding sigp results could change our candidate
+                        '''Note that the below sections are an attempt to try to speed up the program since it can take a significant amount 
+                        of time to run. By only performing signalP prediction when it could change the "best" start site, and by 
+                        storing these results in a dictionary for iteration, we can reduce the amount of signalP executions'''
+                        if signalPdir != None:
+                                performSigp = False
+                                newCandidates = [bestCandidate]
+                                for candidate in startCandidates:
+                                        tmpCandidate = copy.deepcopy(candidate)
+                                        tmpCandidate[1] = 1
+                                        newBestCandidate = best_candidate(tmpCandidate, startCandidates)
+                                        if newBestCandidate[0] != bestCandidate[0]:
+                                                performSigp = True
+                                                newCandidates.append(candidate)
+                                # If it could change our candidate and the signalP setting is turned on, run signalP
+                                if performSigp == True:
+                                        for y in range(len(newCandidates)):
+                                                if prevMsa[i].id + '_' + str(newCandidates[y][0]) not in storedSigpDict:
+                                                        sigpPredictions = run_signalp_sequence(signalPdir, cygwinDir, organism, os.path.dirname(msaFastaOut), prevMsa[i].id.replace('|', '_') + '_' + str(newCandidates[y][0]), str(prevMsa[i].seq)[newCandidates[y][0]:].replace('-', ''))    # Need to sanitise file names that contain | as FASTA sequences are wont to do
+                                                        storedSigpDict[prevMsa[i].id + '_' + str(newCandidates[y][0])] = sigpPredictions
+                                                else:
+                                                        sigpPredictions = storedSigpDict[prevMsa[i].id + '_' + str(newCandidates[y][0])]
+                                                if sigpPredictions != {}:
+                                                        newCandidates[y][1] = 1
+                                        newCandidates.sort(key = lambda x: (-x[1], x[2], x[3], -x[4], -x[5], x[0]))
+                                        bestCandidate = startCandidates[0]
+                                        bestCandidate = best_candidate(bestCandidate, startCandidates)
                         # Generate new sequence & store in our MSA
                         msaSeq = Seq('-' * bestCandidate[0] + msaSeq[bestCandidate[0]:], SingleLetterAlphabet())
                         msa[i].seq = msaSeq
