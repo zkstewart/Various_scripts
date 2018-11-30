@@ -32,7 +32,7 @@ def validate_args(args):
                         program_execution_check(os.path.join(args.mafftdir, 'mafft -h'))
         # Validate Orthogroup file location
         if not os.path.isfile(args.orthogroups):
-                print('I am unable to locate the Orthogroups file (' + args.orthogroup + ')')
+                print('I am unable to locate the Orthogroups file (' + args.orthogroups + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
         # Validate the FASTA file input location depending on type of input
@@ -109,8 +109,8 @@ def pyfaidx_long_indexing_orthofinder(pyfaidxRecords):
         # Set up
         longIndex = {}
         # Main function
-        for record in pyfaidxRecords:
-                orthoName = record.long_name.replace('(', '_').replace(')', '_').replace(',', '_')      # OrthoFinder replaces problem characters with underscores - bit annoying but we can handle it
+        for record in pyfaidxRecords:       # the lstrip below is to handle a bug with pyfaidx?? Some sequences have the '>' character part of the .long_name and I don't know why since it doesn't happen to all of them
+                orthoName = record.long_name.lstrip('>').replace('(', '_').replace(')', '_').replace(',', '_').replace(':', '_')        # OrthoFinder replaces problem characters with underscores - bit annoying but we can handle it
                 longIndex[orthoName] = record.name
         return longIndex
 
