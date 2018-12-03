@@ -73,6 +73,30 @@ def expasyjoiner(functionList):
                         pyperclip.copy(outSeq)
                         print('Copied to clipboard')
 
+def reversecomp(functionList):
+        # Set up
+        import pyperclip
+        # Core loop
+        while True:
+                print('Press any button to continue the loop (reverse complementer). Enter \'help\' or \'exit\' if wanted.')
+                textInput = input()
+                # Help and exit
+                if textInput.lower() == 'help':
+                        detailed_help(functionList)
+                elif textInput.lower() == 'exit':
+                        return 'success'
+                # Main function
+                else:
+                        plainText = pyperclip.paste()
+                        reversedSeq = plainText[::-1].lower()
+                        # Decode characters
+                        reversedSeq = reversedSeq.replace('a', 'T')
+                        reversedSeq = reversedSeq.replace('t', 'A')
+                        reversedSeq = reversedSeq.replace('c', 'G')
+                        reversedSeq = reversedSeq.replace('g', 'C')
+                        pyperclip.copy(reversedSeq)
+                        print('Copied to clipboard')
+
 # Define text for functions
 def detailed_help(functionList):
         import textwrap
@@ -87,6 +111,10 @@ def detailed_help(functionList):
         expasyjoiner = r'''
         The _expasyjoiner_ function will parse Expasy amino acid characters
         in the clipboard and provide the raw protein sequence to the clipboard.
+        '''
+        reversecomp = r'''
+        The _reversecomp_ function will reverse complement nucleotide sequences
+        in the clipboard.
         '''
         printList = str(functionList).replace("'", "")
         printList = eval(printList)
@@ -126,5 +154,5 @@ def core_loop(functionList):
                         print('I didn\'t recognise that function. Make sure you typed it correctly, or type \'help\' to see a list of available functions.\n')
 
 # Start program
-functionList = ['lineremover', 'hyphenremover', 'expasyjoiner']          
+functionList = ['lineremover', 'hyphenremover', 'expasyjoiner', 'reversecomp']          
 core_loop(functionList)
