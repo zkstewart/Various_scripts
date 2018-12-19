@@ -143,7 +143,7 @@ def pyfaidx_long_indexing(pyfaidxRecords):
         longIndex = {}
         # Main function
         for record in pyfaidxRecords:
-                longIndex[record.long_name] = record.name
+                longIndex[record.long_name.rstrip('\r')] = record.name  # pyfaidx doesn't seem to handle Windows-style newlines properly
         return longIndex
 
 ## General purpose
