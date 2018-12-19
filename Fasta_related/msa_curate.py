@@ -4,6 +4,14 @@
 # this supports three modes with a few parameters to tweak their behaviour.
 # Some of the edges are a bit rough, but the outputs appear sensible.
 
+## Room for improvement: The start_trim system could benefit from BLAST evidence
+# to pick start sites. For example, we could BLAST a sequence against a database
+# and locate common starts that way (e.g., if 1 or more database sequences align
+# against the query sequency from their first position) , or we could use that
+# evidence to control our allowed shortening distance which could help in limited
+# cases where the ORF can be extended into the UTR quite a bit (as in the case
+# of Calitoxin).
+
 # Import external packages
 import os, argparse, shutil, sys, platform
 
@@ -131,7 +139,7 @@ def cygwin_program_execution_check(outDir, cygwinDir, exeDir, exeFile):
         import subprocess, os
         # Format script for cygwin execution
         scriptText = os.path.join(exeDir, exeFile)
-        scriptFile = file_name_gen('tmpscript', '.sh')
+        scriptFile = tmp_file_name_gen('tmpscript', '.sh', ''.join([outDir, cygwinDir, exeDir, exeFile]))
         with open(os.path.join(outDir, scriptFile), 'w') as fileOut:
                 fileOut.write(scriptText)
         # Format cmd for execution
@@ -394,7 +402,7 @@ def odseq_outlier_detect(msaFileNameList, rScriptDir, tmpDir, threshold, distMet
                 scriptText.append('y <- odseq(alig, threshold = {}, distance_metric = "{}", B = {})'.format(threshold, distMetric.lower(), bootStraps))
                 scriptText.append('print(filename)')
                 scriptText.append('print(y)')
-        scriptFile = file_name_gen(os.path.join(tmpDir, 'tmp_odseq_script'), '.R')
+        scriptFile = tmp_file_name_gen(os.path.join(tmpDir, 'tmp_odseq_script'), '.R', ''.join([msaFileNameList, rScriptDir, tmpDir, str(threshold), distMetric, str(bootStraps)]))
         with open(scriptFile, 'w') as fileOut:
                 fileOut.write('\n'.join(scriptText))
         # Format cmd
@@ -632,7 +640,7 @@ def msa_outlier_detect(msaFileNameList, statsSave, removeIdentical, scoreType):
                         spdm = np.array(spScore)
                 else:
                         # Make a temp file with our altered MSA
-                        tmpName = file_name_gen('tmp_alfree', '.fasta')
+                        tmpName = tmp_file_name_gen('tmp_alfree', '.fasta', ''.join([msaFileNameList, statsSave, removeIdentical, scoreType]))
                         with open(tmpName, 'w') as fileOut:
                                 fileOut.write(msa.format('fasta'))
                         spScore, idList = alfree_matrix(tmpName, 1, None, 'google')
@@ -913,9 +921,20 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop, sign
                                 else:
                                         startSite = x
                                         break
+                        # Determine the allowed shortening length
+                        nogapLen = len(msaSeq) - msaSeq.count('-')
+                        allowedShortRatio = 0.33   # Arbitrary; we want to prevent a sequence from being shortened excessively
+                        allowedShortenLen = int(round(nogapLen*allowedShortRatio, 0))
                         # Identify start site candidates with associated evidence
                         startCandidates = []
+                        currSeqLen = 0
                         for x in range(len(msaSeq)):
+                                # Enforce allowed shortening length rule
+                                if msaSeq[x] != '-':
+                                        currSeqLen += 1
+                                if currSeqLen > allowedShortenLen:
+                                        break
+                                # Format evidence list for potential start sites
                                 if (startSiteCount[x][1] - 1 > 0 and msaSeq[x] in commonStartAA) or msaSeq[x] == 'M' or x == startSite: # i.e., if this position is the same AA as others at a common start site OR it's an M OR it's the original start site
                                         col = prevMsa[:,x]      # We want to work with the MSA as a snapshot of what it was at the start of the iteration rather than have changes effect results internally
                                         # Calculate the proportion of start sites that support this one
@@ -965,14 +984,25 @@ def msa_start_find(msaFastaIn, minLength, outType, msaFastaOut, skipOrDrop, sign
                                                 newCandidates.append(candidate)
                                 # If it could change our candidate and the signalP setting is turned on, run signalP
                                 if performSigp == True:
+                                        # Format our signalP input values
+                                        seqIDs = []
+                                        prots = []
                                         for y in range(len(newCandidates)):
-                                                if prevMsa[i].id + '_' + str(newCandidates[y][0]) not in storedSigpDict:
-                                                        sigpPredictions = run_signalp_sequence(signalPdir, cygwinDir, organism, os.path.dirname(msaFastaOut), prevMsa[i].id.replace('|', '_') + '_' + str(newCandidates[y][0]), str(prevMsa[i].seq)[newCandidates[y][0]:].replace('-', ''))    # Need to sanitise file names that contain | as FASTA sequences are wont to do
-                                                        storedSigpDict[prevMsa[i].id + '_' + str(newCandidates[y][0])] = sigpPredictions
-                                                else:
-                                                        sigpPredictions = storedSigpDict[prevMsa[i].id + '_' + str(newCandidates[y][0])]
-                                                if sigpPredictions != {}:
-                                                        newCandidates[y][1] = 1
+                                                if prevMsa[i].id.replace('|', '_') + '_' + str(newCandidates[y][0]) not in storedSigpDict:
+                                                        seqIDs.append(prevMsa[i].id.replace('|', '_') + '_' + str(newCandidates[y][0]))
+                                                        prots.append(str(prevMsa[i].seq)[newCandidates[y][0]:].replace('-', ''))
+                                        # Run signalP if relevant and add to our storage value
+                                        if seqIDs != []:
+                                                sigpPredictions = run_signalp_sequence(str(args.signalpdir), args.cygwindir, args.signalporg, os.path.dirname(msaFastaOut), seqIDs, prots)
+                                                for y in range(len(newCandidates)):
+                                                        if prevMsa[i].id.replace('|', '_') + '_' + str(newCandidates[y][0]) in sigpPredictions:
+                                                                storedSigpDict[prevMsa[i].id.replace('|', '_') + '_' + str(newCandidates[y][0])] = 1
+                                                        else:
+                                                                storedSigpDict[prevMsa[i].id.replace('|', '_') + '_' + str(newCandidates[y][0])] = 0
+                                        # Update candidate values
+                                        for y in range(len(newCandidates)):
+                                                newCandidates[y][1] = storedSigpDict[prevMsa[i].id.replace('|', '_') + '_' + str(newCandidates[y][0])]
+                                        # Sort evidence and select the best candidate
                                         newCandidates.sort(key = lambda x: (-x[1], x[2], x[3], -x[4], -x[5], x[0]))
                                         bestCandidate = startCandidates[0]
                                         bestCandidate = best_candidate(bestCandidate, startCandidates)
@@ -1022,7 +1052,7 @@ def signalp_unthreaded(signalpdir, cygwindir, organism, tmpDir, fastaFile, sigpR
         scriptText = '"' + os.path.join(signalpdir, 'signalp') + '" -t ' + organism + ' -f short -n "' + sigpResultFile + '" "' + fastaFile + '"'
         # Generate a script for use with cygwin (if on Windows)
         if platform.system() == 'Windows':
-                sigpScriptFile = os.path.join(tmpDir, file_name_gen('tmp_sigpScript_' + os.path.basename(fastaFile), '.sh'))
+                sigpScriptFile = os.path.join(tmpDir, tmp_file_name_gen('tmp_sigpScript_' + os.path.basename(fastaFile), '.sh', scriptText))
                 with open(sigpScriptFile, 'w') as fileOut:
                         fileOut.write(scriptText.replace('\\', '/'))
         # Run signalP depending on operating system
@@ -1032,6 +1062,7 @@ def signalp_unthreaded(signalpdir, cygwindir, organism, tmpDir, fastaFile, sigpR
                 sigpout, sigperr = runsigP.communicate()
                 os.remove(sigpScriptFile)       # Clean up temporary file
         else:
+                os.putenv("PYTHONPATH",os.pathsep.join([os.getenv("PYTHONPATH",""),signalpdir]))
                 runsigP = subprocess.Popen(scriptText, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
                 sigpout, sigperr = runsigP.communicate()
         # Process output
@@ -1055,12 +1086,34 @@ def signalp_unthreaded(signalpdir, cygwindir, organism, tmpDir, fastaFile, sigpR
                         raise Exception('SignalP error occurred when processing file name ' + fastaFile + '. Error text below\n' + sigperr.decode("utf-8"))
 
 def run_signalp_sequence(signalpdir, cygwindir, organism, tmpDir, seqID, protString):
+        # Determine whether seqId and protString values are the proper type
+        if not type(seqID) == str and not type(protString) == str:
+                if not type(seqID) == list and not type(protString) == list:
+                        print('run_signalp_sequence: seqID and protString inputs should both be str or both be list; this isn\'t true here, so I cannot procede.')
+                        print('Fix the code leading up to this function call.')
+                        quit()
+                # If they are lists, ensure they have the same length
+                else:
+                        if len(seqID) != len(protString):
+                                print('run_signalp_sequence: seqID and protString inputs are lists of nonequivalent length; I cannot procede unless this is true.')
+                                print('Fix the code leading up to this function call.')
+                                quit()
         # Generate temporary file for sequence
-        tmpFileName = file_name_gen(os.path.join(tmpDir, 'tmp_sigpInput_' + seqID + '_'), '.fasta')
+        if type(seqID) == list:
+                tmpFileName = tmp_file_name_gen(os.path.join(tmpDir, 'tmp_sigpInput_' + ''.join([sid[0:5] for sid in seqID])[0:25] + '_'), '.fasta', ''.join([prot[0:10] for prot in protString]))
+        else:
+                tmpFileName = tmp_file_name_gen(os.path.join(tmpDir, 'tmp_sigpInput_' + seqID + '_'), '.fasta', protString)
         with open(tmpFileName, 'w') as fileOut:
-                fileOut.write('>' + seqID.lstrip('>') + '\n' + protString + '\n')      # lstrip any > characters just in case they're already present
+                if type(seqID) == list:
+                        for i in range(len(seqID)):
+                                fileOut.write('>' + seqID[i].lstrip('>') + '\n' + protString[i] + '\n')      # lstrip any > characters just in case they're already present
+                else:
+                        fileOut.write('>' + seqID.lstrip('>') + '\n' + protString + '\n')
         # Run signalP
-        sigpResultFile = file_name_gen(os.path.join(tmpDir, 'tmp_sigpResults_' + seqID + '_'), '.txt')
+        if type(seqID) == list:
+                sigpResultFile = tmp_file_name_gen(os.path.join(tmpDir, 'tmp_sigpResults_' + ''.join([sid[0:5] for sid in seqID])[0:25] + '_'), '.txt', ''.join([prot[0:10] for prot in protString]))
+        else:
+                sigpResultFile = tmp_file_name_gen(os.path.join(tmpDir, 'tmp_sigpResults_' + seqID + '_'), '.txt', protString)
         signalp_unthreaded(signalpdir, cygwindir, organism, tmpDir, tmpFileName, sigpResultFile)
         # Join and parse signalP results files
         sigPredictions = {}
@@ -1087,6 +1140,17 @@ def file_name_gen(prefix, suffix):
                         ongoingCount += 1
                 else:
                         return prefix + str(ongoingCount) + suffix
+
+def tmp_file_name_gen(prefix, suffix, hashString):
+        # Setup
+        import hashlib, time
+        # Main function
+        tmpHash = hashlib.md5(bytes(str(hashString) + str(time.time()), 'utf-8') ).hexdigest()       # This should always give us something unique even if the string for hashString is the same across different runs
+        while True:
+                if os.path.isfile(prefix + tmpHash + suffix):
+                        tmpHash += 'X'
+                else:
+                        return prefix + tmpHash + suffix
 
 # Customise help messages based on current user input
 modeHandling = None
