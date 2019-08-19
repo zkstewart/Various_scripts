@@ -790,9 +790,9 @@ if args.function == 'trim':
 if args.function == 'single2multi':
         fasta_single2multi(args.fastaFileName, args.number, args.outputFileName)
 if args.function == 'cullbelow':
-        fasta_cullbelow(args.fastaFileName, startTime, args.number, args.outputFileName)
+        fasta_cullbelow(args.fastaFileName, args.number, startTime, args.outputFileName)
 if args.function == 'cullabove':
-        fasta_cullabove(args.fastaFileName, startTime, args.number, args.outputFileName)
+        fasta_cullabove(args.fastaFileName, args.number, startTime, args.outputFileName)
 ## Number functions - FAST(A/Q) compatible
 if args.function == 'chunk':
         fasta_chunk(args.fastaFileName, args.number, startTime, args.outputFileName)
