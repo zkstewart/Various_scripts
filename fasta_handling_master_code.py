@@ -868,7 +868,7 @@ if args.function == 'lengths':
 if args.function == 'count':
         fasta_count(args.fastaFileName, startTime, args.outputFileName)
 if args.function == 'multi2single':
-        fasta_multi2single(args.fastaFileName, startTime, args.outputFileName)
+        fasta_multi2single(args.fastaFileName, args.outputFileName)
 if args.function == 'q_to_a':
         fasta_q_to_a(args.fastaFileName, args.outputFileName)
 print('Program completed successfully!')
