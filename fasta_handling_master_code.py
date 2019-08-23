@@ -224,6 +224,56 @@ def fasta_rename(fastaFile, stringInput, prefix, outputFileName, listFileName):
         if changed == True:
                 os.remove(fastaFile)
 
+def fasta_listrename(fastaFile, listFileName, prefix, outputFileName):
+        # Set up
+        import os
+        from Bio import SeqIO
+        # Check for file type
+        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Parse list file
+        listDictL = {} # L = left
+        listDictR = {} # R = right
+        with open(listFileName, 'r') as listIn:
+                for line in listIn:
+                        sl = line.split('\t')
+                        # Validate .list format
+                        try:
+                                assert len(sl) == 2
+                        except:
+                                print('.list file is not correctly formatted; should contain two columns separated by a tab.')
+                                quit()
+                        # Store data in both directions
+                        listDictL[sl[0]] = sl[1]
+                        listDictR[sl[1]] = sl[0]
+        # Perform function
+        with open(outputFileName, 'w') as fastaOut:
+                for record in records:
+                        # Extract relevant details regardless of fasta or fastq
+                        if seqType == 'fasta':
+                                seq = str(record.seq)
+                                qual = ''
+                        else:
+                                seq, qual = fastq_format_extract(record)
+                        # Main function action
+                        oldseqid = record.description
+                        if oldseqid in listDictL:
+                                newseqid = listDictL[oldseqid]
+                        elif oldseqid in listDictR:
+                                newseqid = listDictR[oldseqid]
+                        else:
+                                print('"' + oldseqid + '" not found in .list file. These files should match up.')
+                                quit()
+                        # Output
+                        if seqType == 'fasta':
+                                fastaOut.write('>' + newseqid + '\n' + seq + '\n')                  #fa
+                        else:
+                                fastaOut.write('@' + newseqid + '\n' + seq + '\n+\n' + qual + '\n') #fq
+        # Clean temp file if relevant
+        if changed == True:
+                os.remove(fastaFile)
+
 def fasta_removestringfseqid(fastaFile, removeString, prefix, outputFileName):
         # Set up
         from Bio import SeqIO
@@ -640,6 +690,11 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 as prefix and the iterating number will be added to the end of it e.g.,
                 string input of 'seq' will become 'seq1, 'seq2', etc.
                 '''
+                listrename = '''
+                The _listrename_ function accepts a string input. This string should correspond
+                to a file which has .list format (as produced by _rename_) and will swap
+                sequence IDs within the provided file.
+                '''
                 removeseqwstring = '''
                 The _removeseqwstring_ function accepts a string input. Any sequence
                 which contains the specified string (case sensitive) will not be present
@@ -711,6 +766,11 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 if args.string == None:
                         print('You need to specify a string argument when running function \'' + args.function + '\'. Try again.')
                         quit()
+                # String-based functions
+                if args.function == 'listrename':
+                        if not os.path.isfile(args.string):
+                                print('The specified string does not point to a file. Make sure you have typed this correctly or provided the full path and try again.')
+                                quit()
         # Validate number inputs if relevant
         if args.function in numberFunctions:
                 if args.number == None:
@@ -729,13 +789,13 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
 
 '''
 To add a new function into this program, you need to 1) add a new description  
-to the validate_args function, 2) handle it specifically if it is an integer 
-or float, 3) add the actual function above, 4) add it into the function list,
+to the validate_args function, 2) handle it specifically if it is a special string, integer 
+or float-based function, 3) add the actual function above, 4) add it into the function list,
 and 5) enact the function below.
 '''
 
 # Function list - update as new ones are added
-stringFunctions = ['rename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring', 'trim']
+stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring', 'trim']
 numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk']
 basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a']
 functionList = stringFunctions + numberFunctions + basicFunctions
@@ -772,6 +832,8 @@ listOutName, args.outputFileName = validate_args(args, stringFunctions, numberFu
 ## String functions
 if args.function == 'rename':
         fasta_rename(args.fastaFileName, args.string, startTime, args.outputFileName, listOutName)
+if args.function == 'listrename':
+        fasta_rename(args.fastaFileName, args.string, startTime, args.outputFileName, listOutName)     
 if args.function == 'removestringfseqid':
         fasta_removestringfseqid(args.fastaFileName, args.string, startTime, args.outputFileName)
 if args.function == 'splitseqidatstring':
