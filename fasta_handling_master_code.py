@@ -237,7 +237,7 @@ def fasta_listrename(fastaFile, listFileName, prefix, outputFileName):
         listDictR = {} # R = right
         with open(listFileName, 'r') as listIn:
                 for line in listIn:
-                        sl = line.split('\t')
+                        sl = line.rstrip('\r\n').split('\t')
                         # Validate .list format
                         try:
                                 assert len(sl) == 2
@@ -833,7 +833,7 @@ listOutName, args.outputFileName = validate_args(args, stringFunctions, numberFu
 if args.function == 'rename':
         fasta_rename(args.fastaFileName, args.string, startTime, args.outputFileName, listOutName)
 if args.function == 'listrename':
-        fasta_rename(args.fastaFileName, args.string, startTime, args.outputFileName, listOutName)     
+        fasta_listrename(args.fastaFileName, args.string, startTime, args.outputFileName)     
 if args.function == 'removestringfseqid':
         fasta_removestringfseqid(args.fastaFileName, args.string, startTime, args.outputFileName)
 if args.function == 'splitseqidatstring':
