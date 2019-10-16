@@ -6,13 +6,12 @@
 # and manipulating FASTA files.
 
 # Load packages for main
-import os, argparse, time
+import os, argparse, time, re, math, textwrap
+from Bio import SeqIO
 
 # Define functions
 ## Fasta ONLY functions
-def fasta_multi2single(fastaFile, outputFileName):
-        # Set up
-        from Bio import SeqIO
+def multi2single(fastaFile, outputFileName):
         # Load fasta file
         records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
         # Perform function
@@ -20,9 +19,7 @@ def fasta_multi2single(fastaFile, outputFileName):
                 for record in records:
                         fastaOut.write('>' + record.description + '\n' + str(record.seq) + '\n')
 
-def fasta_single2multi(fastaFile, multilineLength, outputFileName):
-        # Set up
-        from Bio import SeqIO
+def single2multi(fastaFile, multilineLength, outputFileName):
         # Load fasta file
         records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
         # Perform function
@@ -33,9 +30,8 @@ def fasta_single2multi(fastaFile, multilineLength, outputFileName):
                         fastaOut.write('>' + record.description + '\n' + sequence + '\n')
 
 ## Fastq ONLY functions
-def fasta_q_to_a(fastqFile, outputFileName):
+def q_to_a(fastqFile, outputFileName):
         # Set up
-        import os
         ongoingCount = 1
         cleanExit = False
         # Perform function
@@ -65,60 +61,39 @@ def fasta_q_to_a(fastqFile, outputFileName):
                 os.unlink(outputFileName)
 
 ## Fasta and fastq compatible functions
-def fasta_ids(fastaFile, prefix, outputFileName):
-        # Set up
-        import os
-        from Bio import SeqIO
+def ids(fastaFile, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
         with open(outputFileName, 'w') as listOut:
                 for record in records:
                         listOut.write(record.id + '\n')
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_descriptions(fastaFile, prefix, outputFileName):
-        # Set up
-        import os
-        from Bio import SeqIO
+def descriptions(fastaFile, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
         with open(outputFileName, 'w') as listOut:
                 for record in records:
                         listOut.write(record.description + '\n')
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_lengths(fastaFile, prefix, outputFileName):
-        # Set up
-        import os
-        from Bio import SeqIO
+def lengths(fastaFile, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
         with open(outputFileName, 'w') as listOut:
                 for record in records:
                         listOut.write(str(len(record)) + '\n')
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_count(fastaFile, prefix, outputFileName):
-        # Set up
-        import os
-        from Bio import SeqIO
+def count(fastaFile, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -127,16 +102,10 @@ def fasta_count(fastaFile, prefix, outputFileName):
                 ongoingCount += 1
         with open(outputFileName, 'w') as listOut:
                 listOut.write(str(ongoingCount))
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_cullbelow(fastaFile, length, prefix, outputFileName):
-        # Set up
-        import os
-        from Bio import SeqIO
+def cullbelow(fastaFile, length, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -155,16 +124,10 @@ def fasta_cullbelow(fastaFile, length, prefix, outputFileName):
                                 fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_cullabove(fastaFile, length, prefix, outputFileName):
-        # Set up
-        import os
-        from Bio import SeqIO
+def cullabove(fastaFile, length, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -183,16 +146,10 @@ def fasta_cullabove(fastaFile, length, prefix, outputFileName):
                                 fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_rename(fastaFile, stringInput, prefix, outputFileName, listFileName):
-        # Set up
-        import os
-        from Bio import SeqIO
+def rename(fastaFile, stringInput, outputFileName, listFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -220,16 +177,10 @@ def fasta_rename(fastaFile, stringInput, prefix, outputFileName, listFileName):
                                 fastaOut.write('@' + newseqid + '\n' + seq + '\n+\n' + qual + '\n') #fq
                         listOut.write(oldseqid + '\t' + newseqid + '\n')
                         ongoingCount += 1
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_listrename(fastaFile, listFileName, prefix, outputFileName):
-        # Set up
-        import os
-        from Bio import SeqIO
+def listrename(fastaFile, listFileName, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Parse list file
@@ -270,15 +221,10 @@ def fasta_listrename(fastaFile, listFileName, prefix, outputFileName):
                                 fastaOut.write('>' + newseqid + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + newseqid + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_removestringfseqid(fastaFile, removeString, prefix, outputFileName):
-        # Set up
-        from Bio import SeqIO
+def removestringfseqid(fastaFile, removeString, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -298,15 +244,10 @@ def fasta_removestringfseqid(fastaFile, removeString, prefix, outputFileName):
                                 fastaOut.write('>' + seqid + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + seqid + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_splitseqidatstring(fastaFile, splitString, prefix, outputFileName):
-        # Set up
-        from Bio import SeqIO
+def splitseqidatstring_start(fastaFile, splitString, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -320,20 +261,39 @@ def fasta_splitseqidatstring(fastaFile, splitString, prefix, outputFileName):
                                 seq, qual = fastq_format_extract(record)
                         # Main function action
                         seqid = record.description
-                        seqid = seqid.split(splitString)[0]
+                        if splitString in seqid:
+                                seqid = seqid.split(splitString, maxsplit=1)[1]
                         # Output
                         if seqType == 'fasta':
                                 fastaOut.write('>' + seqid + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + seqid + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_trim(fastaFile, trimString, prefix, outputFileName):
-        # Set up
-        import re
-        from Bio import SeqIO
+def splitseqidatstring_end(fastaFile, splitString, outputFileName):
+        # Check for file type
+        seqType = fasta_or_fastq(fastaFile)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        with open(outputFileName, 'w') as fastaOut:
+                for record in records:
+                        # Extract relevant details regardless of fasta or fastq
+                        if seqType == 'fasta':
+                                seq = str(record.seq)
+                                qual = ''
+                        else:
+                                seq, qual = fastq_format_extract(record)
+                        # Main function action
+                        seqid = record.description
+                        if splitString in seqid:
+                                seqid = seqid.split(splitString, maxsplit=1)[0]
+                        # Output
+                        if seqType == 'fasta':
+                                fastaOut.write('>' + seqid + '\n' + seq + '\n')                  #fa
+                        else:
+                                fastaOut.write('@' + seqid + '\n' + seq + '\n+\n' + qual + '\n') #fq
+
+def trim(fastaFile, trimString, outputFileName):
         # Check the string to ensure it is correctly formatted
         stringCheck = re.compile(r'^[Ss](\d{1,10})[Ee](\d{1,10})$')
         result = stringCheck.match(trimString)
@@ -345,7 +305,7 @@ def fasta_trim(fastaFile, trimString, prefix, outputFileName):
         startTrim = int(result.group(1))
         endTrim = int(result.group(2))
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -369,15 +329,10 @@ def fasta_trim(fastaFile, trimString, prefix, outputFileName):
                                 fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_retrieveseqwstring(fastaFile, retrieveString, prefix, outputFileName):
-        # Set up
-        from Bio import SeqIO
+def retrieveseqwstring(fastaFile, retrieveString, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -397,15 +352,10 @@ def fasta_retrieveseqwstring(fastaFile, retrieveString, prefix, outputFileName):
                                 fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_retrieveseqidwstring(fastaFile, retrieveString, prefix, outputFileName):
-        # Set up
-        from Bio import SeqIO
+def retrieveseqidwstring(fastaFile, retrieveString, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -425,15 +375,10 @@ def fasta_retrieveseqidwstring(fastaFile, retrieveString, prefix, outputFileName
                                 fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_removeseqwstring(fastaFile, removeString, prefix, outputFileName):
-        # Set up
-        from Bio import SeqIO
+def removeseqwstring(fastaFile, removeString, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -453,15 +398,10 @@ def fasta_removeseqwstring(fastaFile, removeString, prefix, outputFileName):
                                 fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_removeseqidwstring(fastaFile, removeString, prefix, outputFileName):
-        # Set up
-        from Bio import SeqIO
+def removeseqidwstring(fastaFile, removeString, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
         records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
@@ -481,16 +421,10 @@ def fasta_removeseqidwstring(fastaFile, removeString, prefix, outputFileName):
                                 fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
                         else:
                                 fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
 
-def fasta_chunk(fastaFile, threads, prefix, outputFileName):
-        # Set up
-        import math
-        from Bio import SeqIO
+def chunk(fastaFile, threads, outputFileName):
         # Check for file type
-        seqType, fastaFile, changed = fasta_or_fastq(fastaFile, prefix)
+        seqType = fasta_or_fastq(fastaFile)
         # Count number of sequences in file
         with open(fastaFile, 'r') as fileIn:
                 if seqType == 'fasta':
@@ -543,13 +477,43 @@ def fasta_chunk(fastaFile, threads, prefix, outputFileName):
                                 ongoingCount += 1
                                 if ongoingCount in chunkPoints:
                                         break
-        # Clean temp file if relevant
-        if changed == True:
-                os.remove(fastaFile)
+
+def twofastaseqidcompare(fastaFile1, fastaFile2, outputFileName):
+        # Check for file type
+        seqType1 = fasta_or_fastq(fastaFile1)
+        seqType2 = fasta_or_fastq(fastaFile2)
+        # Load fast(a/q) file
+        records1 = SeqIO.parse(open(fastaFile1, 'r'), seqType1)
+        records2 = SeqIO.parse(open(fastaFile2, 'r'), seqType2)
+        # Obtain sequence IDs from files
+        r1IDs = {}
+        r2IDs = {}
+        for r1 in records1:
+                r1IDs.setdefault(r1.description)
+        for r2 in records2:
+                r2IDs.setdefault(r2.description)
+        # Perform function
+        r1only, r1absent, r2only, r2absent = [], [], [], []
+        for k1 in r1IDs.keys():
+                if k1 not in r2IDs:
+                        r1only.append(k1)
+                        r2absent.append(k1)
+        for k2 in r2IDs.keys():
+                if k2 not in r1IDs:
+                        r2only.append(k2)
+                        r1absent.append(k2)
+        # Write output files
+        with open(outputFileName + '_file1only.txt', 'w') as fileOut1:
+                fileOut1.write('\n'.join(r1only))
+        with open(outputFileName + '_file1absent.txt', 'w') as fileOut2:
+                fileOut2.write('\n'.join(r1absent))
+        with open(outputFileName + '_file2only.txt', 'w') as fileOut3:
+                fileOut3.write('\n'.join(r2only))
+        with open(outputFileName + '_file2absent.txt', 'w') as fileOut4:
+                fileOut4.write('\n'.join(r2absent))
 
 # Define general purpose functions
-def fasta_or_fastq(fastaFile, prefix):
-        changed = False
+def fasta_or_fastq(fastaFile):
         # Get the first letter
         with open(fastaFile, 'r') as seqFile:
                 for line in seqFile:
@@ -558,48 +522,87 @@ def fasta_or_fastq(fastaFile, prefix):
         # Check first letter to see if it conforms to fastq or fasta expected format
         if firstChar1 == '@':
                 seqType = 'fastq'
-                # Check the file to see if Biopython is likely to accept it
-                fastaFile, changed = fastq_qual_fix(fastaFile, prefix)
         elif firstChar1 == '>':
                 seqType = 'fasta'
         else:
                 print('I don\'t recognise the input file! It should start with "@" (fastq) or ">" (fasta). Fix your inputs to continue.')
                 quit()
         # Return value
-        return seqType, fastaFile, changed
+        return seqType
 
-def fastq_qual_fix(fastaFile, prefix):
-        from Bio import SeqIO
-        # Check for errors
-        records = SeqIO.parse(fastaFile, 'fastq')
-        try:
-                for record in records:
-                        break
-                records.close   # Honestly not sure if this is necessary
-                return [fastaFile, False]
-        except ValueError:
-                # Alert user to behaviour
-                print('Your input FASTQ file has qual lines (+ lines) which don\'t match the ID lines (@ lines).')
-                print('This program will produce a temporary file (' + str(prefix) + ') with this issue fixed, assuming that qual lines which follow ID lines are related to each other.')
-                print('If this isn\'t true, you need to fix your FASTQ file manually.')
-                # Create a temporary file with modified quality lines
-                tmpName = file_name_gen(str(prefix), '.fastq')
-                with open(fastaFile, 'r') as fileIn, open(tmpName, 'w') as fileOut:
-                        ongoingCount = 1
-                        for line in fileIn:
-                                if ongoingCount == 3:
-                                        if not line.startswith('+'):
-                                                print('Something is wrong with your fastq formatting.')
-                                                print('Line number ' + str(ongoingCount) + ' (1-based) should be a comment line, but it doesn\'t start with \'+\'')
-                                                print('Fix this file somehow and try again.')
-                                                quit()
-                                        fileOut.write('+\n')
-                                else:
-                                        fileOut.write(line.rstrip('\r\n') + '\n')
-                                ongoingCount += 1
-                                if ongoingCount == 5:
-                                        ongoingCount = 1       # Reset our count to correspond to the new fastq entry
-        return [tmpName, True]
+def AltFastqGeneralIterator(handle):
+        '''
+        Note: I have taken this code from Biopython's functions
+        (https://github.com/biopython/biopython/blob/master/Bio/SeqIO/QualityIO.py)
+        and turned off the requirement for second_title to be just '+' or to be
+        identical to the title_line value. This can be "monkey patched" into
+        SeqIO by this call "SeqIO.QualityIO.FastqGeneralIterator = AltFastqGeneralIterator"
+        if SeqIO was originally imported by "from Bio import SeqIO"
+        '''
+        # We need to call handle.readline() at least four times per record,
+        # so we'll save a property look up each time:
+        handle_readline = handle.readline
+
+        line = handle_readline()
+        if not line:
+                return  # Premature end of file, or just empty?
+        if isinstance(line[0], int):
+                raise ValueError("Is this handle in binary mode not text mode?")
+
+        while line:
+                if line[0] != "@":
+                        raise ValueError(
+                                "Records in Fastq files should start with '@' character")
+                title_line = line[1:].rstrip()
+                # Will now be at least one line of quality data - in most FASTQ files
+                # just one line! We therefore use string concatenation (if needed)
+                # rather using than the "".join(...) trick just in case it is multiline:
+                seq_string = handle_readline().rstrip()
+                # There may now be more sequence lines, or the "+" quality marker line:
+                while True:
+                        line = handle_readline()
+                        if not line:
+                                raise ValueError("End of file without quality information.")
+                        if line[0] == "+":
+                                # The title here is optional, but if present must match!
+                                ## My change is below
+                                #second_title = line[1:].rstrip()
+                                #if second_title and second_title != title_line: 
+                                        #raise ValueError("Sequence and quality captions differ.")
+                                break
+                        seq_string += line.rstrip()  # removes trailing newlines
+                # This is going to slow things down a little, but assuming
+                # this isn't allowed we should try and catch it here:
+                if " " in seq_string or "\t" in seq_string:
+                        raise ValueError("Whitespace is not allowed in the sequence.")
+                seq_len = len(seq_string)
+
+                # Will now be at least one line of quality data...
+                quality_string = handle_readline().rstrip()
+                # There may now be more quality data, or another sequence, or EOF
+                while True:
+                        line = handle_readline()
+                        if not line:
+                                break  # end of file
+                        if line[0] == "@":
+                                # This COULD be the start of a new sequence. However, it MAY just
+                                # be a line of quality data which starts with a "@" character.  We
+                                # should be able to check this by looking at the sequence length
+                                # and the amount of quality data found so far.
+                                if len(quality_string) >= seq_len:
+                                        # We expect it to be equal if this is the start of a new record.
+                                        # If the quality data is longer, we'll raise an error below.
+                                        break
+                                # Continue - its just some (more) quality data.
+                        quality_string += line.rstrip()
+
+                if seq_len != len(quality_string):
+                        raise ValueError("Lengths of sequence and quality values differs "
+                                         " for %s (%i and %i)."
+                                         % (title_line, seq_len, len(quality_string)))
+
+                # Return the record and then continue...
+                yield (title_line, seq_string, quality_string)
 
 def fastq_format_extract(fastqRecord):
         fqLines = fastqRecord.format('fastq').split('\n')
@@ -631,7 +634,6 @@ def output_list_of_lists(outList, outputPrefix, outputSuffix):
 def validate_args(args, stringFunctions, numberFunctions, functionList):
         # Provide detailed help if specified
         if args.detailedHelp:
-                import textwrap
                 ## No input
                 ids = '''
                 The _ids_ function requires no special input. This function will
@@ -690,11 +692,6 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 as prefix and the iterating number will be added to the end of it e.g.,
                 string input of 'seq' will become 'seq1, 'seq2', etc.
                 '''
-                listrename = '''
-                The _listrename_ function accepts a string input. This string should correspond
-                to a file which has .list format (as produced by _rename_) and will swap
-                sequence IDs within the provided file.
-                '''
                 removeseqwstring = '''
                 The _removeseqwstring_ function accepts a string input. Any sequence
                 which contains the specified string (case sensitive) will not be present
@@ -720,11 +717,29 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 remove the specified string (case sensitive) from any sequence IDs
                 and produce a new output fasta file.
                 '''
-                splitseqidatstring = '''
-                The _splitseqidatstring_ function accepts a string input. This function will
-                edit sequence IDs to remove any text that comes after the specified string
-                (case sensitive) and produce a new output fasta file.
+                splitseqidatstring_start = '''
+                The _splitseqidatstring_start_ function accepts a string input. This function will
+                edit sequence IDs to remove any text that comes BEFORE and including the specified
+                string (case sensitive) and produce a new output fasta file.
                 '''
+                splitseqidatstring_end = '''
+                The _splitseqidatstring_end_ function accepts a string input. This function will
+                edit sequence IDs to remove any text that comes AFTER and including the specified
+                string (case sensitive) and produce a new output fasta file.
+                '''
+                ### Special strings
+                listrename = '''
+                The _listrename_ function accepts a string input. This string should correspond
+                to a file which has .list format (as produced by _rename_) and will swap
+                sequence IDs within the provided file.
+                '''
+                twofastaseqidcompare = '''
+                The _twofastaseqidcompare_ function accepts a string
+                input. This string should correspond to a second fast(a/q) file whose sequence
+                IDs are to be compared to the input file to find IDs present and absent in
+                each file and produce text files listing these occurrences.
+                '''
+                ## Combined string & number input
                 trim = '''
                 The _trim_ function accepts a string input in format s{digit}e{digit}. This
                 function will remove {digit} from the start (s) and from the end (e)
@@ -766,8 +781,8 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 if args.string == None:
                         print('You need to specify a string argument when running function \'' + args.function + '\'. Try again.')
                         quit()
-                # String-based functions
-                if args.function == 'listrename':
+                # Special string-based functions
+                if args.function in ['listrename', 'twofastaseqidcompare']:
                         if not os.path.isfile(args.string):
                                 print('The specified string does not point to a file. Make sure you have typed this correctly or provided the full path and try again.')
                                 quit()
@@ -787,88 +802,93 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                                 quit()
         return listOutName, args.outputFileName
 
-'''
-To add a new function into this program, you need to 1) add a new description  
-to the validate_args function, 2) handle it specifically if it is a special string, integer 
-or float-based function, 3) add the actual function above, 4) add it into the function list,
-and 5) enact the function below.
-'''
+def main():
+        '''
+        To add a new function into this program, you need to 1) add a new description  
+        to the validate_args function, 2) handle it specifically if it is a special string, integer 
+        or float-based function, 3) add the actual function above, 4) add it into the function list,
+        and 5) enact the function below.
+        '''
+        # Fix Bio.SeqIO fastq parsing function
+        SeqIO.QualityIO.FastqGeneralIterator = AltFastqGeneralIterator # This helps in cases where qual IDs differ from title IDs, preventing a program-terminating error
+        
+        # Function list - update as new ones are added
+        stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare']
+        numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk']
+        basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a']
+        functionList = stringFunctions + numberFunctions + basicFunctions
+        
+        ##### USER INPUT SECTION
+        usage = """%(prog)s handles FASTA/Q files, producing output according to the
+        selected function. For most functions, an input and output are all that is
+        required; some require a string and/or number input as well. Call program
+        with -H tag for a detailed description of each function.
+        """
+        p = argparse.ArgumentParser(description=usage)
+        p.add_argument("-i", "-input", dest="fastaFileName",
+                       help="Input fasta file")
+        p.add_argument("-f", dest="function", choices=functionList,
+                       help="Function to run")
+        p.add_argument("-s", "-string", dest="string", type=str,
+                       help="String to use for various functions (if relevant)")
+        p.add_argument("-n", "-number", dest="number",
+                       help="Number to use for various functions (if relevant)")
+        p.add_argument("-o", "-output", dest="outputFileName",
+                       help="Output file name (in some cases this should just be a prefix)")
+        p.add_argument("-H", "-HELP", dest="detailedHelp", action='store_true',
+                     help="Provide detailed help for each function")
+        
+        args = p.parse_args()
+        listOutName, args.outputFileName = validate_args(args, stringFunctions, numberFunctions, functionList)
+        
+        # Enact functions
+        ## String functions
+        if args.function == 'rename':
+                rename(args.fastaFileName, args.string, args.outputFileName, listOutName)
+        if args.function == 'listrename':
+                listrename(args.fastaFileName, args.string, args.outputFileName)     
+        if args.function == 'removestringfseqid':
+                removestringfseqid(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'splitseqidatstring_start':
+                splitseqidatstring_start(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'splitseqidatstring_end':
+                splitseqidatstring_end(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'retrieveseqwstring':
+                retrieveseqwstring(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'retrieveseqidwstring':
+                retrieveseqidwstring(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'removeseqwstring':
+                removeseqwstring(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'removeseqidwstring':
+                removeseqidwstring(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'trim':
+                trim(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'twofastaseqidcompare':
+                twofastaseqidcompare(args.fastaFileName, args.string, args.outputFileName)
+        ## Number functions
+        if args.function == 'single2multi':
+                single2multi(args.fastaFileName, args.number, args.outputFileName)
+        if args.function == 'cullbelow':
+                cullbelow(args.fastaFileName, args.number, args.outputFileName)
+        if args.function == 'cullabove':
+                cullabove(args.fastaFileName, args.number, args.outputFileName)
+        ## Number functions - FAST(A/Q) compatible
+        if args.function == 'chunk':
+                chunk(args.fastaFileName, args.number, args.outputFileName)
+        ## Basic functions
+        if args.function == 'ids':
+                ids(args.fastaFileName, args.outputFileName)
+        if args.function == 'descriptions':
+                descriptions(args.fastaFileName, args.outputFileName)
+        if args.function == 'lengths':
+                lengths(args.fastaFileName, args.outputFileName)
+        if args.function == 'count':
+                count(args.fastaFileName, args.outputFileName)
+        if args.function == 'multi2single':
+                multi2single(args.fastaFileName, args.outputFileName)
+        if args.function == 'q_to_a':
+                q_to_a(args.fastaFileName, args.outputFileName)
+        print('Program completed successfully!')
 
-# Function list - update as new ones are added
-stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring', 'trim']
-numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk']
-basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a']
-functionList = stringFunctions + numberFunctions + basicFunctions
-
-# Hold onto program 'start' time for the purpose of temporary file generation
-startTime = time.time()
-changed = False         # Default this as false; if we do create a temporary file this will become True
-
-##### USER INPUT SECTION
-usage = """%(prog)s handles FASTA/Q files, producing output according to the
-selected function. For most functions, an input and output are all that is
-required; some require a string and/or number input as well. Call program
-with -H tag for a detailed description of each function.
-"""
-p = argparse.ArgumentParser(description=usage)
-p.add_argument("-i", "-input", dest="fastaFileName",
-               help="Input fasta file")
-p.add_argument("-f", dest="function", choices=functionList,
-               help="Function to run")
-p.add_argument("-s", "-string", dest="string", type=str,
-               help="String to use for various functions (if relevant)")
-p.add_argument("-n", "-number", dest="number",
-               help="Number to use for various functions (if relevant)")
-p.add_argument("-o", "-output", dest="outputFileName",
-               help="Output file name")
-p.add_argument("-H", "-HELP", dest="detailedHelp", action='store_true',
-             help="Provide detailed help for each function")
-
-args = p.parse_args()
-listOutName, args.outputFileName = validate_args(args, stringFunctions, numberFunctions, functionList)
-
-# Enact functions
-'''Note: startTime is used for temporary file generation if the FASTQ file is faulty'''
-## String functions
-if args.function == 'rename':
-        fasta_rename(args.fastaFileName, args.string, startTime, args.outputFileName, listOutName)
-if args.function == 'listrename':
-        fasta_listrename(args.fastaFileName, args.string, startTime, args.outputFileName)     
-if args.function == 'removestringfseqid':
-        fasta_removestringfseqid(args.fastaFileName, args.string, startTime, args.outputFileName)
-if args.function == 'splitseqidatstring':
-        fasta_splitseqidatstring(args.fastaFileName, args.string, startTime, args.outputFileName)
-if args.function == 'retrieveseqwstring':
-        fasta_retrieveseqwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
-if args.function == 'retrieveseqidwstring':
-        fasta_retrieveseqidwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
-if args.function == 'removeseqwstring':
-        fasta_removeseqwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
-if args.function == 'removeseqidwstring':
-        fasta_removeseqidwstring(args.fastaFileName, args.string, startTime, args.outputFileName)
-if args.function == 'trim':
-        fasta_trim(args.fastaFileName, args.string, startTime, args.outputFileName)
-## Number functions
-if args.function == 'single2multi':
-        fasta_single2multi(args.fastaFileName, args.number, args.outputFileName)
-if args.function == 'cullbelow':
-        fasta_cullbelow(args.fastaFileName, args.number, startTime, args.outputFileName)
-if args.function == 'cullabove':
-        fasta_cullabove(args.fastaFileName, args.number, startTime, args.outputFileName)
-## Number functions - FAST(A/Q) compatible
-if args.function == 'chunk':
-        fasta_chunk(args.fastaFileName, args.number, startTime, args.outputFileName)
-## Basic functions
-if args.function == 'ids':
-        fasta_ids(args.fastaFileName, startTime, args.outputFileName)
-if args.function == 'descriptions':
-        fasta_descriptions(args.fastaFileName, startTime, args.outputFileName)
-if args.function == 'lengths':
-        fasta_lengths(args.fastaFileName, startTime, args.outputFileName)
-if args.function == 'count':
-        fasta_count(args.fastaFileName, startTime, args.outputFileName)
-if args.function == 'multi2single':
-        fasta_multi2single(args.fastaFileName, args.outputFileName)
-if args.function == 'q_to_a':
-        fasta_q_to_a(args.fastaFileName, args.outputFileName)
-print('Program completed successfully!')
+if __name__ == '__main__':
+        main()
