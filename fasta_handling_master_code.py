@@ -262,7 +262,7 @@ def splitseqidatstring_start(fastaFile, splitString, outputFileName):
                         # Main function action
                         seqid = record.description
                         if splitString in seqid:
-                                seqid = seqid.split(splitString, maxsplit=1)[1]
+                                seqid = seqid.split(splitString, maxsplit=1)[0]
                         # Output
                         if seqType == 'fasta':
                                 fastaOut.write('>' + seqid + '\n' + seq + '\n')                  #fa
@@ -286,7 +286,7 @@ def splitseqidatstring_end(fastaFile, splitString, outputFileName):
                         # Main function action
                         seqid = record.description
                         if splitString in seqid:
-                                seqid = seqid.split(splitString, maxsplit=1)[0]
+                                seqid = seqid.split(splitString, maxsplit=1)[1]
                         # Output
                         if seqType == 'fasta':
                                 fastaOut.write('>' + seqid + '\n' + seq + '\n')                  #fa
