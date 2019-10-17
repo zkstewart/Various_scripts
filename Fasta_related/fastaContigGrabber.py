@@ -58,7 +58,7 @@ def fasta_or_fastq(fastaFile):
                 quit()
 
 ## Fasta retrieve/remove functions
-def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList, behaviour, effort):
+def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList, idShortDict, behaviour, effort):
         # Ensure behaviour value makes sense
         if behaviour.lower() not in ['retrieve', 'remove']:
                 print('fasta_retrieve_remove_tofile: Input behaviour value is not "retrieve" or "remove" but is instead "' + str(behaviour) + '".')
@@ -77,6 +77,9 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList
                         elif record.long_name in idList:
                                 seqid = record.long_name
                                 foundList.append(seqid)
+                        elif record.name in idShortDict:
+                                seqid = record.long_name
+                                foundList.append(idShortDict[record.name])
                         # If relevant, put more effort into finding ID in our idList
                         elif effort == True:
                                 idMatches = [seqid for seqid in idList if record.long_name.startswith(seqid)]                   # This will return all entries in the idList that partially match the current record's long name
@@ -212,6 +215,16 @@ if args.textFileName != None:
 if args.idString == None or args.idString == '' or args.idString == []:
         args.idString = set()
 idList = list(set(textIds).union(set(args.idString)))
+# Attempt to generate a short version of our idList (equivalent to how pyfaidx indexes IDs)
+idShortDict = {}
+for seqID in idList:
+        shortSeqID = seqID.split(' ')[0]
+        if shortSeqID not in idShortDict:
+                idShortDict[shortSeqID] = seqID
+        else:
+                idShortDict = None # If we don't have entirely unique short IDs we won't bother using them
+                break
+
 # Strip > characters if they exist in our idList
 for i in range(len(idList)):
         if idList[i].startswith('>'):
@@ -222,7 +235,7 @@ while '' in idList:
 
 # Extract sequences if handling command-line argument
 if operationType == 'command-line':
-        fasta_retrieve_remove_tofile(records, longIndex, args.outputFileName, idList, args.behaviour, args.effort)
+        fasta_retrieve_remove_tofile(records, longIndex, args.outputFileName, idList, idShortDict, args.behaviour, args.effort)
                 
 # Open CMD window and allow for ongoing sequence retrieval otherwise
 elif operationType == 'CMD':
