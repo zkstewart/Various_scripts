@@ -910,7 +910,7 @@ def main():
         if args.function == 'twofastaseqidcompare':
                 twofastaseqidcompare(args.fastaFileName, args.string, args.outputFileName)
         if args.function == 'twofastaseqidcompare_orthofinder':
-                twofastaseqidcompare(args.fastaFileName, args.string, args.outputFileName)
+                twofastaseqidcompare_orthofinder(args.fastaFileName, args.string, args.outputFileName)
         ## Number functions
         if args.function == 'single2multi':
                 single2multi(args.fastaFileName, args.number, args.outputFileName)
