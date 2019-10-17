@@ -512,6 +512,43 @@ def twofastaseqidcompare(fastaFile1, fastaFile2, outputFileName):
         with open(outputFileName + '_file2absent.txt', 'w') as fileOut4:
                 fileOut4.write('\n'.join(r2absent))
 
+def twofastaseqidcompare_orthofinder(fastaFile1, fastaFile2, outputFileName):
+        def sanitise_seqid(seqid):
+                seqid = seqid.replace(',', '_')
+                return seqid
+        # Check for file type
+        seqType1 = fasta_or_fastq(fastaFile1)
+        seqType2 = fasta_or_fastq(fastaFile2)
+        # Load fast(a/q) file
+        records1 = SeqIO.parse(open(fastaFile1, 'r'), seqType1)
+        records2 = SeqIO.parse(open(fastaFile2, 'r'), seqType2)
+        # Obtain sequence IDs from files
+        r1IDs = {}
+        r2IDs = {}
+        for r1 in records1:
+                r1IDs.setdefault(sanitise_seqid(r1.description))
+        for r2 in records2:
+                r2IDs.setdefault(sanitise_seqid(r2.description))
+        # Perform function
+        r1only, r1absent, r2only, r2absent = [], [], [], []
+        for k1 in r1IDs.keys():
+                if k1 not in r2IDs:
+                        r1only.append(k1)
+                        r2absent.append(k1)
+        for k2 in r2IDs.keys():
+                if k2 not in r1IDs:
+                        r2only.append(k2)
+                        r1absent.append(k2)
+        # Write output files
+        with open(outputFileName + '_file1only.txt', 'w') as fileOut1:
+                fileOut1.write('\n'.join(r1only))
+        with open(outputFileName + '_file1absent.txt', 'w') as fileOut2:
+                fileOut2.write('\n'.join(r1absent))
+        with open(outputFileName + '_file2only.txt', 'w') as fileOut3:
+                fileOut3.write('\n'.join(r2only))
+        with open(outputFileName + '_file2absent.txt', 'w') as fileOut4:
+                fileOut4.write('\n'.join(r2absent))
+
 # Define general purpose functions
 def fasta_or_fastq(fastaFile):
         # Get the first letter
@@ -739,6 +776,13 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 IDs are to be compared to the input file to find IDs present and absent in
                 each file and produce text files listing these occurrences.
                 '''
+                twofastaseqidcompare_orthofinder = '''
+                The _twofastaseqidcompare_orthofinder_ function accepts a string
+                input. This string should correspond to a second fast(a/q) file whose sequence
+                IDs are to be compared to the input file to find IDs present and absent in
+                each file and produce text files listing these occurrences. This differs from
+                the above by correcting changes induced by orthofinder to sequence IDs
+                '''
                 ## Combined string & number input
                 trim = '''
                 The _trim_ function accepts a string input in format s{digit}e{digit}. This
@@ -782,7 +826,7 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                         print('You need to specify a string argument when running function \'' + args.function + '\'. Try again.')
                         quit()
                 # Special string-based functions
-                if args.function in ['listrename', 'twofastaseqidcompare']:
+                if args.function in ['listrename', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder']:
                         if not os.path.isfile(args.string):
                                 print('The specified string does not point to a file. Make sure you have typed this correctly or provided the full path and try again.')
                                 quit()
@@ -813,7 +857,7 @@ def main():
         SeqIO.QualityIO.FastqGeneralIterator = AltFastqGeneralIterator # This helps in cases where qual IDs differ from title IDs, preventing a program-terminating error
         
         # Function list - update as new ones are added
-        stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare']
+        stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder']
         numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk']
         basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a']
         functionList = stringFunctions + numberFunctions + basicFunctions
@@ -864,6 +908,8 @@ def main():
         if args.function == 'trim':
                 trim(args.fastaFileName, args.string, args.outputFileName)
         if args.function == 'twofastaseqidcompare':
+                twofastaseqidcompare(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'twofastaseqidcompare_orthofinder':
                 twofastaseqidcompare(args.fastaFileName, args.string, args.outputFileName)
         ## Number functions
         if args.function == 'single2multi':
