@@ -53,6 +53,7 @@ def mms2sort_evalue(inputFile, outputFile, delInputFile=False):
                                 try:
                                         group.sort(key = lambda x: (float(x[10]),-float(x[11])))
                                 except:
+                                        print('Evalue failure')
                                         print('"' + key + '"')
                                         print(group)
                                         quit()
@@ -91,7 +92,12 @@ def mms2sort_recompute(inputFile, outputFile, recomputeFasta):
         """
         with open(inputFile, 'r') as fileIn:
                 for line in fileIn:
-                        queryID = line.split()[0]
+                        sl = line.split()
+                        queryID = sl[0]
+                        if len(sl) != 22:
+                                print('Recompute failure')
+                                print(sl)
+                                quit()
                         recomputeDict[queryID].append(line.rstrip("\r\n"))
         
         # Write output file with sorting by query ID
