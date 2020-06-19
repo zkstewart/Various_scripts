@@ -77,9 +77,10 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList
                         elif record.long_name in idList:
                                 seqid = record.long_name
                                 foundList.append(seqid)
-                        elif record.name in idShortDict:
-                                seqid = record.long_name
-                                foundList.append(idShortDict[record.name])
+                        elif idShortDict != None:
+                                if record.name in idShortDict:
+                                        seqid = record.long_name
+                                        foundList.append(idShortDict[record.name])
                         # If relevant, put more effort into finding ID in our idList
                         elif effort == True:
                                 idMatches = [seqid for seqid in idList if record.long_name.startswith(seqid)]                   # This will return all entries in the idList that partially match the current record's long name
