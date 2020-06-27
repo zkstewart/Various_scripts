@@ -141,6 +141,7 @@ def mms2tab(mmseqs2dir, query, target, tmpdir, searchName, threads):
                 dbname2 = query + '_queryDB'
         # Create tab-delim BLAST-like output
         cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' convertalis "' + dbname1 + '" "' + dbname2 + '" "' + searchName + '" "' + searchName + '.m8" "' + tmpdir + '" --threads ' + str(threads)
+        print(cmd)
         run_mms2 = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         mms2out, mms2err = run_mms2.communicate()
         if mms2err.decode("utf-8") != '':
