@@ -7,6 +7,8 @@
 
 # Load packages for main
 import os, argparse, time
+from Bio import SeqIO
+from collections import OrderedDict
 
 # Define functions
 def blast_hitcount(blastFile, evalue):
@@ -85,7 +87,6 @@ def blast_hitids(blastFile, evalue, whichToReturn):
 
 def blast_fastahitretrieveremove(blastFile, fastaFile, evalue, behaviour, prefix):
         # Set up
-        from Bio import SeqIO
         outFasta = []
         # Ensure that evalue is sensible
         if evalue < 0:
@@ -120,6 +121,46 @@ def blast_fastahitretrieveremove(blastFile, fastaFile, evalue, behaviour, prefix
                 else:
                         outFasta.append('@' + record.description + '\n' + seq + '\n+\n' + qual) #fq
         return outFasta, fastaFile, changed
+
+def blast_besthitid(blastFile, fastaFile):
+        # Set up
+        from itertools import groupby
+        grouper = lambda x: x.split('\t')[0]
+        # Load fasta file
+        records = SeqIO.parse(open(fastaFile, 'r'), "fasta")
+        hitDict = OrderedDict()
+        for record in records:
+                hitDict[record.id] = "N/A" # Default to no result; will be overwritten in below loop if possible
+        # Main function
+        with open(blastFile) as fileIn:
+                for key, value in groupby(fileIn, grouper):
+                        bestHit = []
+                        for entry in value:     # We do this process in case the file isn't sorted; this is the case for MMseqs2
+                                sl = entry.rstrip('\r\n').split('\t')
+                                if bestHit == []:
+                                        bestHit = sl
+                                else:
+                                        # Check E-value
+                                        if float(sl[10]) < float(bestHit[10]):
+                                                bestHit = sl
+                                        # If E-value is equivalent, check bit score
+                                        elif float(sl[10]) == float(bestHit[10]):
+                                                if float(sl[11]) > float(bestHit[11]):
+                                                        bestHit = sl
+                                                # If bit score is equivalent, check alignment length
+                                                elif float(sl[11]) == float(bestHit[11]):
+                                                        if int(sl[3]) > int(bestHit[3]):
+                                                                bestHit = sl
+                                                '''This is arbitrary, if E-value and bit score are identical, then the possible scenarios are
+                                                that one hit is longer with lower identity, and the other hit is shorter with higher identity.
+                                                I'm inclined to think that the first hit is better than the second if E-value/bit score are equivalent'''
+                        # Overwrite N/A value in dict
+                        hitDict[bestHit[0]] = bestHit[1]
+        # Make an output list
+        outList = []
+        for key, value in hitDict.items():
+                outList.append(key + '\t' + value)
+        return outList
 
 # Define general purpose functions
 def fasta_or_fastq(fastaFile, prefix):
@@ -232,6 +273,11 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                 Note that both query and target columns of the BLAST-tab file
                 will be checked for IDs
                 '''
+                besthitid = '''
+                The _besthitid_ function requires a FASTA input. It will output
+                a tab-delimited text file pairing query IDs with their best matching result.
+                Where no results were obtained, "N/A" will be displayed instead.
+                '''
                 ## Format help message
                 printList = str(functionList).replace("'", "")
                 printList = eval(printList)
@@ -315,7 +361,7 @@ and 5) enact the function below.
 stringFunctions = ['hitids', 'fastahitretrieveremove']
 numberFunctions = ['hitcount', 'hitids', 'fastahitretrieveremove']
 basicFunctions = []
-fastaFunctions = ['fastahitretrieveremove']
+fastaFunctions = ['fastahitretrieveremove', 'besthitid']
 functionList = []
 for fList in [stringFunctions + numberFunctions + basicFunctions + fastaFunctions]:     # Need more elaborate process since there can be duplicates in string and number lists
         for func in fList:
@@ -358,6 +404,8 @@ outFasta = []
 ## String functions - FAST(A/Q) input
 if args.function == 'fastahitretrieveremove':
         outFasta, args.fastaFileName, changed = blast_fastahitretrieveremove(args.blastFileName, args.fastaFileName, args.number, args.string, startTime)       # startTime is used for temporary file generation if the FASTQ file is faulty
+if args.function == 'besthitid':
+        outList = blast_besthitid(args.blastFileName, args.fastaFileName)
 ## Number functions
 if args.function == 'hitcount':
         outList = blast_hitcount(args.blastFileName, args.number)
