@@ -131,7 +131,7 @@ def runmms2(mmseqs2dir, query, target, tmpdir, searchName, params):
         if mms2err.decode("utf-8") != '':
                 raise Exception('MMseqs2 search error text below\n' + mms2err.decode("utf-8"))
 
-def mms2tab(mmseqs2dir, query, target, tmpdir, searchName, threads):
+def mms2tab(mmseqs2dir, query, target, searchName, threads):
         import os, subprocess
         # Get file details
         dbname1 = query + '_queryDB'
@@ -140,7 +140,7 @@ def mms2tab(mmseqs2dir, query, target, tmpdir, searchName, threads):
         else:
                 dbname2 = query + '_queryDB'
         # Create tab-delim BLAST-like output
-        cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' convertalis "' + dbname1 + '" "' + dbname2 + '" "' + searchName + '" "' + searchName + '.m8" "' + tmpdir + '" --threads ' + str(threads)
+        cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' convertalis "' + dbname1 + '" "' + dbname2 + '" "' + searchName + '" "' + searchName + '.m8" " " --threads ' + str(threads)
         print(cmd)
         run_mms2 = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         mms2out, mms2err = run_mms2.communicate()
@@ -277,7 +277,7 @@ def main():
                 if os.path.join(args.outputdir, args.output) + '_mms2SEARCH.m8' not in outputdir:
                         print('Generating MMseqs2 tabular output...')
                         log_update(logName, 'Generating MMseqs2 tabular output...')
-                        mms2tab(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.threads)
+                        mms2tab(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.threads)
                 else:
                         print('Skipping MMseqs2 table generation...')
                         log_update(logName, 'Skipping MMseqs2 table generation...')
@@ -306,7 +306,7 @@ def main():
                 runmms2(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), params)
                 print('Generating MMseqs2 tabular output...')
                 log_update(logName, 'Generating MMseqs2 tabular output...')
-                mms2tab(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.threads)
+                mms2tab(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.threads)
                 if args.blast_sort:
                         print('Sorting MMseqs2 output file...')
                         log_update(logName, 'Sorting MMseqs2 output file...')
