@@ -63,3 +63,6 @@ with open(args.outputFileName, 'w') as file_out:
                         for line in input_file:
                                 # Write line as posix standard
                                 file_out.write(line.rstrip('\r\n') + '\n')
+
+# Notify user of successful completion
+print("Program completed successfully!")
