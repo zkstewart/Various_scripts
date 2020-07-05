@@ -14,19 +14,11 @@ def validate_args(args):
                         print(key + ' argument was not specified. Fix this and try again.')
                         quit()
         # Validate the input file locations depending on type of input
-        if len(args.inputLocation) == 1:
-                # Check that specified value is a path
-                if not os.path.isdir(args.inputLocation[0]):
-                        print('One value was provided for -i, which means you should have provided a directory containing FASTA files.')
-                        print('The provided value "' + args.inputLocation[0] + '" is not a directory; either it does not exist or it is a file; fix your input and try again.')
+        for inputLocation in args.inputLocation:
+                # Check that specified value is a path or file
+                if not os.path.isdir(inputLocation) and not os.path.isfile(inputLocation):
+                        print('The provided value "' + inputLocation + '" is not a directory or file; fix your input and try again.')
                         quit()
-        else:
-                # Check that the specified values are files
-                for file in args.inputLocation:
-                        if not os.path.isfile(file):
-                                print('Multiple values were provided for -i, which means you should have provided the location of individual FASTA files.')
-                                print('The provided value "' + file + '" is not a file; either it does not exist or it is a directory; fix your input and try again.')
-                                quit()
         # Handle file overwrites
         if os.path.isdir(args.outputFileName):
                 print(args.outputFileName + ' is a directory. Delete/move/rename this directory and run the program again.')
@@ -46,7 +38,7 @@ where some have newline endings and others do not.
 """
 p = argparse.ArgumentParser(description=usage)
 p.add_argument("-i", "-input", dest="inputLocation", nargs="+",
-               help="Input a single directory or multiple file locations")
+               help="Input director(y/ies) and/or file location(s)")
 p.add_argument("-o", "-output", dest="outputFileName",
                help="Output file name.")
 
@@ -55,25 +47,19 @@ validate_args(args)
 
 # Find files depending on how inputLocation was specified
 input_files = []
-if len(args.inputLocation) == 1:
-        # Scan through files and detect our files of interest
-        for file in os.listdir(args.inputLocation[0]):
-                input_files.append(os.path.join(args.inputLocation[0], file))
-else:
-        # Make sure that the provided files all exist
-        for file in args.inputLocation:
-                if not os.path.isfile(file):
-                        print('Input file "' + file + '" either does not exist or is not a file.')
-                        print('Make sure you spelled the file name/location correctly and try again.')
-                        quit()
-                input_files.append(os.path.abspath(file))
+for inputLocation in args.inputLocation:
+        if os.path.isdir(inputLocation):
+                # Scan through files and detect our files of interest
+                for f in os.listdir(inputLocation):
+                        input_files.append(os.path.join(inputLocation, f))
+        else:
+                # Add the absolute path of the file to our list
+                input_files.append(os.path.abspath(inputLocation))
 
 # Produce output file
 with open(args.outputFileName, 'w') as file_out:
         for f in input_files:
                 with open(f, 'r') as input_file:
                         for line in input_file:
-                                if not line.endswith('\n'):
-                                        file_out.write(line + '\n')
-                                else:
-                                        file_out.write(line)
+                                # Write line as posix standard
+                                file_out.write(line.rstrip('\r\n') + '\n')
