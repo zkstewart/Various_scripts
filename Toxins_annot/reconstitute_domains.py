@@ -80,6 +80,8 @@ def domaindict_sequenceownershipdict_tabulate(domainDict, sequenceOwnershipDict)
         for key in domainDict.keys():
                 if key.startswith(".\\"):
                         cleanKey = key[2:]
+                else:
+                        cleanKey = key
                 domainKeys.append(cleanKey)
                 domainCleanPairs[cleanKey] = key
         
@@ -154,7 +156,7 @@ def domaindict_sequenceownershipdict_tabulate(domainDict, sequenceOwnershipDict)
         # Format groups list as text output
         for i in range(len(tableGroups)):
                 joinedGroup = []
-                for x in range(0, max(len(tableGroups[i][1]), len(tableGroups[i][1]))):
+                for x in range(0, max(len(tableGroups[i][1]), len(tableGroups[i][2]))):
                         if x <= len(tableGroups[i][1]) - 1:
                                 value1 = tableGroups[i][1][x]
                         else:
