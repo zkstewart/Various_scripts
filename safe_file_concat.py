@@ -51,7 +51,9 @@ for inputLocation in args.inputLocation:
         if os.path.isdir(inputLocation):
                 # Scan through files and detect our files of interest
                 for f in os.listdir(inputLocation):
-                        input_files.append(os.path.join(inputLocation, f))
+                        f_path = os.path.join(inputLocation, f)
+                        if os.path.isfile(f_path):
+                                input_files.append(f_path)
         else:
                 # Add the absolute path of the file to our list
                 input_files.append(os.path.abspath(inputLocation))
