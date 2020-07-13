@@ -112,22 +112,22 @@ def domaindict_sequenceownershipdict_tabulate(domainDict, sequenceOwnershipDict)
                 This is only necessary since the files I'm working with currently
                 have issues with their sequence IDs
                 '''
-                pipeCdsRegex = re.compile(r"\|CDS\d{1,3}.+$")
+                uniprotRegex = re.compile(r"(sp\|\w{6})\|.+")
                 for i in range(len(ownershipGroupId)):
-                        ownershipGroupId[i] = ownershipGroupId[i].rsplit("|", maxsplit=1)[0]
-                        suffixToRemove = pipeCdsRegex.findall(ownershipGroupId[i])
-                        if suffixToRemove != []:
-                                ownershipGroupId[i] = ownershipGroupId[i][:len(suffixToRemove[0])]
+                        ownershipGroupId[i] = ownershipGroupId[i].rstrip("|").rsplit("|CDS")[0]
+                        regexHit = uniprotRegex.findall(ownershipGroupId[i])
+                        if regexHit != []:
+                                ownershipGroupId[i] = regexHit[0]
                 for i in range(len(ownershipGroupDescription)):
-                        ownershipGroupDescription[i] = ownershipGroupDescription[i].rsplit("|", maxsplit=1)[0]
-                        suffixToRemove = pipeCdsRegex.findall(ownershipGroupDescription[i])
-                        if suffixToRemove != []:
-                                ownershipGroupDescription[i] = ownershipGroupDescription[i][:len(suffixToRemove[0])]
+                        ownershipGroupDescription[i] = ownershipGroupDescription[i].rstrip("|").rsplit("|CDS")[0]
+                        regexHit = uniprotRegex.findall(ownershipGroupDescription[i])
+                        if regexHit != []:
+                                ownershipGroupDescription[i] = regexHit[0]
                 for i in range(len(domainGroup)):
-                        domainGroup[i] = domainGroup[i].rsplit("|", maxsplit=1)[0]
-                        suffixToRemove = pipeCdsRegex.findall(domainGroup[i])
-                        if suffixToRemove != []:
-                                domainGroup[i] = domainGroup[i][:len(suffixToRemove[0])]
+                        domainGroup[i] = domainGroup[i].rstrip("|").rsplit("|CDS")[0]
+                        regexHit = uniprotRegex.findall(domainGroup[i])
+                        if regexHit != []:
+                                domainGroup[i] = regexHit[0]
                 ownershipGroupId = set(ownershipGroupId)
                 ownershipGroupDescription = set(ownershipGroupDescription)
                 domainGroup = set(domainGroup)
@@ -150,10 +150,23 @@ def domaindict_sequenceownershipdict_tabulate(domainDict, sequenceOwnershipDict)
                 uniqueToDomain.sort()
                 uniqueToOwnership.sort()
                 # Tabulate for the table grouping
-                tableGroups.append([key, common + ["... unique ..."] + uniqueToDomain, common + ["... unique ..."] + uniqueToOwnership])
-        
-
-
+                tableGroups.append([key, common + ["... unique (not already in HMM)..."] + uniqueToDomain, common + ["... unique (not hit by HMM)..."] + uniqueToOwnership])
+        # Format groups list as text output
+        for i in range(len(tableGroups)):
+                joinedGroup = []
+                for x in range(0, max(len(tableGroups[i][1]), len(tableGroups[i][1]))):
+                        if x <= len(tableGroups[i][1]) - 1:
+                                value1 = tableGroups[i][1][x]
+                        else:
+                                value1 = ""
+                        
+                        if x <= len(tableGroups[i][2]) - 1:
+                                value2 = tableGroups[i][2][x]
+                        else:
+                                value2 = ""
+                        joinedGroup.append("\t".join([value1, value2]))
+                tableGroups[i] = tableGroups[i][0] + "\nDomtblout\tReference FASTA\n" + "\n".join(joinedGroup)
+        return "\n\n".join(tableGroups)
 
 # Main call
 def main():
@@ -169,25 +182,19 @@ def main():
                           help="Specify the output file name")
         
         args = p.parse_args()
-        ## HARD-CODED TESTING
-        args.domtbloutParse = r"F:\toxins_annot\analysis\reconstitute_test_database\refs_toxins_domains.domtblout_parse"
-        domtbloutParse = r"F:\toxins_annot\analysis\reconstitute_test_database\refs_toxin_domains.domtblout_parse"
-        args.referenceFastaDir = r"F:\toxins_annot\alns\Manual_domain_curation_MSAs"
-        referenceFastaDir = r"F:\toxins_annot\alns\Manual_domain_curation_MSAs"
-        args.outputFileName = r"F:\toxins_annot\analysis\reconstitute_test_database\test_reconstitute.txt"
-        outputFileName = r"F:\toxins_annot\analysis\reconstitute_test_database\test_reconstitute.txt"
-        #validate_args(args)
-        ## END
+        validate_args(args)
 
         # Parse parsed domtblout
-        #sequenceDict, domainDict = parse_parsed_domtblout(args.domtbloutParse)
-        sequenceDict, domainDict = parse_parsed_domtblout(domtbloutParse)
+        sequenceDict, domainDict = parse_parsed_domtblout(args.domtbloutParse)
 
         # Parse reference directory FASTAs
-        referenceFastas = locate_files_in_directory(referenceFastaDir)
+        referenceFastas = locate_files_in_directory(args.referenceFastaDir)
         sequenceOwnershipDict = sequence_ownership_from_multiple_fastas(referenceFastas)
 
         # Format group comparison output file
+        outputText = domaindict_sequenceownershipdict_tabulate(domainDict, sequenceOwnershipDict)
+        with open(args.outputFileName, "w") as fileOut:
+                fileOut.write(outputText)
 
         # Done!
         print('Program completed successfully!')
