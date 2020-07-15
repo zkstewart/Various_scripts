@@ -31,6 +31,7 @@ def validate_args(args):
                 print('Percentage overlap cutoff must be given as a value >= 0 and <= 100. Try again.')
                 quit()
         args.ovlCutoff = args.ovlCutoff / 100
+        args.hmmPercMatch = args.hmmPercMatch / 100
         # Handle file overwrites
         if os.path.isfile(args.outputFileName):
                 print(args.outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
@@ -189,11 +190,11 @@ def split_middle(sharedPos, modelGroup, y):
 def join_models(modelGroup, y):
         firstPos = modelGroup[y][1]
         lastPos = max(modelGroup[y][2], modelGroup[y+1][2])                     # We want to associate the worst E-value to the joined model for the purpose of later handling
-        highestEval = max(modelGroup[y][3], modelGroup[y+1][3])                 # This is mostly because joining these models isn't entirely "natural" but it is more accurate than the significant overlap scenario that caused the join to occur
+        lowestEval = min(modelGroup[y][3], modelGroup[y+1][3])                  # This is mostly because joining these models isn't entirely "natural" but it is more accurate than the significant overlap scenario that caused the join to occur
         hstart = min(modelGroup[y][4], modelGroup[y+1][4])                      # segregate
-        hend = max(modelGroup[y][5], modelGroup[y+1][5])
-        hlen = max(modelGroup[y][6], modelGroup[y+1][6])
-        modelGroup[y] = [modelGroup[y][0], firstPos, lastPos, highestEval, hstart, hend, hlen]      
+        hend = max(modelGroup[y][5], modelGroup[y+1][5])                        # Segregate changes the above comment: We're instead using the best E-value since, in this scenario,
+        hlen = max(modelGroup[y][6], modelGroup[y+1][6])                        # we should only be joining different versions (_\d suffix) of the same domain
+        modelGroup[y] = [modelGroup[y][0], firstPos, lastPos, lowestEval, hstart, hend, hlen]      
         del modelGroup[y+1]
         return modelGroup
 
@@ -304,7 +305,7 @@ def dom_dict_check(finalDict):
                                 z += 1
 
 ## Domtblout parsing
-def hmmer_parse(domtbloutFile, lowerEvalueCutoff, upperEvalueCutoff):
+def hmmer_parse(domtbloutFile, lowerEvalueCutoff, upperEvalueCutoff, hmmPercMatch, specialBehaviours):
         domDict = {}                            # We need to use a dictionary for later sorting since hmmsearch does not produce output that is ordered in the way we want to work with. hmmscan does, but it is SIGNIFICANTLY slower.
         with open(domtbloutFile, 'r') as fileIn:
                 for line in fileIn:
@@ -319,11 +320,32 @@ def hmmer_parse(domtbloutFile, lowerEvalueCutoff, upperEvalueCutoff):
                         # Get relevant details
                         pid = sl[0]
                         did = sl[3]
+                        if did.rsplit("_", maxsplit=1)[1].isdigit(): # segregate
+                                did = did.rsplit("_", maxsplit=1)[0] # This allow us to tidily have multiple HMMs (with _\d suffix) pointing to the same domain
                         dstart = int(sl[17])
                         dend = int(sl[18])
                         hstart = int(sl[15]) # h_ values enable logic added on top of the original parse_domtblout.py file
                         hend = int(sl[16])
                         hlen = int(sl[5])
+                        '''
+                        The below hmmPerc check allows us to ignore domain hits that do not align against
+                        a defined percentage of the model. This is useful for this adapted script's purpose
+                        since HMMs should (roughly) correspond to family groupings rather than just
+                        plan "domains" (even though this is also not entirely true for the project I am working on)
+                        # Note that the above purpose has been intentionally hamstrung in favour of using 
+                        so-called special behaviours
+                        '''
+                        hmmPerc = (hend - hstart + 1) / hlen # segregate
+                        if hmmPerc < hmmPercMatch: # segregate
+                                continue
+                        specialBehaviourSkip = False
+                        for behaviourPair in specialBehaviours:
+                                if did == behaviourPair[0]:
+                                        if hmmPerc < behaviourPair[1]:
+                                                specialBehaviourSkip = True
+                                                break
+                        if specialBehaviourSkip == True:
+                                continue
                         # Add into domain dictionary
                         if pid not in domDict:
                                 domDict[pid] = [[did, dstart, dend, evalue, hstart, hend, hlen]]
@@ -348,6 +370,14 @@ appropriately.
 """
 
 # Reqs
+'''
+Note that hmmPercMatch's default value has been hamstrung because I need the program to conform
+to the manual curator's selection process wherein they don't seem to use a similar guideline for
+selecting sequences that fit into a model. Because I can't use a general purpose filter, I need
+to hard code some filtering mechanisms to enable me to use the present script for the current
+toxin annotation project.
+'''
+PARSE_SPECIAL_BEHAVIOURS = [["12_Sea_anemone_8_domain", 0.5]]
 p = argparse.ArgumentParser(description=usage)
 p.add_argument("-i", "--input", dest="inputHmmer",
                    help="Input domtblout HMMER3 domtblout file.")
@@ -357,6 +387,8 @@ p.add_argument("-le", "--lowerEvalue", dest="lowerEvalue", type=float,
                    help="Lower E-value significance cut-off for domain predictions (default == 1e-3)", default=1e-3)
 p.add_argument("-p", "--percOvl", dest="ovlCutoff", type=float,
                    help="Percentage overlap cutoff (below == trimming to prevent overlap, above = deletion of lower E-value hit, default == 25.0).", default=25.0)
+p.add_argument("-hp", "--hmmPercMatch", dest="hmmPercMatch", type=float,
+                   help="Percentage that a hit must overlap of the HMM's length (default == 10.0).", default=10.0)
 p.add_argument("-o", "--output", dest="outputFileName",
                    help="Output file name.")
 
@@ -364,7 +396,7 @@ args = p.parse_args()
 args = validate_args(args)
 
 # Parse hmmer domblout file
-domDict = hmmer_parse(args.inputHmmer, args.lowerEvalue, args.upperEvalue)
+domDict = hmmer_parse(args.inputHmmer, args.lowerEvalue, args.upperEvalue, args.hmmPercMatch, PARSE_SPECIAL_BEHAVIOURS)
 
 # Delve into parsed hmmer dictionary and sort out overlapping domain hits from different databases
 finalDict = single_database_domain_overlap_loop(domDict, args.ovlCutoff)
