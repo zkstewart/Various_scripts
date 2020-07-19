@@ -89,11 +89,13 @@ def makemms2profile(mmseqs2dir, query, tmpdir, iterations=4, sensitivity=7.5):
         cmd2 = '{0} search "{1}" "{1}" "{2}" "{3}" --num-iterations {4} -s {5}'.format(os.path.join(mmseqs2dir, 'mmseqs'), query + '_seqDB', query + '_selfsearchDB', tmpdir, iterations, sensitivity)
         cmd3 = '{0} result2profile "{1}" "{1}" "{2}" "{3}"'.format(os.path.join(mmseqs2dir, 'mmseqs'), query + '_seqDB', query + '_selfsearchDB', query + '_profileDB')
         # Run profile creation pipeline
+        print("# " + cmd1)
         run_makedb = subprocess.Popen(cmd1, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         makedbout, makedberr = run_makedb.communicate()
         if makedberr.decode("utf-8") != '':
                 raise Exception('MMseqs2 createdb error text below\n' + makedberr.decode("utf-8"))
 
+        print("# " + cmd2)
         run_search = subprocess.Popen(cmd2, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         searchout, searcherr = run_search.communicate()
         if searcherr.decode("utf-8") != '':
@@ -102,6 +104,7 @@ def makemms2profile(mmseqs2dir, query, tmpdir, iterations=4, sensitivity=7.5):
                         if not err.startswith("posix_madvise"): # mmseqs2 version e1a1c raises an error I don't understand, but it doesn't seem to be an exception
                                 raise Exception('MMseqs2 search error text below\n' + searcherr.decode("utf-8"))
 
+        print("# " + cmd3)
         run_r2s = subprocess.Popen(cmd3, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         r2sout, r2serr = run_r2s.communicate()
         if r2serr.decode("utf-8") != '':
