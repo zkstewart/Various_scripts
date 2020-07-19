@@ -172,6 +172,16 @@ def mms2sort(searchName):
                         for entry in group:
                                 fileOut.write(entry + '\n')
 
+def mms2profiletab(queryFasta, searchName, outName):
+        # Determine profile name
+        profileName = queryFasta.rsplit(".", maxsplit=1)[0]
+        # Write modified file
+        with open(searchName, 'r') as fileIn, open(outName, 'w') as fileOut:
+                for line in fileIn:
+                        sl = line.split("\t")
+                        sl[0] = profileName
+                        fileOut.write("\t".join(sl))
+
 def mms2_index_exists(fileNamePrefix, directory):
         indexName = fileNamePrefix + '.idx'
         if indexName in os.listdir(directory):
@@ -315,7 +325,7 @@ def main():
         else:
                 print('Skipping MMseqs2 table generation...')
                 log_update(logName, 'Skipping MMseqs2 table generation...')
-        
+
         # Sort if necessary
         if args.resume == False or (args.output + '_mms2SEARCH_sorted.m8' not in outputdir):
                 if args.blast_sort:
@@ -325,6 +335,21 @@ def main():
         else:
                 print('Skipping MMseqs2 sorting...')
                 log_update(logName, 'Skipping MMseqs2 sorting...')
+
+        # Extra tabular modification for profile searches
+        if args.profile_query == True:
+                # Determine input and outname names depending upon whether sorting occurred
+                if args.blast_sort:
+                        inputName = args.output + '_mms2SEARCH_sorted.m8'
+                        finalName = args.output + '_mms2PROFILESEARCH_sorted.m8'
+                else:
+                        inputName = args.output + '_mms2SEARCH.m8'
+                        finalName = args.output + '_mms2PROFILESEARCH.m8'
+                # Perform modification if necessary
+                if args.resume == False or (finalName not in outputdir):
+                        print('Converting MMseqs2 tabular output to profile-based output...')
+                        log_update(logName, 'Converting MMseqs2 tabular output to profile-based output...')
+                        mms2profiletab(args.query, inputName, os.path.join(args.outputdir, finalName))
 
         # Done!
         print('Program completed successfully!')
