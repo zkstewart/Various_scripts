@@ -301,7 +301,7 @@ def main():
                         query = args.query + "_seqDB"
                 else:
                         query = args.query + "_profileDB"
-                target = args.query + "_seqDB"
+                target = args.target + "_seqDB"
                 runmms2(args.mmseqs2dir, query, target, tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), params)
         else:  
                 print('Skipping MMseqs2 search...[If you want to re-run the search, delete the previous file (' + os.path.join(args.outputdir, args.output) + '_mms2SEARCH) and the mms2tmp directory]')
