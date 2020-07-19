@@ -77,6 +77,7 @@ def makemms2db(mmseqs2dir, query):
         dbname = query + '_seqDB'
         cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' createdb "' + query + '" "' + dbname + '"'
         # Query DB generation
+        print("# " + cmd)
         run_makedb = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         makedbout, makedberr = run_makedb.communicate()
         if makedberr.decode("utf-8") != '':
@@ -116,6 +117,7 @@ def indexmms2(mmseqs2dir, query, tmpdir, threads):
         dbname = query + '_seqDB'
         cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' createindex "' + dbname + '" "' + tmpdir + '" --threads ' + str(threads)
         # Run query index
+        print("# " + cmd)
         run_index = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         indexout, indexerr = run_index.communicate()
         if indexerr.decode("utf-8") != '':
