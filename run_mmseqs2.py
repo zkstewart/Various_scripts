@@ -350,6 +350,9 @@ def main():
                         print('Converting MMseqs2 tabular output to profile-based output...')
                         log_update(logName, 'Converting MMseqs2 tabular output to profile-based output...')
                         mms2profiletab(args.query, inputName, os.path.join(args.outputdir, finalName))
+                else:
+                        print('Skipping MMseqs2 profile-based output modification...')
+                        log_update(logName, 'Skipping MMseqs2 profile-based output modification...')
 
         # Done!
         print('Program completed successfully!')
