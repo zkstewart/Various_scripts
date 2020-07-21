@@ -8,19 +8,21 @@ import argparse, os
 
 ## Validate arguments
 def validate_args(args):
-        # Validate input file locations
+        # Validate query file location
         if not os.path.isfile(args.query):
                 print('I am unable to locate the query file (' + args.query + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
         args.querydir = os.path.dirname(os.path.abspath(args.query))    # Provides an easy way to handle directories without needing to specify these as separate arguments
         args.query = os.path.basename(args.query)                       # Finalises the separation
-        if not os.path.isfile(args.target):
-                print('I am unable to locate the target file (' + args.target + ')')
-                print('Make sure you\'ve typed the file name or location correctly and try again.')
-                quit()
-        args.targetdir = os.path.dirname(os.path.abspath(args.target))
-        args.target = os.path.basename(args.target)
+        # Validate target file location (if relevant)
+        if args.profile_terminate == False:
+                if not os.path.isfile(args.target):
+                        print('I am unable to locate the target file (' + args.target + ')')
+                        print('Make sure you\'ve typed the file name or location correctly and try again.')
+                        quit()
+                args.targetdir = os.path.dirname(os.path.abspath(args.target))
+                args.target = os.path.basename(args.target)
         # Validate output file location
         args.outputdir = os.path.dirname(os.path.abspath(args.output))
         args.output = os.path.basename(args.output)
@@ -137,13 +139,10 @@ def runmms2(mmseqs2dir, queryDB, targetDB, tmpdir, searchName, params):
                         if not err.startswith("posix_madvise"): # mmseqs2 version e1a1c raises an error I don't understand, but it doesn't seem to be an exception
                                 raise Exception('MMseqs2 search error text below\n' + mms2err.decode("utf-8"))
 
-def mms2tab(mmseqs2dir, query, target, searchName, threads):
+def mms2tab(mmseqs2dir, queryDB, targetDB, searchName, threads):
         import os, subprocess
-        # Get file details
-        dbname1 = query + '_seqDB'
-        dbname2 = target + '_seqDB'
         # Create tab-delim BLAST-like output
-        cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' convertalis "' + dbname1 + '" "' + dbname2 + '" "' + searchName + '" "' + searchName + '.m8" --threads ' + str(threads)
+        cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' convertalis "' + queryDB + '" "' + targetDB + '" "' + searchName + '" "' + searchName + '.m8" --threads ' + str(threads)
         print("# " + cmd)
         run_mms2 = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         mms2out, mms2err = run_mms2.communicate()
@@ -221,6 +220,8 @@ def main():
                           help="Optionally specify whether you want the program to check for files and skip processing steps")
         p.add_argument("-p", "--profile_query", dest="profile_query", action="store_true", default=False,
                           help="Optionally specify whether you want to automatically convert the query into a profile")
+        p.add_argument("-pt", "--profile_terminate", dest="profile_terminate", action="store_true", default=False,
+                          help="Optionally specify whether you want to exit after query profile generation")
         args = p.parse_args()
         args = validate_args(args)
         print('Program arguments appear to be OK. If you have any errors, try deleting the mms2tmp folder and try again.')
@@ -241,7 +242,8 @@ def main():
         
         # Query, target, and output dir details
         querydir = os.listdir(args.querydir)
-        targetdir = os.listdir(args.targetdir)
+        if args.profile_terminate == False:
+                targetdir = os.listdir(args.targetdir)
         outputdir = os.listdir(args.outputdir)
 
         # Format parameters for later MMseqs2 search function
@@ -264,6 +266,10 @@ def main():
                 else:
                         print('Skipping query profile DB generation...')
                         log_update(logName, 'Skipping query profile DB generation...')
+        if args.profile_terminate == True:
+                print('Terminating program after query profile DB generation...')
+                log_update(logName, 'Terminating program after query profile DB generation...')
+                quit()
         
         # Make target db
         if args.resume == False or (os.path.basename(args.target) + '_seqDB' not in targetdir):
@@ -308,10 +314,10 @@ def main():
                 print('Running MMseqs2 search...')
                 log_update(logName, 'Running MMseqs2 search...')
                 if args.profile_query == False:
-                        query = args.query + "_seqDB"
+                        query = os.path.join(args.querydir, args.query + "_seqDB")
                 else:
-                        query = args.query + "_profileDB"
-                target = args.target + "_seqDB"
+                        query = os.path.join(args.querydir, args.query + "_profileDB")
+                target = os.path.join(args.targetdir, args.target + "_seqDB")
                 runmms2(args.mmseqs2dir, query, target, tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), params)
         else:  
                 print('Skipping MMseqs2 search...[If you want to re-run the search, delete the previous file (' + os.path.join(args.outputdir, args.output) + '_mms2SEARCH) and the mms2tmp directory]')
@@ -321,7 +327,12 @@ def main():
         if args.resume == False or (args.output + '_mms2SEARCH.m8' not in outputdir):
                 print('Generating MMseqs2 tabular output...')
                 log_update(logName, 'Generating MMseqs2 tabular output...')
-                mms2tab(args.mmseqs2dir, os.path.join(args.querydir, args.query), os.path.join(args.targetdir, args.target), os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.threads)
+                if args.profile_query == False:
+                        query = os.path.join(args.querydir, args.query + "_seqDB")
+                else:
+                        query = os.path.join(args.querydir, args.query + "_profileDB")
+                target = os.path.join(args.targetdir, args.target + "_seqDB")
+                mms2tab(args.mmseqs2dir, query, target, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.threads)
         else:
                 print('Skipping MMseqs2 table generation...')
                 log_update(logName, 'Skipping MMseqs2 table generation...')
@@ -340,11 +351,11 @@ def main():
         if args.profile_query == True:
                 # Determine input and outname names depending upon whether sorting occurred
                 if args.blast_sort:
-                        inputName = args.output + '_mms2SEARCH_sorted.m8'
-                        finalName = args.output + '_mms2PROFILESEARCH_sorted.m8'
+                        inputName = os.path.join(args.outputdir, args.output + '_mms2SEARCH_sorted.m8')
+                        finalName = os.path.join(args.outputdir, args.output + '_mms2PROFILESEARCH_sorted.m8')
                 else:
-                        inputName = args.output + '_mms2SEARCH.m8'
-                        finalName = args.output + '_mms2PROFILESEARCH.m8'
+                        inputName = os.path.join(args.outputdir, args.output + '_mms2SEARCH.m8')
+                        finalName = os.path.join(args.outputdir, args.output + '_mms2PROFILESEARCH.m8')
                 # Perform modification if necessary
                 if args.resume == False or (finalName not in outputdir):
                         print('Converting MMseqs2 tabular output to profile-based output...')
