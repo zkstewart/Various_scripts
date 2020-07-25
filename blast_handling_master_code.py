@@ -122,6 +122,92 @@ def blast_fastahitretrieveremove(blastFile, fastaFile, evalue, behaviour, prefix
                         outFasta.append('@' + record.description + '\n' + seq + '\n+\n' + qual) #fq
         return outFasta, fastaFile, changed
 
+def blast_fastahitfastaout(blastFile, fastaFile, evalueRange):
+        # Set up
+        outFasta = []
+        evalueSplit = evalueRange.split("-")
+        evalueLower = float(evalueSplit[0])
+        evalueUpper = float(evalueSplit[1])
+        # Ensure that evalue is sensible
+        if evalueLower < 0:
+                print('Evalue should not be less than 0 since it is strictly +ve. Fix your input and try again.')
+                quit()
+        elif evalueUpper < evalueLower:
+                print('Lower Evalue should not be less than upper Evalue in provided range. Fix your input and try again.')
+                quit()
+        # Check if we're handling the query or target FASTA
+        with open(blastFile, "r") as fileIn:
+                for line in fileIn:
+                        if line.startswith("#"):
+                                continue
+                        sl = line.split("\t")
+                        qid = sl[0]
+                        tid = sl[1]
+                        break
+        records = SeqIO.parse(open(fastaFile, 'r'), "fasta")
+        for record in records:
+                seqid = record.id
+                seqdesc = record.description
+                if qid in seqid or qid in seqdesc:
+                        whichFasta = "query"
+                        break
+                elif tid in seqid or tid in seqdesc:
+                        whichFasta = "target"
+                        break
+        # Parse BLAST-tab file
+        blastDict = helper_blastdict(blastFile, evalueLower, evalueUpper, whichFasta)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), "fasta")
+        # Perform function
+        for record in records:
+                # Extract relevant details
+                seq = str(record.seq)
+                seqid = record.id
+                seqdesc = record.description
+                # Retrieve relevant BLAST hits
+                if seqid in blastDict:
+                        hits = blastDict[seqid]
+                elif seqdesc in blastDict:
+                        hits = blastDict[seqdesc]
+                else:
+                        continue
+                # Sort hits appropriately
+                hits.sort(key = lambda x: (x[1], x[2], x[0])) # sort by E-value, bitscore, then id
+                # Obtain the best hit and format output ID
+                bestHit = hits[0]
+                newSeqID = "{0} match={1} evalue={2} bitscore={3}".format(seqid, bestHit[0], bestHit[1], bestHit[2])
+                # Output
+                outFasta.append('>' + newSeqID + '\n' + seq)
+        return outFasta, fastaFile
+
+def helper_blastdict(blastFile, evalueLower, evalueUpper, whichToStore):
+        assert whichToStore in ["query", "target", "both"]
+        blastDict = {}
+        with open(blastFile, "r") as fileIn:
+                for line in fileIn:
+                        if line.startswith("#"):
+                                continue
+                        sl = line.rstrip("\r\n").split("\t")
+                        qid = sl[0]
+                        tid = sl[1]
+                        evalue = float(sl[10])
+                        bitscore = float(sl[11])
+                        # Filter on E-value
+                        if evalue < evalueLower or evalue > evalueUpper:
+                                continue
+                        # Store value
+                        if whichToStore == "query" or whichToStore == "both":
+                                if qid not in blastDict:
+                                        blastDict[qid] = [[tid, evalue, bitscore]]
+                                else:
+                                        blastDict[qid].append([tid, evalue, bitscore])
+                        if whichToStore == "target" or whichToStore == "both":
+                                if tid not in blastDict:
+                                        blastDict[tid] = [[qid, evalue, bitscore]]
+                                else:
+                                        blastDict[tid].append([qid, evalue, bitscore])
+        return blastDict
+
 def blast_besthitid(blastFile, fastaFile):
         # Set up
         from itertools import groupby
@@ -273,6 +359,14 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                 Note that both query and target columns of the BLAST-tab file
                 will be checked for IDs
                 '''
+                fastahitfastaout = '''
+                The _fastahitfastaoute_ function accepts a string and FASTA input. String input 
+                should be formatted as "lowerEvalue-upperEvalue" e.g., "0-0.1" to define the range
+                of E-value hits to retrieve. The input FASTA should correspond to the either the
+                query or the target file for the BLAST search. The output is a FASTA file containing sequences
+                which have a match within the E-value range, and their sequence IDs will be modified
+                to give a short summary of these hits pertinent details i.e., E-value and bit score.
+                '''
                 besthitid = '''
                 The _besthitid_ function requires a FASTA input. It will output
                 a tab-delimited text file pairing query IDs with their best matching result.
@@ -329,6 +423,19 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                 if args.string == None:
                         print('You need to specify a string argument when running function \'' + args.function + '\'. Try again.')
                         quit()
+                elif args.function == "fastahitfastaout":
+                        if "-" not in args.string:
+                                print("The string argument provided to {0} is not properly formatted. Try again.".format(args.function))
+                                quit()
+                        else:
+                                try:
+                                        splitString = args.string.split("-")
+                                        assert len(splitString) == 2
+                                        evalue1 = float(splitString[0])
+                                        evalue2 = float(splitString[1])
+                                except:
+                                        print("The string argument provided to {0} is not properly formatted. Try again.".format(args.function))
+                                        quit()
         # Validate number inputs if relevant
         if args.function in numberFunctions:
                 if args.number == None:
@@ -358,10 +465,10 @@ and 5) enact the function below.
 '''
 
 # Function list - update as new ones are added
-stringFunctions = ['hitids', 'fastahitretrieveremove']
+stringFunctions = ['hitids', 'fastahitretrieveremove', 'fastahitfastaout']
 numberFunctions = ['hitcount', 'hitids', 'fastahitretrieveremove']
 basicFunctions = []
-fastaFunctions = ['fastahitretrieveremove', 'besthitid']
+fastaFunctions = ['fastahitretrieveremove', 'fastahitfastaout', 'besthitid']
 functionList = []
 for fList in [stringFunctions + numberFunctions + basicFunctions + fastaFunctions]:     # Need more elaborate process since there can be duplicates in string and number lists
         for func in fList:
@@ -401,15 +508,16 @@ listOutName, fastaOutName, args.outputFileName = validate_args(args, stringFunct
 outList = []    # Blank lists so we can determine what needs to be output
 outFasta = []
 ## String functions
-## String functions - FAST(A/Q) input
+## String functions - FASTA input
 if args.function == 'fastahitretrieveremove':
         outFasta, args.fastaFileName, changed = blast_fastahitretrieveremove(args.blastFileName, args.fastaFileName, args.number, args.string, startTime)       # startTime is used for temporary file generation if the FASTQ file is faulty
+if args.function == 'fastahitfastaout':
+        outFasta, args.fastaFileName = blast_fastahitfastaout(args.blastFileName, args.fastaFileName, args.string)
 if args.function == 'besthitid':
         outList = blast_besthitid(args.blastFileName, args.fastaFileName)
 ## Number functions
 if args.function == 'hitcount':
         outList = blast_hitcount(args.blastFileName, args.number)
-## Number functions - FAST(A/Q) input
 ## Number & string functions
 if args.function == 'hitids':
         outList = blast_hitids(args.blastFileName, args.number, args.string) 
