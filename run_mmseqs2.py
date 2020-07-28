@@ -312,7 +312,12 @@ def main():
                 log_update(logName, 'Indexing step is being skipped due to argument flag...')
         
         # Run MMseqs2 search
-        if args.resume == False or (os.path.basename(args.output) + '_mms2SEARCH' not in outputdir):
+        if args.resume == False or (os.path.basename(args.output) + '_mms2SEARCH.m8' not in outputdir):
+                '''Because MMseqs2 creates output for each thread (mms2SEARCH.0 -> mms2SEARCH.n)
+                we can't reliably check if a single _mms2SEARCH file exists like in older versions
+                of this program. We should be able to simple check for the tabular file since it
+                should always exist almost immediately after a search operation completes
+                '''
                 print('Running MMseqs2 search...')
                 log_update(logName, 'Running MMseqs2 search...')
                 if args.profile_query == False:
