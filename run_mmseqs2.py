@@ -222,6 +222,8 @@ def main():
                           help="Optionally specify whether you want to automatically convert the query into a profile")
         p.add_argument("-pt", "--profile_terminate", dest="profile_terminate", action="store_true", default=False,
                           help="Optionally specify whether you want to exit after query profile generation")
+        p.add_argument("-iiq", "--id_is_query", dest="id_is_query", action="store_true", default=False,
+                          help="Optionally specify whether you want to convert the output sequence ID to be the query file sans suffix")
         args = p.parse_args()
         args = validate_args(args)
         print('Program arguments appear to be OK. If you have any errors, try deleting the mms2tmp folder and try again.')
@@ -348,14 +350,22 @@ def main():
                 log_update(logName, 'Skipping MMseqs2 sorting...')
 
         # Extra tabular modification for profile searches
-        if args.profile_query == True:
+        if args.id_is_query == True:
                 # Determine input and outname names depending upon whether sorting occurred
-                if args.blast_sort:
-                        inputName = os.path.join(args.outputdir, args.output + '_mms2SEARCH_sorted.m8')
-                        finalName = os.path.join(args.outputdir, args.output + '_mms2PROFILESEARCH_sorted.m8')
+                if args.profile_query == True:
+                        if args.blast_sort:
+                                inputName = os.path.join(args.outputdir, args.output + '_mms2SEARCH_sorted.m8')
+                                finalName = os.path.join(args.outputdir, args.output + '_mms2PROFILESEARCH_sorted.m8')
+                        else:
+                                inputName = os.path.join(args.outputdir, args.output + '_mms2SEARCH.m8')
+                                finalName = os.path.join(args.outputdir, args.output + '_mms2PROFILESEARCH.m8')
                 else:
-                        inputName = os.path.join(args.outputdir, args.output + '_mms2SEARCH.m8')
-                        finalName = os.path.join(args.outputdir, args.output + '_mms2PROFILESEARCH.m8')
+                        if args.blast_sort:
+                                inputName = os.path.join(args.outputdir, args.output + '_mms2SEARCH_sorted.m8')
+                                finalName = os.path.join(args.outputdir, args.output + '_mms2FAMILYSEARCH_sorted.m8')
+                        else:
+                                inputName = os.path.join(args.outputdir, args.output + '_mms2SEARCH.m8')
+                                finalName = os.path.join(args.outputdir, args.output + '_mms2FAMILYSEARCH.m8')
                 # Perform modification if necessary
                 if args.resume == False or (finalName not in outputdir):
                         print('Converting MMseqs2 tabular output to profile-based output...')
