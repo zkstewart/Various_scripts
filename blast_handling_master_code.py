@@ -125,7 +125,7 @@ def blast_fastahitretrieveremove(blastFile, fastaFile, evalue, behaviour, prefix
 def blast_fastahitfastaout(blastFile, fastaFile, evalueRange):
         # Set up
         outFasta = []
-        evalueSplit = evalueRange.split("-")
+        evalueSplit = evalueRange.split(",")
         evalueLower = float(evalueSplit[0])
         evalueUpper = float(evalueSplit[1])
         # Ensure that evalue is sensible
@@ -360,12 +360,13 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                 will be checked for IDs
                 '''
                 fastahitfastaout = '''
-                The _fastahitfastaoute_ function accepts a string and FASTA input. String input 
-                should be formatted as "lowerEvalue-upperEvalue" e.g., "0-0.1" to define the range
+                The _fastahitfastaout_ function accepts a string and FASTA input. String input 
+                should be formatted as "lowerEvalue,upperEvalue" e.g., "0,0.1" to define the range
                 of E-value hits to retrieve. The input FASTA should correspond to the either the
                 query or the target file for the BLAST search. The output is a FASTA file containing sequences
-                which have a match within the E-value range, and their sequence IDs will be modified
-                to give a short summary of these hits pertinent details i.e., E-value and bit score.
+                which have a match within the E-value range (inclusive of upper and lower bounds),
+                and their sequence IDs will be modified to give a short summary of these hits
+                pertinent details i.e., E-value and bit score.
                 '''
                 besthitid = '''
                 The _besthitid_ function requires a FASTA input. It will output
@@ -424,12 +425,12 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                         print('You need to specify a string argument when running function \'' + args.function + '\'. Try again.')
                         quit()
                 elif args.function == "fastahitfastaout":
-                        if "-" not in args.string:
+                        if "," not in args.string:
                                 print("The string argument provided to {0} is not properly formatted. Try again.".format(args.function))
                                 quit()
                         else:
                                 try:
-                                        splitString = args.string.split("-")
+                                        splitString = args.string.split(",")
                                         assert len(splitString) == 2
                                         evalue1 = float(splitString[0])
                                         evalue2 = float(splitString[1])
