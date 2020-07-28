@@ -368,11 +368,11 @@ def main():
                                 finalName = os.path.join(args.outputdir, args.output + '_mms2FAMILYSEARCH.m8')
                 # Perform modification if necessary
                 if args.resume == False or (finalName not in outputdir):
-                        print('Converting MMseqs2 tabular output to profile-based output...')
-                        log_update(logName, 'Converting MMseqs2 tabular output to profile-based output...')
+                        print('Converting MMseqs2 tabular output to ID-is-query output...')
+                        log_update(logName, 'Converting MMseqs2 tabular output to ID-is-query output...')
                         mms2profiletab(args.query, inputName, os.path.join(args.outputdir, finalName))
                 else:
-                        print('Skipping MMseqs2 profile-based output modification...')
+                        print('Skipping MMseqs2 ID-is-query output modification...')
                         log_update(logName, 'Skipping MMseqs2 profile-based output modification...')
 
         # Done!
