@@ -5,6 +5,7 @@
 
 import pyperclip, os, argparse
 from Bio import SeqIO
+from Bio.Seq import Seq
 
 # Define functions for later use
 ## Argument validation
@@ -146,6 +147,19 @@ def text_file_to_list(textFile):
                         outList.append(line.rstrip('\r\n'))
         return outList
 
+## Custom fasta dictionary
+def custom_to_dict(inputFileName):
+        records = {}
+        with open(inputFileName, "r") as fileIn:
+                for line in fileIn:
+                        if line.startswith(">"):
+                                seqid = line.strip(">\r\n")
+                                records[seqid] = SeqIO.SeqRecord(Seq(""), id=seqid)
+                                prevSeqid = seqid
+                        else:
+                                records[prevSeqid].seq += line.strip("\r\n ")
+        return records
+
 #### USER INPUT SECTION
 usage = """%(prog)s reads in FASTA files and allows various operations to extract
 sequences. These include running this program via double-click or with no arguments to operate
@@ -194,7 +208,10 @@ if operationType == 'CMD':
                         continue
 
 # Load the fasta file and parse its contents
-records = SeqIO.to_dict(SeqIO.parse(open(args.fastaFileName, "r"), "fasta"))
+try:
+        records = SeqIO.to_dict(SeqIO.parse(open(args.fastaFileName, "r"), "fasta"))
+except:
+        records = custom_to_dict(args.fastaFileName)
 
 # Load in text file if relevant and format our idList
 textIds = set()
