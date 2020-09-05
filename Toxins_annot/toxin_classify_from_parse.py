@@ -19,13 +19,15 @@ def validate_args(args):
                 print('I am unable to locate the parsed HMMER domtblout file (' + args.inputParse + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
-        if not os.path.isfile(args.inputParse):
+        if not os.path.isfile(args.inputFasta):
                 print('I am unable to locate the FASTA file (' + args.inputFasta + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
-        # Handle file overwrites
-        if os.path.isfile(args.outputFileName):
-                print(args.outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
+        # Validate that output directory is sensible
+        args.outputDirectory = os.path.abspath(args.outputDirectory)
+        if not os.path.isdir(args.outputDirectory):
+                print('The output directory does not exist (' + args.outputDirectory + ')')
+                print('Make sure you\'ve typed the location correctly and try again.')
                 quit()
         return args
 
@@ -106,7 +108,7 @@ def toxin_classifier(sequence, parsedDomainHits): # Receives format of [['Domain
 
         # SA8
         SA8_DOM_NAME = "12_Sea_anemone_8_domain"
-        SA8_FAMILY_NAME = "Sea Anemone 8"
+        SA8_FAMILY_NAME = "Sea_Anemone_8"
         SA8_MIN_EVALUE = 1e-4
         SA8_STARTS_WITHIN = 60
         SA8_ENDS_WITHIN = 10
@@ -121,7 +123,7 @@ def toxin_classifier(sequence, parsedDomainHits): # Receives format of [['Domain
         
         # PEPTIDASE S1
         S1_DOM_NAME = "14_Peptidase_S1_domain"
-        S1_FAMILY_NAME = "Peptidase S1"
+        S1_FAMILY_NAME = "Peptidase_S1"
         S1_L2D2_NAME = "13_ShK-like_domain"
         S1_L2D1_MIN_EVALUE = 1e-1
         S1_L2D2_MIN_EVALUE = 1e-60
@@ -209,7 +211,7 @@ def toxin_classifier(sequence, parsedDomainHits): # Receives format of [['Domain
 
         # PEPTIDASE M12A
         M12A_DOM_NAME = "15_Peptidase_M12A_domain"
-        M12A_FAMILY_NAME = "Peptidase M12A"
+        M12A_FAMILY_NAME = "Peptidase_M12A"
         M12A_L7D2_NAME = "13_ShK-like_domain"
         M12A_L7D3_NAME = "13_ShK-like_domain"
         M12A_L7D1_MIN_EVALUE = 1e-60
@@ -1103,10 +1105,29 @@ def debug_helper(key, fastaDict, parsedDomtbloutDict):
         return str(fastaDict[seqid].seq), parsedDomtbloutDict[key]
 
 ## Output function
-def output_func(toxinDict, outputFileName):
-        with open(outputFileName, "w") as fileOut:
-                for key, value in toxinDict.items():
-                        fileOut.write("{0}\t{1}\n".format(key, value))
+def filename_generator(prefix, suffix):
+        buffer = ""
+        while os.path.exists(prefix + str(buffer) + suffix):
+                if buffer == "":
+                        buffer = 1
+                else:
+                        buffer += 1
+        return prefix + str(buffer) + suffix
+
+def output_func(toxinDict, fastaDict, outputDirectory):
+        groupsDict = {}
+        for key, value in toxinDict.items():
+                if value == None: continue
+                if value not in groupsDict:
+                        groupsDict[value] = [key]
+                else:
+                        groupsDict[value].append(key)
+        for groupKey, groupValue in groupsDict.items():
+                fileName = filename_generator(os.path.join(outputDirectory, groupKey), ".fasta")
+                with open(fileName, "w") as fileOut:
+                        for value in groupValue:
+                                seq = str(fastaDict[value].seq)
+                                fileOut.write(">{0}\n{1}\n".format(value, seq))
 
 # Fasta parser
 def fasta_to_dict(inputFasta):
@@ -1139,35 +1160,28 @@ family structures.
 """
 
 # Reqs
-PARSE_SPECIAL_BEHAVIOURS = [["12_Sea_anemone_8_domain", 0.5]]
 p = argparse.ArgumentParser(description=usage)
 p.add_argument("-i", "--input", dest="inputParse",
                    help="Input parsed HMMER3 domtblout file")
 p.add_argument("-f", "--fasta", dest="inputFasta",
                    help="Input FASTA file of queried sequences")
-p.add_argument("-o", "--output", dest="outputFileName",
-                   help="Output file name")
+p.add_argument("-o", "--ouputDir", dest="outputDirectory", default = "",
+                   help="Optionally specify the directory to write files to")
 
 args = p.parse_args()
-## HARD-CODED TESTING
-inputParse = r"F:\toxins_annot\analysis\family_rule_definition\all_toxins_domains.domtblout_parse"
-inputFasta = r"F:\toxins_annot\analysis\family_rule_definition\all_toxins.fasta"
-outputFileName = r"F:\toxins_annot\analysis\family_rule_definition\test.txt"
 args = validate_args(args)
 
 # Read parsed HMMER file
-#parseDict = read_parsed_domtblout(args.inputParse)
-parseDict = read_parsed_domtblout(inputParse)
+parseDict = read_parsed_domtblout(args.inputParse)
 
 # Obtain FASTA dictionary
-#fastaDict = fasta_to_dict(args.inputFasta)
-fastaDict = fasta_to_dict(inputFasta)
+fastaDict = fasta_to_dict(args.inputFasta)
+
 # Classify toxins with hard-coded rules
 toxinDict = classify_all_toxins(fastaDict, parseDict)
 
 # Generate output
-#output_func(toxinDict, args.outputFileName)
-output_func(toxinDict, outputFileName)
+output_func(toxinDict, fastaDict, args.outputDirectory)
 
 # All done!
 print('Program completed successfully!')
