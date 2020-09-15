@@ -1,10 +1,5 @@
-import os, re, pyperclip, textwrap, shutil, subprocess
-from Bio.Align.Applications import MafftCommandline
-from Bio.SeqRecord import SeqRecord
-from Bio.Seq import Seq
+import os, re
 from Bio import SeqIO
-from io import StringIO
-
 
 # Global values
 transIDs = []
@@ -54,8 +49,8 @@ while True:
                 filenames.append(file)
         for fileName in filenames:            
             # Feed this data into mafft through the CMD window
-            outName = fileName.rsplit('.',maxsplit=1)[0] + '_align' + fileName.rsplit('.',maxsplit=1)[1]
+            outName = fileName.rsplit('.',maxsplit=1)[0] + '_align.' + fileName.rsplit('.',maxsplit=1)[1]
             if insi_setting.lower() == 'e':
-                os.system(r'cd ' + mafft_exe + ' & mafft.bat --genafpair ' + os.path.join(os.getcwd(), fileName) + ' > ' + outName + ')')
+                os.system(r'cd ' + mafft_exe + ' & mafft.bat --genafpair ' + os.path.join(os.getcwd(), fileName) + ' > ' + outName)
             else:
-                os.system(r'cd ' + mafft_exe + ' & mafft.bat --localpair ' + os.path.join(os.getcwd(), fileName) + ' > ' + outName + ')')
+                os.system(r'cd ' + mafft_exe + ' & mafft.bat --localpair ' + os.path.join(os.getcwd(), fileName) + ' > ' + outName)
