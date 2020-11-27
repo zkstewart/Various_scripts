@@ -73,12 +73,12 @@ def validate_args(args):
 
 def setup_working_directory(baseDir, species, genomeFile, rnaseqDirectory, rnaPrefixes):
     # Symbolic link dirs
-    genomeLocation = Path(baseDir, "genome").as_posix()
-    os.mkdir(genomeLocation)
+    genomeLocation = Path(baseDir, "genome")
+    genomeLocation.mkdir(exist_ok=True)
     os.symlink(genomeFile, Path(genomeLocation, "{0}.fasta".format(species)))
 
-    rnaseqLocation = Path(baseDir, "rnaseq_reads").as_posix()
-    os.mkdir(rnaseqLocation)
+    rnaseqLocation = Path(baseDir, "rnaseq_reads")
+    rnaseqLocation.mkdir(exist_ok=True)
     for prefix in rnaPrefixes:
         os.symlink(Path(rnaseqDirectory, "{0}_1.fastq".format(prefix)).as_posix(),
                     Path(rnaseqLocation, "{0}_1.fastq".format(prefix)).as_posix())
@@ -88,9 +88,9 @@ def setup_working_directory(baseDir, species, genomeFile, rnaseqDirectory, rnaPr
     starWorkDir = Path(baseDir, "star_map")
     countWorkDir = Path(baseDir, "htseq_count")
 
-    os.mkdir(trimWorkDir)
-    os.mkdir(starWorkDir)
-    os.mkdir(countWorkDir)
+    trimWorkDir.mkdir(exist_ok=True)
+    starWorkDir.mkdir(exist_ok=True)
+    countWorkDir.mkdir(exist_ok=True)
 
     return genomeLocation, rnaseqLocation, trimWorkDir, starWorkDir, countWorkDir
 
@@ -99,7 +99,7 @@ def qsub(scriptName):
     stdout, stderr = p.communicate()
     return stdout
 
-def generate_trim_script(scriptName, workDir, species, trimDir, trimJar, rnaseqLocation, rnaPrefixes, threads, walltime=80, mem="50G"):
+def generate_trim_script(scriptName, workDir, species, trimDir, trimJar, rnaseqLocation, rnaseqPrefixes, threads, walltime=80, mem="50G"):
     trimScript = r"""#!/bin/bash -l
     #PBS -N trim_{species}
     #PBS -l walltime={walltime}:00:00
@@ -120,8 +120,8 @@ def generate_trim_script(scriptName, workDir, species, trimDir, trimJar, rnaseqL
     SPECIES={species}
     RNADIR={rnaseqLocation}
 
-    FILEPREFIXES="{rnaPrefixes}"
-    # Note: FILEPREFIXES assumes a file name like ${PREFIX}_1.fastq with paired ${PREFIX}_2.fastq
+    FILEPREFIXES="{rnaseqPrefixes}"
+    # Note: FILEPREFIXES assumes a file name like ${{PREFIX}}_1.fastq with paired ${{PREFIX}}_2.fastq
     ### MANUAL SETUP END
 
     ### AUTOMATIC SETUP START
@@ -131,21 +131,20 @@ def generate_trim_script(scriptName, workDir, species, trimDir, trimJar, rnaseqL
 
     ### RUN PROGRAM
     ## STEP 1: Run Trimmomatic
-    for file in $FILEPREFIXES; do java -jar $TRIMDIR/$TRIMJAR PE -threads {threads} -trimlog $SPECIES.logfile $RNADIR/$/{file/}_1.fastq $RNADIR/$/{file/}_2.fastq -baseout $/{file/}.trimmed.fq.gz $/{COMMAND/}; done
+    for file in $FILEPREFIXES; do java -jar $TRIMDIR/$TRIMJAR PE -threads {threads} -trimlog $SPECIES.logfile $RNADIR/${{file}}_1.fastq $RNADIR/${{file}}_2.fastq -baseout ${{file}}.trimmed.fq.gz ${{COMMAND}}; done
 
     ## STEP 2: Unzip files
-    for file in $FILEPREFIXES; do gunzip $/{file/}.trimmed_1P.fq.gz $/{file/}.trimmed_2P.fq; done
+    for file in $FILEPREFIXES; do gunzip ${{file}}.trimmed_1P.fq.gz ${{file}}.trimmed_2P.fq; done
 
     ## STEP 3: Combine files
-    for file in $FILEPREFIXES; do cat $/{file/}.trimmed_1P.fq.gz >> $/{SPECIES/}_1P.fq; cat $/{file/}.trimmed_2P.fq.gz >> $/{SPECIES/}_2P.fq; done
-    touch 
+    for file in $FILEPREFIXES; do cat ${{file}}.trimmed_1P.fq.gz >> ${{SPECIES}}_1P.fq; cat ${{file}}.trimmed_2P.fq.gz >> ${{SPECIES}}_2P.fq; done
     """.format(species=species, walltime=walltime, mem=mem, threads=threads, workDir=workDir, trimDir=trimDir,
-            trimJar=trimJar, rnaseqLocation=rnaseqLocation, rnaPrefixes=" ".join(rnaPrefixes))
+            trimJar=trimJar, rnaseqLocation=rnaseqLocation, rnaseqPrefixes=" ".join(rnaseqPrefixes))
     
     with open(scriptName, "w") as fileOut:
         fileOut.write(trimScript)
 
-def generate_star_script(scriptName, species, starDir, genomeLocation, rnaseqLocation, threads, previousJob, walltime=80, mem="90G"):
+def generate_star_script(scriptName, workDir, species, starDir, genomeLocation, rnaseqLocation, threads, previousJob, walltime=80, mem="90G"):
     starScript = r"""#!/bin/bash -l
     #PBS -N star_{species}
     #PBS -l walltime={walltime}:00:00
@@ -153,7 +152,7 @@ def generate_star_script(scriptName, species, starDir, genomeLocation, rnaseqLoc
     #PBS -l ncpus={threads}
     #PBS -W depend=afterok:{previousJob}
 
-    cd $PBS_O_WORKDIR
+    cd {workDir}
 
     ## MANUAL SETUP BELOW
     # SETUP: Specify STAR location
@@ -164,9 +163,7 @@ def generate_star_script(scriptName, species, starDir, genomeLocation, rnaseqLoc
 
     # SETUP: Specify computational resources
     CPUS={threads}
-    ## MANUAL SETUP END
 
-    ## AUTO SETUP BELOW
     # SETUP: Genome location
     GENDIR={genomeLocation}
     GENFILE={species}.fasta
@@ -175,7 +172,7 @@ def generate_star_script(scriptName, species, starDir, genomeLocation, rnaseqLoc
     RNADIR={rnaseqLocation}
     RNAFILE1={species}_1P.fq
     RNAFILE2={species}_2P.fq
-    ## AUTO SETUP END
+    ## MANUAL SETUP END
 
     ## RUN PROGRAM
     # STEP 1: Copy genome here. Need to do this since STAR can only tolerate 1 index per directory...
@@ -186,13 +183,14 @@ def generate_star_script(scriptName, species, starDir, genomeLocation, rnaseqLoc
 
     # STEP 3: Run 2-pass procedure
     $STARDIR/source/STAR --runThreadN $CPUS --genomeDir $PBS_O_WORKDIR --readFilesIn $RNAFILE1 $RNAFILE2 --twopassMode Basic
-    """.format(species=species, walltime=walltime, mem=mem, threads=threads, starDir=starDir,
-            genomeLocation=genomeLocation, rnaseqLocation=rnaseqLocation, previousJob=previousJob)
+    """.format(species=species, walltime=walltime, mem=mem, threads=threads, workDir=workDir, 
+            starDir=starDir, genomeLocation=genomeLocation, rnaseqLocation=rnaseqLocation,
+            previousJob=previousJob)
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(starScript)
 
-def generate_htseq_script(scriptName, species, py2Dir, annotationFile, samFile, previousJob, walltime=10, mem="50G"):
+def generate_htseq_script(scriptName, workDir, species, py2Dir, annotationFile, samFile, previousJob, walltime=10, mem="50G"):
     htseqScript = r"""#!/bin/bash -l
     #PBS -N htseq_{species}
     #PBS -l walltime={walltime}:00:00
@@ -200,7 +198,7 @@ def generate_htseq_script(scriptName, species, py2Dir, annotationFile, samFile, 
     #PBS -l ncpus=1
     #PBS -W depend=afterok:{previousJob}
 
-    cd $PBS_O_WORKDIR
+    cd {workDir}
 
     ## MANUAL SETUP BELOW
     # SETUP: Specify mapped reads SAM file
@@ -211,17 +209,15 @@ def generate_htseq_script(scriptName, species, py2Dir, annotationFile, samFile, 
 
     # SETUP: GFF annotation file
     GFF={annotationFile}
-    ## MANUAL SETUP END
 
-    ## AUTO SETUP BELOW
     # SETUP: Output file name
     OUT={species}.htseq.counts
-    ## AUTO SETUP END
+    ## MANUAL SETUP END
 
     ## RUN PROGRAM
     $PY2DIR/python2.7 -m HTSeq.scripts.count -r name -a 0 -t gene -i ID $SAMFILE $GFF > $OUT
-    """.format(species=species, walltime=walltime, mem=mem, py2Dir=py2Dir, samFile=samFile,
-            annotationFile=annotationFile, previousJob=previousJob)
+    """.format(species=species, walltime=walltime, mem=mem, workDir=workDir, py2Dir=py2Dir,
+            samFile=samFile, annotationFile=annotationFile, previousJob=previousJob)
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(htseqScript)
@@ -240,9 +236,12 @@ p.add_argument("-g", dest="genomeFile",
                 help="Specify the location and file name of the genome file")
 p.add_argument("-a", dest="annotationFile",
                 help="Specify the location and file name of the gene annotation GFF3 file")
-p.add_argument("-td", dest="rnaseqDirectory",
+p.add_argument("-c", dest="cpus", type=int,
+                help="Specify the number of cpus/threads to use",
+                default = 1)
+p.add_argument("-rd", dest="rnaseqDirectory",
                 help="Specify the location of the RNAseq reads file(s)")
-p.add_argument("-r", dest="rnaseqPrefixes", nargs="+",
+p.add_argument("-rp", dest="rnaseqPrefixes", nargs="+",
                 help="""Specify one or more prefixes of the RNAseq FASTQ file(s).
                 File(s) should be named like \{PREFIX\}_1.fastq and \{PREFIX\}_2.fastq""")
 p.add_argument("-sp", dest="species",
@@ -266,21 +265,23 @@ p.add_argument("-skip_map", dest="skip_map", action="store_true",
                 help="Optionally skip mapping if already performed")
 p.add_argument("-skip_count", dest="skip_count", action="store_true",
                 help="Optionally skip counting if already performed")
-args = p.parse_args()
+#args = p.parse_args()
 #validate_args(args)
 
 ## Hard-coded testing
 class Arg:
     def __init__(self):
-        self.genomeFile = r""
-        self.annotationFile = r""
-        self.rnaseqDirectory = r""
-        self.rnaseqPrefixes = []
-        self.species = ""
-        self.trimmomaticDir = r""
-        self.trimmomaticJar = r""
-        self.starDir = r""
-        self.python2Dir = r""
+        self.genomeFile = r"F:\plant_rnaseq\genomes\alm.fasta"
+        self.annotationFile = r"F:\plant_rnaseq\annotations\Prudul26A.chromosomes.gff3"
+        self.cpus=1
+        self.rnaseqDirectory = r"F:\plant_rnaseq\reads"
+        self.rnaseqPrefixes = ["test1", "test2"]
+        self.species = "alm"
+        self.trimmomaticDir = r"D:\Bioinformatics\Protein_analysis\Trimmomatic-0.36"
+        self.trimmomaticJar = "trimmomatic-0.36.jar"
+        self.starDir = r"D:\Bioinformatics\Protein_analysis\STAR-2.7.6a\bin\Linux_x86_64"
+        self.starExe = "STAR"
+        self.python2Dir = r"D:\Bioinformatics\Anaconda_2"
         self.skip_trim = False
         self.skip_map = False
         self.skip_count = False
@@ -290,13 +291,13 @@ args = Arg()
 # Setup directory
 baseDir = os.getcwd()
 genomeLocation, rnaseqLocation, trimWorkDir, starWorkDir, countWorkDir = setup_working_directory(baseDir,
-        args.species, args.genomeFile, args.rnaseqDirectory, args.rnaPrefixes)
+        args.species, args.genomeFile, args.rnaseqDirectory, args.rnaseqPrefixes)
 
 # Trim reads
 if not args.skip_trim:
     trimScriptName = Path(trimWorkDir, "run_trim.sh").as_posix()
     generate_trim_script(trimScriptName, trimWorkDir, args.species, args.trimmomaticDir,
-            args.trimmomaticJar, args.rnaseqDirectory, args.rnaPrefixes, args.cpus)
+            args.trimmomaticJar, args.rnaseqDirectory, args.rnaseqPrefixes, args.cpus)
     trimJob = qsub(trimScriptName)
 else:
     trimJob = ""
@@ -304,7 +305,7 @@ else:
 # Map reads
 if not args.skip_map:
     starScriptName = Path(starWorkDir, "run_star.sh").as_posix()
-    generate_star_script(starScriptName, args.species, args.starDir, genomeLocation,
+    generate_star_script(starScriptName, starWorkDir, args.species, args.starDir, genomeLocation,
             rnaseqLocation, args.cpus, trimJob)
     starJob = qsub(starScriptName)
 else:
@@ -313,7 +314,7 @@ else:
 # Count mapped reads
 if not args.skip_count:
     htseqScriptName = Path(countWorkDir, "run_htseq.sh").as_posix()
-    generate_htseq_script(htseqScriptName, args.species, args.python2Dir, args.annotationFile,
+    generate_htseq_script(htseqScriptName, countWorkDir, args.species, args.python2Dir, args.annotationFile,
             Path(starWorkDir, "Aligned.out.sam").as_posix(), starJob)
     countJob = qsub(htseqScriptName)
 else:
