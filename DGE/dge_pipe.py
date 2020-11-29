@@ -409,6 +409,45 @@ $PY2DIR/{py2Exe} -m HTSeq.scripts.count -r name -a 0 -t gene -i ID $FILE $GFF > 
     with open(scriptName, "w") as fileOut:
         fileOut.write(htseqScript)
 
+def tabulate_htseq(htseqFiles, outputFile):
+    # Format tabular data
+    for i in range(len(htseqFiles)):
+        # Handle the first file
+        if i == 0:
+            # Turn the entire file into a list
+            with open(htseqFiles[i], 'r') as fileIn:
+                htseqFile = fileIn.read()
+            table = htseqFile.split('\n')
+            # Clean up potential blank lines in the list
+            while table[-1] == '' or table[-1].replace('\t', '') == '':
+                del table[-1]
+            # Separate the list into gene IDs on the left, and counts on the right
+            for i in range(len(table)):
+                table[i] = table[i].split('\t')
+        # Handle all subsequent files
+        else:
+            with open(htseqFiles[i], 'r') as fileIn:
+                for line in fileIn:
+                    if line == "" or line.replace("\t", "") == "":
+                        continue
+                    row = line.split("\t")
+                    table[i].append(row[1])
+    
+    # Format output file header
+    sampleNames = ['gene_id']
+    for name in htseqFiles:
+        baseName = os.path.basename(name)
+        sampleNames.append(baseName.split('.')[0])
+    table.insert(0, sampleNames)
+    
+    # Format each line for output to text
+    for i in range(len(table)):
+        table[i] = '\t'.join(table[i])
+
+    # Write output to file
+    with open(outputFile, 'w') as fileOut:
+        fileOut.write("\n".join(table))
+
 # Argument input
 usage = """%(prog)s does things.
 It will establish a working environment within the directory where this script is located. As such, you should
@@ -511,6 +550,10 @@ if not args.skip_count:
     countJob = qsub(htseqScriptName)
 else:
     countJob = ""
+
+# Tabulate counts
+htseqFiles = [Path(locations.countWorkDir, name + ".htseq.counts").as_posix() for name in metadata.names]
+tabulate_htseq(htseqFiles, Path(locations.countWorkDir, "all.htseq.counts").as_posix())
 
 # DGE analysis
 
