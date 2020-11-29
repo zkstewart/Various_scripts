@@ -131,6 +131,7 @@ def validate_args(args):
             Path(args.starDir).as_posix()))
         print("I expect there to be a file called \"python\", \"python2.7\", or \"python2\"")
         fail_validation()
+    return args
 
 def setup_working_directory(baseDir, species, genomeFile, metadata):
     # Create data location dirs
@@ -354,19 +355,35 @@ cd ..
     with open(scriptName, "w") as fileOut:
         fileOut.write(starScript)
 
-def generate_htseq_script(scriptName, locations, species, py2Dir, annotationFile, samFile, previousJob, walltime=10, mem="50G"):
+def generate_htseq_script(scriptName, locations, species, py2Dir, py2Exe, annotationFile, samFile, previousJob, walltime=10, mem="50G"):
+    # Format SAM files for HTSeq purposes
+    samFiles = []
+    samNames = []
+    for name in metadata.names:
+        # Derive STAR output name
+        samDir = Path(locations.starWorkDir, name)
+        samFile = "{0}/Aligned.out.sam".format(samDir, name)
+        samFiles.append(samFile)
+        samNames.append(name)
+    
     htseqScript = r"""#!/bin/bash -l
 #PBS -N htseq_{species}
 #PBS -l walltime={walltime}:00:00
 #PBS -l mem={mem}
 #PBS -l ncpus=1
 #PBS -W depend=afterok:{previousJob}
+#PBS -J 1-{numJobs}
 
 cd {workDir}
 
 ## MANUAL SETUP BELOW
-# SETUP: Specify mapped reads SAM file
-SAMFILE={samFile}
+## SETUP: Specify mapped reads SAM files
+SAMFILES="{samFiles}"
+ARRAY1=($SAMFILES)
+
+## SETUP: Sample names (paired to SAMFILES)
+SAMNAMES="{samNames}"
+ARRAY2=($SAMNAMES)
 
 # SETUP: Specify Python2 location
 PY2DIR={py2Dir}
@@ -375,13 +392,19 @@ PY2DIR={py2Dir}
 GFF={annotationFile}
 
 # SETUP: Output file name
-OUT={species}.htseq.counts
+
 ## MANUAL SETUP END
 
 ## RUN PROGRAM
-$PY2DIR/python2.7 -m HTSeq.scripts.count -r name -a 0 -t gene -i ID $SAMFILE $GFF > $OUT
+ARRAY_INDEX=$((${{PBS_ARRAY_INDEX}}-1))
+FILE=${{ARRAY1[${{ARRAY_INDEX}}]}}
+NAME=${{ARRAY2[${{ARRAY_INDEX}}]}}
+OUT=$NAME.htseq.counts
+
+$PY2DIR/{py2Exe} -m HTSeq.scripts.count -r name -a 0 -t gene -i ID $FILE $GFF > $OUT
     """.format(species=species, walltime=walltime, mem=mem, workDir=locations.countWorkDir, py2Dir=py2Dir,
-            samFile=samFile, annotationFile=annotationFile, previousJob=previousJob)
+            py2Exe=py2Exe, samFile=samFile, annotationFile=annotationFile, previousJob=previousJob,
+            samFiles=" ".join(samFiles), samNames=" ".join(samNames), numJobs=len(samFiles))
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(htseqScript)
@@ -483,8 +506,8 @@ else:
 # Count mapped reads
 if not args.skip_count:
     htseqScriptName = Path(locations.countWorkDir, "run_htseq.sh").as_posix()
-    generate_htseq_script(htseqScriptName, locations, args.species, args.python2Dir, args.annotationFile,
-        Path(locations.starWorkDir, "Aligned.out.sam").as_posix(), starJob)
+    generate_htseq_script(htseqScriptName, locations, args.species, args.python2Dir, args.python2Exe, 
+        args.annotationFile, Path(locations.starWorkDir, "Aligned.out.sam").as_posix(), starJob)
     countJob = qsub(htseqScriptName)
 else:
     countJob = ""
