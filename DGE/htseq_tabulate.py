@@ -20,6 +20,52 @@ def validate_args(args):
             print("I am unable to locate the HTSeq count file ({0})".format(file))
             print("Make sure you\'ve typed the file name or location correctly and try again.")
             quit()
+    
+    # Validate output file
+    if os.path.exists(args.output):
+        print("Specifed output file already exists.")
+        print("This program does not allow file overwriting. \
+            Specify a new name or move the existing file and try again.")
+        quit()
+
+def tabulate_htseq(htseqFiles, outputFile):
+    # Format tabular data
+    for i in range(len(htseqFiles)):
+        # Handle the first file
+        if i == 0:
+            # Turn the entire file into a list
+            with open(htseqFiles[i], 'r') as fileIn:
+                htseqFile = fileIn.read()
+            table = htseqFile.split('\n')
+            # Clean up potential blank lines in the list
+            while table[-1] == '' or table[-1].replace('\t', '') == '':
+                del table[-1]
+            # Separate the list into gene IDs on the left, and counts on the right
+            for i in range(len(table)):
+                table[i] = table[i].split('\t')
+        # Handle all subsequent files
+        else:
+            with open(htseqFiles[i], 'r') as fileIn:
+                for line in fileIn:
+                    if line == "" or line.replace("\t", "") == "":
+                        continue
+                    row = line.split("\t")
+                    table[i].append(row[1])
+    
+    # Format output file header
+    sampleNames = ['gene_id']
+    for name in htseqFiles:
+        baseName = os.path.basename(name)
+        sampleNames.append(baseName.split('.')[0])
+    table.insert(0, sampleNames)
+    
+    # Format each line for output to text
+    for i in range(len(table)):
+        table[i] = '\t'.join(table[i])
+
+    # Write output to file
+    with open(outputFile, 'w') as fileOut:
+        fileOut.write("\n".join(table))
 
 #### USER INPUT SECTION
 usage = """%(prog)s will produce a single tabulated file from multiple HTSeq output files. This
@@ -34,45 +80,8 @@ p.add_argument("-o", dest="output",
     help="output file name")
 args = p.parse_args()
 
-# Tabulate in list data structure
-for i in range(len(args.inputFiles)):
-    # Handle the first file
-    if i == 0:
-        # Turn the entire file into a list
-        with open(args.inputFiles[i], 'r') as fileIn:
-            htseqFile = fileIn.read()
-        combinedList = htseqFile.split('\n')
-        # Clean up potential blank lines in the list
-        while combinedList[-1] == '' or combinedList[-1].replace('\t', '') == '':
-            del combinedList[-1]
-        # Separate the list into gene IDs on the left, and counts on the right
-        for i in range(len(combinedList)):
-            combinedList[i] = combinedList[i].split('\t')
-    # Handle all subsequent files
-    else:
-        with open(args.inputFiles[i], 'r') as fileIn:
-            for line in fileIn:
-                if line == "" or line.replace("\t", "") == "":
-                    continue
-                row = line.split("\t")
-                combinedList[i].append(row[1])
-    # Alert user to script progress
-    print('Finished file (' + args.inputFiles[i] + ')')
+# Run program
+tabulate_htseq(args.inputFiles, args.output)
 
-# Format output file header
-sampleNames = ['gene_id']
-for name in args.inputFiles:
-    sampleNames.append(name.split('.')[0])
-header = '\t'.join(sampleNames) + '\n'
-
-# Format each line for output to text
-for i in range(len(combinedList)):
-    combinedList[i] = '\t'.join(combinedList[i])
-output = '\n'.join(combinedList)
-
-# Write output to file
-with open(args.output, 'w') as fileOut:
-    output = header + output
-    fileOut.write(output)
-
-print('All done')
+# Alert user to successful program completion
+print('Program completed successfully!')
