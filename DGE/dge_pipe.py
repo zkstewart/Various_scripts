@@ -2,7 +2,7 @@
 # dge_pipe.py
 # Pipeline script for performing differential gene expression analysis
 
-import os, argparse, subprocess, shutil
+import os, argparse, subprocess, shutil, math
 from pathlib import Path
 
 # Define classes
@@ -239,12 +239,20 @@ def qsub(scriptName):
     stdout, stderr = p.communicate()
     return stdout
 
-def generate_trim_script(scriptName, locations, species, trimDir, trimJar, threads, walltime=80, mem="50G"):
+def generate_trim_script(scriptName, locations, species, trimDir, trimJar, threads, walltime=24, mem="25G"):
+    # Format reads for Trimmomatic purposes
+    trimReads = []
+    suffix = locations.rnaseqFiles[0].split("_R1.")[1]
+    for name in metadata.names:
+        prefix = Path(locations.rnaseqLocation, name).as_posix()
+        trimReads.append(prefix)
+
     trimScript = r"""#!/bin/bash -l
 #PBS -N trim_{species}
 #PBS -l walltime={walltime}:00:00
 #PBS -l mem={mem}
 #PBS -l ncpus={threads}
+#PBS -J 1-{numJobs}
 
 cd {workDir}
 
@@ -261,6 +269,7 @@ SPECIES={species}
 
 ## SETUP: Specify RNAseq files
 RNAFILES="{rnaseqFiles}"
+ARRAY=($RNAFILES)
 # Note: FILEPREFIXES assumes a file name like ${{PREFIX}}_1.fastq with paired ${{PREFIX}}_2.fastq
 ### MANUAL SETUP END
 
@@ -270,24 +279,37 @@ COMMAND="ILLUMINACLIP:{trimDir}/adapters/TruSeq3-PE.fa:2:30:10 SLIDINGWINDOW:4:5
 ### AUTOMATIC SETUP END
 
 ### RUN PROGRAM
+ARRAY_INDEX=$((${{PBS_ARRAY_INDEX}}-1))
+FILE=${{ARRAY[${{ARRAY_INDEX}}]}}
+BASENAME=$(basename ${{FILE}})
+
 ## STEP 1: Run Trimmomatic
-for file in $RNAFILES; do java -jar $TRIMDIR/$TRIMJAR PE -threads {threads} -trimlog $SPECIES.logfile $RNADIR/${{file}}_1.fastq $RNADIR/${{file}}_2.fastq -baseout ${{file}}.trimmed.fq.gz ${{COMMAND}}; done
+java -jar $TRIMDIR/$TRIMJAR PE -threads {threads} -trimlog $SPECIES.logfile ${{FILE}}_R1.{suffix} ${{FILE}}_R2.{suffix} -baseout {workDir}/${{BASENAME}}.trimmed.fq.gz ${{COMMAND}}
 
 ## STEP 2: Unzip files
-#for file in $FILEPREFIXES; do gunzip ${{file}}.trimmed_1P.fq.gz ${{file}}.trimmed_2P.fq; done
+gunzip {workDir}/${{BASENAME}}.trimmed_1P.fq.gz {workDir}/${{BASENAME}}.trimmed_2P.fq
     """.format(species=species, walltime=walltime, mem=mem, threads=threads, workDir=locations.trimWorkDir,
-            trimDir=trimDir, trimJar=trimJar, rnaseqFiles=" ".join(locations.rnaseqFiles))
+            trimDir=trimDir, trimJar=trimJar, rnaseqFiles=" ".join(trimReads), suffix=suffix,
+            numJobs=len(trimReads))
     
     with open(scriptName, "w") as fileOut:
         fileOut.write(trimScript)
 
-def generate_star_script(scriptName, locations, metadata, species, threads, previousJob, walltime=80, mem="90G"):
+def generate_star_script(scriptName, starDir, starExe, locations, metadata, species, threads, previousJob, walltime=12, mem="50G"):
+    # Format reads for STAR purposes
+    starReads = []
+    for name in metadata.names:
+        # Derive Trimmomatic output name
+        prefix = "{0}/{1}.trimmed_".format(locations.trimWorkDir, name)
+        starReads.append(prefix)
+    
     starScript = r"""#!/bin/bash -l
 #PBS -N star_{species}
 #PBS -l walltime={walltime}:00:00
 #PBS -l mem={mem}
 #PBS -l ncpus={threads}
 #PBS -W depend=afterok:{previousJob}
+#PBS -J 1-{numJobs}
 
 cd {workDir}
 
@@ -305,10 +327,9 @@ CPUS={threads}
 GENDIR={genomeLocation}
 GENFILE={species}.fasta
 
-# SETUP: Trimmed reads location
-RNADIR={rnaseqLocation}
-RNAFILE1={species}_1P.fq
-RNAFILE2={species}_2P.fq
+## SETUP: Specify RNAseq files
+RNAFILES="{rnaseqFiles}"
+ARRAY=($RNAFILES)
 ## MANUAL SETUP END
 
 ## RUN PROGRAM
@@ -316,13 +337,19 @@ RNAFILE2={species}_2P.fq
 cp $GENDIR/$GENFILE .
 
 # STEP 2: Generate index
-$STARDIR/source/STAR --runThreadN $CPUS --runMode genomeGenerate --genomeDir $PBS_O_WORKDIR --genomeFastaFiles $GENFILE
+$STARDIR/source/{starExe} --runThreadN $CPUS --runMode genomeGenerate --genomeDir {workDir} --genomeFastaFiles $GENFILE
 
-# STEP 3: Run 2-pass procedure
-$STARDIR/source/STAR --runThreadN $CPUS --genomeDir $PBS_O_WORKDIR --readFilesIn $RNAFILE1 $RNAFILE2 --twopassMode Basic
-    """.format(species=species, walltime=walltime, mem=mem, threads=threads, workDir=locations.starWorkDir, 
-            starDir=locations.starDir, genomeLocation=locations.genomeLocation, rnaseqLocation=metadata.reads,
-            previousJob=previousJob)
+# STEP 3: Run 2-pass procedure for each sample
+ARRAY_INDEX=$((${{PBS_ARRAY_INDEX}}-1))
+FILE=${{ARRAY[${{ARRAY_INDEX}}]}}
+BASENAME=$(basename ${{FILE}} .trimmed_)
+mkdir $BASENAME
+cd $BASENAME
+$STARDIR/source/{starExe} --runThreadN $CPUS --genomeDir {workDir} --readFilesIn ${{FILE}}1P.fq ${{FILE}}2P.fq --twopassMode Basic
+cd ..
+""".format(species=species, walltime=walltime, mem=mem, threads=threads, workDir=locations.starWorkDir, 
+            starDir=starDir, genomeLocation=locations.genomeLocation, rnaseqFiles=" ".join(starReads),
+            previousJob=previousJob, starExe=starExe, numJobs=len(starReads))
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(starScript)
@@ -439,7 +466,7 @@ locations = testing_setup_working_directory(baseDir, args.species, args.genomeFi
 if not args.skip_trim:
     trimScriptName = Path(locations.trimWorkDir, "run_trim.sh").as_posix()
     generate_trim_script(trimScriptName, locations, args.species, args.trimmomaticDir,
-            args.trimmomaticJar, args.cpus)
+        args.trimmomaticJar, math.ceil(args.cpus / 4)) # Arbitrary division by 4 for batch submission
     trimJob = qsub(trimScriptName)
 else:
     trimJob = ""
@@ -447,7 +474,8 @@ else:
 # Map reads
 if not args.skip_map:
     starScriptName = Path(locations.starWorkDir, "run_star.sh").as_posix()
-    generate_star_script(starScriptName, locations, metadata, args.species, args.cpus, trimJob)
+    generate_star_script(starScriptName, args.starDir, args.starExe, locations, metadata,
+        args.species, math.ceil(args.cpus / 4), trimJob) # Arbitrary division by 4 for batch submission
     starJob = qsub(starScriptName)
 else:
     starJob = ""
@@ -456,7 +484,7 @@ else:
 if not args.skip_count:
     htseqScriptName = Path(locations.countWorkDir, "run_htseq.sh").as_posix()
     generate_htseq_script(htseqScriptName, locations, args.species, args.python2Dir, args.annotationFile,
-            Path(locations.starWorkDir, "Aligned.out.sam").as_posix(), starJob)
+        Path(locations.starWorkDir, "Aligned.out.sam").as_posix(), starJob)
     countJob = qsub(htseqScriptName)
 else:
     countJob = ""
