@@ -131,6 +131,9 @@ def validate_args(args):
             Path(args.starDir).as_posix()))
         print("I expect there to be a file called \"python\", \"python2.7\", or \"python2\"")
         fail_validation()
+    if not os.path.isfile(args.htseqTabulateScript):
+        print("I am unable to locate the htseq_tabulate.py script ({0})".format(args.htseqTabulateScript))
+        fail_validation()
     return args
 
 def setup_working_directory(baseDir, species, genomeFile, metadata):
@@ -249,8 +252,8 @@ java -jar $TRIMDIR/$TRIMJAR PE -threads {threads} -trimlog $SPECIES.logfile ${{F
 ## STEP 2: Unzip files
 gunzip {workDir}/${{BASENAME}}.trimmed_1P.fq.gz {workDir}/${{BASENAME}}.trimmed_2P.fq
     """.format(species=species, walltime=walltime, mem=mem, threads=threads, workDir=locations.trimWorkDir,
-            trimDir=trimDir, trimJar=trimJar, rnaseqFiles=" ".join(trimReads), suffix=suffix,
-            numJobs=len(trimReads))
+        trimDir=trimDir, trimJar=trimJar, rnaseqFiles=" ".join(trimReads), suffix=suffix,
+        numJobs=len(trimReads))
     
     with open(scriptName, "w") as fileOut:
         fileOut.write(trimScript)
@@ -285,8 +288,8 @@ cp $GENDIR/$GENFILE .
 # STEP 2: Generate index
 $STARDIR/{starExe} --runThreadN 1 --runMode genomeGenerate --genomeDir {workDir} --genomeFastaFiles $GENFILE
 """.format(walltime=walltime, mem=mem, workDir=locations.starWorkDir, species=species,
-            starDir=starDir, genomeLocation=locations.genomeLocation,
-            previousJob=previousJob, starExe=starExe)
+        starDir=starDir, genomeLocation=locations.genomeLocation,
+        previousJob=previousJob, starExe=starExe)
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(starScript)
@@ -338,8 +341,8 @@ cd $BASENAME
 $STARDIR/{starExe} --runThreadN $CPUS --genomeDir {workDir} --readFilesIn ${{FILE}}1P.fq ${{FILE}}2P.fq --twopassMode Basic
 cd ..
 """.format(species=species, walltime=walltime, mem=mem, threads=threads, workDir=locations.starWorkDir, 
-            starDir=starDir, genomeLocation=locations.genomeLocation, rnaseqFiles=" ".join(starReads),
-            previousJob=previousJob, starExe=starExe, numJobs=len(starReads))
+        starDir=starDir, genomeLocation=locations.genomeLocation, rnaseqFiles=" ".join(starReads),
+        previousJob=previousJob, starExe=starExe, numJobs=len(starReads))
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(starScript)
@@ -392,50 +395,43 @@ OUT=$NAME.htseq.counts
 
 $PY2DIR/{py2Exe} -m HTSeq.scripts.count -r name -a 0 -t gene -i ID $FILE $GFF > $OUT
     """.format(species=species, walltime=walltime, mem=mem, workDir=locations.countWorkDir, py2Dir=py2Dir,
-            py2Exe=py2Exe, samFile=samFile, annotationFile=annotationFile, previousJob=previousJob,
-            samFiles=" ".join(samFiles), samNames=" ".join(samNames), numJobs=len(samFiles))
+        py2Exe=py2Exe, samFile=samFile, annotationFile=annotationFile, previousJob=previousJob,
+        samFiles=" ".join(samFiles), samNames=" ".join(samNames), numJobs=len(samFiles))
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(htseqScript)
 
-def tabulate_htseq(htseqFiles, outputFile):
-    # Format tabular data
-    for i in range(len(htseqFiles)):
-        # Handle the first file
-        if i == 0:
-            # Turn the entire file into a list
-            with open(htseqFiles[i], 'r') as fileIn:
-                htseqFile = fileIn.read()
-            table = htseqFile.split('\n')
-            # Clean up potential blank lines in the list
-            while table[-1] == '' or table[-1].replace('\t', '') == '':
-                del table[-1]
-            # Separate the list into gene IDs on the left, and counts on the right
-            for i in range(len(table)):
-                table[i] = table[i].split('\t')
-        # Handle all subsequent files
-        else:
-            with open(htseqFiles[i], 'r') as fileIn:
-                for line in fileIn:
-                    if line == "" or line.replace("\t", "") == "":
-                        continue
-                    row = line.split("\t")
-                    table[i].append(row[1])
-    
-    # Format output file header
-    sampleNames = ['gene_id']
-    for name in htseqFiles:
-        baseName = os.path.basename(name)
-        sampleNames.append(baseName.split('.')[0])
-    table.insert(0, sampleNames)
-    
-    # Format each line for output to text
-    for i in range(len(table)):
-        table[i] = '\t'.join(table[i])
+def generate_tabulate_script(scriptName, htseqTabulateScript, locations, species, metadata, previousJob, walltime=2, mem="40G"):
+    # Format HTSeq counts files for tabulation purposes
+    htseqFiles = [Path(locations.countWorkDir, name + ".htseq.counts").as_posix() for name in metadata.names]
 
-    # Write output to file
-    with open(outputFile, 'w') as fileOut:
-        fileOut.write("\n".join(table))
+    tabulateScript = r"""#!/bin/bash -l
+#PBS -N tabulate_{species}
+#PBS -l walltime={walltime}:00:00
+#PBS -l mem={mem}
+#PBS -l ncpus=1
+#PBS -W depend=afterok:{previousJob}
+
+cd {workDir}
+
+## MANUAL SETUP BELOW
+## SETUP: Specify htseq_tabulate.py script
+TABULATESCRIPT={htseqTabulateScript}
+
+## SETUP: Specify all input HTSeq counts to tabulate
+COUNTFILES="{htseqFiles}"
+
+## SETUP: Specify output file name
+OUT=all.htseq.counts
+## MANUAL SETUP END
+
+## RUN PROGRAM
+$TABULATESCRIPT -i $COUNTFILES -o $OUT
+    """.format(species=species, walltime=walltime, mem=mem, workDir=locations.countWorkDir,
+        previousJob=previousJob, htseqTabulateScript=htseqTabulateScript, htseqFiles=htseqFiles)
+
+    with open(scriptName, "w") as fileOut:
+        fileOut.write(tabulateScript)
 
 # Argument input
 usage = """%(prog)s does things.
@@ -475,6 +471,8 @@ p.add_argument("-se", dest="starExe",
 p.add_argument("-p2", dest="python2Dir",
                 help="Specify the location of the Python 2 directory which has HTSeq installed",
                 default = "STAR")
+p.add_argument("-ht", dest="htseqTabulateScript",
+                help="Specify the location and name of the htseq_tabulate.py script")
 p.add_argument("-skip_trim", dest="skip_trim", action="store_true",
                 help="Optionally skip trimming if already performed")
 p.add_argument("-skip_index", dest="skip_index", action="store_true",
@@ -483,6 +481,8 @@ p.add_argument("-skip_map", dest="skip_map", action="store_true",
                 help="Optionally skip STAR mapping if already performed")
 p.add_argument("-skip_count", dest="skip_count", action="store_true",
                 help="Optionally skip counting if already performed")
+p.add_argument("-skip_tabulate", dest="skip_tabulate", action="store_true",
+                help="Optionally skip tabulation if already performed")
 args = p.parse_args()
 validate_args(args)
 
@@ -531,8 +531,12 @@ else:
     countJob = ""
 
 # Tabulate counts
-htseqFiles = [Path(locations.countWorkDir, name + ".htseq.counts").as_posix() for name in metadata.names]
-tabulate_htseq(htseqFiles, Path(locations.countWorkDir, "all.htseq.counts").as_posix())
+if not args.skip_tabulate:
+    tabulateScriptName = Path(locations.countWorkDir, "run_tabulate.sh").as_posix()
+    generate_tabulate_script(tabulateScriptName, args.htseqTabulateScript, locations, args.species, metadata, countJob)
+    tabulateJob = qsub(tabulateScriptName)
+else:
+    tabulateJob = ""
 
 # DGE analysis
 
