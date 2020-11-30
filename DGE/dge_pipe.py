@@ -192,49 +192,6 @@ def setup_working_directory(baseDir, species, genomeFile, metadata):
 
     return locations
 
-def testing_setup_working_directory(baseDir, species, genomeFile, metadata):
-    # Create data location dirs
-    genomeLocation = Path(baseDir, "genome")
-    genomeLocation.mkdir(exist_ok=True)
-    
-    rnaseqLocation = Path(baseDir, "rnaseq_reads")
-    rnaseqLocation.mkdir(exist_ok=True)
-
-    # Symbolic link files to data locations
-    newGenomeName = Path(genomeLocation, "{0}.fasta".format(species))
-
-    
-    rnaseqFiles = []
-    readFilesSuffix = os.path.basename(metadata.reads[0][0]).split(".",  maxsplit=1)[1] # Program assumes all files are same
-    for i in range(len(metadata.reads)):
-        # Derive new file names with standard format
-        newR1Name = Path(rnaseqLocation, "{0}_R1.{1}".format(
-                metadata.names[i], readFilesSuffix)).as_posix()
-        newR2Name = Path(rnaseqLocation, "{0}_R2.{1}".format(
-            metadata.names[i], readFilesSuffix)).as_posix()
-        rnaseqFiles.append(newR1Name)
-        rnaseqFiles.append(newR2Name)
-
-        # Concatenate when multiple technical replicates exist
-        if len(metadata.reads[i]) > 1:
-            pass
-        # Symbolic link when no technical replicates exist
-        else:
-            pass
-
-    # Create working dirs
-    trimWorkDir = Path(baseDir, "trimmomatic")
-    starWorkDir = Path(baseDir, "star_map")
-    countWorkDir = Path(baseDir, "htseq_count")
-
-    trimWorkDir.mkdir(exist_ok=True)
-    starWorkDir.mkdir(exist_ok=True)
-    countWorkDir.mkdir(exist_ok=True)
-
-    locations = Locations(genomeLocation, rnaseqLocation, trimWorkDir, starWorkDir, countWorkDir, rnaseqFiles)
-
-    return locations
-
 def qsub(scriptName):
     p = os.system("qsub {0} > jobid_capture.txt".format(scriptName))
     with open("jobid_capture.txt", "r") as fileIn:
@@ -300,7 +257,7 @@ gunzip {workDir}/${{BASENAME}}.trimmed_1P.fq.gz {workDir}/${{BASENAME}}.trimmed_
 
 def generate_index_script(scriptName, starDir, starExe, locations, species, previousJob, walltime=2, mem="50G"):
     starScript = r"""#!/bin/bash -l
-#PBS -N star_{species}
+#PBS -N index_{species}
 #PBS -l walltime={walltime}:00:00
 #PBS -l mem={mem}
 #PBS -l ncpus=1
@@ -343,7 +300,7 @@ def generate_map_script(scriptName, starDir, starExe, locations, metadata, speci
         starReads.append(prefix)
     
     starScript = r"""#!/bin/bash -l
-#PBS -N star_{species}
+#PBS -N map_{species}
 #PBS -l walltime={walltime}:00:00
 #PBS -l mem={mem}
 #PBS -l ncpus={threads}
@@ -526,29 +483,8 @@ p.add_argument("-skip_map", dest="skip_map", action="store_true",
                 help="Optionally skip STAR mapping if already performed")
 p.add_argument("-skip_count", dest="skip_count", action="store_true",
                 help="Optionally skip counting if already performed")
-#args = p.parse_args()
-#validate_args(args)
-
-## Hard-coded testing
-class Arg:
-    def __init__(self):
-        self.genomeFile = r"F:\plant_rnaseq\genomes\alm.fasta"
-        self.annotationFile = r"F:\plant_rnaseq\annotations\Prudul26A.chromosomes.gff3"
-        self.metadataFile = r"F:\plant_rnaseq\sample_metadata\alm_meta.txt"
-        self.cpus=1
-        self.rnaseqDirectory = r"F:\plant_rnaseq\reads"
-        self.species = "alm"
-        self.trimmomaticDir = r"D:\Bioinformatics\Protein_analysis\Trimmomatic-0.36"
-        self.trimmomaticJar = "trimmomatic-0.36.jar"
-        self.starDir = r"D:\Bioinformatics\Protein_analysis\STAR-2.7.6a\bin\Linux_x86_64"
-        self.starExe = "STAR"
-        self.python2Dir = r"D:\Bioinformatics\Anaconda_2"
-        self.skip_trim = False
-        self.skip_index = False
-        self.skip_map = False
-        self.skip_count = False
-
-args = Arg()
+args = p.parse_args()
+validate_args(args)
 
 # Parse metadata
 metadata = DGE_Meta(args.metadataFile)
@@ -556,8 +492,7 @@ metadata.format_reads_names(args.rnaseqDirectory)
 
 # Setup directory
 baseDir = os.getcwd()
-#locations = setup_working_directory(baseDir, args.species, args.genomeFile, metadata)
-locations = testing_setup_working_directory(baseDir, args.species, args.genomeFile, metadata)
+locations = setup_working_directory(baseDir, args.species, args.genomeFile, metadata)
 
 # Trim reads
 if not args.skip_trim:
