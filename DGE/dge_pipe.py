@@ -2,7 +2,7 @@
 # dge_pipe.py
 # Pipeline script for performing differential gene expression analysis
 
-import os, argparse, subprocess, shutil, math
+import os, argparse, shutil, math
 from pathlib import Path
 
 # Define classes
@@ -236,9 +236,11 @@ def testing_setup_working_directory(baseDir, species, genomeFile, metadata):
     return locations
 
 def qsub(scriptName):
-    p = subprocess.Popen(["qsub", scriptName])
-    stdout, stderr = p.communicate()
-    return stdout
+    p = os.system("qsub {0} > jobid_capture.txt".format(scriptName))
+    with open("jobid_capture.txt", "r") as fileIn:
+        jobID = fileIn.read().strip("\n")
+    os.unlink("jobid_capture.txt")
+    return jobID
 
 def generate_trim_script(scriptName, locations, species, trimDir, trimJar, threads, walltime=24, mem="25G"):
     # Format reads for Trimmomatic purposes
@@ -296,7 +298,43 @@ gunzip {workDir}/${{BASENAME}}.trimmed_1P.fq.gz {workDir}/${{BASENAME}}.trimmed_
     with open(scriptName, "w") as fileOut:
         fileOut.write(trimScript)
 
-def generate_star_script(scriptName, starDir, starExe, locations, metadata, species, threads, previousJob, walltime=12, mem="50G"):
+def generate_index_script(scriptName, starDir, starExe, locations, species, previousJob, walltime=2, mem="50G"):
+    starScript = r"""#!/bin/bash -l
+#PBS -N star_{species}
+#PBS -l walltime={walltime}:00:00
+#PBS -l mem={mem}
+#PBS -l ncpus=1
+#PBS -W depend=afterok:{previousJob}
+
+cd {workDir}
+
+## MANUAL SETUP BELOW
+# SETUP: Specify STAR location
+STARDIR={starDir}
+
+# SETUP: Specify prefix
+SPECIES={species}
+
+# SETUP: Genome location
+GENDIR={genomeLocation}
+GENFILE={species}.fasta
+
+## MANUAL SETUP END
+
+## RUN PROGRAM
+# STEP 1: Copy genome here. Need to do this since STAR can only tolerate 1 index per directory...
+cp $GENDIR/$GENFILE .
+
+# STEP 2: Generate index
+$STARDIR/{starExe} --runThreadN 1 --runMode genomeGenerate --genomeDir {workDir} --genomeFastaFiles $GENFILE
+""".format(walltime=walltime, mem=mem, workDir=locations.starWorkDir, species=species,
+            starDir=starDir, genomeLocation=locations.genomeLocation,
+            previousJob=previousJob, starExe=starExe)
+
+    with open(scriptName, "w") as fileOut:
+        fileOut.write(starScript)
+
+def generate_map_script(scriptName, starDir, starExe, locations, metadata, species, threads, previousJob, walltime=12, mem="50G"):
     # Format reads for STAR purposes
     starReads = []
     for name in metadata.names:
@@ -334,19 +372,13 @@ ARRAY=($RNAFILES)
 ## MANUAL SETUP END
 
 ## RUN PROGRAM
-# STEP 1: Copy genome here. Need to do this since STAR can only tolerate 1 index per directory...
-cp $GENDIR/$GENFILE .
-
-# STEP 2: Generate index
-$STARDIR/source/{starExe} --runThreadN $CPUS --runMode genomeGenerate --genomeDir {workDir} --genomeFastaFiles $GENFILE
-
 # STEP 3: Run 2-pass procedure for each sample
 ARRAY_INDEX=$((${{PBS_ARRAY_INDEX}}-1))
 FILE=${{ARRAY[${{ARRAY_INDEX}}]}}
 BASENAME=$(basename ${{FILE}} .trimmed_)
 mkdir $BASENAME
 cd $BASENAME
-$STARDIR/source/{starExe} --runThreadN $CPUS --genomeDir {workDir} --readFilesIn ${{FILE}}1P.fq ${{FILE}}2P.fq --twopassMode Basic
+$STARDIR/{starExe} --runThreadN $CPUS --genomeDir {workDir} --readFilesIn ${{FILE}}1P.fq ${{FILE}}2P.fq --twopassMode Basic
 cd ..
 """.format(species=species, walltime=walltime, mem=mem, threads=threads, workDir=locations.starWorkDir, 
             starDir=starDir, genomeLocation=locations.genomeLocation, rnaseqFiles=" ".join(starReads),
@@ -488,8 +520,10 @@ p.add_argument("-p2", dest="python2Dir",
                 default = "STAR")
 p.add_argument("-skip_trim", dest="skip_trim", action="store_true",
                 help="Optionally skip trimming if already performed")
+p.add_argument("-skip_index", dest="skip_index", action="store_true",
+                help="Optionally skip STAR indexing if already performed")
 p.add_argument("-skip_map", dest="skip_map", action="store_true",
-                help="Optionally skip mapping if already performed")
+                help="Optionally skip STAR mapping if already performed")
 p.add_argument("-skip_count", dest="skip_count", action="store_true",
                 help="Optionally skip counting if already performed")
 #args = p.parse_args()
@@ -510,6 +544,7 @@ class Arg:
         self.starExe = "STAR"
         self.python2Dir = r"D:\Bioinformatics\Anaconda_2"
         self.skip_trim = False
+        self.skip_index = False
         self.skip_map = False
         self.skip_count = False
 
@@ -533,11 +568,20 @@ if not args.skip_trim:
 else:
     trimJob = ""
 
+# Create STAR index
+if not args.skip_index:
+    indexScriptName = Path(locations.starWorkDir, "run_star_index.sh").as_posix()
+    generate_index_script(indexScriptName, args.starDir, args.starExe, locations,
+        args.species, trimJob) # Arbitrary division by 4 for batch submission
+    indexJob = qsub(indexScriptName)
+else:
+    indexJob = ""
+
 # Map reads
 if not args.skip_map:
-    starScriptName = Path(locations.starWorkDir, "run_star.sh").as_posix()
-    generate_star_script(starScriptName, args.starDir, args.starExe, locations, metadata,
-        args.species, math.ceil(args.cpus / 4), trimJob) # Arbitrary division by 4 for batch submission
+    starScriptName = Path(locations.starWorkDir, "run_star_map.sh").as_posix()
+    generate_map_script(starScriptName, args.starDir, args.starExe, locations, metadata,
+        args.species, math.ceil(args.cpus / 4), indexJob) # Arbitrary division by 4 for batch submission
     starJob = qsub(starScriptName)
 else:
     starJob = ""
@@ -545,7 +589,7 @@ else:
 # Count mapped reads
 if not args.skip_count:
     htseqScriptName = Path(locations.countWorkDir, "run_htseq.sh").as_posix()
-    generate_htseq_script(htseqScriptName, locations, args.species, args.python2Dir, args.python2Exe, 
+    generate_htseq_script(htseqScriptName, locations, args.species, args.python2Dir, args.python2Exe,
         args.annotationFile, Path(locations.starWorkDir, "Aligned.out.sam").as_posix(), starJob)
     countJob = qsub(htseqScriptName)
 else:
