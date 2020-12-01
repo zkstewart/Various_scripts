@@ -29,6 +29,8 @@ def validate_args(args):
         quit()
 
 def tabulate_htseq(htseqFiles, outputFile):
+    # Extraneous HTSeq lines
+    junkLines = ["__no_feature", "__ambiguous", "__too_low_aQual", "__not_aligned", "__alignment_not_unique"]
     # Format tabular data
     for i in range(len(htseqFiles)):
         # Handle the first file
@@ -43,14 +45,24 @@ def tabulate_htseq(htseqFiles, outputFile):
             # Separate the list into gene IDs on the left, and counts on the right
             for i in range(len(table)):
                 table[i] = table[i].split('\t')
+            # Delete extraneous HTSeq lines
+            while table[-1][0] in junkLines:
+                del table[-1]
         # Handle all subsequent files
         else:
+            ongoingCount = 0
             with open(htseqFiles[i], 'r') as fileIn:
                 for line in fileIn:
+                    # Skip potential blank lines
                     if line == "" or line.replace("\t", "") == "":
                         continue
-                    row = line.split("\t")
-                    table[i].append(row[1])
+                    # Skip extraneous HTSeq lines
+                    row = line.rstrip("\r\n").split("\t")
+                    if row[0] in junkLines:
+                        continue
+                    # Format line for addition to table
+                    table[ongoingCount].append(row[1])
+                    ongoingCount += 1
     
     # Format output file header
     sampleNames = ['gene_id']
