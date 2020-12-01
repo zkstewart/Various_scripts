@@ -426,7 +426,7 @@ OUT=all.htseq.counts
 ## MANUAL SETUP END
 
 ## RUN PROGRAM
-$TABULATESCRIPT -i $COUNTFILES -o $OUT
+python $TABULATESCRIPT -i $COUNTFILES -o $OUT
     """.format(species=species, walltime=walltime, mem=mem, workDir=locations.countWorkDir,
         previousJob=previousJob, htseqTabulateScript=htseqTabulateScript, htseqFiles=htseqFiles)
 
