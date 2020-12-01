@@ -428,7 +428,7 @@ OUT=all.htseq.counts
 ## RUN PROGRAM
 python $TABULATESCRIPT -i $COUNTFILES -o $OUT
     """.format(species=species, walltime=walltime, mem=mem, workDir=locations.countWorkDir,
-        previousJob=previousJob, htseqTabulateScript=htseqTabulateScript, htseqFiles=htseqFiles)
+        previousJob=previousJob, htseqTabulateScript=htseqTabulateScript, htseqFiles=" ".join(htseqFiles))
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(tabulateScript)
