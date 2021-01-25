@@ -10,7 +10,7 @@ class DGE_Meta:
     def __init__(self, metadataFile):
         self.names = []
         self.reads = []
-        self.comparisons = [] # Will be overwritten with meta_open()
+        #self.comparisons = [] # Will be overwritten with meta_open()
         self.meta_open(metadataFile)
     
     def meta_open(self, metadataFile):
@@ -22,7 +22,7 @@ class DGE_Meta:
                 if header == None:
                     header = sl
                     header_codes = ["" for i in range(len(header))] # For body line parsing
-                    found = [False, False, 0] # For header validation
+                    found = [False, False] #found = [False, False, 0] # For header validation
                     for i in range(len(header)):
                         colname = header[i]
                         if colname == "sample":
@@ -36,37 +36,38 @@ class DGE_Meta:
                         elif colname.startswith("techrep"):
                             header_codes[i] = "t"
                             found[1] = True
-                        elif colname.startswith("comparison"):
-                            header_codes[i] = "c"
-                            found[2] += 1
+                        # elif colname.startswith("comparison"):
+                        #     header_codes[i] = "c"
+                        #     found[2] += 1
                         else:
                             print("Metadata file has unknown column titled {0}".format(colname))
                             print("Make sure this file conforms to the format and try again.")
                             quit()
-                    if not (found[0] == True and found[1] == True and found[2] > 0):
+                    if not (found[0] == True and found[1] == True): #and found[2] > 0):
                         print("Metadata file is missing necessary fields i.e., sample name, \
-                            technical replicate, and/or comparisons.")
+                            technical replicate") #, and/or comparisons.")
                         print("Make sure this file conforms to the format and try again.")
                         quit()
                     # Setup comparisons storage
-                    self.comparisons = [[] for i in range(found[2])]
+                    #self.comparisons = [[] for i in range(found[2])]
                 # Parse body lines
                 else:
-                    comparisonCount = 0
+                    #comparisonCount = 0
                     for i in range(len(sl)):
                         if header_codes[i] == "s":
                             self.names.append(sl[i])
                             self.reads.append([])
                         elif header_codes[i] == "t":
                             self.reads[-1].append(sl[i].replace("\\", "/")) # Potential problem with paths
-                        elif header_codes[i] == "c":
-                            self.comparisons[comparisonCount].append(sl[i])
-                            comparisonCount += 1
+                        # elif header_codes[i] == "c":
+                        #     self.comparisons[comparisonCount].append(sl[i])
+                        #     comparisonCount += 1
     
     def format_reads_names(self, rnaseqDirectory):
         for i in range(len(self.reads)):
-            self.reads[i][0] = Path(rnaseqDirectory, self.reads[i][0]).as_posix()
-            self.reads[i][1] = Path(rnaseqDirectory, self.reads[i][1]).as_posix()
+            for x in range(len(self.reads[i])):
+                self.reads[i][x] = Path(rnaseqDirectory, self.reads[i][x]).as_posix()
+                #self.reads[i][1] = Path(rnaseqDirectory, self.reads[i][1]).as_posix()
 
 class Locations:
     def __init__(self, genomeLocation, rnaseqLocation, trimWorkDir, starWorkDir, countWorkDir, rnaseqFiles):
@@ -401,7 +402,7 @@ $PY2DIR/{py2Exe} -m HTSeq.scripts.count -r name -a 0 -t gene -i ID $FILE $GFF > 
     with open(scriptName, "w") as fileOut:
         fileOut.write(htseqScript)
 
-def generate_tabulate_script(scriptName, htseqTabulateScript, locations, species, metadata, previousJob, walltime=2, mem="40G"):
+def generate_tabulate_script(scriptName, htseqTabulateScript, locations, species, metadata, previousJob, walltime=1, mem="40G"):
     # Format HTSeq counts files for tabulation purposes
     htseqFiles = [Path(locations.countWorkDir, name + ".htseq.counts").as_posix() for name in metadata.names]
 
