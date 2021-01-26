@@ -32,9 +32,12 @@ def validate_args(args):
         return args
 
 # IQTree call
-def execute_iqtree(iqtreeDir, inputFile, cpus):
+def execute_iqtree(iqtreeDir, inputFile, cpus, bootstraps):
         # Format command
-        cmd = "{0} -s {1} -nt {2}".format(os.path.join(iqtreeDir, 'iqtree'), inputFile, cpus)
+        if bootstraps > 0:
+            cmd = "{0} -s {1} -T {2} -B {3}".format(os.path.join(iqtreeDir, 'iqtree'), inputFile, cpus, bootstraps)
+        else:
+            cmd = "{0} -s {1} -T {2}".format(os.path.join(iqtreeDir, 'iqtree'), inputFile, cpus)
         print("# " + cmd)
         # Run command
         exe_iqtree = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -55,6 +58,8 @@ def main():
                           help="Specify a file or directory containing ONLY files to be used as input")
         p.add_argument("-c", dest="cpus", type = int, default = 1,
                           help="Specify the number of CPUs/threads to provide as an argument (default == 1)")
+        p.add_argument("-b", dest="bootstraps", type = int, default = 1000,
+                          help="Specify the number of bootstraps to provide as an argument (default == 1000; enter 0 for no bootstrapping)")
         p.add_argument("-e", dest="iqtreeDir", type = str, default = "",
                           help="Specify the directory where the IQTree executable is located; if it is accessible from your PATH, you can leave this blank")
         args = p.parse_args()
