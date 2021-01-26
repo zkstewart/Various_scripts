@@ -67,7 +67,7 @@ def main():
 
         # Call IQTree
         for file in args.files:
-            execute_iqtree(args.iqtreeDir, file, args.cpus)
+            execute_iqtree(args.iqtreeDir, file, args.cpus, args.bootstraps)
             iqtree_to_newark(file)
 
         # Done!
