@@ -20,7 +20,7 @@ def validate_args(args):
                 args.files.append(os.path.join(os.path.abspath(args.input), file)) # Make sure the full path is available just in case
         # Validate IQTree location
         if args.iqtreeDir != '':
-                if not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree')) and not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree.exe')):
+                if not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree2')) and not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree2.exe')):
                         print('I cannot find "iqtree" or "iqtree.exe" at the location provided (' + args.iqtreeDir + ')')
                         quit()
         else:
@@ -35,9 +35,9 @@ def validate_args(args):
 def execute_iqtree(iqtreeDir, inputFile, cpus, bootstraps):
         # Format command
         if bootstraps > 0:
-            cmd = "{0} -s {1} -T {2} -B {3}".format(os.path.join(iqtreeDir, 'iqtree'), inputFile, cpus, bootstraps)
+            cmd = "{0} -s {1} -T {2} -B {3}".format(os.path.join(iqtreeDir, 'iqtree2'), inputFile, cpus, bootstraps)
         else:
-            cmd = "{0} -s {1} -T {2}".format(os.path.join(iqtreeDir, 'iqtree'), inputFile, cpus)
+            cmd = "{0} -s {1} -T {2}".format(os.path.join(iqtreeDir, 'iqtree2'), inputFile, cpus)
         print("# " + cmd)
         # Run command
         exe_iqtree = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
