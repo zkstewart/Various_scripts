@@ -21,7 +21,7 @@ def validate_args(args):
         # Validate IQTree location
         if args.iqtreeDir != '':
                 if not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree2')) and not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree2.exe')):
-                        print('I cannot find "iqtree" or "iqtree.exe" at the location provided (' + args.iqtreeDir + ')')
+                        print('I cannot find "iqtree2" or "iqtree2.exe" at the location provided (' + args.iqtreeDir + ')')
                         quit()
         else:
                 print('You haven\'t specified a location for the IQTree executable. If this is in your PATH that\'s OK. Otherwise, I\'ll likely crash soon.')
@@ -62,13 +62,22 @@ def main():
                           help="Specify the number of bootstraps to provide as an argument (default == 1000; enter 0 for no bootstrapping)")
         p.add_argument("-e", dest="iqtreeDir", type = str, default = "",
                           help="Specify the directory where the IQTree executable is located; if it is accessible from your PATH, you can leave this blank")
+        p.add_argument("-s", dest="skipCompleted", action = "store_true", default = False,
+                          help="Optionally skip running IQTree on FASTAs when .nwk files already exist for that file (enables job resumption)")
         args = p.parse_args()
         args = validate_args(args)
 
         # Call IQTree
         for file in args.files:
-            execute_iqtree(args.iqtreeDir, file, args.cpus, args.bootstraps)
-            iqtree_to_newark(file)
+            alreadyCompleted = False
+            if os.path.isfile("{0}.nwk".format(file)):
+                alreadyCompleted = True
+            
+            if args.skipCompleted == True and alreadyCompleted == True:
+                print("Skipping file \"{0}\"...".format(file))
+            else:
+                execute_iqtree(args.iqtreeDir, file, args.cpus, args.bootstraps)
+                iqtree_to_newark(file)
 
         # Done!
         print('Program completed successfully!')
