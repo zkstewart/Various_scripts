@@ -261,7 +261,7 @@ gunzip {workDir}/${{BASENAME}}.trimmed_1P.fq.gz {workDir}/${{BASENAME}}.trimmed_
 
 def generate_index_script(scriptName, starDir, starExe, locations, species, previousJob, walltime=2, mem="50G"):
     if previousJob != "":
-        previousJobConditional = "#PBS -W depend=afterok:{previousJob}".format(previousJob)
+        previousJobConditional = "#PBS -W depend=afterok:{0}".format(previousJob)
     else:
         previousJobConditional = ""
     
@@ -302,7 +302,7 @@ $STARDIR/{starExe} --runThreadN 1 --runMode genomeGenerate --genomeDir {workDir}
 
 def generate_map_script(scriptName, starDir, starExe, locations, metadata, species, threads, previousJob, walltime=12, mem="50G"):
     if previousJob != "":
-        previousJobConditional = "#PBS -W depend=afterok:{previousJob}".format(previousJob)
+        previousJobConditional = "#PBS -W depend=afterok:{0}".format(previousJob)
     else:
         previousJobConditional = ""
     
@@ -360,7 +360,7 @@ cd ..
 
 def generate_htseq_script(scriptName, locations, species, py2Dir, py2Exe, annotationFile, samFile, previousJob, walltime=10, mem="50G"):
     if previousJob != "":
-        previousJobConditional = "#PBS -W depend=afterok:{previousJob}".format(previousJob)
+        previousJobConditional = "#PBS -W depend=afterok:{0}".format(previousJob)
     else:
         previousJobConditional = ""
     
@@ -419,7 +419,7 @@ $PY2DIR/{py2Exe} -m HTSeq.scripts.count -r name -a 0 -t gene -i ID $FILE $GFF > 
 
 def generate_tabulate_script(scriptName, htseqTabulateScript, locations, species, metadata, previousJob, walltime=1, mem="40G"):
     if previousJob != "":
-        previousJobConditional = "#PBS -W depend=afterok:{previousJob}".format(previousJob)
+        previousJobConditional = "#PBS -W depend=afterok:{0}".format(previousJob)
     else:
         previousJobConditional = ""
     
