@@ -6,30 +6,36 @@ import argparse, os, subprocess, shutil
 
 # Validate arguments
 def validate_args(args):
-        # Validate input argument
-        if not os.path.isfile(args.input) and not os.path.isdir(args.input):
-                print('I am unable to locate a file or directory as provided (' + args.input + ')')
-                print('Make sure you\'ve typed the file name or location correctly and try again.')
-                quit()
-        # Format files list from user-provided input
-        if os.path.isfile(args.input):
-            args.files = [os.path.abspath(args.input)]
-        else:
-            args.files = []
-            for file in os.listdir(args.input):
-                args.files.append(os.path.join(os.path.abspath(args.input), file)) # Make sure the full path is available just in case
-        # Validate IQTree location
-        if args.iqtreeDir != '':
-                if not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree2')) and not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree2.exe')):
-                        print('I cannot find "iqtree2" or "iqtree2.exe" at the location provided (' + args.iqtreeDir + ')')
-                        quit()
-        else:
-                print('You haven\'t specified a location for the IQTree executable. If this is in your PATH that\'s OK. Otherwise, I\'ll likely crash soon.')
-        # Validate numeric arguments
-        if args.cpus < 1:
-                print('CPUs cannot be less than 1. Specify any number >= 1 and try again.')
-                quit()
-        return args
+    # iqt2suffixes is used to obtain just the files in the directory that (should) correspond to fasta files i.e., those not made by iqtree2 or this script
+    iqt2Suffixes = (".bionj", ".ckp.gz", ".contree", ".iqtree", ".log", ".mldist", ".model.gz", ".nwk", ".splits.nex", ".treefile", ".uniqueseq.phy")
+
+
+    # Validate input argument
+    if not os.path.isfile(args.input) and not os.path.isdir(args.input):
+            print('I am unable to locate a file or directory as provided (' + args.input + ')')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+    # Format files list from user-provided input
+    if os.path.isfile(args.input):
+        args.files = [os.path.abspath(args.input)]
+    else:
+        args.files = []
+        for file in os.listdir(args.input):
+            if file.endswith(iqt2Suffixes): # Necessary for job skipping
+                continue
+            args.files.append(os.path.join(os.path.abspath(args.input), file)) # Make sure the full path is available just in case
+    # Validate IQTree location
+    if args.iqtreeDir != '':
+            if not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree2')) and not os.path.isfile(os.path.join(args.iqtreeDir, 'iqtree2.exe')):
+                    print('I cannot find "iqtree2" or "iqtree2.exe" at the location provided (' + args.iqtreeDir + ')')
+                    quit()
+    else:
+            print('You haven\'t specified a location for the IQTree executable. If this is in your PATH that\'s OK. Otherwise, I\'ll likely crash soon.')
+    # Validate numeric arguments
+    if args.cpus < 1:
+            print('CPUs cannot be less than 1. Specify any number >= 1 and try again.')
+            quit()
+    return args
 
 # IQTree call
 def execute_iqtree(iqtreeDir, inputFile, cpus, bootstraps):
