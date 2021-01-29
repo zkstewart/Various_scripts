@@ -260,12 +260,17 @@ gunzip {workDir}/${{BASENAME}}.trimmed_1P.fq.gz {workDir}/${{BASENAME}}.trimmed_
         fileOut.write(trimScript)
 
 def generate_index_script(scriptName, starDir, starExe, locations, species, previousJob, walltime=2, mem="50G"):
+    if previousJob != "":
+        previousJobConditional = "#PBS -W depend=afterok:{previousJob}".format(previousJob)
+    else:
+        previousJobConditional = ""
+    
     starScript = r"""#!/bin/bash -l
 #PBS -N index_{species}
 #PBS -l walltime={walltime}:00:00
 #PBS -l mem={mem}
 #PBS -l ncpus=1
-#PBS -W depend=afterok:{previousJob}
+{previousJobConditional}
 
 cd {workDir}
 
@@ -290,12 +295,17 @@ cp $GENDIR/$GENFILE .
 $STARDIR/{starExe} --runThreadN 1 --runMode genomeGenerate --genomeDir {workDir} --genomeFastaFiles $GENFILE
 """.format(walltime=walltime, mem=mem, workDir=locations.starWorkDir, species=species,
         starDir=starDir, genomeLocation=locations.genomeLocation,
-        previousJob=previousJob, starExe=starExe)
+        previousJobConditional=previousJobConditional, starExe=starExe)
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(starScript)
 
 def generate_map_script(scriptName, starDir, starExe, locations, metadata, species, threads, previousJob, walltime=12, mem="50G"):
+    if previousJob != "":
+        previousJobConditional = "#PBS -W depend=afterok:{previousJob}".format(previousJob)
+    else:
+        previousJobConditional = ""
+    
     # Format reads for STAR purposes
     starReads = []
     for name in metadata.names:
@@ -308,8 +318,8 @@ def generate_map_script(scriptName, starDir, starExe, locations, metadata, speci
 #PBS -l walltime={walltime}:00:00
 #PBS -l mem={mem}
 #PBS -l ncpus={threads}
-#PBS -W depend=afterok:{previousJob}
 #PBS -J 1-{numJobs}
+{previousJobConditional}
 
 cd {workDir}
 
@@ -343,12 +353,17 @@ $STARDIR/{starExe} --runThreadN $CPUS --genomeDir {workDir} --readFilesIn ${{FIL
 cd ..
 """.format(species=species, walltime=walltime, mem=mem, threads=threads, workDir=locations.starWorkDir, 
         starDir=starDir, genomeLocation=locations.genomeLocation, rnaseqFiles=" ".join(starReads),
-        previousJob=previousJob, starExe=starExe, numJobs=len(starReads))
+        previousJobConditional=previousJobConditional, starExe=starExe, numJobs=len(starReads))
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(starScript)
 
 def generate_htseq_script(scriptName, locations, species, py2Dir, py2Exe, annotationFile, samFile, previousJob, walltime=10, mem="50G"):
+    if previousJob != "":
+        previousJobConditional = "#PBS -W depend=afterok:{previousJob}".format(previousJob)
+    else:
+        previousJobConditional = ""
+    
     # Format SAM files for HTSeq purposes
     samFiles = []
     samNames = []
@@ -364,8 +379,8 @@ def generate_htseq_script(scriptName, locations, species, py2Dir, py2Exe, annota
 #PBS -l walltime={walltime}:00:00
 #PBS -l mem={mem}
 #PBS -l ncpus=1
-#PBS -W depend=afterok:{previousJob}
 #PBS -J 1-{numJobs}
+{previousJobConditional}
 
 cd {workDir}
 
@@ -396,13 +411,18 @@ OUT=$NAME.htseq.counts
 
 $PY2DIR/{py2Exe} -m HTSeq.scripts.count -r name -a 0 -t gene -i ID $FILE $GFF > $OUT
     """.format(species=species, walltime=walltime, mem=mem, workDir=locations.countWorkDir, py2Dir=py2Dir,
-        py2Exe=py2Exe, samFile=samFile, annotationFile=annotationFile, previousJob=previousJob,
+        py2Exe=py2Exe, samFile=samFile, annotationFile=annotationFile, previousJobConditional=previousJobConditional,
         samFiles=" ".join(samFiles), samNames=" ".join(samNames), numJobs=len(samFiles))
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(htseqScript)
 
 def generate_tabulate_script(scriptName, htseqTabulateScript, locations, species, metadata, previousJob, walltime=1, mem="40G"):
+    if previousJob != "":
+        previousJobConditional = "#PBS -W depend=afterok:{previousJob}".format(previousJob)
+    else:
+        previousJobConditional = ""
+    
     # Format HTSeq counts files for tabulation purposes
     htseqFiles = [Path(locations.countWorkDir, name + ".htseq.counts").as_posix() for name in metadata.names]
 
@@ -411,7 +431,7 @@ def generate_tabulate_script(scriptName, htseqTabulateScript, locations, species
 #PBS -l walltime={walltime}:00:00
 #PBS -l mem={mem}
 #PBS -l ncpus=1
-#PBS -W depend=afterok:{previousJob}
+{previousJobConditional}
 
 cd {workDir}
 
@@ -429,7 +449,7 @@ OUT=all.htseq.counts
 ## RUN PROGRAM
 python $TABULATESCRIPT -i $COUNTFILES -o $OUT
     """.format(species=species, walltime=walltime, mem=mem, workDir=locations.countWorkDir,
-        previousJob=previousJob, htseqTabulateScript=htseqTabulateScript, htseqFiles=" ".join(htseqFiles))
+        previousJobConditional=previousJobConditional, htseqTabulateScript=htseqTabulateScript, htseqFiles=" ".join(htseqFiles))
 
     with open(scriptName, "w") as fileOut:
         fileOut.write(tabulateScript)
