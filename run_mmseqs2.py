@@ -124,6 +124,9 @@ def indexmms2(mmseqs2dir, query, tmpdir, threads):
         indexout, indexerr = run_index.communicate()
         if indexerr.decode("utf-8") != '':
                 raise Exception('Indexing MMseqs2 query db error text below\n' + indexerr.decode("utf-8"))
+        # Create output flag
+        with open(dbname + ".idxComplete", "w") as fileOut:
+            fileOut.write("Index completed")
 
 def runmms2(mmseqs2dir, queryDB, targetDB, tmpdir, searchName, params):
         import os, subprocess
@@ -182,7 +185,7 @@ def mms2profiletab(queryFasta, searchName, outName):
                         fileOut.write("\t".join(sl))
 
 def mms2_index_exists(fileNamePrefix, directory):
-        indexName = fileNamePrefix + '.idx'
+        indexName = fileNamePrefix + '.idxComplete'
         if indexName in os.listdir(directory):
                 return True
         else:
