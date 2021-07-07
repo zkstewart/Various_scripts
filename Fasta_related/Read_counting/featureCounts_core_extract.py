@@ -54,15 +54,34 @@ def fastq_maybe_gz_handle(fastqFile):
         return open(fastqFile, "r")
 
 def coredict_and_fastq_to_feature_fastqs(coreDict, fastqFile1, fastqFile2):
+    slashSuffix = False
+    checked = False
     with fastq_maybe_gz_handle(fastqFile1) as handle:
         for record in SeqIO.parse(handle, "fastq"):
-            if (record.id in coreDict):
+            # Run once check to see if we need to handle sequence IDs specially
+            if checked == False:
+                if (record.id.endswith("/1")):
+                    slashSuffix = True
+                checked = True
+            # Normal process
+            if slashSuffix:
+                seqid = record.id.rsplit("/", maxsplit=1)[0]
+                if seqid in coreDict:
+                    with open("{0}_R1.fastq".format(coreDict[seqid]), "a") as fileOut:
+                        SeqIO.write(record, fileOut, "fastq")
+            elif record.id in coreDict:
                 with open("{0}_R1.fastq".format(coreDict[record.id]), "a") as fileOut:
                     SeqIO.write(record, fileOut, "fastq")
     
     with fastq_maybe_gz_handle(fastqFile2) as handle:
         for record in SeqIO.parse(handle, "fastq"):
-            if (record.id in coreDict):
+            # Normal process
+            if slashSuffix:
+                seqid = record.id.rsplit("/", maxsplit=1)[0]
+                if seqid in coreDict:
+                    with open("{0}_R2.fastq".format(coreDict[seqid]), "a") as fileOut:
+                        SeqIO.write(record, fileOut, "fastq")
+            elif record.id in coreDict:
                 with open("{0}_R2.fastq".format(coreDict[record.id]), "a") as fileOut:
                     SeqIO.write(record, fileOut, "fastq")
 
