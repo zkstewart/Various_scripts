@@ -111,7 +111,6 @@ def main():
 
     # Simple GFF3 load for CDS regions
     cdsRegions = cds_regions_for_gene_id(args.gff3, args.geneID)
-    print(cdsRegions)
 
     # Perform filtration
     filter_gvcf_qual_introns(args.vcf, args.outputFileName, cdsRegions, args.qualMin)
