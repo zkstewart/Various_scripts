@@ -53,10 +53,13 @@ def cds_regions_for_gene_id(gff3File, targetID):
                     geneID = a[3:]
                 elif a.startswith("Parent="):
                     parentID = a[7:]
-            if geneID != targetID and parentID != targetID:
-                # Rescue 1: CDS points to transcript which has T# suffix
-                altID = parentID.rsplit("T", maxsplit=1)[0]
-                if altID != targetID:
+            if targetID not in geneID and targetID not in parentID:
+                # Rescue 1: remove the .suffix and try again
+                if ".path" or ".mrna" in targetID:
+                    targetAlt = targetID.rsplit(".", maxsplit=1)[0]
+                    if targetAlt not in geneID and targetAlt not in parentID:
+                        continue
+                else:
                     continue
             # Add relevant CDS coordinates to dict
             cdsRegions.append(range(int(sl[3]), int(sl[4])+1)) # 1-based range for checking within
@@ -108,6 +111,7 @@ def main():
 
     # Simple GFF3 load for CDS regions
     cdsRegions = cds_regions_for_gene_id(args.gff3, args.geneID)
+    print(cdsRegions)
 
     # Perform filtration
     filter_gvcf_qual_introns(args.vcf, args.outputFileName, cdsRegions, args.qualMin)
