@@ -56,7 +56,7 @@ def parse_gvcf_to_phase(vcfFile, outputFileName):
         fileOut.write(str(numSpecies) + "\n")
         fileOut.write(str(len(positions)) + "\n")
         # Write positions header
-        fileOut.write(" ".join(positions) + "\n")
+        fileOut.write("P " + " ".join(positions) + "\n")
         # Write locus type header
         ## Note: Assume all alleles are bi-allelic; if not, this is bad
         fileOut.write("S"*len(positions) + "\n")
