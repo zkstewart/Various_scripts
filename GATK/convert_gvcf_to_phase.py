@@ -48,7 +48,7 @@ def parse_gvcf_to_phase(vcfFile, outputFileName):
                 else:
                     gt = gt.split("/")
                 if gt[0] == "." or gt[1] == ".":
-                    gt = gt["?", "?"]
+                    gt = ["?", "?"]
                 speciesGenotypes[i].append(gt) # Add GT to genotypes list
     # Produce output file
     with open(outputFileName, "w") as fileOut:
