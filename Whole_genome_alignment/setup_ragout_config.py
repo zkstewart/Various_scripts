@@ -58,7 +58,9 @@ def format_ragout_config(referenceGenomeFiles, targetGenomeFile, outputConfigNam
         fileOut.write("#paths to genome fasta files (required for Sibelia)\n")
         for path in refPaths:
             fileOut.write("{0}\n".format(path))
-        fileOut.write("{0}\n".format(targetPath))
+        fileOut.write("{0}\n\n".format(targetPath)) # Leave a blank line after
+
+        fileOut.write("*.draft = true\n") # Specify that all genomes are in draft form
 
 def main():
     # User input
