@@ -370,42 +370,10 @@ def vcf_edit_update_coords(indelIndex, refResidue, editResidue, gff3Value, mrnaI
                             gff3Value[mrnaID]['CDS']['coords'][i][1] += lenDifference
                             cumulativeChange += lenDifference
 
-# class TestArgs():
-#     def __init__(self):
-#         self.geneID = "Prudul26A000867"
-#         self.vcf = r"F:\plant_haplotypes\gvcf\alm\Prudul26A000867.genotypes.filtered.vcf"
-#         self.phase = r"F:\plant_haplotypes\PHASE\alm\Prudul26A000867\Prudul26A000867.genotypes.filtered.phase_out_freqs"
-#         self.gff3 = r"F:\plant_haplotypes\annotations\extracted_genes_of_interest\Alm_gois_final.gff3"
-#         self.genomeFasta = r"F:\plant_annotation\genomes\alm.fasta"
-#         self.outputFileName = r"test.fasta"
-#         self.numHaplotypes = 5
-## ^ this test file works correctly!
-
-# class TestArgs():
-#     def __init__(self):
-#         self.geneID = "Chr05g0001960"
-#         self.vcf = r"F:\plant_haplotypes\gvcf\mac\Chr05g0001960.genotypes.filtered.vcf"
-#         self.phase = r"F:\plant_haplotypes\PHASE\mac\Chr05g0001960\Chr05g0001960.genotypes.filtered.phase_out_freqs"
-#         self.gff3 = r"F:\plant_haplotypes\annotations\extracted_genes_of_interest\Mac_gois_final.gff3"
-#         self.genomeFasta = r"F:\plant_annotation\macadamia\GCA_013358625.1_SCU_Mint_v3_genomic.fna"
-#         self.outputFileName = r"test.fasta"
-#         self.numHaplotypes = 5
-## ^ this has been fixed now!
-
-# class TestArgs():
-#     def __init__(self):
-#         self.geneID = "Chr06g0014230"
-#         self.vcf = r"F:\plant_haplotypes\gvcf\mac\Chr06g0014230.genotypes.filtered.vcf"
-#         self.phase = r"F:\plant_haplotypes\PHASE\mac\Chr06g0014230\Chr06g0014230.genotypes.filtered.phase_out_freqs"
-#         self.gff3 = r"F:\plant_haplotypes\annotations\extracted_genes_of_interest\Mac_gois_final.gff3"
-#         self.genomeFasta = r"F:\plant_annotation\macadamia\GCA_013358625.1_SCU_Mint_v3_genomic.fna"
-#         self.outputFileName = r"test.fasta"
-#         self.numHaplotypes = 5
-## ^ this worked!
-
 def main():
     # User input
-    usage = """%(prog)s reads in a VCF 
+    usage = """%(prog)s reads in a bunch of files specified below and will automatically
+    generate a FASTA file of haplotype sequences incorporating the various variants.
     """
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-id", dest="geneID",
@@ -423,7 +391,6 @@ def main():
     p.add_argument("-X", dest="numHaplotypes", type=int, default=5,
         help="Optionally specify the number of top frequency haplotypes to produce sequences for (default=5)")
     args = p.parse_args()
-    #args = TestArgs()
     validate_args(args)
 
     # Parse PHASE freqs file
@@ -446,7 +413,7 @@ def main():
         backup = deepcopy(gff3.index_dict[args.geneID])
         transcript, cds = gff3_object_haplotype_extract(gff3, args.geneID, genomeRecords, "both", vcfDict, haplotype)
         sequences.append(cds)
-        gff3.index_dict[args.geneID] = backup
+        gff3.index_dict[args.geneID] = backup # Don't carry over changes to the gff3 gene entry
     
     # Produce output FASTA
     with open(args.outputFileName, "w") as fileOut:
@@ -455,7 +422,6 @@ def main():
             seq = sequences[i]
             seqid = ">{0}_seq{1} haplotypeCode={2} frequency={3}".format(args.geneID, i+1, haplotype[0], haplotype[1])
             fileOut.write("{0}\n{1}\n".format(seqid, seq))
-    
 
 if __name__ == "__main__":
     main()
