@@ -395,6 +395,13 @@ def main():
 
     # Parse PHASE freqs file
     haplotypes = parse_phase_freqs(args.phase, args.numHaplotypes)
+    if haplotypes == []:
+        # Exit gracefully for empty haplotype files
+        emptyName = "{0}.no_haplotypes".format(args.outputFileName.rsplit(".", maxsplit=1)[0])
+        with open(emptyName, "w") as fileOut:
+            pass
+        print("No haplotypes found; exiting now")
+        quit()
 
     # Parse GATK VCF file
     vcfDict = parse_vcf(args.vcf)
