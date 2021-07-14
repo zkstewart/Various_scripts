@@ -61,7 +61,7 @@ def format_ragout_config(referenceGenomeFiles, targetGenomeFile, outputConfigNam
         fileOut.write("{0}\n".format(targetPath))
 
         if isDraft:
-            fileOut.write("\n*.draft = true\n") # Specify that all genomes are in draft form, with separation between it and prior details
+            fileOut.write("\n*.fasta = true\n") # Specify that all genomes are in draft form, with separation between it and prior details
 
 def main():
     # User input
