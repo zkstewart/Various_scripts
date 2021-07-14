@@ -266,6 +266,11 @@ def gff3_object_haplotype_extract(gff3Object, mrna, genomeRecords, seqType, vcfD
                         value[mrna]['CDS']['coords'].reverse()
         # Edit genomic sequence if needed
         genomeSeq = vcf_edit_sequence(vcfDict, value, mrna, genomeSeq, haplotype)
+        if genomeSeq == False: # Convey the fail condition for when PHASE suggests a fake haplotype
+            if seqType == 'transcript' or seqType == 'cds':
+                return False
+            else:
+                return False, False
         # Join sequence segments
         if seqType == 'transcript' or seqType == 'both':
                 transcript = ''
@@ -322,7 +327,10 @@ def vcf_edit_sequence(vcfDict, gff3Value, mrnaID, genomeSeq, haplotype): # mrnaV
                         indelIndex = edit[0] - 1                                        # - 1 to make this act 0-based (in the main program we instead minused coordRange which accomplished the same goal of making the index 0-based).
                         if hapValue != 0: # if hapValue == 0, it's just the reference
                             refResidue = edit[1]
-                            editResidue = edit[2][hapValue - 1] # hapValue == 1 means we get the first value in our edit list
+                            try:
+                                editResidue = edit[2][hapValue - 1] # hapValue == 1 means we get the first value in our edit list
+                            except:
+                                return False # This is an exit condition for when PHASE suggests a non-existent haplotype
                             # Make edit
                             genomeSeq = genomeSeq[:indelIndex] + editResidue + genomeSeq[indelIndex+len(refResidue):]
                             # Update coords if necessary
@@ -414,18 +422,21 @@ def main():
     genomeRecords = SeqIO.to_dict(SeqIO.parse(open(args.genomeFasta, 'r'), 'fasta'))
 
     # Iteratively get our haplotype sequences
-    sequences = []
     haplotypes.insert(0, ['0'*len(haplotypes[0][0]), "REFERENCE"])
+    sequences = []
+    outHaplotypes = []
     for haplotype in haplotypes:
         backup = deepcopy(gff3.index_dict[args.geneID])
         transcript, cds = gff3_object_haplotype_extract(gff3, args.geneID, genomeRecords, "both", vcfDict, haplotype)
-        sequences.append(cds)
+        if cds != False: # This is the final step of carrying over a failure condition for PHASE suggesting a fake haplotype
+            sequences.append(cds)
+            outHaplotypes.append(haplotype)
         gff3.index_dict[args.geneID] = backup # Don't carry over changes to the gff3 gene entry
     
     # Produce output FASTA
     with open(args.outputFileName, "w") as fileOut:
-        for i in range(len(haplotypes)):
-            haplotype = haplotypes[i]
+        for i in range(len(outHaplotypes)):
+            haplotype = outHaplotypes[i]
             seq = sequences[i]
             seqid = ">{0}_seq{1} haplotypeCode={2} frequency={3}".format(args.geneID, i+1, haplotype[0], haplotype[1])
             fileOut.write("{0}\n{1}\n".format(seqid, seq))
