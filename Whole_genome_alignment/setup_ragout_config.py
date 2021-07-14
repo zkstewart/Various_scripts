@@ -35,7 +35,7 @@ def validate_args(args):
         quit()
     #return fullPathReferences, fullPathTarget
 
-def format_ragout_config(referenceGenomeFiles, targetGenomeFile, outputConfigName):
+def format_ragout_config(referenceGenomeFiles, targetGenomeFile, outputConfigName, isDraft):
     # Format reference values
     refNames = []
     refPaths = []
@@ -58,9 +58,10 @@ def format_ragout_config(referenceGenomeFiles, targetGenomeFile, outputConfigNam
         fileOut.write("#paths to genome fasta files (required for Sibelia)\n")
         for path in refPaths:
             fileOut.write("{0}\n".format(path))
-        fileOut.write("{0}\n\n".format(targetPath)) # Leave a blank line after
+        fileOut.write("{0}\n".format(targetPath))
 
-        fileOut.write("*.draft = true\n") # Specify that all genomes are in draft form
+        if isDraft:
+            fileOut.write("\n*.draft = true\n") # Specify that all genomes are in draft form, with separation between it and prior details
 
 def main():
     # User input
@@ -75,11 +76,13 @@ def main():
         help="Input target genome file")
     p.add_argument("-o", dest="outputFileName",
         help="Output file name for the config file")
+    p.add_argument("-d", dest="drafts", action="store_true", default=False,
+        help="Optionally specify that the references are drafts (unspecified == not draft)")
     args = p.parse_args()
     validate_args(args)
 
     # Generate config file
-    format_ragout_config(args.references, args.target, args.outputFileName)
+    format_ragout_config(args.references, args.target, args.outputFileName, args.drafts)
 
 if __name__ == "__main__":
     main()
