@@ -86,9 +86,9 @@ def main():
     for use by Ragout to scaffold the target genome. It does not run Ragout itself.
     """
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-rd", dest="draftRefs", nargs="+",
+    p.add_argument("-rd", dest="draftRefs", nargs="+", default=[],
         help="Input reference genome files which are DRAFT quality")
-    p.add_argument("-rc", dest="completeRefs", nargs="+",
+    p.add_argument("-rc", dest="completeRefs", nargs="+", default=[],
         help="Input reference genome files which are COMPLETE/CHROMOSOME quality")
     p.add_argument("-t", dest="target",
         help="Input target genome file")
