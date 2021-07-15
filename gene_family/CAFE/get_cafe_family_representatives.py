@@ -58,7 +58,7 @@ def parse_basechange_tab_for_change(tabFileName, columnID):
                 families.append(groupID)
     return families
 
-def get_representative_from_orthogroups(sequencesDir, families):
+def get_representative_from_orthogroups(sequencesDir, families, change_id):
     RIVAL_PERCENT = 0.6 # If the rival seq is at least 60% of the length of best, it's good
     repRecords = []
     for family in families:
@@ -66,9 +66,6 @@ def get_representative_from_orthogroups(sequencesDir, families):
         fileName = os.path.join(sequencesDir, "{0}.fa".format(family))
         assert os.path.isfile(fileName)
         # Read file as record dict
-        #try:
-            #records = SeqIO.to_dict(SeqIO.parse(open(fileName, "r"), "fasta"))
-        #except:
         records = custom_to_dict(fileName) # This indexes by description which is more stable
         # Find best representative with two metrics: M start, longest length
         bestID = None
@@ -106,9 +103,10 @@ def get_representative_from_orthogroups(sequencesDir, families):
                 if bestLen <= rivalLen * RIVAL_PERCENT: # Handicap the rival seq
                     bestID = key
                     continue
-        # Change our sequence ID to be the family name
-        records[bestID].description = ""
-        records[bestID].id = family
+        # Change our sequence ID to be the family name if relevant
+        if change_id:
+            records[bestID].description = ""
+            records[bestID].id = family
         # Store the record in our list
         repRecords.append(records[bestID])
     return repRecords
@@ -138,6 +136,8 @@ def main():
         help="Specify the branch/node ID to check for expansions/contractions")
     p.add_argument("-o", dest="outputFileName",
         help="Output file name for the FASTA")
+    p.add_argument("--change_id", dest="change_id", action="store_true", default=False,
+        help="Optionally produce a FASTA file where the representative ID is changed to be the Orthogroup ID")
     args = p.parse_args()
     validate_args(args)
 
@@ -145,7 +145,7 @@ def main():
     families = parse_basechange_tab_for_change(args.tabFileName, args.id)
 
     # Extract representatives from family FASTA files
-    repRecords = get_representative_from_orthogroups(args.sequencesDir, families)
+    repRecords = get_representative_from_orthogroups(args.sequencesDir, families, args.change_id)
 
     # Produce output FASTA
     with open(args.outputFileName, "w") as fileOut:
