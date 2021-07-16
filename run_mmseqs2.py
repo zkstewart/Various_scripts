@@ -227,6 +227,9 @@ def main():
                           help="Optionally specify whether you want to exit after query profile generation")
         p.add_argument("-iiq", "--id_is_query", dest="id_is_query", action="store_true", default=False,
                           help="Optionally specify whether you want to convert the output sequence ID to be the query file sans suffix")
+        p.add_argument("-tai", "--target_as_is", dest="target_as_is", action="store_true", default=False,
+                          help="""Optionally specify whether the target name should be treated as-is i.e., I won't assume a DB of it has _seqDB suffix.
+                          This is mostly useful for using a database made by mmseqs databases command, not by this wrapper script.""")
         args = p.parse_args()
         args = validate_args(args)
         print('Program arguments appear to be OK. If you have any errors, try deleting the mms2tmp folder and try again.')
@@ -254,6 +257,13 @@ def main():
         # Format parameters for later MMseqs2 search function
         params = [args.evalue, args.threads, args.num_iterations, args.sensitivity, args.alt_ali]
         
+        # Figure out our target name based on target_as_is parameter
+        ## This name is only used for our if checks in this main function for resuming
+        if args.target_as_is:
+            targetName = args.target
+        else:
+            targetName = args.target + '_seqDB'
+
         # Make query db
         if args.profile_query == False:
                 if args.resume == False or (args.query + '_seqDB' not in querydir):
@@ -277,10 +287,10 @@ def main():
                 quit()
         
         # Make target db
-        if args.resume == False or (os.path.basename(args.target) + '_seqDB' not in targetdir):
+        if args.resume == False or (targetName not in targetdir):
                 print('Running target DB generation...')
                 log_update(logName, 'Running target DB generation...')
-                makemms2db(args.mmseqs2dir, os.path.join(args.targetdir, args.target))
+                makemms2db(args.mmseqs2dir, os.path.join(args.targetdir, args.target)) # Note that we don't use targetName, since mms2db adds _seqDB automatically
         else:
                 print('Skipping target DB generation...')
                 log_update(logName, 'Skipping target DB generation...')
@@ -289,7 +299,7 @@ def main():
         if not args.skip_index:
                 # Index query db
                 if args.profile_query == False:
-                        index = mms2_index_exists(os.path.basename(args.query) + '_seqDB', args.querydir)
+                        index = mms2_index_exists(args.query + '_seqDB', args.querydir)
                         if args.resume == False or (index == False):
                                 print('Indexing query DB...')
                                 log_update(logName, 'Indexing query DB...')
@@ -302,7 +312,7 @@ def main():
                         log_update(logName, 'Skipping query DB indexing (not needed for profile)...')
                 
                 # Index target db
-                index = mms2_index_exists(os.path.basename(args.target) + '_seqDB', args.targetdir)
+                index = mms2_index_exists(targetName, args.targetdir)
                 if args.resume == False or (index == False):
                         print('Indexing target DB...')
                         log_update(logName, 'Indexing target DB...')
@@ -315,7 +325,7 @@ def main():
                 log_update(logName, 'Indexing step is being skipped due to argument flag...')
         
         # Run MMseqs2 search
-        if args.resume == False or (os.path.basename(args.output) + '_mms2SEARCH.m8' not in outputdir):
+        if args.resume == False or (args.output + '_mms2SEARCH.m8' not in outputdir):
                 '''Because MMseqs2 creates output for each thread (mms2SEARCH.0 -> mms2SEARCH.n)
                 we can't reliably check if a single _mms2SEARCH file exists like in older versions
                 of this program. We should be able to simple check for the tabular file since it
@@ -327,7 +337,7 @@ def main():
                         query = os.path.join(args.querydir, args.query + "_seqDB")
                 else:
                         query = os.path.join(args.querydir, args.query + "_profileDB")
-                target = os.path.join(args.targetdir, args.target + "_seqDB")
+                target = os.path.join(args.targetdir, targetName)
                 runmms2(args.mmseqs2dir, query, target, tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), params)
         else:  
                 print('Skipping MMseqs2 search...[If you want to re-run the search, delete the previous file (' + os.path.join(args.outputdir, args.output) + '_mms2SEARCH) and the mms2tmp directory]')
@@ -341,7 +351,7 @@ def main():
                         query = os.path.join(args.querydir, args.query + "_seqDB")
                 else:
                         query = os.path.join(args.querydir, args.query + "_profileDB")
-                target = os.path.join(args.targetdir, args.target + "_seqDB")
+                target = os.path.join(args.targetdir, targetName)
                 mms2tab(args.mmseqs2dir, query, target, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.threads)
         else:
                 print('Skipping MMseqs2 table generation...')
