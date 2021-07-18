@@ -281,7 +281,7 @@ def blast_besthitoutfmt6(blastFile, fastaFile):
                                                 that one hit is longer with lower identity, and the other hit is shorter with higher identity.
                                                 I'm inclined to think that the first hit is better than the second if E-value/bit score are equivalent'''
                         # Overwrite N/A value in dict
-                        hitDict[bestHit[0]] = bestHit
+                        hitDict[bestHit[0]] = '\t'.join(bestHit)
         # Make an output list
         outList = []
         for key, value in hitDict.items():
