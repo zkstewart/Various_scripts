@@ -248,6 +248,46 @@ def blast_besthitid(blastFile, fastaFile):
                 outList.append(key + '\t' + value)
         return outList
 
+def blast_besthitoutfmt6(blastFile, fastaFile):
+        # Set up
+        from itertools import groupby
+        grouper = lambda x: x.split('\t')[0]
+        # Load fasta file
+        records = SeqIO.parse(open(fastaFile, 'r'), "fasta")
+        hitDict = OrderedDict()
+        for record in records:
+                hitDict[record.id] = "N/A" # Default to no result; will be overwritten in below loop if possible
+        # Main function
+        with open(blastFile) as fileIn:
+                for key, value in groupby(fileIn, grouper):
+                        bestHit = []
+                        for entry in value:     # We do this process in case the file isn't sorted; this is the case for MMseqs2
+                                sl = entry.rstrip('\r\n').split('\t')
+                                if bestHit == []:
+                                        bestHit = sl
+                                else:
+                                        # Check E-value
+                                        if float(sl[10]) < float(bestHit[10]):
+                                                bestHit = sl
+                                        # If E-value is equivalent, check bit score
+                                        elif float(sl[10]) == float(bestHit[10]):
+                                                if float(sl[11]) > float(bestHit[11]):
+                                                        bestHit = sl
+                                                # If bit score is equivalent, check alignment length
+                                                elif float(sl[11]) == float(bestHit[11]):
+                                                        if int(sl[3]) > int(bestHit[3]):
+                                                                bestHit = sl
+                                                '''This is arbitrary, if E-value and bit score are identical, then the possible scenarios are
+                                                that one hit is longer with lower identity, and the other hit is shorter with higher identity.
+                                                I'm inclined to think that the first hit is better than the second if E-value/bit score are equivalent'''
+                        # Overwrite N/A value in dict
+                        hitDict[bestHit[0]] = bestHit
+        # Make an output list
+        outList = []
+        for key, value in hitDict.items():
+                outList.append(key + '\t' + value)
+        return outList
+
 # Define general purpose functions
 def fasta_or_fastq(fastaFile, prefix):
         changed = False
@@ -373,6 +413,11 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                 a tab-delimited text file pairing query IDs with their best matching result.
                 Where no results were obtained, "N/A" will be displayed instead.
                 '''
+                besthitoutfmt6 = '''
+                The _besthitoutfmt6_ function requires a FASTA input. It will output
+                a BLAST-tab file with the best hit for each query sequence stored.
+                Where no results were obtained, "N/A" will be displayed instead.
+                '''
                 ## Format help message
                 printList = str(functionList).replace("'", "")
                 printList = eval(printList)
@@ -469,7 +514,7 @@ and 5) enact the function below.
 stringFunctions = ['hitids', 'fastahitretrieveremove', 'fastahitfastaout']
 numberFunctions = ['hitcount', 'hitids', 'fastahitretrieveremove']
 basicFunctions = []
-fastaFunctions = ['fastahitretrieveremove', 'fastahitfastaout', 'besthitid']
+fastaFunctions = ['fastahitretrieveremove', 'fastahitfastaout', 'besthitid', 'besthitoutfmt6']
 functionList = []
 for fList in [stringFunctions + numberFunctions + basicFunctions + fastaFunctions]:     # Need more elaborate process since there can be duplicates in string and number lists
         for func in fList:
@@ -508,6 +553,8 @@ listOutName, fastaOutName, args.outputFileName = validate_args(args, stringFunct
 # Enact functions
 outList = []    # Blank lists so we can determine what needs to be output
 outFasta = []
+## No input functions
+
 ## String functions
 ## String functions - FASTA input
 if args.function == 'fastahitretrieveremove':
@@ -516,6 +563,8 @@ if args.function == 'fastahitfastaout':
         outFasta, args.fastaFileName = blast_fastahitfastaout(args.blastFileName, args.fastaFileName, args.string)
 if args.function == 'besthitid':
         outList = blast_besthitid(args.blastFileName, args.fastaFileName)
+if args.function == 'besthitoutfmt6':
+        outList = blast_besthitoutfmt6(args.blastFileName, args.fastaFileName)
 ## Number functions
 if args.function == 'hitcount':
         outList = blast_hitcount(args.blastFileName, args.number)
