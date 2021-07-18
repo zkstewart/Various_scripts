@@ -608,17 +608,18 @@ outFasta = []
 ## No input functions
 
 ## String functions
-## String functions - FASTA input
+## String functions - w/ FASTA input
 if args.function == 'fastahitretrieveremove':
         outFasta, args.fastaFileName, changed = blast_fastahitretrieveremove(args.blastFileName, args.fastaFileName, args.number, args.string, startTime)       # startTime is used for temporary file generation if the FASTQ file is faulty
 if args.function == 'fastahitfastaout':
         outFasta, args.fastaFileName = blast_fastahitfastaout(args.blastFileName, args.fastaFileName, args.string)
+if args.function == 'gene2accession_info':
+        outList = blast_gene2accession_info(args.blastFileName, args.string, args.fastaFileName)
+## FASTA functions
 if args.function == 'besthitid':
         outList = blast_besthitid(args.blastFileName, args.fastaFileName)
 if args.function == 'besthitoutfmt6':
         outList = blast_besthitoutfmt6(args.blastFileName, args.fastaFileName)
-if args.function == 'gene2accession_info':
-        outList = blast_gene2accession_info(args.blastFileName, args.fastaFileName)
 ## Number functions
 if args.function == 'hitcount':
         outList = blast_hitcount(args.blastFileName, args.number)
