@@ -285,7 +285,7 @@ def blast_besthitoutfmt6(blastFile, fastaFile):
         # Make an output list
         outList = []
         for key, value in hitDict.items():
-                outList.append(key + '\t' + value)
+                outList.append(value)
         return outList
 
 # Define general purpose functions
