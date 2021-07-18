@@ -288,6 +288,46 @@ def blast_besthitoutfmt6(blastFile, fastaFile):
                 outList.append(value)
         return outList
 
+def blast_gene2accession_info(blastFile, gene2accessionFile, gene_infoFile):
+        # Parse gene2accession file
+        gene2accession = {}
+        with open(gene2accessionFile, "r") as fileIn:
+            for line in fileIn:
+                if line.startswith("#"): continue
+                sl = line.rstrip("\r\n").split("\t")
+                geneID = sl[1]
+                nucAccession = sl[3]
+                protAccession = sl[5]
+                genNucAccession = sl[7]
+                # Redundantly associate accessions to the unique gene ID
+                gene2accession[nucAccession] = geneID
+                gene2accession[protAccession] = geneID
+                gene2accession[genNucAccession] = geneID
+        # Parse gene_info file
+        gene_info = {}
+        with open(gene_infoFile, "r") as fileIn:
+            for line in fileIn:
+                if line.startswith("#"): continue
+                sl = line.rstrip("\r\n").split("\r\n")
+                geneID = sl[1]
+                symbol = sl[2]
+                description = sl[8]
+                # Associate unique gene ID to relevant details
+                gene_info[geneID] = [symbol, description]
+        # Main function
+        outList = []
+        with open(blastFile) as fileIn:
+                for line in fileIn:
+                        sl = line.rstrip("\r\n").split("\t")
+                        accession = sl[1]
+                        # Replace accession with details
+                        geneID = gene2accession[accession]
+                        info = gene_info[geneID]
+                        newAccession = "{0} [symbol={1}, accession={2}]".format(info[1], info[0], accession)
+                        sl[1] = newAccession
+                        outList.append("\t".join(sl))
+        return outList
+
 # Define general purpose functions
 def fasta_or_fastq(fastaFile, prefix):
         changed = False
@@ -379,6 +419,34 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                 significant hits.
                 '''
                 ## String input
+                ## FASTA input
+                besthitid = '''
+                The _besthitid_ function requires a FASTA input. It will output
+                a tab-delimited text file pairing query IDs with their best matching result.
+                Where no results were obtained, "N/A" will be displayed instead.
+                '''
+                besthitoutfmt6 = '''
+                The _besthitoutfmt6_ function requires a FASTA input. It will output
+                a BLAST-tab file with the best hit for each query sequence stored.
+                Where no results were obtained, "N/A" will be displayed instead.
+                '''
+                ## String & FASTA input
+                fastahitfastaout = '''
+                The _fastahitfastaout_ function accepts a string and FASTA input. String input 
+                should be formatted as "lowerEvalue,upperEvalue" e.g., "0,0.1" to define the range
+                of E-value hits to retrieve. The input FASTA should correspond to the either the
+                query or the target file for the BLAST search. The output is a FASTA file containing sequences
+                which have a match within the E-value range (inclusive of upper and lower bounds),
+                and their sequence IDs will be modified to give a short summary of these hits
+                pertinent details i.e., E-value and bit score.
+                '''
+                gene2accession_info = '''
+                The _fastahitfastaout_ function accepts a string and FASTA input. String input 
+                should correspond to the gene2accession file provided by NCBI; FASTA input should
+                correspond to the gene_info file provided by NCBI. The output is a file where the
+                input BLAST-tab file has had sequence accessions replaced by the full gene description,
+                with extra information included such as the accession and gene symbol
+                '''
                 ## String & number input
                 hitids = '''
                 The _hitids_ function accepts a string and number input. String input
@@ -388,6 +456,7 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                 The output is a text file listing sequence IDs which are matched
                 significantly using the E-value cutoff.
                 '''
+                ## String & number & FASTA input
                 fastahitretrieveremove = '''
                 The _fastahitretrieveremove_ function accepts a string and number input;
                 it additionally requires FASTA input. String input should be either "retrieve"
@@ -399,25 +468,8 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                 Note that both query and target columns of the BLAST-tab file
                 will be checked for IDs
                 '''
-                fastahitfastaout = '''
-                The _fastahitfastaout_ function accepts a string and FASTA input. String input 
-                should be formatted as "lowerEvalue,upperEvalue" e.g., "0,0.1" to define the range
-                of E-value hits to retrieve. The input FASTA should correspond to the either the
-                query or the target file for the BLAST search. The output is a FASTA file containing sequences
-                which have a match within the E-value range (inclusive of upper and lower bounds),
-                and their sequence IDs will be modified to give a short summary of these hits
-                pertinent details i.e., E-value and bit score.
-                '''
-                besthitid = '''
-                The _besthitid_ function requires a FASTA input. It will output
-                a tab-delimited text file pairing query IDs with their best matching result.
-                Where no results were obtained, "N/A" will be displayed instead.
-                '''
-                besthitoutfmt6 = '''
-                The _besthitoutfmt6_ function requires a FASTA input. It will output
-                a BLAST-tab file with the best hit for each query sequence stored.
-                Where no results were obtained, "N/A" will be displayed instead.
-                '''
+                
+                
                 ## Format help message
                 printList = str(functionList).replace("'", "")
                 printList = eval(printList)
@@ -511,10 +563,10 @@ and 5) enact the function below.
 '''
 
 # Function list - update as new ones are added
-stringFunctions = ['hitids', 'fastahitretrieveremove', 'fastahitfastaout']
+stringFunctions = ['hitids', 'fastahitretrieveremove', 'fastahitfastaout', 'gene2accession_info']
 numberFunctions = ['hitcount', 'hitids', 'fastahitretrieveremove']
 basicFunctions = []
-fastaFunctions = ['fastahitretrieveremove', 'fastahitfastaout', 'besthitid', 'besthitoutfmt6']
+fastaFunctions = ['fastahitretrieveremove', 'fastahitfastaout', 'besthitid', 'besthitoutfmt6', 'gene2accession_info']
 functionList = []
 for fList in [stringFunctions + numberFunctions + basicFunctions + fastaFunctions]:     # Need more elaborate process since there can be duplicates in string and number lists
         for func in fList:
@@ -565,6 +617,8 @@ if args.function == 'besthitid':
         outList = blast_besthitid(args.blastFileName, args.fastaFileName)
 if args.function == 'besthitoutfmt6':
         outList = blast_besthitoutfmt6(args.blastFileName, args.fastaFileName)
+if args.function == 'gene2accession_info':
+        outList = blast_gene2accession_info(args.blastFileName, args.fastaFileName)
 ## Number functions
 if args.function == 'hitcount':
         outList = blast_hitcount(args.blastFileName, args.number)
