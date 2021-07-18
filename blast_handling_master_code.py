@@ -308,7 +308,7 @@ def blast_gene2accession_info(blastFile, gene2accessionFile, gene_infoFile):
         with open(gene_infoFile, "r") as fileIn:
             for line in fileIn:
                 if line.startswith("#"): continue
-                sl = line.rstrip("\r\n").split("\r\n")
+                sl = line.rstrip("\r\n").split("\t")
                 geneID = sl[1]
                 symbol = sl[2]
                 description = sl[8]
