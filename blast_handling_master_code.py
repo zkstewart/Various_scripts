@@ -289,6 +289,10 @@ def blast_besthitoutfmt6(blastFile, fastaFile):
         return outList
 
 def blast_gene2accession_info(blastFile, gene2accessionFile, gene_infoFile):
+        ## HARD-CODED FIXES FOR PROGRAM USE 19-07-21
+        idPairs = {
+            "WP_161418457.1": ["NoSymbol", "DDE-type integrase/transposase/recombinase"]
+        }
         # Parse gene2accession file
         gene2accession = {}
         with open(gene2accessionFile, "r") as fileIn:
@@ -321,9 +325,13 @@ def blast_gene2accession_info(blastFile, gene2accessionFile, gene_infoFile):
                         sl = line.rstrip("\r\n").split("\t")
                         accession = sl[1]
                         # Replace accession with details
-                        geneID = gene2accession[accession]
-                        info = gene_info[geneID]
-                        newAccession = "{0} [symbol={1}, accession={2}]".format(info[1], info[0], accession)
+                        try:
+                            geneID = gene2accession[accession]
+                            info = gene_info[geneID]
+                            newAccession = "{0} [symbol={1}, accession={2}]".format(info[1], info[0], accession)
+                        except:
+                             hardcodeFix = idPairs[accession]
+                             newAccession = "{0} [symbol={1}, accession={2}]".format(hardcodeFix[1], hardcodeFix[0], accession)
                         sl[1] = newAccession
                         outList.append("\t".join(sl))
         return outList
