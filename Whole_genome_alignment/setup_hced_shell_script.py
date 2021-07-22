@@ -90,7 +90,7 @@ def main():
         help="Input reference genome file around which all other sequences will be \"rotated\"")
     p.add_argument("-t", dest="targetGenomes", nargs="+", default=[],
         help="Input target genome files which will have their start/end adjusted according to the reference")
-    p.add_argument("-h", dest="hcedExe", 
+    p.add_argument("-hced", dest="hcedExe", 
         help="Specify the full path to the hCED executable file")
     p.add_argument("-o", dest="outputFileName",
         help="Output file name for the shell script")
