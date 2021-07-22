@@ -66,8 +66,9 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, outputFi
     ]
 
     # Concatenate hCED outputs into a single MSA
+    scriptLines.append("cat {0} > hCED_result/hCED_result.fasta".format(referenceGenome))
     scriptLines.append("cd hCED_result")
-    scriptLines.append("cat {0} > hCED_result.fasta".format(referenceGenome))
+    
     scriptLines += [
         r"for t in ${TARGETS[@]}; do",
         "    PREFIX=$(basename $t);",
