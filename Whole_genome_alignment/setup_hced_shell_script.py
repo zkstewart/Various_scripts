@@ -39,27 +39,45 @@ def validate_args(args):
 def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, outputFileName):
     # Setup default script head
     scriptLines = []
-    scriptLines.append(
-        [
-            "#!/bin/bash -l",
-            "#PBS -N testHced",
-            "#PBS -l walltime=02:00:00",
-            "#PBS -l mem=30G",
-            "#PBS -l ncpus=1\n",
-            "cd $PBS_O_WORKDIR\n"
-        ]
-    )
+    scriptLines += [
+        "#!/bin/bash -l",
+        "#PBS -N testHced",
+        "#PBS -l walltime=02:00:00",
+        "#PBS -l mem=30G",
+        "#PBS -l ncpus=1\n",
+        "cd $PBS_O_WORKDIR\n",
+        "mkdir -p tmp",
+        "mkdir -p intermediate",
+        "mkdir -p hCED_result\n"
+    ]
     # Specify files as an array for shell script
-    scriptLines.append("TARGETS=({0})".format(" ".join(targetGenomes)))
+    #targetGenomes = ["/path/to/genome1", "path/to/genome2"]
+    scriptLines.append("TARGETS=({0})\n".format(" ".join(targetGenomes)))
 
     # Set up loop for hCED operations
-    scriptLines.append(
-        [
-            "",
-        ]
-    )
-    # Concatenate hCED outputs into a single MSA
+    #referenceGenome = "/path/to/reference"
+    #hcedExeLocation = "/home/n8942188/various_programs/hCED/hCED"
+    scriptLines += [
+        r"for t in ${TARGETS[@]}; do",
+        "    PREFIX=$(basename $t);",
+        "    cat {0} $t > tmp/tmp_hced.fasta;".format(referenceGenome),
+        "    {0} -i tmp/tmp_hced.fasta -o intermediate/$PREFIX.hced.fasta;".format(hcedExeLocation),
+        "done\n"
+    ]
 
+    # Concatenate hCED outputs into a single MSA
+    scriptLines.append("cd hCED_result")
+    scriptLines.append("cat {0} > hCED_result.fasta".format(referenceGenome))
+    scriptLines += [
+        r"for t in ${TARGETS[@]}; do",
+        "    PREFIX=$(basename $t);",
+        "    tail -n 2 ${PBS_O_WORKDIR}/intermediate/$PREFIX.hced.fasta >> hCED_result.fasta;",
+        "done\n"
+    ]
+
+    # Write script to file
+    with open(outputFileName, "w") as fileOut:
+        fileOut.write("\n".join(scriptLines))
 
 def main():
     # User input
