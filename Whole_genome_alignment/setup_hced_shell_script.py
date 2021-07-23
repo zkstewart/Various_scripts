@@ -76,7 +76,7 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, fastaHan
         ## > Check the BLAST result
         "    SFRAME=$(head -n 1 tmp/hced_tmp_target.outfmt6 | awk '{print $10}');", # print $10 grabs the sframe field of the custom outfmt above
         ## > Reverse complement depending on sframe
-        "    if [[ \"$SFRAME\" = \"-1\" ]]; then mv tmp/hced_tmp_target.fasta tmp/hced_tmp_target.fasta.tmp; python {0} -f reversecomplement2multi -n 60 -i tmp/hced_tmp_target.fasta.tmp -o tmp/hced_tmp_target.fasta fi;".format(fastaHandlingCode),
+        "    if [[ \"$SFRAME\" = \"-1\" ]]; then mv tmp/hced_tmp_target.fasta tmp/hced_tmp_target.fasta.tmp; python {0} -f reversecomplement2multi -n 60 -i tmp/hced_tmp_target.fasta.tmp -o tmp/hced_tmp_target.fasta; fi;".format(fastaHandlingCode),
         ## > Resume normal operation for hCED
         "    cat {0} tmp/hced_tmp_target.fasta > tmp/tmp_hced.fasta;".format(referenceGenome),
         "    {0} -i tmp/tmp_hced.fasta -o intermediate/$PREFIX.hced.fasta;".format(hcedExeLocation),
