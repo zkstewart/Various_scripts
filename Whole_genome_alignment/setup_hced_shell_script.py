@@ -79,7 +79,7 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, fastaHan
         ## > Reverse complement depending on sframe
         "    if [[ \"$SFRAME\" = \"-1\" ]]; then mv tmp/hced_tmp_target.fasta tmp/hced_tmp_target.fasta.tmp; python {0} -f reversecomplement2multi -n 60 -i tmp/hced_tmp_target.fasta.tmp -o tmp/hced_tmp_target.fasta; fi;".format(fastaHandlingCode),
         ## > Resume normal operation for hCED
-        "    cat {0} tmp/hced_tmp_target.fasta > tmp/tmp_hced.fasta;".format(referenceGenome),
+        "    cat tmp/hced_tmp_target.fasta {0} > tmp/tmp_hced.fasta;".format(referenceGenome),
         "    {0} -i tmp/tmp_hced.fasta -o intermediate/$PREFIX.hced.fasta;".format(hcedExeLocation),
         "done\n"
     ]
