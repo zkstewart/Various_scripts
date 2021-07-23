@@ -29,6 +29,10 @@ def validate_args(args):
         print('I am unable to locate the hCED executable file (' + args.hcedExe + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if not os.path.isfile(args.fastaHandlingCode):
+        print('I am unable to locate the fasta handling master code file (' + args.fastaHandlingCode + ')')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
     
     # Validate output file location
     if os.path.isfile(args.outputFileName):
@@ -36,7 +40,7 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
-def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, outputFileName):
+def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, fastaHandlingCode, suffix, outputFileName):
     # Setup default script head
     scriptLines = []
     scriptLines += [
@@ -59,8 +63,11 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, outputFi
     #hcedExeLocation = "/home/n8942188/various_programs/hCED/hCED"
     scriptLines += [
         r"for t in ${TARGETS[@]}; do",
-        "    PREFIX=$(basename $t);",
-        "    cat {0} $t > tmp/tmp_hced.fasta;".format(referenceGenome),
+        "    BASE=$(basename $t);",
+        "    PREFIX=${BASE%%.fasta}",
+        "    rm tmp/hced_tmp_target.fasta",
+        "    python {0} -f rename -s ${{PREFIX}}_{1}_seq{{}} -i $t -o tmp/hced_tmp_target.fasta".format(fastaHandlingCode, suffix),
+        "    cat {0} tmp/hced_tmp_target.fasta > tmp/tmp_hced.fasta;".format(referenceGenome),
         "    {0} -i tmp/tmp_hced.fasta -o intermediate/$PREFIX.hced.fasta;".format(hcedExeLocation),
         "done\n"
     ]
@@ -68,10 +75,10 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, outputFi
     # Concatenate hCED outputs into a single MSA
     scriptLines.append("cat {0} > hCED_result/hCED_result.fasta".format(referenceGenome))
     scriptLines.append("cd hCED_result")
-    
     scriptLines += [
         r"for t in ${TARGETS[@]}; do",
-        "    PREFIX=$(basename $t);",
+        "    BASE=$(basename $t);",
+        "    PREFIX=${BASE%%.fasta}",
         "    tail -n 2 ${PBS_O_WORKDIR}/intermediate/$PREFIX.hced.fasta >> hCED_result.fasta;",
         "done\n"
     ]
@@ -93,13 +100,17 @@ def main():
         help="Input target genome files which will have their start/end adjusted according to the reference")
     p.add_argument("-hced", dest="hcedExe", 
         help="Specify the full path to the hCED executable file")
+    p.add_argument("-f", dest="fastaHandlingCode", 
+        help="Specify the full path to the fasta handling master code python file")
+    p.add_argument("-s", dest="suffix",
+        help="Specify suffix to add to all sequence names (suffix proceeds a _ character; omit this _ here)")
     p.add_argument("-o", dest="outputFileName",
         help="Output file name for the shell script")
     args = p.parse_args()
     validate_args(args)
 
     # Generate script file
-    format_hced_script(args.referenceGenome, args.targetGenomes, args.hcedExe, args.outputFileName)
+    format_hced_script(args.referenceGenome, args.targetGenomes, args.hcedExe, args.fastaHandlingCode, args.suffix, args.outputFileName)
 
 if __name__ == "__main__":
     main()
