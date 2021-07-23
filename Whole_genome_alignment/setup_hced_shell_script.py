@@ -91,7 +91,7 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, fastaHan
         r"for t in ${TARGETS[@]}; do",
         "    BASE=$(basename $t);",
         "    PREFIX=${BASE%%.fasta}",
-        "    tail -n 2 ${PBS_O_WORKDIR}/intermediate/$PREFIX.hced.fasta >> hCED_result.fasta;",
+        "    head -n 2 ${PBS_O_WORKDIR}/intermediate/$PREFIX.hced.fasta >> hCED_result.fasta;",
         "done\n"
     ]
 
