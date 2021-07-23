@@ -71,6 +71,7 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, fastaHan
         "    rm tmp/hced_tmp_target.*;",
         ## > Rename the contigs to be unique
         "    python {0} -f rename -s ${{PREFIX}}_{1}_seq{{}} -i $t -o tmp/hced_tmp_target.fasta;".format(fastaHandlingCode, suffix),
+        "    rm tmp/hced_tmp_target.list", # This prevents the if [[]] block below from erroring out when the .list file exists
         ## > Perform a BLAST to see if we need to reverse complement or not
         "    blastn -query tmp/hced_tmp_target.fasta -db {0} -outfmt \"6 qseqid sseqid qstart qend sstart send evalue bitscore qframe sframe\" -out tmp/hced_tmp_target.outfmt6;".format(referenceGenome),
         ## > Check the BLAST result
