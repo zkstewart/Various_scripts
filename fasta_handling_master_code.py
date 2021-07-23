@@ -29,6 +29,24 @@ def single2multi(fastaFile, multilineLength, outputFileName):
                         sequence = '\n'.join([sequence[i:i+multilineLength] for i in range(0, len(sequence), multilineLength)])
                         fastaOut.write('>' + record.description + '\n' + sequence + '\n')
 
+def reversecomplement(fastaFile, outputFileName):
+        # Load fasta file
+        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
+        # Perform function
+        with open(outputFileName, 'w') as fastaOut:
+                for record in records:
+                        fastaOut.write('>' + record.description + '\n' + str(record.seq.reverse_complement()) + '\n')
+
+def reversecomplement2multi(fastaFile, multilineLength, outputFileName):
+        # Load fasta file
+        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
+        # Perform function
+        with open(outputFileName, 'w') as fastaOut:
+                for record in records:
+                        sequence = str(record.seq.reverse_complement())
+                        sequence = '\n'.join([sequence[i:i+multilineLength] for i in range(0, len(sequence), multilineLength)])
+                        fastaOut.write('>' + record.description + '\n' + sequence + '\n')
+
 ## Fastq ONLY functions
 def q_to_a(fastqFile, outputFileName):
         # Set up
@@ -737,6 +755,17 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 to the number of sequence characters displayed per line. The output
                 is a multiline formatted fasta file.
                 '''
+                reversecomplement = '''
+                The _reversecomplement_ function requires no special input. The output is
+                a singleline formatted fasta file in which every sequence has been reverse
+                complemented.
+                '''
+                reversecomplement2multi = '''
+                The _reversecomplement2multi_ function accepts a number input. This number refers
+                to the number of sequence characters displayed per line. The output is
+                a multiline formatted fasta file in which every sequence has been reverse
+                complemented.
+                '''
                 cullbelow = '''
                 The _cullbelow_ function accepts a number input. This number refers
                 to the minimum length of sequence that will be present in the output
@@ -876,7 +905,7 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 # Float-based functions
                 #None yet
                 # Integer-based functions
-                if args.function == 'single2multi' or args.function == 'cullbelow' or args.function == 'cullabove' or args.function == 'chunk':
+                if args.function == 'single2multi' or args.function == 'cullbelow' or args.function == 'cullabove' or args.function == 'chunk' or args.function == 'reversecomplement2multi':
                         try:
                                 args.number = int(args.number)
                         except:
@@ -896,8 +925,8 @@ def main():
         
         # Function list - update as new ones are added
         stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
-        numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk']
-        basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a']
+        numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi']
+        basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a', 'reversecomplement']
         functionList = stringFunctions + numberFunctions + basicFunctions
         
         ##### USER INPUT SECTION
@@ -958,6 +987,8 @@ def main():
                 cullbelow(args.fastaFileName, args.number, args.outputFileName)
         if args.function == 'cullabove':
                 cullabove(args.fastaFileName, args.number, args.outputFileName)
+        if args.function == 'reversecomplement2multi':
+                reversecomplement2multi(args.fastaFileName, args.number, args.outputFileName)
         ## Number functions - FAST(A/Q) compatible
         if args.function == 'chunk':
                 chunk(args.fastaFileName, args.number, args.outputFileName)
@@ -974,6 +1005,8 @@ def main():
                 multi2single(args.fastaFileName, args.outputFileName)
         if args.function == 'q_to_a':
                 q_to_a(args.fastaFileName, args.outputFileName)
+        if args.function == 'reversecomplement':
+                reversecomplement(args.fastaFileName, args.outputFileName)
         print('Program completed successfully!')
 
 if __name__ == '__main__':
