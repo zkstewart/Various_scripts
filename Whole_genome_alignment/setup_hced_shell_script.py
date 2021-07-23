@@ -47,7 +47,7 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, fastaHan
         "#!/bin/bash -l",
         "#PBS -N testHced",
         "#PBS -l walltime=02:00:00",
-        "#PBS -l mem=30G",
+        "#PBS -l mem=10G",
         "#PBS -l ncpus=1\n",
         "cd $PBS_O_WORKDIR\n",
         "mkdir -p tmp",
@@ -58,15 +58,26 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, fastaHan
     #targetGenomes = ["/path/to/genome1", "path/to/genome2"]
     scriptLines.append("TARGETS=({0})\n".format(" ".join(targetGenomes)))
 
+    # Setup BLAST db for finding out if we need to reverse complement our sequence or not
+    scriptLines.append("makeblastdb -in {0} -dbtype nucl".format(referenceGenome))
+
     # Set up loop for hCED operations
     #referenceGenome = "/path/to/reference"
     #hcedExeLocation = "/home/n8942188/various_programs/hCED/hCED"
     scriptLines += [
         r"for t in ${TARGETS[@]}; do",
         "    BASE=$(basename $t);",
-        "    PREFIX=${BASE%%.fasta}",
-        "    rm tmp/hced_tmp_target.*",
-        "    python {0} -f rename -s ${{PREFIX}}_{1}_seq{{}} -i $t -o tmp/hced_tmp_target.fasta".format(fastaHandlingCode, suffix),
+        "    PREFIX=${BASE%%.fasta};",
+        "    rm tmp/hced_tmp_target.*;",
+        ## > Rename the contigs to be unique
+        "    python {0} -f rename -s ${{PREFIX}}_{1}_seq{{}} -i $t -o tmp/hced_tmp_target.fasta;".format(fastaHandlingCode, suffix),
+        ## > Perform a BLAST to see if we need to reverse complement or not
+        "    blastn -query tmp/hced_tmp_target.fasta -db {0} -outfmt \"6 qseqid sseqid qstart qend sstart send evalue bitscore qframe sframe\" -out tmp/hced_tmp_target.outfmt6;".format(referenceGenome),
+        ## > Check the BLAST result
+        "    SFRAME=$(head -n 1 tmp/hced_tmp_target.outfmt6 | awk '{print $10}');", # print $10 grabs the sframe field of the custom outfmt above
+        ## > Reverse complement depending on sframe
+        "    if [[ \"$SFRAME\" = \"-1\" ]]; then mv tmp/hced_tmp_target.fasta tmp/hced_tmp_target.fasta.tmp; python {0} -f reversecomplement2multi -n 60 -i tmp/hced_tmp_target.fasta.tmp -o tmp/hced_tmp_target.fasta fi;".format(fastaHandlingCode),
+        ## > Resume normal operation for hCED
         "    cat {0} tmp/hced_tmp_target.fasta > tmp/tmp_hced.fasta;".format(referenceGenome),
         "    {0} -i tmp/tmp_hced.fasta -o intermediate/$PREFIX.hced.fasta;".format(hcedExeLocation),
         "done\n"
@@ -82,6 +93,9 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, fastaHan
         "    tail -n 2 ${PBS_O_WORKDIR}/intermediate/$PREFIX.hced.fasta >> hCED_result.fasta;",
         "done\n"
     ]
+
+    # Fix the MSA to have consistent multispacing
+    scriptLines.append("python {0} -f single2multi -n 60 -i hCED_result.fasta -o hCED_result.fix.fasta".format(fastaHandlingCode))
 
     # Write script to file
     with open(outputFileName, "w") as fileOut:
