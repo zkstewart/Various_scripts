@@ -65,7 +65,7 @@ def format_hced_script(referenceGenome, targetGenomes, hcedExeLocation, fastaHan
         r"for t in ${TARGETS[@]}; do",
         "    BASE=$(basename $t);",
         "    PREFIX=${BASE%%.fasta}",
-        "    rm tmp/hced_tmp_target.fasta",
+        "    rm tmp/hced_tmp_target.*",
         "    python {0} -f rename -s ${{PREFIX}}_{1}_seq{{}} -i $t -o tmp/hced_tmp_target.fasta".format(fastaHandlingCode, suffix),
         "    cat {0} tmp/hced_tmp_target.fasta > tmp/tmp_hced.fasta;".format(referenceGenome),
         "    {0} -i tmp/tmp_hced.fasta -o intermediate/$PREFIX.hced.fasta;".format(hcedExeLocation),
