@@ -50,7 +50,7 @@ def create_barcode_file(speciesIds, barcodes, outputFileName="process_radtags_ba
         for i in range(len(speciesIds)):
             speciesId = speciesIds[i]
             barcode = barcodes[i]
-            fileOut.write("{0}\t{1}\n".format(speciesId, barcode))
+            fileOut.write("{0}\t{1}\n".format(barcode, speciesId))
 
 def run_process_radtags(multiplexedFastq, enzyme, barcodesFileName="process_radtags_barcodes.tsv", outputDirectory="process_radtags_out"):
     # Format cmd
