@@ -4,6 +4,7 @@
 # cleaning via stacks process_radtags
 
 import os, argparse, subprocess
+from pathlib import Path
 
 # Define functions
 def validate_args(args):
@@ -53,6 +54,8 @@ def create_barcode_file(speciesIds, barcodes, outputFileName="process_radtags_ba
             fileOut.write("{0}\t{1}\n".format(barcode, speciesId))
 
 def run_process_radtags(multiplexedFastq, enzyme, barcodesFileName="process_radtags_barcodes.tsv", outputDirectory="process_radtags_out"):
+    Path("process_radtags_out").mkdir(parents=True, exist_ok=True)
+    
     # Format cmd
     cmd = "process_radtags -f {0} -b {1} -o {2} -e {3} --inline_null -c -q -r --disable-rad-check".format(multiplexedFastq, barcodesFileName, outputDirectory, enzyme)
     run = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
