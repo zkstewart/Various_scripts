@@ -63,8 +63,10 @@ def run_process_radtags(multiplexedFastq, enzyme, barcodesFileName="process_radt
 
 def main():
     # User input
-    usage = """%(prog)s does things...
+    usage = """%(prog)s enables slightly easier configuration of process_radtags
+    runs when using a metadata CSV file.
     
+    It allows for fastq.gz file format as input.
     It assumes process_radtags can be found in environment variables.
     """
     p = argparse.ArgumentParser(description=usage)
