@@ -105,7 +105,7 @@ def create_shell_script(cmdFile, numJobs, outputFileName="run_dartseq_map.sh"):
 
 cd $PBS_O_WORKDIR
 
-$(cat {4} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
+eval $(cat {4} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
 """
 
     # Write to file
