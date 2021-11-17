@@ -58,7 +58,7 @@ def parse_metadata_csv(metadataCsv, speciesIdCol, genotypeCols):
 def process_readgroups(speciesIds, genotypes, platform, library, unit):
     readgroups=[]
     for i in range(len(genotypes)):
-        readgroups.append("@RG\tID:{0}\tSM:{1}\tPL:{2}\tLB:{3}\tPU:{4}".format(speciesIds[i], genotypes[i], platform, library, unit))
+        readgroups.append("@RG\\tID:{0}\\tSM:{1}\\tPL:{2}\\tLB:{3}\\tPU:{4}".format(speciesIds[i], genotypes[i], platform, library, unit))
     return readgroups
 
 def process_fqfiles(speciesIds, fqDir):
