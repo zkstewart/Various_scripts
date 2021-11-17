@@ -135,16 +135,13 @@ def main():
                    required=True,
                    help="One or more columns to concatenate as a genotype name")
     p.add_argument("-p", dest="platform",
-                   required=True,
                    choices=["illumina", "pacbio"], #incomplete list
                    default="illumina",
                    help="String to use for readgroup platform e.g., 'illumina' by default")
     p.add_argument("-l", dest="library",
-                   required=True,
                    default="lib1",
                    help="String to use for library e.g., 'lib1' by default")
     p.add_argument("-u", dest="unit",
-                   required=True,
                    default="unit1",
                    help="String to use for unit e.g., 'unit1' by default")
     args = p.parse_args()
