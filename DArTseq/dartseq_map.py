@@ -16,6 +16,10 @@ def validate_args(args):
         print('I am unable to locate the metadata CSV file (' + args.metadataCsv + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if not os.path.isfile(args.bwa):
+        print('I am unable to locate the bwa executable file (' + args.bwa + ')')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
     if not os.path.isdir(args.demultiplexedDirectory):
         print('I am unable to locate the demultiplexed directory (' + args.demultiplexedDirectory + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
@@ -67,7 +71,7 @@ def process_fqfiles(speciesIds, fqDir):
         fqFiles.append(os.path.join(fqDir, "{0}.fq.gz".format(speciesIds[i]))) # This is what dartseq_process will give us
     return fqFiles
 
-def create_cmd_file(speciesIds, fqDir, readgroups, genomeFile, outputFileName="cmd_dartseq_map.txt"):
+def create_cmd_file(speciesIds, fqDir, readgroups, genomeFile, bwa, outputFileName="cmd_dartseq_map.txt"):
     fqFiles = process_fqfiles(speciesIds, fqDir)
     
     # Validations
@@ -82,7 +86,7 @@ def create_cmd_file(speciesIds, fqDir, readgroups, genomeFile, outputFileName="c
             fq = fqFiles[i]
             rg = readgroups[i]
             
-            fileOut.write("bwa mem -R '{0}' -p {1} {2} > {3}.sam\n".format(rg, genomeFile, fq, sid))
+            fileOut.write("{0} mem -R '{1}' -p {2} {3} > {4}.sam\n".format(bwa, rg, genomeFile, fq, sid))
 
 def create_shell_script(cmdFile, numJobs, outputFileName="run_dartseq_map.sh"):
     # Specify hard-coded script features
@@ -128,6 +132,9 @@ def main():
     p.add_argument("-csv", dest="metadataCsv",
                    required=True,
                    help="Input Metadata CSV file")
+    p.add_argument("-b", dest="bwa",
+                   required=True,
+                   help="Input the full path to the bwa executable")
     p.add_argument("-id", dest="speciesIdCol",
                    required=True,
                    help="Column name where species ID is located")
@@ -156,7 +163,7 @@ def main():
     
     # Create cmd file
     cmdFileName = "cmd_dartseq_map.txt"
-    create_cmd_file(speciesIds, args.demultiplexedDirectory, readgroups, args.fastaFile, cmdFileName)
+    create_cmd_file(speciesIds, args.demultiplexedDirectory, readgroups, args.fastaFile, args.bwa, cmdFileName)
     
     # Create shell script
     create_shell_script(cmdFileName, len(readgroups))
