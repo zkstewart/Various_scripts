@@ -37,7 +37,7 @@ def cds_regions(gff3File):
             sl = line.rstrip("\r\n ").split("\t")
             if sl[2] != "CDS":
                 continue
-            if "gene_biotype=protein_coding" not in sl[8]:
+            if "protein_id=" not in sl[8]:
                 continue
             # Add relevant CDS coordinates to dict
             cdsRegions.append(range(int(sl[3]), int(sl[4])+1)) # 1-based range for checking within
