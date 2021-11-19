@@ -25,6 +25,7 @@ def validate_args(args):
         quit()
 
 def drop_failed_variants(vcfFile, outputFileName):
+    alreadyProcessed = {}
     with open(vcfFile, "r") as fileIn, open(outputFileName, "w") as fileOut:
         for line in fileIn:
             # Handle comment lines
@@ -33,13 +34,18 @@ def drop_failed_variants(vcfFile, outputFileName):
                 continue
             # Handle variant lines
             sl = line.split("\t")
+            details = "\t".join(sl[0:5])
+            if details in alreadyProcessed:
+                continue
             if sl[6] == "PASS": # Only write PASS lines
                 fileOut.write(line)
+                alreadyProcessed.setdefault(details) # Prevent duplicates being written to file
 
 def main():
     # User input
     usage = """%(prog)s reads in a VCF that has been hard-filtered and drops any
-    variant calls that are not marked as "PASS"
+    variant calls that are not marked as "PASS". It additionally removes redundant
+    lines that might have crept into the process somehow.
     """
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-v", dest="vcf",
