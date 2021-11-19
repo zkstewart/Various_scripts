@@ -41,12 +41,12 @@ def cds_regions(gff3File):
                 continue
             # Extract relevant details
             contig = sl[0]
-            start = sl[3]
-            end = sl[4] + 1 # 1-based range for checking within
+            start = int(sl[3])
+            end = int(sl[4]) + 1 # 1-based range for checking within
             # Add relevant CDS coordinates to dict
             if contig not in cdsRegions:
                 cdsRegions[contig] = []
-            cdsRegions[contig].append(range(int(start), int(end)))
+            cdsRegions[contig].append(range(start, end))
     return cdsRegions
 
 def filter_gvcf_qual_introns(vcfFile, outputFileName, cdsRegions):
