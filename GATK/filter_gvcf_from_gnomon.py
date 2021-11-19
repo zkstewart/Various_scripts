@@ -28,7 +28,7 @@ def validate_args(args):
         quit()
 
 def cds_regions(gff3File):
-    cdsRegions = []
+    cdsRegions = {}
     with open(gff3File, "r") as fileIn:
         for line in fileIn:
             # Skip irrelevant lines
@@ -39,8 +39,14 @@ def cds_regions(gff3File):
                 continue
             if "protein_id=" not in sl[8]:
                 continue
+            # Extract relevant details
+            contig = sl[0]
+            start = sl[3]
+            end = sl[4] + 1 # 1-based range for checking within
             # Add relevant CDS coordinates to dict
-            cdsRegions.append(range(int(sl[3]), int(sl[4])+1)) # 1-based range for checking within
+            if contig not in cdsRegions:
+                cdsRegions[contig] = []
+            cdsRegions[contig].append(range(int(start), int(end)))
     return cdsRegions
 
 def filter_gvcf_qual_introns(vcfFile, outputFileName, cdsRegions):
@@ -51,10 +57,13 @@ def filter_gvcf_qual_introns(vcfFile, outputFileName, cdsRegions):
                 continue
             # Get relevant details
             sl = line.split("\t")
+            contig = sl[0]
             pos = int(sl[1])
             # Make filtration checks
             isIntron = True
-            for region in cdsRegions:
+            if contig not in cdsRegions: # Skip contigs which have no CDS regions
+                continue
+            for region in cdsRegions[contig]:
                 if pos in region:
                     isIntron = False
                     break
