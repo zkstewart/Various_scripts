@@ -291,7 +291,8 @@ def blast_besthitoutfmt6(blastFile, fastaFile):
 def blast_gene2accession_info(blastFile, gene2accessionFile, gene_infoFile):
         ## HARD-CODED FIXES FOR PROGRAM USE 19-07-21
         idPairs = {
-            "WP_161418457.1": ["NoSymbol", "DDE-type integrase/transposase/recombinase"]
+            "WP_161418457.1": ["NoSymbol", "DDE-type integrase/transposase/recombinase"],
+            "OIS96378.1": ["A4A49_06475", "putative receptor-like protein kinase"]
         }
         # Parse gene2accession file
         gene2accession = {}
