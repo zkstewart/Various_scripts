@@ -29,6 +29,14 @@ def single2multi(fastaFile, multilineLength, outputFileName):
                         sequence = '\n'.join([sequence[i:i+multilineLength] for i in range(0, len(sequence), multilineLength)])
                         fastaOut.write('>' + record.description + '\n' + sequence + '\n')
 
+def striphyphens(fastaFile, outputFileName):
+        # Load fasta file
+        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
+        # Perform function
+        with open(outputFileName, 'w') as fastaOut:
+                for record in records:
+                        fastaOut.write('>' + record.description + '\n' + str(record.seq).replace("-", "") + '\n')
+
 def reversecomplement(fastaFile, outputFileName):
         # Load fasta file
         records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
@@ -745,6 +753,10 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 q_to_a = '''The _q_to_a_ function requires no special input. This function
                 will produce an output fasta file when a fastq input is provided.
                 '''
+                striphyphens = '''
+                The _striphyphens_ function requires no special input. This function
+                will produce an output fasta file sans any sequence hyphen characters.
+                '''
                 ## Number input
                 multi2single = '''
                 The _multi2single_ function requires no special input. The output is 
@@ -926,7 +938,7 @@ def main():
         # Function list - update as new ones are added
         stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
         numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi']
-        basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a', 'reversecomplement']
+        basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens']
         functionList = stringFunctions + numberFunctions + basicFunctions
         
         ##### USER INPUT SECTION
@@ -1007,6 +1019,8 @@ def main():
                 q_to_a(args.fastaFileName, args.outputFileName)
         if args.function == 'reversecomplement':
                 reversecomplement(args.fastaFileName, args.outputFileName)
+        if args.function == 'striphyphens':
+                striphyphens(args.fastaFileName, args.outputFileName)
         print('Program completed successfully!')
 
 if __name__ == '__main__':
