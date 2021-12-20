@@ -440,6 +440,30 @@ def hmmer_parse(domtbloutFile, evalueCutoff):
                                 domDict[pid].append([did, dstart, dend, evalue])
         return domDict
 
+def hmmer_parse_targetIsDomain(domtbloutFile, evalueCutoff):
+        domDict = {}                            # We need to use a dictionary for later sorting since hmmsearch does not produce output that is ordered in the way we want to work with. hmmscan does, but it is SIGNIFICANTLY slower.
+        with open(domtbloutFile, 'r') as fileIn:
+                for line in fileIn:
+                        # Skip unnecessary lines
+                        if line.startswith('#') or line == '' or line == '\n' or line == '\r\n':
+                                continue
+                        # Parse line and skip if evalue is not significant
+                        sl = line.rstrip('\r\n').split()
+                        evalue = float(sl[12])
+                        if evalue > float(evalueCutoff):
+                                continue
+                        # Get relevant details
+                        pid = sl[3]
+                        did = sl[0]
+                        dstart = int(sl[17])
+                        dend = int(sl[18])
+                        # Add into domain dictionary
+                        if pid not in domDict:
+                                domDict[pid] = [[did, dstart, dend, evalue]]
+                        else:
+                                domDict[pid].append([did, dstart, dend, evalue])
+        return domDict
+
 ## Output functions
 def output_func(inputDict, outputFileName):
         with open(outputFileName, 'w') as fileOut:
@@ -502,6 +526,8 @@ p.add_argument("-hmm", "-hmmdbScript", dest="hmmdbScript", action='store_true',
                    help="Optionally specify whether the HMM database was formatted by the hmm_db_download.py script and you want annotation table formatted results.", default=False)
 p.add_argument("-d", "-databaseSelect", dest="databaseSelect", nargs="+",
                    help="If the HMM database was formatted by the hmm_db_download.py script but you want to extract the results of 1 or more databases, choose here. Note that specifying this argument overrides -hmm.", default=False)
+p.add_argument("-t", "-targetIsDomain", dest="targetIsDomain", action='store_true',
+                   help="Optionally specify whether the target column refers to domains, not sequences as expected.", default=False)
 p.add_argument("-o", "-output", dest="outputFileName",
                    help="Output file name.")
 
@@ -509,7 +535,10 @@ args = p.parse_args()
 args, dom_prefixes = validate_args(args, dom_prefixes)
 
 # Parse hmmer domblout file
-domDict = hmmer_parse(args.inputHmmer, args.evalue)
+if not args.targetIsDomain:
+    domDict = hmmer_parse(args.inputHmmer, args.evalue)
+else:
+    domDict = hmmer_parse_targetIsDomain(args.inputHmmer, args.evalue)
 
 # Delve into parsed hmmer dictionary and sort out overlapping domain hits from different databases
 if args.hmmdbScript == False and args.databaseSelect == False:
