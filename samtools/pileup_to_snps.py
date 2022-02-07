@@ -40,7 +40,7 @@ def validate_args(args):
         print("mafCutoff should be less than 1")
         quit()
 
-## Data filtering
+## Data parsing and filtering
 def mpileup_to_snpPiles(pileupFile):
     '''
     This is going to produce a snpPiles data structure with format like:
@@ -114,7 +114,8 @@ def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
 
 def filter_snpPiles_to_geno(snpPiles, floorCount, coverageCutoff, mafCutoff):
     '''
-    TBD: Update to dictionary-based structure
+    This assumes a snpPiles dictionary structure has been created through at least
+    a two-step process of 1) mpileup_to_snpPiles, and 2) augment_snpPiles_with_GT_from_vcf.
     '''
     geno = []
     for chrom in snpPiles.keys():
@@ -149,6 +150,11 @@ def filter_snpPiles_to_geno(snpPiles, floorCount, coverageCutoff, mafCutoff):
                 )])
             ))
     return geno
+
+## File out
+def write_geno_file(geno, outputFileName):
+    with open(outputFileName) as fileOut:
+        fileOut.write("\n".join(geno))
 
 ## Data exploration
 def plot_pile_statistics(snpPiles, boxplotName, histogramName):
@@ -207,7 +213,7 @@ def main():
     validate_args(args)
     
     # Get SNP piles
-    snpPiles = mpileup_to_snpPiles(args.pileupFile, args.floorCount)
+    snpPiles = mpileup_to_snpPiles(args.pileupFile)
     
     # Generate exploratory plots
     plot_pile_statistics(snpPiles, 'piles_boxplot.png', 'piles_histogram.png')
@@ -215,13 +221,12 @@ def main():
     # Filter SNP piles
     geno = filter_snpPiles_to_geno(snpPiles, args.floorCount, args.coverageCutoff, args.mafCutoff)
     
-    # Convert SNP piles to output format
-    ## TBD
+    # Write output .geno file
+    write_geno_file(geno, args.outputFileName)
     
     ## TESTING
     pickle.dump(snpPiles, open("snpPiles.pickle", "wb"))
     pickle.dump(geno, open("geno.pickle", "wb"))
-
 
 if __name__ == "__main__":
     main()
