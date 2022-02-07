@@ -64,7 +64,7 @@ def mpileup_to_snpPiles(pileupFile):
             chrom = l[0]
             pos = l[1]
             ref = l[2]
-            coverages = [int(l[i]) for i in range(3, len(l), 3)] # This ignores the type of alignment (match, mismatch) and ASCII scores
+            coverages = [[int(l[i])] for i in range(3, len(l), 3)] # This ignores the type of alignment (match, mismatch) and ASCII scores
             #piles = [l[i:i+3] for i in range(3, len(l), 3)]
             # Establish dictionary structure
             if chrom not in snpPiles:
@@ -162,7 +162,7 @@ def plot_pile_statistics(snpPiles, boxplotName, histogramName):
     covs = []
     for chrom in snpPiles.keys():
         for _, value in snpPiles[chrom].items():
-            totalCoverage = sum([int(v[0]) for v in value]) # value gives us a list with [[coverage, ...], ...]
+            totalCoverage = sum([v[0] for v in value]) # value gives us a list with [[coverage, ...], ...]
             covs.append(totalCoverage)
     covs = np.array(covs)
     
@@ -214,19 +214,17 @@ def main():
     
     # Get SNP piles
     snpPiles = mpileup_to_snpPiles(args.pileupFile)
+    pickle.dump(snpPiles, open("snpPiles.pickle", "wb")) ## TESTING
     
     # Generate exploratory plots
     plot_pile_statistics(snpPiles, 'piles_boxplot.png', 'piles_histogram.png')
     
     # Filter SNP piles
     geno = filter_snpPiles_to_geno(snpPiles, args.floorCount, args.coverageCutoff, args.mafCutoff)
+    pickle.dump(geno, open("geno.pickle", "wb")) ## TESTING
     
     # Write output .geno file
     write_geno_file(geno, args.outputFileName)
-    
-    ## TESTING
-    pickle.dump(snpPiles, open("snpPiles.pickle", "wb"))
-    pickle.dump(geno, open("geno.pickle", "wb"))
 
 if __name__ == "__main__":
     main()
