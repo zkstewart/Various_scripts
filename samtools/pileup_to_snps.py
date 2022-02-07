@@ -12,7 +12,11 @@ import pickle
 def validate_args(args):
     # Validate input file locations
     if not os.path.isfile(args.pileupFile):
-        print('I am unable to locate the samtools mpileup file (' + args.pileupFile + ')')
+        print('I am unable to locate the pileup file (' + args.pileupFile + ')')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
+    if not os.path.isfile(args.vcfFile):
+        print('I am unable to locate the bcf file (' + args.vcfFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Validate output file location
@@ -35,21 +39,81 @@ def validate_args(args):
         quit()
 
 ## Data filtering
-def mpileup_to_snpPiles(mpileupFile):
-    snpPiles = []
-    with open(mpileupFile, "r") as fileIn:
+def mpileup_to_snpPiles(pileupFile):
+    '''
+    This is going to produce a snpPiles data structure with format like:
+    {chromosome:
+        {pos:
+            [coverage_1],
+            ...
+            [coverage_N]
+        }
+    }
+    
+    The sub-dictionary indexed by 'pos' will contain a list for each sample
+    including the coverage at the chromosomal position. This list can be
+    augmented by later functions.
+    '''
+    snpPiles = {}
+    with open(pileupFile, "r") as fileIn:
         for line in fileIn:
             l = line.rstrip("\r\n").split("\t")
             # Extract relevant information
             chrom = l[0]
             pos = l[1]
             ref = l[2]
-            piles = [l[i:i+3] for i in range(3, len(l), 3)]
+            coverages = [int(l[i]) for i in range(3, len(l), 3)] # This ignores the type of alignment (match, mismatch) and ASCII scores
+            #piles = [l[i:i+3] for i in range(3, len(l), 3)]
+            # Establish dictionary structure
+            if chrom not in snpPiles:
+                snpPiles[chrom] = {}
             # Store results
-            snpPiles.append([chrom, pos, ref, piles]) # This forms a pileGroup
+            snpPiles[chrom][pos] = coverages
+    return snpPiles
+
+def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
+    '''
+    This assumes a dictionary-based snpPiles data structure is being
+    received as from mpileup_to_snpPiles(). It adds the genotype information
+    for each sample to the per-samples list which should already contain, at
+    a minimum, the coverage at the position.
+    
+    It also assumes the order of the pileup file and VCF file are the same
+    in terms of their sample listing.
+    '''
+    with open(vcfFile, "r") as fileIn:
+        for line in fileIn:
+            if line.startswith("#"): continue
+            
+            l = line.rstrip("\r\n").split("\t")
+            # Extract relevant information
+            chrom = l[0]
+            pos = l[1]
+            ref = l[3]
+            alt = l[4]
+            fieldsDescription = l[8]
+            # Determine which field position we're extracting
+            if ":" not in fieldsDescription:
+                pos = -1
+            else:
+                pos = fieldsDescription.split(":").index("GT")
+            # Parse genotype per sample
+            ongoingCount = 0 # This gives us the index for the sample in order
+            for sampleResult in l[9:]: # This gives us the results for each sample as per fieldsDescription
+                if pos != -1:
+                    gtField = sampleResult.split(":")[pos]
+                else:
+                    gtField = sampleResult
+                genotype = gtField.replace("0", ref).replace("1", alt)
+                # Store results
+                snpPiles[chrom][pos][ongoingCount].append(genotype)
+                ongoingCount += 1
     return snpPiles
 
 def filter_snpPiles(snpPiles, floorCount, coverageCutoff, mafCutoff):
+    '''
+    TBD: Update to dictionary-based structure
+    '''
     filteredPiles = []
     for pileGroup in snpPiles:
         # Filter 1: Floor count
@@ -62,111 +126,21 @@ def filter_snpPiles(snpPiles, floorCount, coverageCutoff, mafCutoff):
         # Filter 3: MAF cutoff
         alleleCount = []
         for pile in pileGroup[3]:
-            alleleFreqs = allele_frequency_from_subpile(pileGroup[2], pile) # pileGroup[2] is the reference base
-            diploidAlleles = call_diploid_alleles_from_alleleFreqs(alleleFreqs)
-            
+            # alleleFreqs = allele_frequency_from_subpile(pileGroup[2], pile) # pileGroup[2] is the reference base
+            # diploidAlleles = call_diploid_alleles_from_alleleFreqs(alleleFreqs)
+            pass
         # Store results if above filters pass
         filteredPiles.append(pile)
     return filteredPiles
-
-def allele_frequency_from_subpile(ref, pile):
-    '''
-    This function assumes it is receiving a triplet-formatted pile, where
-    the first value is the read count, the second value are the samtools read
-    bases encoding, and the third is the ASCII quality score for each read.
-    Refer to http://www.htslib.org/doc/samtools-mpileup.html for details on the
-    samtools pileup format.
-    
-    It also needs to know the reference base. Provide that please.
-    '''
-    newpile = copy.deepcopy(pile) # prevent changes to the original pile
-    bases = newpile[1]
-    
-    # Remove symbols irrelevant to our calculations
-    bases = re.sub("\^.", "", bases) # ^ is followed by the ASCII quality of the read alignment; we don't need it
-    bases = bases.replace(">", "").replace("<", "") # I don't know how to handle reference skips
-    
-    # Get the allele for each position
-    ## Handle insertions and deletions AFTER the read base
-    insertAfter = re.findall(r"\+[0-9]+[ACGTNacgtn*#]+", bases) # count...
-    bases = re.sub(r"\+[0-9]+[ACGTNacgtn*#]+", "", bases) # then remove them
-    deleteAfter = re.findall(r"-[0-9]+[ACGTNacgtn]+", bases) # count...
-    bases = re.sub(r"-[0-9]+[ACGTNacgtn]+", "", bases) # then remove them
-    
-    ## Handle simple matches, mismatches, and deletions
-    matches = re.findall(r"[\.,]", bases)
-    mismatches = re.findall(r"[ACGTNacgtn]", bases)
-    deletions = re.findall(r"[\*#]", bases)
-    
-    # Tally the alleles
-    alleles = {}
-    for entry in [insertAfter, deleteAfter]:
-        for value in entry:
-            if value not in alleles:
-                alleles[value] = 1
-            else:
-                alleles[value] += 1
-                
-    alleles[ref] = len(matches)
-    
-    for mm in mismatches:
-        mm = mm.upper()
-        if mm not in alleles:
-            alleles[mm] = 1
-        else:
-            alleles[mm] += 1
-    
-    if len(deletions) > 0:
-        alleles["deletion"] = len(deletions)
-    
-    # Calculate frequencies
-    total = sum(alleles.values())
-    alleleFreqs = {}
-    for key, value in alleles.items():
-        freq = value / total
-        alleleFreqs[key] = freq
-    
-    return alleleFreqs
-
-def call_diploid_alleles_from_alleleFreqs(alleleFreqs):
-    '''
-    alleleFreqs is assumed to be a dictionary with key:value pairs
-    corresponding to the putative allele, and its frequency
-    as a float ratio which should sum to approximately 1.0.
-    
-    A simple assumption is made in this function that all samples are
-    diploid. This means we're going to see a monoallelic or biallelic
-    position. If it's biallelic, our ratio should be close to 0.5 : 0.5
-    for the two variants, otherwise we should see something close to
-    1.0 : 0.0. Deviations outside of this range will be assumed to be noise.
-    '''
-    MONOALLELIC_CUTOFF = 0.7
-    BIALLELIC_CUTOFF = 0.3
-    
-    # Get an ordered list of frequencies from alleleFreqs
-    orderedFreqs = []
-    for key, value in alleleFreqs.items():
-        orderedFreqs.append([key, value])
-    orderedFreqs.sort(key = lambda x: -x[1])
-    
-    # Handle scenario 1: monoallelic
-    if orderedFreqs[0][1] >= MONOALLELIC_CUTOFF:
-        return [orderedFreqs[0][0], orderedFreqs[0][0]]
-    # Handle scenario 2: biallelic
-    if len(orderedFreqs) > 1 and orderedFreqs[1][1] >= BIALLELIC_CUTOFF:
-        return [orderedFreqs[0][0], orderedFreqs[1][0]]
-    # Handle uncertainty (default to null hypothesis - there is no SNP here.)
-    else:
-        return [orderedFreqs[0][0], orderedFreqs[0][0]]
 
 ## Data exploration
 def plot_pile_statistics(snpPiles, boxplotName, histogramName):
     # Calculate position coverage
     covs = []
-    for value in snpPiles:
-        piles = value[3] # pile[3] is the list of triplets [coverage, description, ASCII score]
-        totalCoverage = sum([int(pile[0]) for pile in piles])
-        covs.append(totalCoverage)
+    for chrom in snpPiles.keys():
+        for _, value in snpPiles[chrom].items():
+            totalCoverage = sum([int(v[0]) for v in value]) # value gives us a list with [[coverage, ...], ...]
+            covs.append(totalCoverage)
     covs = np.array(covs)
     
     # Plot 1: Boxplot of position coverage
@@ -192,8 +166,10 @@ def main():
     """
     p = argparse.ArgumentParser(description=usage)
     ## Required
-    p.add_argument("-i", dest="pileupFile", required=True,
-        help="Input samtools mpileup output file")
+    p.add_argument("-ip", dest="pileupFile", required=True,
+        help="Input samtools PILEUP format file")
+    p.add_argument("-ib", dest="vcfFile", required=True,
+        help="Input bcftools view VCF output file")
     p.add_argument("-o", dest="outputFileName", required=True,
         help="Output file name for the filtered SNPs")
     ## Optional
@@ -220,7 +196,7 @@ def main():
     plot_pile_statistics(snpPiles, 'piles_boxplot.png', 'piles_histogram.png')
     
     # Filter SNP piles
-    filteredPiles = filter_snpPiles(snpPiles, args.floorCount, args.coverageCutoff)
+    # filteredPiles = filter_snpPiles(snpPiles, args.floorCount, args.coverageCutoff)
     
     # Convert SNP piles to output format
     ## TBD
@@ -234,11 +210,16 @@ if __name__ == "__main__":
 
 
 ## Testing zone
-highCov = []
-covs = []
-for spile in snpPiles:
-    piles = spile[2]
-    totalCoverage = sum([int(pile[0]) for pile in piles])
-    if totalCoverage > 300:
-        highCov.append(spile)
-        covs.append(totalCoverage)
+# highCov = []
+# covs = []
+# for spile in snpPiles:
+#     piles = spile[2]
+#     totalCoverage = sum([int(pile[0]) for pile in piles])
+#     if totalCoverage > 300:
+#         highCov.append(spile)
+#         covs.append(totalCoverage)
+
+# bcfFile = r"F:\flies\chapa_2022\pileup\btrys06_mpileup.bcf"
+# with open(bcfFile, "rb") as fileIn:
+#     for line in fileIn:
+#         stophere
