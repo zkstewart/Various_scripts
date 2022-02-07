@@ -3,7 +3,9 @@
 # Script to parse a samtools pileup produced by mpileup and
 # identify SNPs using custom filtering rules
 
-import os, argparse, copy, re
+import os, argparse
+from collections import Counter
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pickle
@@ -110,28 +112,43 @@ def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
                 ongoingCount += 1
     return snpPiles
 
-def filter_snpPiles(snpPiles, floorCount, coverageCutoff, mafCutoff):
+def filter_snpPiles_to_geno(snpPiles, floorCount, coverageCutoff, mafCutoff):
     '''
     TBD: Update to dictionary-based structure
     '''
-    filteredPiles = []
-    for pileGroup in snpPiles:
-        # Filter 1: Floor count
-        if int(pileGroup[0]) < floorCount:
-            continue
-        # Filter 2: Total coverage
-        totalCoverage = sum([int(pile[0]) for pile in pileGroup[3]]) # pileGroup[3] is the list of triplets [coverage, description, ASCII score]
-        if totalCoverage > coverageCutoff:
-            continue
-        # Filter 3: MAF cutoff
-        alleleCount = []
-        for pile in pileGroup[3]:
-            # alleleFreqs = allele_frequency_from_subpile(pileGroup[2], pile) # pileGroup[2] is the reference base
-            # diploidAlleles = call_diploid_alleles_from_alleleFreqs(alleleFreqs)
-            pass
-        # Store results if above filters pass
-        filteredPiles.append(pile)
-    return filteredPiles
+    geno = []
+    for chrom in snpPiles.keys():
+        for pos, value in snpPiles[chrom].items():
+            # Filter 1: Floor count
+            success = all([v[0] >= floorCount for v in value]) # v[0] will be the coverage as an int for the sample
+            if not success: continue
+            
+            # Filter 2: Total coverage
+            success = sum([v[0] for v in value]) <= coverageCutoff
+            if not success: continue
+            
+            # Filter 3: MAF cutoff
+            alleles = [allele for v in value for allele in v[1].split("/")] # v[1] will be the genotype like "A/T" or "G/."
+            alleleCounter = Counter(alleles)
+            
+            majorAlleleCount = alleleCounter.most_common(1)[0][1] # works like [('G', 3)][0][1]
+            minorAlleleCount = len(alleles) - majorAlleleCount
+            
+            maf = minorAlleleCount / len(alleles)
+            success = maf >= mafCutoff
+            if not success: continue
+            
+            # Store results if above filters pass
+            if geno == []: # add header line
+                geno.append("#CHROM\tPOS\t{0}\n".format(
+                    "\t".join(["ind" + str(i+1) for i in range(0, len(value))])
+                ))
+            geno.append("{0}\n".format(
+                "\t".join([chrom, pos, "\t".join(
+                    [v[1] for v in value]
+                )])
+            ))
+    return geno
 
 ## Data exploration
 def plot_pile_statistics(snpPiles, boxplotName, histogramName):
@@ -168,7 +185,7 @@ def main():
     ## Required
     p.add_argument("-ip", dest="pileupFile", required=True,
         help="Input samtools PILEUP format file")
-    p.add_argument("-ib", dest="vcfFile", required=True,
+    p.add_argument("-iv", dest="vcfFile", required=True,
         help="Input bcftools view VCF output file")
     p.add_argument("-o", dest="outputFileName", required=True,
         help="Output file name for the filtered SNPs")
@@ -196,13 +213,14 @@ def main():
     plot_pile_statistics(snpPiles, 'piles_boxplot.png', 'piles_histogram.png')
     
     # Filter SNP piles
-    # filteredPiles = filter_snpPiles(snpPiles, args.floorCount, args.coverageCutoff)
+    geno = filter_snpPiles_to_geno(snpPiles, args.floorCount, args.coverageCutoff, args.mafCutoff)
     
     # Convert SNP piles to output format
     ## TBD
     
     ## TESTING
     pickle.dump(snpPiles, open("snpPiles.pickle", "wb"))
+    pickle.dump(geno, open("geno.pickle", "wb"))
 
 
 if __name__ == "__main__":
