@@ -30,16 +30,18 @@ def validate_args(args):
     if args.floorCount <= 0:
         print("floorCount should be greater than 0")
         quit()
-    if args.coverageCutoff == -1:
-        pass # This is an accepted option
-    if args.coverageCutoff < 0:
-        print("coverageCutoff should be greater than or equal to 0, or -1")
-        quit()
+    
     if args.mafCutoff <= 0.00:
         print("mafCutoff should be greater than 0")
         quit()
     if args.mafCutoff >= 1.00:
         print("mafCutoff should be less than 1")
+        quit()
+    
+    if args.coverageCutoff == -1:
+        pass # This is an accepted option
+    elif args.coverageCutoff < 0:
+        print("coverageCutoff should be greater than or equal to 0, or -1")
         quit()
 
 ## Data parsing and filtering
