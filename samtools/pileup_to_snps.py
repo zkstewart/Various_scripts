@@ -74,11 +74,11 @@ def mpileup_to_snpPiles(pileupFile, floorCount, coverageCutoff):
             coverages = [[int(l[i])] for i in range(3, len(l), 3)] # This ignores the type of alignment (match, mismatch) and ASCII scores
             # Perform basic filtration to reduce memory burden
             ## Filter 1: Floor count
-            success = all([c >= floorCount for c in coverages])
+            success = all([c[0] >= floorCount for c in coverages])
             if not success: continue
             ## Filter 2: Total coverage
             if coverageCutoff != -1:
-                success = sum([c for c in coverages]) <= coverageCutoff
+                success = sum([c[0] for c in coverages]) <= coverageCutoff
                 if not success: continue
             # Establish dictionary structure
             if chrom not in snpPiles:
