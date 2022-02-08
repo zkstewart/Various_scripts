@@ -30,8 +30,10 @@ def validate_args(args):
     if args.floorCount <= 0:
         print("floorCount should be greater than 0")
         quit()
+    if args.coverageCutoff == -1:
+        pass # This is an accepted option
     if args.coverageCutoff < 0:
-        print("coverageCutoff should be greater than or equal to 0")
+        print("coverageCutoff should be greater than or equal to 0, or -1")
         quit()
     if args.mafCutoff <= 0.00:
         print("mafCutoff should be greater than 0")
@@ -41,7 +43,7 @@ def validate_args(args):
         quit()
 
 ## Data parsing and filtering
-def mpileup_to_snpPiles(pileupFile):
+def mpileup_to_snpPiles(pileupFile, floorCount, coverageCutoff):
     '''
     This is going to produce a snpPiles data structure with format like:
     {chromosome:
@@ -55,6 +57,9 @@ def mpileup_to_snpPiles(pileupFile):
     The sub-dictionary indexed by 'pos' will contain a list for each sample
     including the coverage at the chromosomal position. This list can be
     augmented by later functions.
+    
+    Basic filtration occurs here to reduce the amount of data we need to store
+    in memory.
     '''
     snpPiles = {}
     with open(pileupFile, "r") as fileIn:
@@ -65,7 +70,14 @@ def mpileup_to_snpPiles(pileupFile):
             pos = l[1]
             ref = l[2]
             coverages = [[int(l[i])] for i in range(3, len(l), 3)] # This ignores the type of alignment (match, mismatch) and ASCII scores
-            #piles = [l[i:i+3] for i in range(3, len(l), 3)]
+            # Perform basic filtration to reduce memory burden
+            ## Filter 1: Floor count
+            success = all([c >= floorCount for c in coverages])
+            if not success: continue
+            ## Filter 2: Total coverage
+            if coverageCutoff != -1:
+                success = sum([c for c in coverages]) <= coverageCutoff
+                if not success: continue
             # Establish dictionary structure
             if chrom not in snpPiles:
                 snpPiles[chrom] = {}
@@ -82,6 +94,9 @@ def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
     
     It also assumes the order of the pileup file and VCF file are the same
     in terms of their sample listing.
+    
+    Lastly, the input snpPiles may have been filtered already, so we check to
+    see if a position is present in snpPiles. If it's not, we just skip it.
     '''
     with open(vcfFile, "r") as fileIn:
         for line in fileIn:
@@ -94,6 +109,11 @@ def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
             ref = l[3]
             alt = l[4]
             fieldsDescription = l[8]
+            # Skip if we've filtered this position already
+            if chrom not in snpPiles:
+                continue
+            elif pos not in snpPiles[chrom]:
+                continue
             # Determine which field position we're extracting
             if ":" not in fieldsDescription:
                 pos = -1
@@ -112,22 +132,16 @@ def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
                 ongoingCount += 1
     return snpPiles
 
-def filter_snpPiles_to_geno(snpPiles, floorCount, coverageCutoff, mafCutoff):
+def snpPiles_to_geno(snpPiles, mafCutoff):
     '''
     This assumes a snpPiles dictionary structure has been created through at least
     a two-step process of 1) mpileup_to_snpPiles, and 2) augment_snpPiles_with_GT_from_vcf.
+    
+    It also performs the MAF cutoff filtration
     '''
     geno = []
     for chrom in snpPiles.keys():
         for pos, value in snpPiles[chrom].items():
-            # Filter 1: Floor count
-            success = all([v[0] >= floorCount for v in value]) # v[0] will be the coverage as an int for the sample
-            if not success: continue
-            
-            # Filter 2: Total coverage
-            success = sum([v[0] for v in value]) <= coverageCutoff
-            if not success: continue
-            
             # Filter 3: MAF cutoff
             alleles = [allele for v in value for allele in v[1].split("/")] # v[1] will be the genotype like "A/T" or "G/."
             alleleCounter = Counter(alleles)
@@ -202,8 +216,9 @@ def main():
         default=0)
     p.add_argument("--repeatCutoff", dest="coverageCutoff", type=int,
         help="""This number is the maximum cumulative read coverage
-        allowed for a site before being discarded as a repeat region; default=0""",
-        default=0)
+        allowed for a site before being discarded as a repeat region; 
+        default=-1 which means no repeat filtering occurs""",
+        default=-1)
     p.add_argument("--mafCutoff", dest="mafCutoff", type=float,
         help="""This number is the minor allele frequency (MAF) required
         for a SNP to be called; default=0.04""",
@@ -213,14 +228,14 @@ def main():
     validate_args(args)
     
     # Get SNP piles
-    snpPiles = mpileup_to_snpPiles(args.pileupFile)
+    snpPiles = mpileup_to_snpPiles(args.pileupFile, args.floorCount, args.coverageCutoff)
     pickle.dump(snpPiles, open("snpPiles.pickle", "wb")) ## TESTING
     
     # Generate exploratory plots
     plot_pile_statistics(snpPiles, 'piles_boxplot.png', 'piles_histogram.png')
     
     # Filter SNP piles
-    geno = filter_snpPiles_to_geno(snpPiles, args.floorCount, args.coverageCutoff, args.mafCutoff)
+    geno = snpPiles_to_geno(snpPiles, args.mafCutoff)
     pickle.dump(geno, open("geno.pickle", "wb")) ## TESTING
     
     # Write output .geno file
