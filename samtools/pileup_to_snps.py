@@ -43,6 +43,10 @@ def validate_args(args):
     elif args.coverageCutoff < 0:
         print("coverageCutoff should be greater than or equal to 0, or -1")
         quit()
+    
+    if args.spacing < 0:
+        print("spacing should be greater than or equal to 0")
+        quit()
 
 ## Data parsing and filtering
 def mpileup_to_snpPiles(pileupFile, floorCount, coverageCutoff):
@@ -70,7 +74,6 @@ def mpileup_to_snpPiles(pileupFile, floorCount, coverageCutoff):
             # Extract relevant information
             chrom = l[0]
             pos = l[1]
-            ref = l[2]
             coverages = [[int(l[i])] for i in range(3, len(l), 3)] # This ignores the type of alignment (match, mismatch) and ASCII scores
             # Perform basic filtration to reduce memory burden
             ## Filter 1: Floor count
@@ -134,17 +137,18 @@ def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
                 ongoingCount += 1
     return snpPiles
 
-def snpPiles_to_geno(snpPiles, mafCutoff):
+def filter_snpPiles_to_geno(snpPiles, mafCutoff, spacing):
     '''
     This assumes a snpPiles dictionary structure has been created through at least
     a two-step process of 1) mpileup_to_snpPiles, and 2) augment_snpPiles_with_GT_from_vcf.
     
-    It also performs the MAF cutoff filtration
+    It also performs the MAF cutoff filtration and spacing filtration to handle
+    micro-indels.
     '''
+    # Convert, and filter 1: MAF cutoff
     geno = []
     for chrom in snpPiles.keys():
         for pos, value in snpPiles[chrom].items():
-            # Filter 3: MAF cutoff
             alleles = [allele for v in value for allele in v[1].split("/")] # v[1] will be the genotype like "A/T" or "G/."
             alleleCounter = Counter(alleles)
             
@@ -154,7 +158,7 @@ def snpPiles_to_geno(snpPiles, mafCutoff):
             maf = minorAlleleCount / len(alleles)
             success = maf >= mafCutoff
             if not success: continue
-            
+
             # Store results if above filters pass
             if geno == []: # add header line
                 geno.append("#CHROM\tPOS\t{0}\n".format(
@@ -165,7 +169,27 @@ def snpPiles_to_geno(snpPiles, mafCutoff):
                     [v[1] for v in value]
                 )])
             ))
-    return geno
+    
+    # Filter 2: Spacing cutoff
+    '''
+    It's inefficient to split the tabs out again, but I'm just revising a part of the
+    code and don't see a need to refactor entirely.
+    '''
+    genoPostFilter = []
+    for i in range(len(geno)):
+        if geno[i].startswith("#"):
+            genoPostFilter.append(geno[i])
+        else:
+            genoSplit = geno[i].split("\t")
+            chrom = genoSplit[0]
+            posInt = int(genoSplit[1])
+            # Compare this position against all other SNP positions
+            success = not any([int(v.split("\t")[1]) in range(posInt-spacing, posInt+spacing+1) and int(v.split("\t")[1]) != posInt for v in geno[1:]])
+            if not success: continue
+            # Store in post filter list
+            genoPostFilter.append(geno[i])
+    
+    return genoPostFilter
 
 ## File out
 def write_geno_file(geno, outputFileName):
@@ -225,6 +249,12 @@ def main():
         help="""This number is the minor allele frequency (MAF) required
         for a SNP to be called; default=0.04""",
         default=0.04)
+    p.add_argument("--spacing", dest="spacing", type=int,
+        help="""This number is the minimum distance a potential SNP has
+        to have between it and the nearest other SNP to be considered
+        a true SNP. Ideally, this deals with "micro-indels", but you can
+        set this as 0 to prevent filtration on this value; default=100""",
+        default=100)
     
     args = p.parse_args()
     validate_args(args)
@@ -237,29 +267,12 @@ def main():
     
     # Augment SNP piles with genotype
     snpPiles = augment_snpPiles_with_GT_from_vcf(snpPiles, args.vcfFile)
-    pickle.dump(snpPiles, open("snpPiles_augment.pickle", "wb")) ## TESTING
     
     # Filter SNP piles
-    geno = snpPiles_to_geno(snpPiles, args.mafCutoff)
+    geno = filter_snpPiles_to_geno(snpPiles, args.mafCutoff)
     
     # Write output .geno file
     write_geno_file(geno, args.outputFileName)
 
 if __name__ == "__main__":
     main()
-
-
-## Testing zone
-# highCov = []
-# covs = []
-# for spile in snpPiles:
-#     piles = spile[2]
-#     totalCoverage = sum([int(pile[0]) for pile in piles])
-#     if totalCoverage > 300:
-#         highCov.append(spile)
-#         covs.append(totalCoverage)
-
-# bcfFile = r"F:\flies\chapa_2022\pileup\btrys06_mpileup.bcf"
-# with open(bcfFile, "rb") as fileIn:
-#     for line in fileIn:
-#         stophere
