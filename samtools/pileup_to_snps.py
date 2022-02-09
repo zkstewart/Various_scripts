@@ -169,8 +169,8 @@ def snpPiles_to_geno(snpPiles, mafCutoff):
 
 ## File out
 def write_geno_file(geno, outputFileName):
-    with open(outputFileName) as fileOut:
-        fileOut.write("\n".join(geno))
+    with open(outputFileName, "w") as fileOut:
+        fileOut.write("".join(geno))
 
 ## Data exploration
 def plot_pile_statistics(snpPiles, boxplotName, histogramName):
@@ -231,17 +231,16 @@ def main():
     
     # Get SNP piles
     snpPiles = mpileup_to_snpPiles(args.pileupFile, args.floorCount, args.coverageCutoff)
-    pickle.dump(snpPiles, open("snpPiles.pickle", "wb")) ## TESTING
     
     # Generate exploratory plots
     plot_pile_statistics(snpPiles, 'piles_boxplot.png', 'piles_histogram.png')
     
     # Augment SNP piles with genotype
     snpPiles = augment_snpPiles_with_GT_from_vcf(snpPiles, args.vcfFile)
+    pickle.dump(snpPiles, open("snpPiles_augment.pickle", "wb")) ## TESTING
     
     # Filter SNP piles
     geno = snpPiles_to_geno(snpPiles, args.mafCutoff)
-    pickle.dump(geno, open("geno.pickle", "wb")) ## TESTING
     
     # Write output .geno file
     write_geno_file(geno, args.outputFileName)
