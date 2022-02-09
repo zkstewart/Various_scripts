@@ -118,14 +118,14 @@ def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
                 continue
             # Determine which field position we're extracting
             if ":" not in fieldsDescription:
-                pos = -1
+                fieldIndex = -1
             else:
-                pos = fieldsDescription.split(":").index("GT")
+                fieldIndex = fieldsDescription.split(":").index("GT")
             # Parse genotype per sample
             ongoingCount = 0 # This gives us the index for the sample in order
             for sampleResult in l[9:]: # This gives us the results for each sample as per fieldsDescription
-                if pos != -1:
-                    gtField = sampleResult.split(":")[pos]
+                if fieldIndex != -1:
+                    gtField = sampleResult.split(":")[fieldIndex]
                 else:
                     gtField = sampleResult
                 genotype = gtField.replace("0", ref).replace("1", alt)
