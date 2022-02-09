@@ -218,7 +218,7 @@ def main():
         default=0)
     p.add_argument("--repeatCutoff", dest="coverageCutoff", type=int,
         help="""This number is the maximum cumulative read coverage
-        allowed for a site before being discarded as a repeat region; 
+        allowed for a site before being discarded as a repeat region;
         default=-1 which means no repeat filtering occurs""",
         default=-1)
     p.add_argument("--mafCutoff", dest="mafCutoff", type=float,
@@ -235,6 +235,9 @@ def main():
     
     # Generate exploratory plots
     plot_pile_statistics(snpPiles, 'piles_boxplot.png', 'piles_histogram.png')
+    
+    # Augment SNP piles with genotype
+    snpPiles = augment_snpPiles_with_GT_from_vcf(snpPiles, args.vcfFile)
     
     # Filter SNP piles
     geno = snpPiles_to_geno(snpPiles, args.mafCutoff)
