@@ -8,7 +8,6 @@ from collections import Counter
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pickle
 
 # Define functions
 def validate_args(args):
@@ -113,6 +112,7 @@ def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
             pos = l[1]
             ref = l[3]
             alt = l[4]
+            gtOptions = [ref, *alt.split(",")] # This enables us to deal with multi-allelic calling
             fieldsDescription = l[8]
             # Skip if we've filtered this position already
             if chrom not in snpPiles:
@@ -128,10 +128,12 @@ def augment_snpPiles_with_GT_from_vcf(snpPiles, vcfFile):
             ongoingCount = 0 # This gives us the index for the sample in order
             for sampleResult in l[9:]: # This gives us the results for each sample as per fieldsDescription
                 if fieldIndex != -1:
-                    gtField = sampleResult.split(":")[fieldIndex]
+                    genotype = sampleResult.split(":")[fieldIndex]
                 else:
-                    gtField = sampleResult
-                genotype = gtField.replace("0", ref).replace("1", alt)
+                    genotype = sampleResult
+                # Multi-allelic compatible genotype finding
+                for i in range(0, len(gtOptions)):
+                    genotype = genotype.replace(str(i), gtOptions[i])
                 # Store results
                 snpPiles[chrom][pos][ongoingCount].append(genotype)
                 ongoingCount += 1
