@@ -177,19 +177,22 @@ def filter_snpPiles_to_geno(snpPiles, mafCutoff, spacing):
     It's inefficient to split the tabs out again, but I'm just revising a part of the
     code and don't see a need to refactor entirely.
     '''
-    genoPostFilter = []
-    for i in range(len(geno)):
-        if geno[i].startswith("#"):
-            genoPostFilter.append(geno[i])
-        else:
-            genoSplit = geno[i].split("\t")
-            chrom = genoSplit[0]
-            posInt = int(genoSplit[1])
-            # Compare this position against all other SNP positions
-            success = not any([int(v.split("\t")[1]) in range(posInt-spacing, posInt+spacing+1) and int(v.split("\t")[1]) != posInt for v in geno[1:]])
-            if not success: continue
-            # Store in post filter list
-            genoPostFilter.append(geno[i])
+    if spacing != 0:
+        genoPostFilter = []
+        for i in range(len(geno)):
+            if geno[i].startswith("#"):
+                genoPostFilter.append(geno[i])
+            else:
+                genoSplit = geno[i].split("\t")
+                chrom = genoSplit[0]
+                posInt = int(genoSplit[1])
+                # Compare this position against all other SNP positions
+                success = not any([int(v.split("\t")[1]) in range(posInt-spacing, posInt+spacing+1) and int(v.split("\t")[1]) != posInt for v in geno[1:]])
+                if not success: continue
+                # Store in post filter list
+                genoPostFilter.append(geno[i])
+    else:
+        genoPostFilter = geno
     
     return genoPostFilter
 
