@@ -271,7 +271,7 @@ def main():
     snpPiles = augment_snpPiles_with_GT_from_vcf(snpPiles, args.vcfFile)
     
     # Filter SNP piles
-    geno = filter_snpPiles_to_geno(snpPiles, args.mafCutoff)
+    geno = filter_snpPiles_to_geno(snpPiles, args.mafCutoff, args.spacing)
     
     # Write output .geno file
     write_geno_file(geno, args.outputFileName)
