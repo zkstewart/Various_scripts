@@ -102,6 +102,57 @@ def write_vcf_file(vcfLines, outputFileName):
     with open(outputFileName, "w") as fileOut:
         fileOut.write("\n".join(vcfLines))
 
+def write_geno_file(vcfLines, outputFileName):
+    # Find header from vcfLines
+    for line in vcfLines:
+        if not line.startswith("#CHROM"):
+            continue
+        else:
+            l = line.rstrip("\r\n").split("\t")
+            samples = l[9:] # This gives us the ordered sample IDs
+            break
+    
+    # Write output geno
+    with open(outputFileName, "w") as fileOut:
+        # Write header to file
+        fileOut.write("#CHROM\tPOS\t{0}\n".format("\t".join(samples)))
+        # Write everything else
+        for line in vcfLines:
+            if line.startswith("#"): continue
+            
+            # Extract relevant info
+            l = line.split("\t")
+            chrom = l[0]
+            pos = l[1]
+            ref = l[3]
+            alt = l[4]
+            gtOptions = [ref, *alt.split(",")] # This enables us to deal with multi-allelic calling
+            fieldsDescription = l[8]
+            
+            # Determine which field position we're extracting to get genotype
+            if ":" not in fieldsDescription:
+                gtIndex = -1
+            else:
+                gtIndex = fieldsDescription.split(":").index("GT")
+            
+            # Parse genotype per sample
+            genotypes = []
+            ongoingCount = 0 # This gives us the index for the sample in order
+            for sampleResult in l[9:]: # This gives us the results for each sample as per fieldsDescription
+                if gtIndex != -1:
+                    genotype = sampleResult.split(":")[gtIndex]
+                else:
+                    genotype = sampleResult
+                # Multi-allelic compatible genotype finding
+                for i in range(0, len(gtOptions)):
+                    genotype = genotype.replace(str(i), gtOptions[i]).replace(".", "N") # need to switch to N to satisfy the .geno requirements
+                # Store results
+                genotypes.append(genotype)
+                ongoingCount += 1
+            
+            # Write to file
+            fileOut.write("{0}\t{1}\t{2}\n".format(chrom, pos, "\t".join(genotypes)))
+
 ## Main
 def main():
     # User input
@@ -124,6 +175,9 @@ def main():
         help="""This number if the minimum proportion of samples per population
         that is tolerated; default=0.5 (range 0 -> 1)""",
         default=0.5)
+    p.add_argument("--geno", dest="genoOutput", action="store_true",
+        help="""Optionally, produce a .geno formatted output rather than .vcf""",
+        default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -135,7 +189,10 @@ def main():
     vcfLines = filter_vcf(args.vcfFile, pops, args.missingPerPopulation)
     
     # Write output write_vcf_file file
-    write_vcf_file(vcfLines, args.outputFileName)
+    if not args.genoOutput:
+        write_vcf_file(vcfLines, args.outputFileName)
+    else:
+        write_geno_file(vcfLines, args.outputFileName)
 
 if __name__ == "__main__":
     main()
