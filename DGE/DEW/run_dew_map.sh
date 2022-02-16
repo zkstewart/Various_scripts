@@ -73,6 +73,7 @@ cd ${SPECIES}_dew_results
 rm ${SPECIES}_dew.toalign.noredundant.fsa_vs_*
 rm -r edgeR
 rm -r gene_coverage_plots
+cd ..
 
 # >> STEP 4: Run DEW alignment procedure
 perl ${DEWDIR}/dew.pl -infile ${MODELDIR}/${MODELFILE} -format FASTQ -readset1 ${READ1} -readset2 ${READ2} -output ${SPECIES}_dew -threads ${CPUS} -kanga -remove_redund -no_pairwise -nographs -genomewide -readset_separation ${INSERT_SIZE} -only_alignments -sample_names ${SAMPLE_NAMES} -resume -over #-no_check
