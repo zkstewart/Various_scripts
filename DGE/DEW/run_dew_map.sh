@@ -8,7 +8,10 @@ cd $PBS_O_WORKDIR
 
 export PERL5LIB="/home2/stewarz2/plant_group/plant_rnaseq/analysis/alm/alexie_lucky_related/DEW/PerlLib:$PERL5LIB"
 
-# SETUP END
+# SETUP START
+# >> SETUP: Secify Various_scripts dir
+VARSCRIPTDIR=/home/stewarz2/scripts/Various_scripts
+
 # >> SETUP: Specify DEW location
 DEWDIR=/home/stewarz2/plant_group/plant_rnaseq/analysis/alm/alexie_lucky_related/DEW
 
@@ -78,3 +81,5 @@ cd ..
 # >> STEP 4: Run DEW alignment procedure
 perl ${DEWDIR}/dew.pl -infile ${MODELDIR}/${MODELFILE} -format FASTQ -readset1 ${READ1} -readset2 ${READ2} -output ${SPECIES}_dew -threads ${CPUS} -kanga -remove_redund -no_pairwise -nographs -genomewide -readset_separation ${INSERT_SIZE} -only_alignments -sample_names ${SAMPLE_NAMES} -resume -over #-no_check
 
+# >> STEP 5: Tabulate and summarise output read counts
+python ${VARSCRIPTDIR}/DGE/DEW/merge_dew_stats.py -i ${SPECIES}_dew_results -o ${SPECIES}_dew_counts.tsv
