@@ -107,33 +107,35 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName)
                     cfGenotypes = [genotype for i in range(len(samplesList))]
                 # Produce genotypes for variant position
                 else:
-                    print("Found at {0}, {1}".format(chrom, ongoingCount))
+                    print("Found SNP in chrom {0}, pos {1}".format(chrom, ongoingCount))
                     ref, alt, genotypes = genotypeDict[chrom][ongoingCount]
-                    assert ref.lower() == nucleotide.lower() # prevent error
+                    if len(ref) > 1: # counts file format does not support block substitution; we must ignore this SNP
+                        print("Skipping block substitution at above position")
+                        cfGenotypes = [genotype for i in range(len(samplesList))] # do the same as for non-variant positions
+                    else:
+                        cfGenotypes = []
+                        for g in genotypes:
+                            assert "|" not in g # ensure formatting compliance
+                            
+                            newGenotype = [0,0,0,0]
+                            g = g.replace("0", ref).replace("1", alt)
+                            for allele in g.split("/"):
+                                if allele.lower() == "a":
+                                    newGenotype[0] += 1
+                                elif allele.lower() == "c":
+                                    newGenotype[1] += 1
+                                elif allele.lower() == "g":
+                                    newGenotype[2] += 1
+                                elif allele.lower() == "t":
+                                    newGenotype[3] += 1
+                                elif allele.lower() == ".":
+                                    newGenotype[0] += 1 # impute gaps as reference allele
+                                else:
+                                    print("Unknown allele encountered '{0}'".format(allele))
+                                    print("Program must exit to prevent erroneous behaviour")
+                                    quit()
+                            cfGenotypes.append(str(newGenotype).replace("[", "").replace("]", "").replace(" ", ""))
                     
-                    cfGenotypes = []
-                    for g in genotypes:
-                        assert "|" not in g # ensure formatting compliance
-                        
-                        newGenotype = [0,0,0,0]
-                        g = g.replace("0", ref).replace("1", alt)
-                        for allele in g.split("/"):
-                            if allele.lower() == "a":
-                                newGenotype[0] += 1
-                            elif allele.lower() == "c":
-                                newGenotype[1] += 1
-                            elif allele.lower() == "g":
-                                newGenotype[2] += 1
-                            elif allele.lower() == "t":
-                                newGenotype[3] += 1
-                            elif allele.lower() == ".":
-                                newGenotype[0] += 1 # impute gaps as reference allele
-                            else:
-                                print("Unknown allele encountered '{0}'".format(allele))
-                                print("Program must exit to prevent erroneous behaviour")
-                                quit()
-                        cfGenotypes.append(str(newGenotype).replace("[", "").replace("]", "").replace(" ", ""))
-                
                 # Write line to file
                 outLine = "{0} {1} {2}\n".format(chrom, ongoingCount, " ".join(cfGenotypes))
                 fileOut.write(outLine)
