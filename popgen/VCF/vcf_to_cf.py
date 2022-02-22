@@ -103,7 +103,7 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName)
                     quit()
                 
                 # Produce genotypes for non-variant position
-                if ongoingCount not in genotypeDict[chrom]:
+                if (chrom not in genotypeDict) or (ongoingCount not in genotypeDict[chrom]):
                     cfGenotypes = [genotype for i in range(len(samplesList))]
                 # Produce genotypes for variant position
                 else:
