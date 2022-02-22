@@ -48,7 +48,7 @@ FILEPREFIX=${RNAFILES[${ARRAY_INDEX}]}
 BASEPREFIX=$(basename ${FILEPREFIX})
 
 ## STEP 1: Run Trimmomatic
-java -jar $TRIMDIR/$TRIMJAR PE -threads ${CPUS} -trimlog ${SPECIES}.logfile ${FILEPREFIX}_R1${SUFFIX} ${FILE}_R2${SUFFIX} -baseout ${BASEPREFIX}.trimmed.fq.gz ${COMMAND}
+java -jar $TRIMDIR/$TRIMJAR PE -threads ${CPUS} -trimlog ${SPECIES}.logfile ${FILEPREFIX}_R1${SUFFIX} ${FILEPREFIX}_R2${SUFFIX} -baseout ${BASEPREFIX}.trimmed.fq.gz ${COMMAND}
 
 ## STEP 2: Unzip files
 gunzip ${BASEPREFIX}.trimmed_1P.fq.gz ${BASEPREFIX}.trimmed_2P.fq
