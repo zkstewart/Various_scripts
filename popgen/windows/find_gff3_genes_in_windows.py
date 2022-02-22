@@ -97,6 +97,7 @@ def get_gene_window_overlaps(geneBoundaries, windowBoundaries):
                 wStart, wEnd = wBoundary
                 if gStart <= wEnd and wStart <= gEnd: # head-to-tail comparison for overlap of two ranges
                     genes.append(geneID)
+    genes = list(set(genes)) # prevent redundancy
     return genes
 
 ## Main
