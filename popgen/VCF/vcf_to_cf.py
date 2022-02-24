@@ -85,6 +85,10 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName,
             ongoingCount = 1 # This is the genomic position
             chrom = record.id
             for nucleotide in record.seq:
+                # Speed up onlySNPs operation
+                if onlySNPs and ((chrom not in genotypeDict) or (ongoingCount not in genotypeDict[chrom])):
+                    ongoingCount += 1
+                    continue
                 # Generate reference genotype
                 if nucleotide.lower() == "a":
                     genotype = "2,0,0,0"
