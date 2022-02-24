@@ -67,7 +67,7 @@ def vcf_parse_as_genotypeDict(vcfFile):
             
     return genotypeDict, samples
 
-def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName):
+def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName, onlySNPs):
     '''
     cf format is like:
         A, C, G, T
@@ -102,6 +102,7 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName)
                     print("Program must exit to prevent erroneous behaviour")
                     quit()
                 
+                isSNP = False
                 # Produce genotypes for non-variant position
                 if (chrom not in genotypeDict) or (ongoingCount not in genotypeDict[chrom]):
                     cfGenotypes = [genotype for i in range(len(samplesList))]
@@ -113,6 +114,7 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName)
                         print("Skipping block substitution at above position")
                         cfGenotypes = [genotype for i in range(len(samplesList))] # do the same as for non-variant positions
                     else:
+                        isSNP = True
                         cfGenotypes = []
                         for g in genotypes:
                             assert "|" not in g # ensure formatting compliance
@@ -137,8 +139,9 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName)
                             cfGenotypes.append(str(newGenotype).replace("[", "").replace("]", "").replace(" ", ""))
                     
                 # Write line to file
-                outLine = "{0} {1} {2}\n".format(chrom, ongoingCount, " ".join(cfGenotypes))
-                fileOut.write(outLine)
+                if onlySNPs == False or isSNP == True:
+                    outLine = "{0} {1} {2}\n".format(chrom, ongoingCount, " ".join(cfGenotypes))
+                    fileOut.write(outLine)
                 
                 # Iterate position counter
                 ongoingCount += 1
@@ -157,6 +160,10 @@ def main():
         help="Input population file")
     p.add_argument("-o", dest="outputFileName", required=True,
         help="Output file name for the filtered SNPs")
+    ## Optional
+    p.add_argument("--snps", dest="onlySNPs", required=False, action="store_true",
+        help="Optionally, produce a .cf with only SNPs present",
+        default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -168,7 +175,7 @@ def main():
     genotypeDict, samplesList = vcf_parse_as_genotypeDict(args.vcfFile)
     
     # Produce .cf file
-    genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, args.outputFileName)
+    genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, args.outputFileName, args.onlySNPs)
 
 if __name__ == "__main__":
     main()
