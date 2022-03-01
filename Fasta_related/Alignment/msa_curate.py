@@ -1152,185 +1152,186 @@ def tmp_file_name_gen(prefix, suffix, hashString):
                 else:
                         return prefix + tmpHash + suffix
 
-# Customise help messages based on current user input
-modeHandling = None
-if '-m outliers' in ' '.join(sys.argv) or '-mode outliers' in ' '.join(sys.argv):
-        modeHandling = 'outliers'
-elif '-m start_trim' in ' '.join(sys.argv) or '-mode start_trim' in ' '.join(sys.argv):
-        modeHandling = 'start_trim'
-elif '-m full_trim' in ' '.join(sys.argv) or '-mode full_trim' in ' '.join(sys.argv):
-        modeHandling = 'full_trim'
+if __name__ == "__main__":
+    # Customise help messages based on current user input
+    modeHandling = None
+    if '-m outliers' in ' '.join(sys.argv) or '-mode outliers' in ' '.join(sys.argv):
+            modeHandling = 'outliers'
+    elif '-m start_trim' in ' '.join(sys.argv) or '-mode start_trim' in ' '.join(sys.argv):
+            modeHandling = 'start_trim'
+    elif '-m full_trim' in ' '.join(sys.argv) or '-mode full_trim' in ' '.join(sys.argv):
+            modeHandling = 'full_trim'
 
-#### USER INPUT SECTION
-usage = """%(prog)s is a multi-functional program for the curation of multiple sequence
-alignments (MSAs). Required arguments include -i, -o, and -m; the rest are optional
-and some are used only for certain "modes"; call this program with the -m option
-specified and -h to only see arguments required for that mode.
+    #### USER INPUT SECTION
+    usage = """%(prog)s is a multi-functional program for the curation of multiple sequence
+    alignments (MSAs). Required arguments include -i, -o, and -m; the rest are optional
+    and some are used only for certain "modes"; call this program with the -m option
+    specified and -h to only see arguments required for that mode.
 
-If a single -i value is provided, this program assumes that any file in this
-directory with contents starting with the '>' character is a FASTA MSA file; if
-this proves untrue, errors will occur. If multiple values are provided to -i,
-it is assumed that you have specified FASTA MSA files individually.
+    If a single -i value is provided, this program assumes that any file in this
+    directory with contents starting with the '>' character is a FASTA MSA file; if
+    this proves untrue, errors will occur. If multiple values are provided to -i,
+    it is assumed that you have specified FASTA MSA files individually.
 
-Mode information: 
-        'outliers' will automatically detect and remove outlier sequences
-from provided FASTA MSA files; a detailed log will be produced in the output
-directory indicating what changes were made. 
-        'start_trim' will attempt to trim protein sequences to equalise their
-start amino acid relative to each other; this is useful when trying to identify
-the correct CDS start positions in a MSA. SignalP can be used to weight start
-sites with signal peptide prediction above those without, but it _significantly_
-slows the program down - be warned!
-        'full_trim' will attempt to trim all sequences in a MSA to capture the
-most "central" or "conserved" region within the MSA; this function is useful when
-trying to identify domains in an alignment, but it is likely performed better by
-some other available programs, have a look online before trying this.
+    Mode information: 
+            'outliers' will automatically detect and remove outlier sequences
+    from provided FASTA MSA files; a detailed log will be produced in the output
+    directory indicating what changes were made. 
+            'start_trim' will attempt to trim protein sequences to equalise their
+    start amino acid relative to each other; this is useful when trying to identify
+    the correct CDS start positions in a MSA. SignalP can be used to weight start
+    sites with signal peptide prediction above those without, but it _significantly_
+    slows the program down - be warned!
+            'full_trim' will attempt to trim all sequences in a MSA to capture the
+    most "central" or "conserved" region within the MSA; this function is useful when
+    trying to identify domains in an alignment, but it is likely performed better by
+    some other available programs, have a look online before trying this.
 
-Note that 'start_trim' is designed specifically to handle proteins, whereas the
-other systems will handle the underlying sequence agnostically to whether it is
-protein or DNA.
+    Note that 'start_trim' is designed specifically to handle proteins, whereas the
+    other systems will handle the underlying sequence agnostically to whether it is
+    protein or DNA.
 
-Tips and tricks: "full_trim" with stricter dropProp (-d) value can be used as an
-alternative to "outliers" if you want to remove gappy sequences from a MSA by 
-providing the -onlydrop argument;... this program is not threaded, so if you want
-to use signalP start_trim-ming, you might consider calling this program multiple
-times for each input file.
-"""
+    Tips and tricks: "full_trim" with stricter dropProp (-d) value can be used as an
+    alternative to "outliers" if you want to remove gappy sequences from a MSA by 
+    providing the -onlydrop argument;... this program is not threaded, so if you want
+    to use signalP start_trim-ming, you might consider calling this program multiple
+    times for each input file.
+    """
 
-# Reqs
-p = argparse.ArgumentParser(description=usage, formatter_class=argparse.RawDescriptionHelpFormatter)
-p.add_argument("-i", "-input", dest="inputLocation", nargs="+",
-               help="Input a single directory or multiple file locations")
-p.add_argument("-o", "-output", dest="outputLocation",
-               help="Specify the location to write output files to")
-p.add_argument("-m", "-mode", dest="mode", choices=['outliers', 'start_trim', 'full_trim'],
-               help="Specify the program mode to run in; details are provided above")
-## Opts with visibility settings
-### outliers
-p.add_argument("-r", "-rscriptdir", dest="rscriptdir", type=str,
-               help="""outliers: Specify the R directory that contains Rscript.exe. If this is already in your PATH,
-               you can leave this blank."""
-               if (modeHandling == 'outliers' or modeHandling == None) else argparse.SUPPRESS)
-p.add_argument("-s", "-strictness", dest="strictness", choices=['relaxed', 'strict'], default='relaxed',
-               help="""outliers: Specify the strictness with which outliers will be removed; 'relaxed' settings
-               require two different lines of evidence to suggest a sequence is an outlier, whereas 'strict'
-               settings only require one, thus removing more sequences (default == relaxed)"""
-               if (modeHandling == 'outliers' or modeHandling == None) else argparse.SUPPRESS)
-### full_trim
-p.add_argument("-p", "-propTrim", dest="propTrim", type=float, default=0.7,
-               help="""full_trim: Specify the proportion of a MSA column that must contain
-               sequences (rather than gaps) to mark the start and end positions for trimming
-               (default == 0.7)"""
-               if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
-p.add_argument("-d", "-dropProp", dest="dropProp", type=float, default=0.5,
-               help="""full_trim: Specify the proportion of a sequence allowed to disagree with
-               consensus (i.e., whether a column is a gap or a sequence) before removal of the sequence
-               (default == 0.5)"""
-               if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
-p.add_argument("-onlydrop", dest="onlydrop", action='store_true', default=False,
-               help="""full_trim: Optionally prevent trimming from occurring and only produce outputs
-               minus dropped sequences (read tips and tricks above)"""
-               if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
-### start_trim & full_trim
-p.add_argument("-l", "-lengthMin", dest="lengthMin", type=float, default=0.25,
-               help="""full_trim / start_trim: Specify the minimum length a MSA must be for trimming to occur;
-               providing an integer > 1 will enforce a minimum length as a value, whereas providing
-               a 0 < float >= 1 value enforce a minimum proportion relative to the original MSA
-               (default == 0.25)"""
-               if (modeHandling == 'full_trim' or modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
-### start_trim
-p.add_argument("-signalp_trim", dest="signalp_trim", action='store_true', default=False,
-               help="""start_trim: Optionally use signalP evidence for determining the optimal
-               start site for sequences when these sequences are expected to begin with a signal peptide"""
-               if (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
-p.add_argument("-g", "-signalpdir", dest="signalpdir", type=str,
-               help="""start_trim: If -signalp_trim is provided, specify the directory where signalp executables are located.
-               If this is already in your PATH, you can leave this blank."""
-               if (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
-p.add_argument("-sigporg", dest="signalporg", type = str, choices = ['euk', 'gram-', 'gram+'], default='euk',
-               help="""start_trim: If -signalp_trim is provided, specify the type of organism for SignalP from the available
-               options. Refer to the SignalP manual if unsure what these mean (default == 'euk')."""
-               if (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
-p.add_argument("-c", "-cygwindir", dest="cygwindir", type=str,
-               help="""start_trim: If -signalp_trim is provided, Cygwin is required since you are running this program on a Windows computer.
-               Specify the location of the bin directory here or, if this is already in your PATH, you can leave this blank."""
-               if platform.system() == 'Windows' and (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
+    # Reqs
+    p = argparse.ArgumentParser(description=usage, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("-i", "-input", dest="inputLocation", nargs="+",
+                help="Input a single directory or multiple file locations")
+    p.add_argument("-o", "-output", dest="outputLocation",
+                help="Specify the location to write output files to")
+    p.add_argument("-m", "-mode", dest="mode", choices=['outliers', 'start_trim', 'full_trim'],
+                help="Specify the program mode to run in; details are provided above")
+    ## Opts with visibility settings
+    ### outliers
+    p.add_argument("-r", "-rscriptdir", dest="rscriptdir", type=str,
+                help="""outliers: Specify the R directory that contains Rscript.exe. If this is already in your PATH,
+                you can leave this blank."""
+                if (modeHandling == 'outliers' or modeHandling == None) else argparse.SUPPRESS)
+    p.add_argument("-s", "-strictness", dest="strictness", choices=['relaxed', 'strict'], default='relaxed',
+                help="""outliers: Specify the strictness with which outliers will be removed; 'relaxed' settings
+                require two different lines of evidence to suggest a sequence is an outlier, whereas 'strict'
+                settings only require one, thus removing more sequences (default == relaxed)"""
+                if (modeHandling == 'outliers' or modeHandling == None) else argparse.SUPPRESS)
+    ### full_trim
+    p.add_argument("-p", "-propTrim", dest="propTrim", type=float, default=0.7,
+                help="""full_trim: Specify the proportion of a MSA column that must contain
+                sequences (rather than gaps) to mark the start and end positions for trimming
+                (default == 0.7)"""
+                if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
+    p.add_argument("-d", "-dropProp", dest="dropProp", type=float, default=0.5,
+                help="""full_trim: Specify the proportion of a sequence allowed to disagree with
+                consensus (i.e., whether a column is a gap or a sequence) before removal of the sequence
+                (default == 0.5)"""
+                if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
+    p.add_argument("-onlydrop", dest="onlydrop", action='store_true', default=False,
+                help="""full_trim: Optionally prevent trimming from occurring and only produce outputs
+                minus dropped sequences (read tips and tricks above)"""
+                if (modeHandling == 'full_trim' or modeHandling == None) else argparse.SUPPRESS)
+    ### start_trim & full_trim
+    p.add_argument("-l", "-lengthMin", dest="lengthMin", type=float, default=0.25,
+                help="""full_trim / start_trim: Specify the minimum length a MSA must be for trimming to occur;
+                providing an integer > 1 will enforce a minimum length as a value, whereas providing
+                a 0 < float >= 1 value enforce a minimum proportion relative to the original MSA
+                (default == 0.25)"""
+                if (modeHandling == 'full_trim' or modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
+    ### start_trim
+    p.add_argument("-signalp_trim", dest="signalp_trim", action='store_true', default=False,
+                help="""start_trim: Optionally use signalP evidence for determining the optimal
+                start site for sequences when these sequences are expected to begin with a signal peptide"""
+                if (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
+    p.add_argument("-g", "-signalpdir", dest="signalpdir", type=str,
+                help="""start_trim: If -signalp_trim is provided, specify the directory where signalp executables are located.
+                If this is already in your PATH, you can leave this blank."""
+                if (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
+    p.add_argument("-sigporg", dest="signalporg", type = str, choices = ['euk', 'gram-', 'gram+'], default='euk',
+                help="""start_trim: If -signalp_trim is provided, specify the type of organism for SignalP from the available
+                options. Refer to the SignalP manual if unsure what these mean (default == 'euk')."""
+                if (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
+    p.add_argument("-c", "-cygwindir", dest="cygwindir", type=str,
+                help="""start_trim: If -signalp_trim is provided, Cygwin is required since you are running this program on a Windows computer.
+                Specify the location of the bin directory here or, if this is already in your PATH, you can leave this blank."""
+                if platform.system() == 'Windows' and (modeHandling == 'start_trim' or modeHandling == None) else argparse.SUPPRESS)
 
-args = p.parse_args()
-args = validate_args(args)
+    args = p.parse_args()
+    args = validate_args(args)
 
-# Find FASTA files depending on how inputLocation was specified
-msaFileNameList = []
-if len(args.inputLocation) == 1:
-        # Scan through files and detect our files of interest
-        for file in os.listdir(args.inputLocation[0]):
-                file = os.path.join(args.inputLocation[0], file)
-                if not os.path.isfile(file):
-                        continue
-                with open(file, 'r') as fileIn:
-                        for line in fileIn:
-                                if line.startswith('>'):
-                                        msaFileNameList.append(os.path.abspath(file))
-                                break
-        # Ensure that we found some input files
-        if msaFileNameList == []:
-                print('I did not find any FASTA files in the provided input directory "' + args.inputLocation[0] + '"')
-                print('Make sure you specified the correct location, or make sure all files are located at this directory. Program will exit now.')
-                quit()
-else:
-        # Make sure that the provided files all exist
-        for file in args.inputLocation:
-                if not os.path.isfile(file):
-                        print('Input file "' + file + '" either does not exist or is not a file.')
-                        print('Make sure you spelled the file name/location correctly and try again.')
-                        quit()
-                with open(file, 'r') as fileIn:
-                        for line in fileIn:
-                                if not line.startswith('>'):
-                                        print('Input file "' + file + '" does not appear to be FASTA formatted i.e., it lacks the ">" character at its start.')
-                                        print('Make sure you spelled the correct file or fix this file and try again.')
-                                        quit()
-                                break
-                msaFileNameList.append(os.path.abspath(file))
+    # Find FASTA files depending on how inputLocation was specified
+    msaFileNameList = []
+    if len(args.inputLocation) == 1:
+            # Scan through files and detect our files of interest
+            for file in os.listdir(args.inputLocation[0]):
+                    file = os.path.join(args.inputLocation[0], file)
+                    if not os.path.isfile(file):
+                            continue
+                    with open(file, 'r') as fileIn:
+                            for line in fileIn:
+                                    if line.startswith('>'):
+                                            msaFileNameList.append(os.path.abspath(file))
+                                    break
+            # Ensure that we found some input files
+            if msaFileNameList == []:
+                    print('I did not find any FASTA files in the provided input directory "' + args.inputLocation[0] + '"')
+                    print('Make sure you specified the correct location, or make sure all files are located at this directory. Program will exit now.')
+                    quit()
+    else:
+            # Make sure that the provided files all exist
+            for file in args.inputLocation:
+                    if not os.path.isfile(file):
+                            print('Input file "' + file + '" either does not exist or is not a file.')
+                            print('Make sure you spelled the file name/location correctly and try again.')
+                            quit()
+                    with open(file, 'r') as fileIn:
+                            for line in fileIn:
+                                    if not line.startswith('>'):
+                                            print('Input file "' + file + '" does not appear to be FASTA formatted i.e., it lacks the ">" character at its start.')
+                                            print('Make sure you spelled the correct file or fix this file and try again.')
+                                            quit()
+                                    break
+                    msaFileNameList.append(os.path.abspath(file))
 
-# Ensure that file overwrites won't happen
-for file in msaFileNameList:
-        if os.path.isfile(os.path.join(args.outputLocation, os.path.basename(file))):
-                print('"' + os.path.basename(file) + '" file already exists in output directory "' + os.path.abspath(args.outputLocation) + '"')
-                print('This program will not overwrite existing files; delete/rename/move this existing file or specify a new output directory location and try again.')
-                quit()
+    # Ensure that file overwrites won't happen
+    for file in msaFileNameList:
+            if os.path.isfile(os.path.join(args.outputLocation, os.path.basename(file))):
+                    print('"' + os.path.basename(file) + '" file already exists in output directory "' + os.path.abspath(args.outputLocation) + '"')
+                    print('This program will not overwrite existing files; delete/rename/move this existing file or specify a new output directory location and try again.')
+                    quit()
 
-# Make output files for later modification in place
-finalMsaFileList = []
-for file in msaFileNameList:
-        shutil.copy(file, args.outputLocation)
-        finalMsaFileList.append(os.path.join(args.outputLocation, os.path.basename(file)))
+    # Make output files for later modification in place
+    finalMsaFileList = []
+    for file in msaFileNameList:
+            shutil.copy(file, args.outputLocation)
+            finalMsaFileList.append(os.path.join(args.outputLocation, os.path.basename(file)))
 
-# Enact relevant function
-logList = []
-## Outliers
-if args.mode == 'outliers':
-        odSeqResults = odseq_outlier_detect(msaFileNameList, args.rscriptdir, args.outputLocation, 0.01, 'affine', 1000)        # Values are somewhat arbitrary; 0.01 refers to ODseq threshold and seems to be appropriate, 'affine' means we will penalise gaps, and 1000 is the number of bootstrap replicates - it seems to be fast enough so the large number isn't a concern
-        spOutResults = msa_outlier_detect(msaFileNameList, True, True, 'alfree')                                                # The first True here means we use basic distribution statistics to justify HDBSCAN's outlier prediction; it helps to temper HDBSCAN and should thus be turned on
-        mergedOutlierResults = outlier_dict_merge(odSeqResults, spOutResults, args.strictness)                                  # The second True above removes identical sequences for the purpose of calculating distribution statistics; this helps to prevent a domain being overwhelmed by identicality (it's a word, look it up)
-        logList = curate_msa_from_outlier_dict(mergedOutlierResults, finalMsaFileList)
-elif args.mode == 'full_trim':
-        for msaFileName in finalMsaFileList:
-                msa, tmpLog = msa_trim(msaFileName, args.propTrim, args.lengthMin, 'file', msaFileName, args.dropProp, 'skip', args.onlydrop)
-                logList += tmpLog
-elif args.mode == 'start_trim':
-        for msaFileName in finalMsaFileList:
-                if args.signalp_trim:
-                        msa_start_find(msaFileName, args.lengthMin, 'file', msaFileName, 'skip', args.signalpdir, args.cygwindir, args.signalporg)
-                else:
-                        msa_start_find(msaFileName, args.lengthMin, 'file', msaFileName, 'skip', None, None, None)
+    # Enact relevant function
+    logList = []
+    ## Outliers
+    if args.mode == 'outliers':
+            odSeqResults = odseq_outlier_detect(msaFileNameList, args.rscriptdir, args.outputLocation, 0.01, 'affine', 1000)        # Values are somewhat arbitrary; 0.01 refers to ODseq threshold and seems to be appropriate, 'affine' means we will penalise gaps, and 1000 is the number of bootstrap replicates - it seems to be fast enough so the large number isn't a concern
+            spOutResults = msa_outlier_detect(msaFileNameList, True, True, 'alfree')                                                # The first True here means we use basic distribution statistics to justify HDBSCAN's outlier prediction; it helps to temper HDBSCAN and should thus be turned on
+            mergedOutlierResults = outlier_dict_merge(odSeqResults, spOutResults, args.strictness)                                  # The second True above removes identical sequences for the purpose of calculating distribution statistics; this helps to prevent a domain being overwhelmed by identicality (it's a word, look it up)
+            logList = curate_msa_from_outlier_dict(mergedOutlierResults, finalMsaFileList)
+    elif args.mode == 'full_trim':
+            for msaFileName in finalMsaFileList:
+                    msa, tmpLog = msa_trim(msaFileName, args.propTrim, args.lengthMin, 'file', msaFileName, args.dropProp, 'skip', args.onlydrop)
+                    logList += tmpLog
+    elif args.mode == 'start_trim':
+            for msaFileName in finalMsaFileList:
+                    if args.signalp_trim:
+                            msa_start_find(msaFileName, args.lengthMin, 'file', msaFileName, 'skip', args.signalpdir, args.cygwindir, args.signalporg)
+                    else:
+                            msa_start_find(msaFileName, args.lengthMin, 'file', msaFileName, 'skip', None, None, None)
 
-# Produce output file for the log
-if logList != []:
-        logFileName = file_name_gen(os.path.join(args.outputLocation, 'msa_curate_log'), '.tsv')
-        with open(logFileName, 'w') as fileOut:
-                fileOut.write('\n'.join(logList))
-        print('Log file created at "' + logFileName + '"')
+    # Produce output file for the log
+    if logList != []:
+            logFileName = file_name_gen(os.path.join(args.outputLocation, 'msa_curate_log'), '.tsv')
+            with open(logFileName, 'w') as fileOut:
+                    fileOut.write('\n'.join(logList))
+            print('Log file created at "' + logFileName + '"')
 
-# All done!
-print('Program completed successfully!')
+    # All done!
+    print('Program completed successfully!')
