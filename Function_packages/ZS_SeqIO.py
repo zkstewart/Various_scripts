@@ -3,12 +3,6 @@
 # Contains various Classes to perform manipulations involing
 # FASTA sequences and MSAs.
 
-# TBD
-## Argument validation
-## FASTA sequence class (name, altname, raw seq, gapped seq) [+]
-## FASTA class (incl. key:value map function) [+]
-## Stats functions that apply to FASTA class [-]
-
 import os
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
