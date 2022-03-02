@@ -11,6 +11,7 @@
 
 import os
 from Bio.SeqIO.FastaIO import SimpleFastaParser
+from collections import Counter
 
 class FastASeq:
     '''
@@ -135,7 +136,6 @@ class FASTA:
         consensus -- A FastaASeq object containing the consensus representation
                      of this FASTA object
         isAligned -- A Boolean indicating whether the FASTA file has been aligned
-        
     '''
     def __init__(self, fastaFile, isAligned=False):
         assert type(fastaFile).__name__ == "str"
@@ -294,20 +294,108 @@ class FASTA:
             self.set_alt_ids_via_list(altList)
     
     def generate_consensus(self):
+        '''
+        This method produces a very basic consensus sequence through a voting mechanism
+        whereby the most common nucleotide/amino acid will be the representative. This
+        might not be biologically valid, but it provides a metric by which human investigations
+        can occur especially via calculation of variable site statistics.
+        
+        Method sets self.consensus, but also returns:
+            consensus -- A string of the consensus sequence including gaps
+        '''
         # Validate sensibility and possibility of running this method
         if not self.isAligned:
             raise Exception("Consensus generation only relevant and/or possible if FASTA is aligned")
-        ## Check if all FastASeq objects have the same length of their .gap_seq attribute
-        raise NotImplementedError()
-    
+        
+        prevLength = None
+        for FastASeq_obj in self.seqs:
+            if FastASeq_obj.gap_seq == None:
+                raise Exception("Can't generate consensus if FastaASeq .gap_seq attribute not set")
+            
+            thisLength = len(FastASeq_obj.gap_seq)
+            if prevLength != None and prevLength != thisLength:
+                raise Exception(".gap_seq attributes are set but alignment length differs")
+            
+            prevLength = thisLength
+        
+        # Generate consensus sequence
+        self.consensus = ""
+        for i in range(prevLength):
+            positionList = []
+            for x in range(len(self.seqs)):
+                positionList.append(self.seqs[x].gap_seq[i])
+            positionCount = Counter(positionList)
+            self.consensus += positionCount.most_common(1)[0][0] # most_common(1) gives a list with (residue, count) tuple
+        
+        return self.consensus
+        
     def gc_content(self):
-        raise NotImplementedError()
+        '''
+        Calculates the proportion of sequence that is G/C out of all nucleotides in all sequences.
+        i.e., in a FASTA with 3 sequences of length 10bp each, if each sequence has 3 G's or C's
+        in them, our GC calculation will be:
+            (3*3) / (3*10) == 0.3
+        
+        Note that this function only has biological relevance if the sequences are nucleotides.
+        This function makes no checks to assert that this is the case. It's on the user to be
+        sensible.
+        
+        Returns:
+            proportion -- A float value from 0->1 representing the proportion of sequences that
+                          are G or C.
+        '''
+        gcCount = 0
+        totalCount = 0
+        for FastASeq_obj in self.seqs:
+            for nucleotide in FastASeq_obj.seq.lower():
+                if nucleotide in ["g", "c"]:
+                    gcCount += 1
+                totalCount += 1
+        
+        return gcCount / totalCount
     
-    def variable_sites(self):
+    def conserved_proportion(self):
+        '''
+        Calculates the proportion of sequence positions that matches the consensus sequence.
+        In an alignment like this:
+        
+            CONSENSUS: ABCDEF
+            SEQ1:      ABCDEF
+            SEQ2:      ABCABC
+        
+        Iterating through each position, we'd determine how many share the same sequence as
+        the consensus. We'd get a result like this:
+        
+            POSITION:  0  |  1  |  2  |  3  |  4  |  5
+            SHARED:    1  |  1  |  1  | .5  | .5  | .5
+        
+        We then average the shared values i.e.,: 
+        
+            summed shared / length of consensus == (1 + 1 + 1 + .5 + .5 + .5) / 6 == 0.75
+        
+        Hence, returning a value of 0.75 indicating that 75 percent of the sequence positions
+        are shared in common or, informally, are "conserved". Note that we ignore gaps in
+        the consensus sequence to avoid bias from alignments where a single sequence is introducing
+        large gaps, artificially inflating the proportion.
+        '''
+        # Validate that we can run this method successfully
         if self.consensus == None:
             raise Exception("Can't calculate variable sites since consensus generation has not occurred")
-        raise NotImplementedError()
-    
+        
+        # Perform calculation
+        shared = []
+        for i in range(len(self.consensus)):
+            thisPosition = self.consensus[i].lower()
+            if thisPosition == "-":
+                continue
+            
+            positionProportion = []
+            for x in range(len(self.seqs)):
+                positionProportion.append(1 if self.seqs[x].gap_seq[i].lower() == thisPosition else 0)
+            shared.append(sum(positionProportion) / len(positionProportion))
+        
+        return sum(shared) / len(shared)
+        
     def __getitem__(self, key):
         return self.seqs[key]
     
