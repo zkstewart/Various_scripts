@@ -16,6 +16,25 @@ class FastASeq:
         gap_seq -- A string of the nucleotide of protein sequence inclusive of gaps
                    introduced via sequence alignment
     '''
+    TRANSLATION_TABLE = {
+        'ATA':'I', 'ATC':'I', 'ATT':'I', 'ATG':'M',
+        'ACA':'T', 'ACC':'T', 'ACG':'T', 'ACT':'T', 'ACN': 'T',
+        'AAC':'N', 'AAT':'N', 'AAA':'K', 'AAG':'K',
+        'AGC':'S', 'AGT':'S', 'AGA':'R', 'AGG':'R',                
+        'CTA':'L', 'CTC':'L', 'CTG':'L', 'CTT':'L', 'CTN': 'L',
+        'CCA':'P', 'CCC':'P', 'CCG':'P', 'CCT':'P', 'CCN': 'P',
+        'CAC':'H', 'CAT':'H', 'CAA':'Q', 'CAG':'Q',
+        'CGA':'R', 'CGC':'R', 'CGG':'R', 'CGT':'R', 'CGN': 'R',
+        'GTA':'V', 'GTC':'V', 'GTG':'V', 'GTT':'V', 'GTN': 'V',
+        'GCA':'A', 'GCC':'A', 'GCG':'A', 'GCT':'A', 'GCN': 'A',
+        'GAC':'D', 'GAT':'D', 'GAA':'E', 'GAG':'E',
+        'GGA':'G', 'GGC':'G', 'GGG':'G', 'GGT':'G', 'GGN': 'G',
+        'TCA':'S', 'TCC':'S', 'TCG':'S', 'TCT':'S', 'TCN': 'S',
+        'TTC':'F', 'TTT':'F', 'TTA':'L', 'TTG':'L',
+        'TAC':'Y', 'TAT':'Y', 'TAA':'*', 'TAG':'*',
+        'TGC':'C', 'TGT':'C', 'TGA':'*', 'TGG':'W',
+    }
+    
     def __init__(self, id, seq=None, alt=None, gapSeq=None):
         # Validate input types
         assert type(id).__name__ == "str"
@@ -99,6 +118,106 @@ class FastASeq:
         self.seq += seq.replace("-", "").replace("\r", "").replace("\n", "").replace(" ", "") # always exists
         if self.gap_seq != None:
             self.gap_seq += seq.replace("\r", "").replace("\n", "").replace(" ", "")
+    
+    def get_translation(self, findBestFrame=False, strand=1, frame=0):
+        '''
+        This method will translate a nucleotide sequence into its peptide sequence
+        with a standard translation table. Since this class is not yet aware of whether
+        it is a nucleotide or protein already, the onus is on you as a user to not be
+        dumb. An error will be raised if you try to translate a protein into a protein.
+        
+        Params:
+            findBestFrame -- a Boolean indicating whether you want this program to find
+                             the longest translation for the sequence. This is relevant
+                             when you don't know what frame the sequence is in. On short
+                             sequences without any stop codons this might not work well.
+                             If set, strand and frame arguments will be ignored.
+            strand -- an integer indicating the strand the translation should occur on;
+                      a positive 1 indicates forward (+ve) strand, and negative 1 is reverse
+                      (-ve) strand. Only set this if you know you need a specific strand.
+            frame -- an integer indicating the frame the translation has occurred in;
+                     value ranges from 0 (first position in the sequence) to 2 (at the third
+                     position in the sequence). Only set this if you know you need a specific
+                     frame.
+        Returns:
+            protein -- a string of amino acid residues translated from this instance's .seq.
+            strand -- an integer indicating the strand the translation has occurred on;
+                      a positive 1 indicates forward (+ve) strand, and negative 1 is reverse
+                      (-ve) strand.
+            frame -- an integer indicating the frame the translation has occurred in;
+                     value ranges from 0 (first position in the sequence) to 2 (at the third
+                     position in the sequence).
+        '''
+        # Validate input type & values
+        assert type(findBestFrame).__name__ == "bool"
+        assert type(strand).__name__ == "int"
+        assert strand in [1, -1]
+        assert type(frame).__name__ == "int"
+        assert frame in range(0, 3)
+        
+        # Handle normal cases (findBestFrame is False)
+        if not findBestFrame:
+            if strand == 1 and frame == 0:
+                return self._dna_to_protein(self.seq), strand, frame
+            else:
+                nuc = self.seq if strand == 1 else self.get_reverse_complement()
+                length = 3 * ((len(nuc)-frame) // 3)
+                frameNuc = nuc[frame:frame+length]
+                frameProt = self._dna_to_protein(frameNuc)
+                return frameProt, strand, frame
+        # Handle other cases
+        else:
+            longest = [0, "", strand, frame] # [length, sequence, strand, frame]
+            for strand in [1, -1]:
+                nuc = self.seq if strand == 1 else self.get_reverse_complement()
+                for frame in range(3):
+                    length = 3 * ((len(nuc)-frame) // 3)
+                    frameNuc = nuc[frame:frame+length]
+                    frameProt = self._dna_to_protein(frameNuc)
+                    orfs = frameProt.split("*")
+                    for orf in orfs:
+                        l = len(orf)
+                        if l > longest[0]:
+                            longest = [l, orf, strand, frame]
+            _, protein, strand, frame = longest
+            return protein, strand, frame
+    
+    def _dna_to_protein(self, dnaString):
+        '''
+        Hidden method for FastASeq to convert a string DNA sequence into
+        its protein sequence. Peforms a simple codon substitution based on
+        the static TRANSLATION_TABLE associated with this Class.
+        
+        Params:
+            dnaString -- a string of nucleotides. Try to make sure this only
+                         includes recognised nucleotides (no ambiguous characters)
+                         or you'll end up with a bunch of 'X's in your translation.
+        Returns:
+            protein -- a string of amino acid residues translated from dnaString.
+        '''
+        protein = ""
+        for i in range(0, len(dnaString), 3):
+            codon = dnaString[i:i+3]
+            if len(codon) < 3:
+                continue
+            protein += self.TRANSLATION_TABLE[codon.upper()] if codon.upper() in self.TRANSLATION_TABLE else "X"
+        return protein
+    
+    def get_reverse_complement(self):
+        '''
+        Converts this nucleotide sequence into its reverse complement. Since the Class
+        is unaware of whether it is a nucleotide or protein sequence, the onus is on you
+        to not be dumb. You'll get a jumbled up protein if you run this method on a protein.
+        
+        Returns:
+            nucleotide -- a string of this .seq after being reverse complemented.
+        '''
+        reverseComplement = self.seq[::-1].lower()
+        reverseComplement = reverseComplement.replace('a', 'T')
+        reverseComplement = reverseComplement.replace('t', 'A')
+        reverseComplement = reverseComplement.replace('c', 'G')
+        reverseComplement = reverseComplement.replace('g', 'C')
+        return reverseComplement.upper()
     
     def __str__(self):
         seq = self.seq if self.seq != None else self.gap_seq
