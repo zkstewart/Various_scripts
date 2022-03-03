@@ -389,6 +389,61 @@ class FASTA:
             shared.append(sum(positionProportion) / len(positionProportion))
         
         return sum(shared) / len(shared)
+    
+    def write(self, outputFileName, withAlt=False, asAligned=False, withConsensus=False):
+        '''
+        Writes the FASTA object out to a file in appropriate FASTA formatting. Various
+        method params allow the customisation of how the file is produced.
+        
+        Params:
+            outputFileName -- a string indicating the file location to write to. This file
+                              must not exist or an error will be raised.
+            withAlt -- a Boolean indicating whether sequences should be labelled with their
+                       ID value or with the alternative IDs provided. An error will be raised
+                       if no alternative IDs exist.
+            asAligned -- a Boolean indicating whether the raw sequences or aligned sequences
+                         including gap characters should be output. An error will be raised
+                         if .isAligned == False or if any sequences lack a .gap_seq value.
+            withConsensus -- a Boolean indicating whether the output file should be inclusive
+                             of an additional sequence at the top with ">consensus" ID and the
+                             generated consensus sequence as its value.
+        '''
+        # Validate alternative ID validity and possibility
+        assert type(withAlt).__name__ == "bool"
+        if withAlt:
+            for FastASeq_obj in self.seqs:
+                if FastASeq_obj.alt == None:
+                    raise Exception("""Sequence with ID {0} lacks an alt ID; 
+                                    can't write withAlt""".format(FastASeq_obj.id))
+        
+        # Validate aligned validity and possibility
+        assert type(asAligned).__name__ == "bool"
+        if asAligned:
+            if not self.isAligned:
+                raise Exception("FASTA object isn't flagged as being aligned; cant write asAligned")
+            for FastASeq_obj in self.seqs:
+                if FastASeq_obj.gap_seq == None:
+                    raise Exception("""Sequence with ID {0} lacks a gap seq value; 
+                                    can't write asAligned""".format(FastASeq_obj.id))
+        
+        # Validate consensus validity and possibility
+        assert type(withConsensus).__name__ == "bool"
+        if withConsensus:
+            if self.consensus == None:
+                raise Exception("FASTA object doesn't have a consensus sequence; cant write withConsensus")
+        
+        # Validate output value types and file non-existence
+        assert type(outputFileName).__name__ == "str"
+        if os.path.isfile(outputFileName):
+            raise Exception("{0} already exists; can't write output file".format(outputFileName))
+
+        # Actually write the output file
+        with open(outputFileName, "w") as fileOut:
+            if withConsensus:
+                fileOut.write(">consensus\n{0}\n".format(self.consensus))
+            for FastASeq_obj in self.seqs:
+                s = FastASeq_obj.get_str(withAlt=withAlt, withGap=asAligned)
+                fileOut.write("{0}\n".format(s))
         
     def __getitem__(self, key):
         return self.seqs[key]
