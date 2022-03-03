@@ -575,6 +575,9 @@ class FASTA:
             len(self.seqs), addCount, concatCount, "s" if addCount > 1 else "",
             "s" if concatCount > 1 else ""
         )
+    
+    def __len__(self):
+        return len(self.seqs)
 
 if __name__ == "__main__":
     pass

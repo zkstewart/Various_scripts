@@ -11,6 +11,7 @@
 ## 4) detect outliers in a MSA by phylogeny mismatch [-]
 
 import os, platform
+from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
 class MAFFT:
@@ -123,8 +124,66 @@ class MAFFT:
                 thisSeq.append(line)
         FASTA_obj[ongoingCount].gap_seq = "".join(thisSeq) # handle last sequence in the iteration
         
+        # Set flag that this FASTA object has been aligned
+        FASTA_obj.isAligned = True
+        
         # Clean up temporary file
         os.unlink(tmpFileName)
+    
+    def run_nucleotide_as_protein(self, FASTA_obj, findBestFrame=False, strand=1, frame=0):
+        '''
+        Refer to method header of run() for the fundamentals of this method.
+        Refer to FastASeq method header of get_translation() for descriptions
+        of the other parameters.
+        
+        What this method does differently to run() is that it will:
+
+            1) Translate nucleotides into their corresponding protein sequence
+            2) Align the protein sequences
+            3) Map the gaps in the protein alignment back to the nucleotide sequence
+        
+        In effect, it allows nucleotide sequences to be aligned as codons rather than
+        as individual base pairs, which might be more biologically relevant when dealing
+        with closely related sequences.
+        '''
+        # Validate input value type
+        assert type(FASTA_obj).__name__ == "FASTA"
+        assert type(findBestFrame).__name__ == "bool"
+        assert type(strand).__name__ == "int"
+        assert strand in [1, -1]
+        assert type(frame).__name__ == "int"
+        assert frame in range(0, 3)
+        
+        # Create a dummy FASTA object with our translations
+        dummy = deepcopy(FASTA_obj)
+        for i in range(len(dummy)):
+            protein, strand, frame = dummy.seqs[i].get_translation(findBestFrame, strand, frame)
+            dummy.seqs[i].seq = protein
+        
+        # Align it
+        self.run(dummy)
+        
+        # Map back aligned proteins to their original nucleotide counterparts
+        for i in range(len(dummy)):
+            nuc = FASTA_obj[i].seq if strand == 1 else FASTA_obj[i].get_reverse_complement()
+            alignedProt = dummy[i].gap_seq
+            
+            # Perform mapping procedure
+            alignedNuc = nuc[0: frame] # put any extra bits before frame start in now
+            codonIndex = frame
+            for proteinIndex in range(0, len(alignedProt)):
+                if alignedProt[proteinIndex] != "-":
+                    alignedNuc += nuc[codonIndex: codonIndex+3] # codon length == 3
+                    codonIndex += 3 # iterate our nucleotide position marker
+                else:
+                    alignedNuc += "---"
+            alignedNuc += nuc[codonIndex:] # add any potential stop codons back
+            
+            # Update original FASTA values
+            FASTA_obj[i].gap_seq = alignedNuc
+        
+        # Set flag that this FASTA object has been aligned
+        FASTA_obj.isAligned = True
     
     def _tmp_file_name_gen(self, prefix, suffix):
         '''
