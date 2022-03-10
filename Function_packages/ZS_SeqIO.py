@@ -37,24 +37,28 @@ class FastASeq:
     
     def __init__(self, id, seq=None, alt=None, gapSeq=None):
         # Validate input types
-        assert type(id).__name__ == "str"
+        assert isinstance(id, str)
         if seq != None:
-            assert type(seq).__name__ == "str"
+            assert isinstance(seq, str)
         if alt != None:
-            assert type(alt).__name__ == "str"
+            assert isinstance(alt, str)
         if gapSeq != None:
-            assert type(gapSeq).__name__ == "str"
+            assert isinstance(gapSeq, str)
         assert seq != None or gapSeq != None
         
         # Set alt and/or ID
-        '''
-        We're not going to support long FASTA descriptions. It's rarely
-        used by other programs anyway, and it makes a whole hassle.
-        '''
         self.id = id.split(" ")[0].replace(">", "").strip(" \t\r\n")
         self.alt = alt
         if alt != None:
             self.alt = alt.replace(">", "").strip(" \t\r\n")
+        
+        # Set description line
+        '''
+        We're not supporting the use of descriptions directly in this Class, but we'll
+        store the values so that users can directly interact with the attributes and
+        expand upon behaviours not otherwise supported directly.
+        '''
+        self.description = id.replace(">", "").strip(" \t\r\n")
         
         # Set seq and/or gap_seq
         if seq != None:
@@ -112,7 +116,7 @@ class FastASeq:
         Otherwise, we just modify the .seq attribute.
         '''
         # Validate input type
-        assert type(seq).__name__ == "str"
+        assert isinstance(seq, str)
         
         # Extend gap_seq and/or seq
         self.seq += seq.replace("-", "").replace("\r", "").replace("\n", "").replace(" ", "") # always exists
@@ -149,10 +153,10 @@ class FastASeq:
                      position in the sequence).
         '''
         # Validate input type & values
-        assert type(findBestFrame).__name__ == "bool"
-        assert type(strand).__name__ == "int"
+        assert isinstance(findBestFrame, bool)
+        assert isinstance(strand, int)
         assert strand in [1, -1]
-        assert type(frame).__name__ == "int"
+        assert isinstance(frame, int)
         assert frame in range(0, 3)
         
         # Handle normal cases (findBestFrame is False)
@@ -251,8 +255,8 @@ class FASTA:
         isAligned -- A Boolean indicating whether the FASTA file has been aligned
     '''
     def __init__(self, fastaFile, isAligned=False):
-        assert type(fastaFile).__name__ == "str"
-        assert type(isAligned).__name__ == "bool"
+        assert isinstance(fastaFile, str)
+        assert isinstance(isAligned, bool)
         
         self.seqs = []
         self.fileOrder = []
@@ -271,8 +275,8 @@ class FASTA:
             isAligned -- a Boolean indicating whether the file contents have been aligned
         '''
         # Validate value type and file existence
-        assert type(fastaFile).__name__ == "str"
-        assert type(isAligned).__name__ == "bool"
+        assert isinstance(fastaFile, str)
+        assert isinstance(isAligned, bool)
         if not os.path.isfile(fastaFile):
             raise Exception("{0} does not exist; can't load".format(fastaFile))
     
@@ -302,7 +306,7 @@ class FASTA:
                          find this file; will be interpreted by os.path
         '''
         # Validate value type and file existence
-        assert type(fastaFile).__name__ == "str"
+        assert isinstance(fastaFile, str)
         if not os.path.isfile(fastaFile):
             raise Exception("{0} does not exist; can't load".format(fastaFile))
 
@@ -329,6 +333,22 @@ class FASTA:
         
         self.fileOrder.append([fastaFile, "concat"])
     
+    def insert(self, index, FastASeq_obj):
+        '''
+        This method will insert a FastASeq object into this FASTA instance. Behaviourally
+        this is the same as a list .insert() since our underlying datastructure of the
+        .seq attribute is a list.
+        
+        Params:
+            index -- any positive or negative integer.
+            FastASeq_obj -- a ZS_SeqIO FastASeq object.
+        '''
+        # Validate value type and file existence
+        assert isinstance(FastASeq_obj, FastASeq)
+        assert isinstance(index, int)
+        
+        self.seqs.insert(index, FastASeq_obj)
+    
     def set_alt_ids_via_list(self, altList):
         '''
         The number of values in the list must match that of the FASTA or an
@@ -337,7 +357,7 @@ class FASTA:
         in self.seqs.
         '''
         # Validate value type & compatibility
-        assert type(altList).__name__ == "list"
+        assert isinstance(altList, list)
         if len(altList) != len(self.seqs):
             raise Exception(f"""
                 Alt ID setting not possible as sequence count differs\n
@@ -354,7 +374,7 @@ class FASTA:
         a key within altDict or an error will be raised.
         '''
         # Validate value type & compatibility
-        assert type(altDict).__name__ == "dict"
+        assert isinstance(altDict, dict)
         numFound = sum([1 for FastASeq_obj in self.seqs if FastASeq_obj.id in altDict])            
         if numFound != len(self.seqs):
             raise Exception(f"""
@@ -376,7 +396,7 @@ class FASTA:
         contain more entries than present in the FASTA.
         '''
         # Validate value type and file existence
-        assert type(altFile).__name__ == "str"
+        assert isinstance(altFile, str)
         if not os.path.isfile(altFile):
             raise Exception("{0} does not exist; can't update alt IDs".format(altFile))
         
@@ -528,7 +548,7 @@ class FASTA:
                              generated consensus sequence as its value.
         '''
         # Validate alternative ID validity and possibility
-        assert type(withAlt).__name__ == "bool"
+        assert isinstance(withAlt, bool)
         if withAlt:
             for FastASeq_obj in self.seqs:
                 if FastASeq_obj.alt == None:
@@ -536,7 +556,7 @@ class FASTA:
                                     can't write withAlt""".format(FastASeq_obj.id))
         
         # Validate aligned validity and possibility
-        assert type(asAligned).__name__ == "bool"
+        assert isinstance(asAligned, bool)
         if asAligned:
             if not self.isAligned:
                 raise Exception("FASTA object isn't flagged as being aligned; cant write asAligned")
@@ -546,13 +566,13 @@ class FASTA:
                                     can't write asAligned""".format(FastASeq_obj.id))
         
         # Validate consensus validity and possibility
-        assert type(withConsensus).__name__ == "bool"
+        assert isinstance(withConsensus, bool)
         if withConsensus:
             if self.consensus == None:
                 raise Exception("FASTA object doesn't have a consensus sequence; cant write withConsensus")
         
         # Validate output value types and file non-existence
-        assert type(outputFileName).__name__ == "str"
+        assert isinstance(outputFileName, str)
         if os.path.isfile(outputFileName):
             raise Exception("{0} already exists; can't write output file".format(outputFileName))
 
