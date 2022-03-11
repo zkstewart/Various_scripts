@@ -68,9 +68,7 @@ if __name__ == "__main__":
     
     # Locate all files
     files = [os.path.join(args.alignmentsDir, file) for file in os.listdir(args.alignmentsDir)]
-    ## Testing only
-    files = files[0:50]
-    
+
     # Create HMMs from aligned files
     hmmsDir = os.path.join(args.outputDir, "hmms")
     hmmsList = []
