@@ -329,6 +329,8 @@ class HMMER:
         # Validate possibility of running this function
         if self.FASTA == None:
             raise Exception("Can't run hmmsearch; HMMER instance not configured with a FASTA target.")
+        if self.outputFileName == None:
+            raise Exception("Can't run hmmsearch; HMMER instance not configured with an output file name.")
         
         # Create a temporary file if .FASTA is an object
         fileName = self.FASTA # If not self.FASTA_is_obj, then this remains our default value
