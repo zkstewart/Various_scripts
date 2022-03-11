@@ -5,7 +5,7 @@
 # of Matthew Phillips and Andrew Baker (et. al.'s) group.
 
 import sys, argparse, os, math
-sys.path.append('../')
+sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_AlignIO
 
 def validate_args(args):
@@ -172,9 +172,12 @@ if __name__ == "__main__":
     for FASTA_obj in fastaObjs:
         add_missing_seqs(FASTA_obj, sequenceIDs)
     
-    # Sort FASTA objects to have consistent ordering
+    # Sort FASTA objects to have consistent internal ordering
     for FASTA_obj in fastaObjs:
         FASTA_obj.seqs.sort(key = lambda x: sequenceIDs.index(x.alt))
+    
+    # Sort FASTA object list by conservation proportion & GC content
+    ## TBD
     
     # Figure out how to concatenate FASTA files in chunks of ~50 (or whatever args.chunkSize is)
     chunkPoints = get_chunking_points(len(fastaObjs), args.chunkSize)

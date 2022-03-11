@@ -5,7 +5,7 @@
 # sequencing alignments
 
 import sys, argparse, os
-sys.path.append('../')
+sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_HmmIO
 
 def validate_args(args):
@@ -73,24 +73,25 @@ if __name__ == "__main__":
     
     # Create HMMs from aligned files
     hmmsDir = os.path.join(args.outputDir, "hmms")
-    hmms = []
+    hmmsList = []
     os.makedirs(hmmsDir, exist_ok=True)
     for f in files:
-        # Derive HMM name and skip if already constructed
         hmmName = os.path.join(hmmsDir, os.path.basename(f).rsplit(".", maxsplit=1)[0] + ".hmm")
-        if os.path.isfile(hmmName):
-            continue
-        
-        # Create HMM if it doesn't exist
         hmm = ZS_HmmIO.HMM(args.hmmerDir)
-        hmm.load_FASTA_from_file(f)
-        hmm.create_HMM(hmmName, hmmBuildExtraArgs="--dna")
-        hmms.append(hmms)
+        
+        # If HMM exists, load it in
+        if os.path.isfile(hmmName):
+            hmm.load_HMM_file(hmmName)
+        # Create HMM if it doesn't exist
+        else:
+            hmm.load_FASTA_from_file(f)
+            hmm.create_HMM(hmmName, hmmBuildExtraArgs="--dna")
+        hmmsList.append(hmm)
     
     # Use our HMMs to query the genome for possible exon hits
     domtbloutsDir = os.path.join(args.outputDir, "domtblouts")
     os.makedirs(domtbloutsDir, exist_ok=True)
-    for hmm in hmms:
+    for hmm in hmmsList:
         # Derive domtblout name
         domtbloutName = os.path.join(
             domtbloutsDir,
@@ -112,3 +113,4 @@ if __name__ == "__main__":
         # Perform liftover operation
         ## TBD, need to define a function above and use it with hmmer.domDict
         ## predict_exon_from_domDict(...)
+    print("Program completed successfully!")
