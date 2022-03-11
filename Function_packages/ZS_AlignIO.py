@@ -14,6 +14,8 @@ import os, platform
 from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
+from ZS_SeqIO import FASTA
+
 class MAFFT:
     '''
     The MAFFT Class is intended to be used alongside the ZS_SeqIO.FASTA Class to
@@ -26,7 +28,7 @@ class MAFFT:
     '''
     def __init__(self, mafftDir):
         # Validate input type and location
-        assert type(mafftDir).__name__ == "str"
+        assert isinstance(mafftDir, str)
         assert os.path.isdir(mafftDir)
         if platform.system() == "Windows":
             if not os.path.isfile(os.path.join(mafftDir, "mafft.bat")):
@@ -70,7 +72,7 @@ class MAFFT:
         This method allows the use of multithreading by MAFFT. num should be a valid
         integer greater than 0. Be sensible since there's no upper limit checking.
         '''
-        assert type(num).__name__ == "int"
+        assert isinstance(num, int)
         if num < 0:
             raise Exception("Number of threads must be more than 0")
         
@@ -92,7 +94,7 @@ class MAFFT:
             FASTA_obj -- an object of ZS_SeqIO.FASTA class.
         '''
         # Validate input value type
-        assert type(FASTA_obj).__name__ == "FASTA"
+        assert isinstance(FASTA_obj, FASTA)
         
         # Create temporary file
         tmpFileName = self._tmp_file_name_gen("mafft_tmp", "fasta")
@@ -147,11 +149,11 @@ class MAFFT:
         with closely related sequences.
         '''
         # Validate input value type
-        assert type(FASTA_obj).__name__ == "FASTA"
-        assert type(findBestFrame).__name__ == "bool"
-        assert type(strand).__name__ == "int"
+        assert isinstance(FASTA_obj, FASTA)
+        assert isinstance(findBestFrame, bool)
+        assert isinstance(strand, int)
         assert strand in [1, -1]
-        assert type(frame).__name__ == "int"
+        assert isinstance(frame, int)
         assert frame in range(0, 3)
         
         # Create a dummy FASTA object with our translations
