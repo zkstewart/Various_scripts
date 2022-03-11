@@ -72,7 +72,7 @@ class HMM:
         self.FASTA_is_obj = True
         self.useAlts = useAlts
     
-    def create_HMM(self, hmmName):
+    def create_HMM(self, hmmName, hmmBuildExtraArgs=""):
         '''
         Once the .FASTA attribute is set via loading a FASTA, this method will handle the
         creation of a HMM file using hmmbuild and hmmpress.
@@ -80,8 +80,12 @@ class HMM:
         Params:
             hmmName -- a string providing the file name for our created HMM. This can include
                        the path to where you want the file to be written
+            hmmBuildExtraArgs -- a string that optionally allows you to add extra arguments 
+                                 to the command e.g., "--dna" may be needed for hmmbuild to 
+                                 work successfully.
         '''
         # Validate input type and location
+        assert isinstance(hmmBuildExtraArgs, str)
         assert isinstance(hmmName, str)
         if os.path.isfile(hmmName):
             raise Exception(inspect.cleandoc("""
@@ -104,7 +108,7 @@ class HMM:
             self.FASTA.write(fileName, withAlt = self.useAlts, asAligned = True) # Always write asAligned since it should be an MSA
         
         # Run hmmbuild & hmmpress
-        self.hmmbuild(fileName, hmmName)
+        self.hmmbuild(fileName, hmmName, extraArgs=hmmBuildExtraArgs)
         self.hmmpress(hmmName)
         self.hmmFile = hmmName # Sets our instance attribute so we know the HMM file exists
         
@@ -134,7 +138,7 @@ class HMM:
         # Store prepared file
         self.hmmFile = hmmName # Sets our instance attribute so we know the HMM file exists
     
-    def hmmbuild(self, fastaFile, outputFileName):
+    def hmmbuild(self, fastaFile, outputFileName, extraArgs=""):
         '''
         This method isn't intended to be called directly by users, but is written static-like in case
         you want access to this method without going through the fuss of working with this Class "properly".
@@ -143,8 +147,11 @@ class HMM:
         Params:
             fastaFile -- a string indicating the location of a FASTA file to be hmmbuild-ed.
             outputFileName -- a string indicating the name and, optionally, the path of the HMM file to be created.
+            extraArgs -- a string that optionally allows you to add extra arguments to the command
+                         e.g., "--dna" may be needed for hmmbuild to work successfully.
         '''
         # Validate input type and location
+        assert isinstance(extraArgs, str)
         assert isinstance(fastaFile, str)
         if not os.path.isfile(fastaFile):
             raise Exception("{0} is not a file or does not exist".format(fastaFile))
@@ -156,7 +163,7 @@ class HMM:
                             .load_HMM_file() if you want to make use of an already existing 
                             HMM""".format(outputFileName)))
         
-        cmd = "{0} \"{1}\" \"{2}\"".format(os.path.join(self.hmmerDir, "hmmbuild"),  outputFileName, fastaFile)
+        cmd = "{0} {3} \"{1}\" \"{2}\"".format(os.path.join(self.hmmerDir, "hmmbuild"),  outputFileName, fastaFile, extraArgs)
         run_hmmbuild = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
         _, hmmerr = run_hmmbuild.communicate()
         if hmmerr.decode("utf-8") != '':
