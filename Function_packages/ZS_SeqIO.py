@@ -3,7 +3,7 @@
 # Contains various Classes to perform manipulations involing
 # FASTA sequences and MSAs.
 
-import os
+import os, inspect
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
 
@@ -359,10 +359,10 @@ class FASTA:
         # Validate value type & compatibility
         assert isinstance(altList, list)
         if len(altList) != len(self.seqs):
-            raise Exception(f"""
-                Alt ID setting not possible as sequence count differs\n
+            raise Exception(inspect.cleandoc(f"""
+                Alt ID setting not possible as sequence count differs.
                 Num alt IDs={len(altList)}, Num FASTA seqs={len(self.seqs)}
-            """)
+            """))
         
         # Update FastASeq objects with IDs list
         for i in range(len(altList)):
@@ -377,10 +377,10 @@ class FASTA:
         assert isinstance(altDict, dict)
         numFound = sum([1 for FastASeq_obj in self.seqs if FastASeq_obj.id in altDict])            
         if numFound != len(self.seqs):
-            raise Exception(f"""
-                Alt ID setting not possible as not all sequences were discovered\n
+            raise Exception(inspect.cleandoc(f"""
+                Alt ID setting not possible as not all sequences were discovered
                 Num found IDs={numFound}, Num FASTA seqs={len(self.seqs)}
-            """)
+            """))
         
         # Update FastASeq objects with IDs list
         for i in range(len(self.seqs)):
@@ -552,8 +552,9 @@ class FASTA:
         if withAlt:
             for FastASeq_obj in self.seqs:
                 if FastASeq_obj.alt == None:
-                    raise Exception("""Sequence with ID {0} lacks an alt ID; 
-                                    can't write withAlt""".format(FastASeq_obj.id))
+                    raise Exception(inspect.cleandoc("""
+                                    Sequence with ID {0} lacks an alt ID; 
+                                    can't write withAlt""".format(FastASeq_obj.id)))
         
         # Validate aligned validity and possibility
         assert isinstance(asAligned, bool)
@@ -562,8 +563,9 @@ class FASTA:
                 raise Exception("FASTA object isn't flagged as being aligned; cant write asAligned")
             for FastASeq_obj in self.seqs:
                 if FastASeq_obj.gap_seq == None:
-                    raise Exception("""Sequence with ID {0} lacks a gap seq value; 
-                                    can't write asAligned""".format(FastASeq_obj.id))
+                    raise Exception(inspect.cleandoc("""
+                                    Sequence with ID {0} lacks a gap seq value; 
+                                    can't write asAligned""".format(FastASeq_obj.id)))
         
         # Validate consensus validity and possibility
         assert isinstance(withConsensus, bool)
