@@ -10,10 +10,11 @@
 ## 3) detect outliers in a MSA by sequence conservation [-]
 ## 4) detect outliers in a MSA by phylogeny mismatch [-]
 
-import os, platform
+import os, platform, sys
 from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
+sys.path.append(os.path.dirname(__file__))
 from ZS_SeqIO import FASTA
 
 class MAFFT:

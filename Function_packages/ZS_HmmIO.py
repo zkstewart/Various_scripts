@@ -3,7 +3,9 @@
 # Contains various Classes to perform manipulations involving
 # HMMs and FASTA files using HMMER
 
-import os, subprocess, inspect
+import os, subprocess, inspect, sys
+sys.path.append(os.path.dirname(__file__))
+
 from ZS_SeqIO import FASTA
 from domtblout_handling import hmmer_parse
 
