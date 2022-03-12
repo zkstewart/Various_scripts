@@ -407,7 +407,7 @@ def dom_dict_check(finalDict, hmmdbDict):
                                         z += 1
 
 ## Raw domtblout parsing
-def hmmer_parse(domtbloutFile, evalueCutoff):
+def hmmer_parse(domtbloutFile, evalueCutoff, extendedDetails=False):
         domDict = {}                            # We need to use a dictionary for later sorting since hmmsearch does not produce output that is ordered in the way we want to work with. hmmscan does, but it is SIGNIFICANTLY slower.
         with open(domtbloutFile, 'r') as fileIn:
                 for line in fileIn:
@@ -424,14 +424,23 @@ def hmmer_parse(domtbloutFile, evalueCutoff):
                         did = sl[3]
                         dstart = int(sl[17])
                         dend = int(sl[18])
+                        if extendedDetails:
+                            hmmFrom = int(sl[15])
+                            hmmTo = int(sl[16])
                         # Add into domain dictionary
-                        if pid not in domDict:
-                                domDict[pid] = [[did, dstart, dend, evalue]]
+                        if extendedDetails == False: # default behaviour
+                            if pid not in domDict:
+                                    domDict[pid] = [[did, dstart, dend, evalue]]
+                            else:
+                                    domDict[pid].append([did, dstart, dend, evalue])
                         else:
-                                domDict[pid].append([did, dstart, dend, evalue])
+                            if pid not in domDict:
+                                    domDict[pid] = [[did, dstart, dend, evalue, hmmFrom, hmmTo]]
+                            else:
+                                    domDict[pid].append([did, dstart, dend, evalue, hmmFrom, hmmTo])
         return domDict
 
-def nhmmer_parse(tbloutFile, evalueCutoff):
+def nhmmer_parse(tbloutFile, evalueCutoff, extendedDetails=False):
         domDict = {}                            # We need to use a dictionary for later sorting since hmmsearch does not produce output that is ordered in the way we want to work with. hmmscan does, but it is SIGNIFICANTLY slower.
         with open(tbloutFile, 'r') as fileIn:
                 for line in fileIn:
@@ -448,11 +457,21 @@ def nhmmer_parse(tbloutFile, evalueCutoff):
                         did = sl[2] # nhmmer is [2], not [3] like hmmsearch
                         dstart = int(sl[6]) # nhmmer is [6], not [17] like hmmsearch
                         dend = int(sl[7]) # nhmmer is [7], not [18] like hmmsearch
+                        if extendedDetails:
+                            hmmFrom = int(sl[4])
+                            hmmTo = int(sl[5])
+                            strand = sl[11]
                         # Add into domain dictionary
-                        if pid not in domDict:
-                                domDict[pid] = [[did, dstart, dend, evalue]]
+                        if extendedDetails == False: # default behaviour
+                            if pid not in domDict:
+                                    domDict[pid] = [[did, dstart, dend, evalue]]
+                            else:
+                                    domDict[pid].append([did, dstart, dend, evalue])
                         else:
-                                domDict[pid].append([did, dstart, dend, evalue])
+                            if pid not in domDict:
+                                    domDict[pid] = [[did, dstart, dend, evalue, hmmFrom, hmmTo, strand]]
+                            else:
+                                    domDict[pid].append([did, dstart, dend, evalue, hmmFrom, hmmTo, strand])
         return domDict
 
 ## Output functions
