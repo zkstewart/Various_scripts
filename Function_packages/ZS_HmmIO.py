@@ -7,7 +7,7 @@ import os, subprocess, inspect, sys
 sys.path.append(os.path.dirname(__file__))
 
 from ZS_SeqIO import FASTA
-from domtblout_handling import hmmer_parse
+from domtblout_handling import hmmer_parse, nhmmer_parse # Make these available to things loading HmmIO
 
 class HMM:
     '''
@@ -18,8 +18,12 @@ class HMM:
     If you build a HMM using this class from a FASTA file, it MUST already be aligned. This
     Class is dumb and assumes any FASTA file is aligned. If you provide it a ZS_SeqIO.FASTA
     instance, it will check to see if the .isAligned flag was set and raise errors if not.
+    
+    Pay attention to .isNucleotide! It defaults to False since most HMMs are proteins, but
+    occasionally you'll have a nucleotide HMM and this field is important when used alongside
+    the HMMER Class!
     '''
-    def __init__(self, hmmerDir):
+    def __init__(self, hmmerDir, isNucleotide=False):
         # Validate input type and location
         assert isinstance(hmmerDir, str)
         assert os.path.isdir(hmmerDir)
@@ -31,6 +35,7 @@ class HMM:
         
         # Set attributes
         self.hmmerDir = hmmerDir
+        self.isNucleotide = isNucleotide # Flag to specify whether the HMM is based on nucleotide or protein sequence
         self.FASTA = None # Stores a string or ZS_SeqIO.FASTA object
         self.FASTA_is_file = False # Flag so we know if .FASTA is a string file location
         self.FASTA_is_obj = False # Flag so we know if .FASTA is a ZS_SeqIO.FASTA object
@@ -218,6 +223,11 @@ class HMMER:
     This Class provides methods that make use of a ZS_HmmIO.HMM instance to run
     various HMMER modules.
     
+    An important but understated part of this Class is its reliance on the
+    HMM_obj's .isNucleotide attribute. This controls whether we run hmmsearch
+    or nhmmer, which has minor differences in how we parse the output. It's 
+    important you get this right, though.
+    
     Params:
         HMM_obj -- a ZS_HmmIO.HMM instance which has been fully setup to point
                    to a prepared HMM file.
@@ -339,16 +349,16 @@ class HMMER:
             self.FASTA.write(fileName, withAlt = self.useAlts, asAligned = False) # As a target file we don't need gaps
         
         # Run hmmsearch
-        self.hmmsearch(threads=self.threads, evalue=self.Evalue, outputFileName=self.outputFileName, hmmFile=self.HMM.hmmFile, fastaFile=fileName)
+        self.hmmsearch(threads=self.threads, evalue=self.Evalue, outputFileName=self.outputFileName, hmmFile=self.HMM.hmmFile, fastaFile=fileName, isNucleotide=self.HMM.isNucleotide)
         
         # Parse search results
-        self.domDict = hmmer_parse(self.outputFileName, self.Evalue)
+        self.domDict = nhmmer_parse(self.outputFileName, self.Evalue) if self.HMM.isNucleotide else hmmer_parse(self.outputFileName, self.Evalue)
         
         # Clean up temporary file if relevant
         if self.FASTA_is_obj:
             os.unlink(fileName)
     
-    def hmmsearch(self, threads=1, evalue=0.01, outputFileName="", hmmFile="", fastaFile=""):
+    def hmmsearch(self, threads=1, evalue=0.01, outputFileName="", hmmFile="", fastaFile="", isNucleotide=False):
         '''
         This method isn't intended to be called directly by users, but is written static-like in case
         you want access to this method without going through the fuss of working with this Class "properly".
@@ -356,6 +366,12 @@ class HMMER:
         
         Params:
             hmmFile -- a string indicating the location of a HMM file to be hmmpress-ed.
+            threads -- an integer controlling the number of HMMER threads to specify.
+            evalue -- a float indicating the significance threshold for results to be returned.
+            outputFileName -- a string value for a file to write to; should not already exist!
+            hmmFile -- a string value for a HMM file.
+            fastaFile -- a string value for a target FASTA file to search.
+            isNucleotide -- a boolean indicating whether the we're using a nucleotide model or not.
         '''
         # Validate input types and locations
         assert isinstance(threads, int)
@@ -380,8 +396,10 @@ class HMMER:
             raise Exception("{0} is not a file or does not exist".format(fastaFile))
         
         # Perform the hmmsearch operation
-        cmd = "{0} --cpu {1} -E {2} --domtblout {3} \"{4}\" \"{5}\"".format(
-            os.path.join(self.HMM.hmmerDir, "hmmsearch"), threads, evalue, outputFileName, hmmFile, fastaFile
+        program = "nhmmer" if isNucleotide else "hmmsearch"
+        outputArg = "tblout" if isNucleotide else "domtblout"
+        cmd = "{0} --cpu {1} -E {2} --{3} {4} \"{5}\" \"{6}\"".format(
+            os.path.join(self.HMM.hmmerDir, program), threads, evalue, outputArg, outputFileName, hmmFile, fastaFile
         )
         run_hmmsearch = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
         _, hmmerr = run_hmmsearch.communicate()
