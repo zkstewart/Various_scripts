@@ -4,7 +4,7 @@
 # from genome sequences on the basis of exome
 # sequencing alignments
 
-import sys, argparse, os, math, statistics
+import sys, argparse, os, math, statistics, parasail
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_HmmIO
 
@@ -116,12 +116,13 @@ def get_prediction_from_domdict(domDict):
             newEnd = possibleGaps[-1][3]
             newHmmStart = possibleGaps[0][5]
             newHmmEnd = possibleGaps[-1][6]
+            strand = entry1[7]
             
             evalues = [g[4] for g in possibleGaps]
             newExponent = int(sum([math.log10(e) for e in evalues]))
             newEvalue = eval("1e{0}".format(newExponent)) # This is wack but idk maths so...
             
-            newValue = [entry1[0], entry1[1], newStart, newEnd, newEvalue, newHmmStart, newHmmEnd] # Drops strand here, who cares
+            newValue = [entry1[0], entry1[1], newStart, newEnd, newEvalue, newHmmStart, newHmmEnd, strand]
         
         # Update our newFlatList for downstream usage
         newFlatList.append(newValue)
@@ -137,17 +138,26 @@ def get_prediction_from_domdict(domDict):
         bestEvalue = newFlatList[0][4]
         secondBestEvalue = newFlatList[1][4]
         
-        ## Heuristic 2: many results, but a much better E-value as a scaling value
+        ## Heuristic 2: best result has E=0, second best does not!
+        if bestEvalue == 0 and secondBestEvalue != 0:
+            return newFlatList[0]
+        
+        ## Heuristic 3: best and second best results are both E=0
+        "If they're both 0, then we just decide it's too hard to pick a 'best'"
+        if bestEvalue == 0 and secondBestEvalue == 0:
+            return None
+        
+        ## Heuristic 4: many results, but a much better E-value as a scaling value
         BETTER_FACTOR = 1.5 # 1.5 times better is always significant amount
         if abs(math.log10(bestEvalue)) >= abs(math.log10(secondBestEvalue)) * BETTER_FACTOR:
             return newFlatList[0]
         
-        ## Heuristic 3: many results, but a large E-value difference as a flat value
+        ## Heuristic 5: many results, but a large E-value difference as a flat value
         BETTER_FLAT_VALUE = 20 # an E-value difference of 1e-20 is always a significant amount
         if abs(math.log10(bestEvalue)) >= abs(math.log10(secondBestEvalue)) + BETTER_FLAT_VALUE:
             return newFlatList[0]
         
-        ## Heuristic 4: many results, but HMM alignment length is better as a scaling value
+        ## Heuristic 6: many results, but HMM alignment length is better as a scaling value
         LENGTH_BETTER_FACTOR = 1.5 # 1.5 times better is always significant amount
         length1 = newFlatList[0][6] - newFlatList[0][5]
         length2 = newFlatList[1][6] - newFlatList[1][5]
@@ -180,24 +190,21 @@ def get_hmm_length(hmmFile):
                 currentCount += 1
     return currentCount - 1 # Since we add one every iteration, we'll end up adding 1 too many by the end
 
-def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genomeFastaFile):
+def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_obj):
     '''
     This function will apply some general heuristics to see if the exon we've
-    predicted seems to match the HMM well. If it doesn't, we might need some
-    manual inspection to fix things up.
+    predicted seems to match the HMM well. If there's something minor wrong 
+    with it, we'll fix it up here. Otherwise, we'll discard it.
     
     Params:
         bestPrediction -- a list created by get_prediction_from_domdict()
         hmmer -- a ZS_HmmIO.HMMER object.
         fastaFile -- a string indicating the location of the FASTA file that
                      the HMM is based on.
-        genomeFastaFile -- a string indicating the location of the genome FASTA
-                           file that we're predicting exons from.
+        genome_FASTA_obj -- a ZS_SeqIO.FASTA object containing the genome sequences.
     Returns:
         isGood -- a boolean indicating whether the prediction is good or not.
-    '''
-    genome_FASTA_obj = None # We only want to go to the effort of loading this in if we need to rescue something
-    
+    '''    
     # Heuristic 1: Check if the exon mostly aligns end-to-end with the HMM
     '''
     From testing, this heuristic can't be applied because some of the alignments
@@ -214,7 +221,7 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genomeFastaFil
     
     # Heuristic 2: Check if the exon has a comparable E-value to sequences taken from the HMM itself
     ## Run HMMER again against the HMM's own sequences
-    FASTA_obj = ZS_SeqIO.FASTA(fastaFile)
+    FASTA_obj = ZS_SeqIO.FASTA(fastaFile, isAligned=True)
     tmpFastaName = hmmer._tmp_file_name_gen("tmpFasta", "fasta")
     FASTA_obj.write(tmpFastaName)
     
@@ -235,21 +242,19 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genomeFastaFil
     ## Calculate the minimum allowed floor
     STDEV_RANGE_FACTOR = 2 # we'll allow the exponent to increase or decrease by 2x the st.dev.'s exponent
     stdevExponent = math.log10(stdev)
-    medianExponent = math.log10(medianEvalue)
+    if medianEvalue != 0:
+        medianExponent = math.log10(medianEvalue)
+    else:
+        medianExponent = -250 # zero has no exponent, so we can just set a very good E-value as our base
     worstAllowedEvalue = eval("1e{0}".format(int(medianExponent - (stdevExponent * STDEV_RANGE_FACTOR))))
     
     # If we fail because our E-value is worse than the floor for heuristic passing...
     if bestPrediction[4] > worstAllowedEvalue:
         # ... try to rescue it first to see if it's a gap sequence messing with things
         
-        ## Prep - load in FASTA if not done already
-        if genome_FASTA_obj == None:
-            genome_FASTA_obj = ZS_SeqIO.FASTA(genomeFastaFile)
-        
         ## Rescue step 1: Find out how much sequence might be left out due to gap regions
         hmmLength = get_hmm_length(hmmer.HMM.hmmFile)
         predictionHmmStart, predictionHmmEnd = bestPrediction[5:7]
-        overlapLength = hmmLength - ((hmmLength - predictionHmmEnd) - (predictionHmmStart - 1))
         
         potentialNewStart = bestPrediction[2] - predictionHmmStart + 1
         startDifference = bestPrediction[2] - potentialNewStart
@@ -273,35 +278,62 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genomeFastaFil
             newSequence = FastASeq_obj.seq[potentialNewStart-1: bestPrediction[3]] # No +1 needed here
         
         ## Rescue step 3: Check if the new sequence section contains gap characters
+        LONG_GAP_LENGTH = 20 # shorter gaps shouldn't really register... I think
         if endDifference > startDifference:
             additionalSequence = FastASeq_obj.seq[bestPrediction[3]: potentialNewEnd]
         else:
-            additionalSequence = FastASeq_obj.seq[potentialNewStart: bestPrediction[2]] 
+            additionalSequence = FastASeq_obj.seq[potentialNewStart: bestPrediction[2]]
+        if "n" * LONG_GAP_LENGTH not in additionalSequence.lower():
+            '''
+            If there isn't a sufficiently long gap to explain the failure to capture this bit,
+            it's probably not a gaps fault and is because the exon is dodgy.
+            '''
+            return False
         
-        ## If that still doesn't help, fail it
-        return False
+        ## Rescue step 4: If the new sequence DOES contain gaps, align it to the exon and check for good alignment
+        ## 4.1: Create a consensus sequence for the exon
+        consensus = FASTA_obj.generate_consensus().replace("-", "")
+        ## 4.2: Get the additionalSequence bit we want to align (sans N's)
+        querySequence = max(additionalSequence.lower().split("n" * LONG_GAP_LENGTH)).lstrip("n").upper()
+        ## 4.3: Align it
+        queryAlign, targetAlign, startIndex, score = ssw_exons(consensus, querySequence)
+        ## 4.4: Check if the query aligns well, fail it if not
+        ALLOWED_NONALIGNING_RATIO = 0.1 # can only miss 10% of the extra sequence
+        querySequenceLen = len(querySequence)
+        if len(queryAlign) < querySequenceLen - (querySequenceLen*ALLOWED_NONALIGNING_RATIO):
+            return False
+        ## 4.5: Check if the aligned region is where we expect it to be, fail if not
+        if endDifference > startDifference: # i.e., if it's a tail extension
+            if startIndex < predictionHmmEnd: # i.e., if we're starting earlier than the point the original sequence ends
+                return False
+        else:
+            if startIndex > predictionHmmStart: # i.e., if we're starting later than the point the original sequence starts
+                return False
+        ## If we get to here, it looks like we've got something good, so let's update the sequence details
+        if endDifference > startDifference:
+            bestPrediction[3] = potentialNewEnd
+            bestPrediction[6] = startIndex + len(queryAlign)
+        else:
+            bestPrediction[2] = potentialNewStart
+            bestPrediction[5] = startIndex
     
     ## If all the above heuristics pass, we can conclude that this exon is "good"
     return True
 
-def ssw(genomePatchRec, transcriptRecord):
+def ssw_exons(targetString, queryString):
+    '''
+    Special implementation of striped Smith Waterman alignment for exon liftover
+    project.
+    '''
     # Perform SSW with parasail implementation
-    profile = parasail.profile_create_sat(str(genomePatchRec.seq), parasail.blosum62)
-    alignment = parasail.sw_trace_striped_profile_sat(profile, str(transcriptRecord.seq), 10, 1)
-    genomeAlign = alignment.traceback.query
-    transcriptAlign = alignment.traceback.ref
-    # Figure out where we're starting in the genome with this alignment
-    startIndex = str(genomePatchRec.seq).find(genomeAlign.replace('-', ''))
-    # Figure out if we need downstream processing to identify an indel
-    hyphen = 'n'
-    if '-' in genomeAlign:
-            hyphen = 'y'
-    elif '-' in transcriptAlign:
-            hyphen = 'y'
-    if platform.system() == 'Windows':
-            return [transcriptAlign, genomeAlign, hyphen, startIndex, alignment.score]
-    else:
-            return [transcriptAlign, genomeAlign, hyphen, startIndex, alignment.optimal_alignment_score]
+    profile = parasail.profile_create_sat(targetString, parasail.blosum62)
+    alignment = parasail.sw_trace_striped_profile_sat(profile, queryString, 10, 1)
+    targetAlign = alignment.traceback.query
+    queryAlign = alignment.traceback.ref
+    # Figure out where we're starting in the target with this alignment
+    startIndex = targetString.find(targetAlign.replace('-', ''))
+    
+    return [queryAlign, targetAlign, startIndex, alignment.score]
 
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
@@ -350,6 +382,9 @@ if __name__ == "__main__":
             hmm.create_HMM(hmmName, hmmBuildExtraArgs="--dna")
         hmmsList.append(hmm)
     
+    # Load the genome FASTA for later use
+    genome_FASTA_obj = ZS_SeqIO.FASTA(args.genomeFile)
+    
     # Use our HMMs to query the genome for possible exon hits
     tbloutsDir = os.path.join(args.outputDir, "tblouts")
     os.makedirs(tbloutsDir, exist_ok=True)
@@ -389,12 +424,31 @@ if __name__ == "__main__":
         
         # If we could find a single "best" exon, check if it's any good at all
         fastaFile = files[i]
-        isGood = check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, args.genomeFile)
-        
+        isGood = check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_obj)
         if not isGood:
-            stophere ## TESTING
-        
+            continue
+
         # If it's good, store it for later output
         exonPredictions.append(bestPrediction)
-        
+    
+    # Get exon predictions as FastASeq objects
+    exonFastASeqs = []
+    for prediction in exonPredictions:
+        chrom, id, start, end, _, _, _, strand = prediction
+        seq = genome_FASTA_obj[chrom].seq[start-1: end] # -1 for 0-based indexing
+        if strand == "-":
+            seq = ZS_SeqIO.FastASeq.get_reverse_complement(None, seq) # None fills the role of self
+        newFastASeq_obj = ZS_SeqIO.FastASeq(id, seq=seq)
+        exonFastASeqs.append(newFastASeq_obj)
+    
+    # Write results files to FASTAs for individual inspections
+    fastasDir = os.path.join(args.outputDir, "fastas")
+    os.makedirs(fastasDir, exist_ok=True)
+    for FastASeq_obj in exonFastASeqs:
+        outputFileName = "{0}.fasta".format(os.path.join(fastasDir, FastASeq_obj.id))
+        with open(outputFileName, "w") as fileOut:
+            fileOut.write(FastASeq_obj.get_str())
+
+    # Merge results into alignments
+    ## TBD
     print("Program completed successfully!")
