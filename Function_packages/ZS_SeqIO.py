@@ -207,16 +207,32 @@ class FastASeq:
             protein += self.TRANSLATION_TABLE[codon.upper()] if codon.upper() in self.TRANSLATION_TABLE else "X"
         return protein
     
-    def get_reverse_complement(self):
+    def get_reverse_complement(self, staticSeq=None):
         '''
-        Converts this nucleotide sequence into its reverse complement. Since the Class
+        Converts a nucleotide sequence into its reverse complement. Since the Class
         is unaware of whether it is a nucleotide or protein sequence, the onus is on you
         to not be dumb. You'll get a jumbled up protein if you run this method on a protein.
+        This does not work in-place, it only returns a string as output.
+        
+        Can be run statically if the optional parameter staticSeq is provided
+        
+        Params:
+            staticSeq -- optional only! If you specify this, this method acts like
+                         a static function rather than being instance-based. It should
+                         be a nucleotide as a string sequence.
         
         Returns:
-            nucleotide -- a string of this .seq after being reverse complemented.
+            nucleotide -- a string of this .seq (or the staticSeq) after being
+                          reverse complemented (e.g., by saying they're smarter
+                          than they look)
         '''
-        reverseComplement = self.seq[::-1].lower()
+        if staticSeq != None:
+            assert isinstance(staticSeq, str)
+            sequence = staticSeq
+        else:
+            sequence = self.seq
+
+        reverseComplement = sequence[::-1].lower()
         reverseComplement = reverseComplement.replace('a', 'T')
         reverseComplement = reverseComplement.replace('t', 'A')
         reverseComplement = reverseComplement.replace('c', 'G')
@@ -229,8 +245,8 @@ class FastASeq:
     
     def __repr__(self):
         return "FastASeq(id='{0}',seq='{1}',alt={4}{2}{4},gap_seq={5}{3}{5})".format(
-            self.id, self.seq, self.alt, self.gap_seq,
-            "'" if self.alt != None else "", "'" if self.gap_seq != None else "",
+            self.id, self.seq if len(self.seq) < 200 else "{0}...{1}".format(self.seq[0:100], self.seq[-100:]),
+            self.alt, self.gap_seq, "'" if self.alt != None else "", "'" if self.gap_seq != None else ""
         )
 
 class FASTA:
@@ -587,7 +603,12 @@ class FASTA:
                 fileOut.write("{0}\n".format(s))
         
     def __getitem__(self, key):
-        return self.seqs[key]
+        if isinstance(key, int):
+            return self.seqs[key]
+        else:
+            for value in self.seqs:
+                if value.id == key or value.alt == key or value.description == key:
+                    return value
     
     def __str__(self):
         addCount = len([f[0] for f in self.fileOrder if f[1] == "add"])
