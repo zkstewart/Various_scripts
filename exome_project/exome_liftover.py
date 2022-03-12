@@ -4,7 +4,7 @@
 # from genome sequences on the basis of exome
 # sequencing alignments
 
-import sys, argparse, os, math
+import sys, argparse, os, math, statistics
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_HmmIO
 
@@ -42,7 +42,7 @@ def validate_args(args):
         except:
             print("Wasn't able to create '{0}' directory; does '{1}' actually exist?".format(args.outputDir, os.path.dirname(args.outputDir)))
 
-def predict_exon_from_domDict(domDict):
+def get_prediction_from_domdict(domDict):
     '''
     This method is intended to perform half the work of the liftover operation.
     Its goal is to take a domDict with potentially many domain predictions, and return
@@ -57,8 +57,20 @@ def predict_exon_from_domDict(domDict):
         domDict -- a dictionary with chromosome:[predictions] structure as per hmmer_parse()
                    or nhmmer_parse().
     '''
+    # Flatten dictionary structure to a list
     flatList = [[key] + v for key, value in domDict.items() for v in value] # Put the chromosome ID at start of list
-    flatList.sort(key = lambda x: (x[4], x[2], x[3]))
+    
+    # Adjust negative stranded predictions
+    '''nhmmer seems to write coordinates in an adjusted fashion when strand is negative
+    so that where we'd normally expect it to be start=[2] and end=[3], which throws off
+    some of our operations.'''
+    for i in range(len(flatList)):
+        if flatList[i][7] == "-":
+            start, end = flatList[i][3], flatList[i][2]
+            flatList[i][2], flatList[i][3] = start, end
+    
+    # Sort list for priority of coordinate ordering prior to merging
+    flatList.sort(key = lambda x: (x[0], x[2], x[3]))
     
     # Merge segments separated by gaps if relevant
     GAP_LEN_CUTOFF=500 # This is derived through checking the median values of gap lengths
@@ -113,6 +125,8 @@ def predict_exon_from_domDict(domDict):
         
         # Update our newFlatList for downstream usage
         newFlatList.append(newValue)
+    
+    # Sort list for E-value priority prior to heuristic application
     newFlatList.sort(key = lambda x: (x[4], x[2], x[3]))
     
     # Perform prediction operation with simple heuristics
@@ -143,6 +157,151 @@ def predict_exon_from_domDict(domDict):
         ## If all above heuristics fail to check out, we can't know for sure which exon is "the" exon
         else:
             return None
+
+def get_hmm_length(hmmFile):
+    '''
+    This function is a bit rough, but it should work to find out how many
+    residues are coded in a HMM to get the "length" of the HMM. I don't know
+    how best to parse its coding scheme esp. when it pertains to amino acid
+    containing models, so I'm using some basic heuristics which seem to apply
+    for the files I'm looking at right now.
+    '''
+    currentCount = 1
+    with open(hmmFile, "r") as fileIn:
+        for line in fileIn:
+            sl = line.split()
+            if sl == []:
+                continue
+            elif sl[0] != str(currentCount):
+                continue
+            elif "." not in str(sl[1]):
+                continue
+            else:
+                currentCount += 1
+    return currentCount - 1 # Since we add one every iteration, we'll end up adding 1 too many by the end
+
+def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genomeFastaFile):
+    '''
+    This function will apply some general heuristics to see if the exon we've
+    predicted seems to match the HMM well. If it doesn't, we might need some
+    manual inspection to fix things up.
+    
+    Params:
+        bestPrediction -- a list created by get_prediction_from_domdict()
+        hmmer -- a ZS_HmmIO.HMMER object.
+        fastaFile -- a string indicating the location of the FASTA file that
+                     the HMM is based on.
+        genomeFastaFile -- a string indicating the location of the genome FASTA
+                           file that we're predicting exons from.
+    Returns:
+        isGood -- a boolean indicating whether the prediction is good or not.
+    '''
+    genome_FASTA_obj = None # We only want to go to the effort of loading this in if we need to rescue something
+    
+    # Heuristic 1: Check if the exon mostly aligns end-to-end with the HMM
+    '''
+    From testing, this heuristic can't be applied because some of the alignments
+    are horrible. I could do this if I applied my MSA trimming protocol first, but
+    it makes things more complicated for not enough benefit. The E-value based
+    heuristic below should deal with problematic MSAs like ENSSHAP00000000088-mx
+    '''
+    # ALLOWED_MISSING_RATIO = 0.15 # don't allow more than 15% of the sequence to not match the HMM
+    # hmmLength = get_hmm_length(hmmer.HMM.hmmFile)
+    # predictionHmmStart, predictionHmmEnd = bestPrediction[5:7]
+    # overlapLength = hmmLength - ((hmmLength - predictionHmmEnd) - (predictionHmmStart - 1))
+    # if overlapLength < hmmLength - (hmmLength * ALLOWED_MISSING_RATIO):
+    #     return False
+    
+    # Heuristic 2: Check if the exon has a comparable E-value to sequences taken from the HMM itself
+    ## Run HMMER again against the HMM's own sequences
+    FASTA_obj = ZS_SeqIO.FASTA(fastaFile)
+    tmpFastaName = hmmer._tmp_file_name_gen("tmpFasta", "fasta")
+    FASTA_obj.write(tmpFastaName)
+    
+    hmmer.load_FASTA_from_file(tmpFastaName)
+    tmpTbloutName = hmmer._tmp_file_name_gen("goodPred", "tblout")
+    hmmer.set_output_name(tmpTbloutName)
+    hmmer.run_search()
+    
+    os.unlink(tmpTbloutName) # Clean up temporary files now since we've saved .domDict
+    os.unlink(tmpFastaName)
+    
+    ## Get the statistical distribution of E-values
+    evalues = [value[3] for chrom in hmmer.domDict.keys() for value in hmmer.domDict[chrom]]
+    evalues.sort()
+    medianEvalue = statistics.median(evalues)
+    stdev = statistics.stdev(evalues)
+    
+    ## Calculate the minimum allowed floor
+    STDEV_RANGE_FACTOR = 2 # we'll allow the exponent to increase or decrease by 2x the st.dev.'s exponent
+    stdevExponent = math.log10(stdev)
+    medianExponent = math.log10(medianEvalue)
+    worstAllowedEvalue = eval("1e{0}".format(int(medianExponent - (stdevExponent * STDEV_RANGE_FACTOR))))
+    
+    # If we fail because our E-value is worse than the floor for heuristic passing...
+    if bestPrediction[4] > worstAllowedEvalue:
+        # ... try to rescue it first to see if it's a gap sequence messing with things
+        
+        ## Prep - load in FASTA if not done already
+        if genome_FASTA_obj == None:
+            genome_FASTA_obj = ZS_SeqIO.FASTA(genomeFastaFile)
+        
+        ## Rescue step 1: Find out how much sequence might be left out due to gap regions
+        hmmLength = get_hmm_length(hmmer.HMM.hmmFile)
+        predictionHmmStart, predictionHmmEnd = bestPrediction[5:7]
+        overlapLength = hmmLength - ((hmmLength - predictionHmmEnd) - (predictionHmmStart - 1))
+        
+        potentialNewStart = bestPrediction[2] - predictionHmmStart + 1
+        startDifference = bestPrediction[2] - potentialNewStart
+        
+        potentialNewEnd = bestPrediction[3] + (hmmLength - predictionHmmEnd)
+        endDifference = potentialNewEnd - bestPrediction[3]
+        
+        ## Rescue step 2: Find the new sequence section we want to work with
+        '''
+        We only extend the head OR the tail, not both. It gets too complicated to try to rescue
+        both ends, and it's unlikely we're going to run into these situations anyway.
+        '''
+        for FastASeq_obj in genome_FASTA_obj:
+            if FastASeq_obj.id == bestPrediction[0]:
+                break
+        assert FastASeq_obj.id == bestPrediction[0], "Get in and fix things pls Zac"
+        
+        if endDifference > startDifference:
+            newSequence = FastASeq_obj.seq[bestPrediction[2]-1: potentialNewEnd] # -1 to bring it into 0-based indexing
+        else:
+            newSequence = FastASeq_obj.seq[potentialNewStart-1: bestPrediction[3]] # No +1 needed here
+        
+        ## Rescue step 3: Check if the new sequence section contains gap characters
+        if endDifference > startDifference:
+            additionalSequence = FastASeq_obj.seq[bestPrediction[3]: potentialNewEnd]
+        else:
+            additionalSequence = FastASeq_obj.seq[potentialNewStart: bestPrediction[2]] 
+        
+        ## If that still doesn't help, fail it
+        return False
+    
+    ## If all the above heuristics pass, we can conclude that this exon is "good"
+    return True
+
+def ssw(genomePatchRec, transcriptRecord):
+    # Perform SSW with parasail implementation
+    profile = parasail.profile_create_sat(str(genomePatchRec.seq), parasail.blosum62)
+    alignment = parasail.sw_trace_striped_profile_sat(profile, str(transcriptRecord.seq), 10, 1)
+    genomeAlign = alignment.traceback.query
+    transcriptAlign = alignment.traceback.ref
+    # Figure out where we're starting in the genome with this alignment
+    startIndex = str(genomePatchRec.seq).find(genomeAlign.replace('-', ''))
+    # Figure out if we need downstream processing to identify an indel
+    hyphen = 'n'
+    if '-' in genomeAlign:
+            hyphen = 'y'
+    elif '-' in transcriptAlign:
+            hyphen = 'y'
+    if platform.system() == 'Windows':
+            return [transcriptAlign, genomeAlign, hyphen, startIndex, alignment.score]
+    else:
+            return [transcriptAlign, genomeAlign, hyphen, startIndex, alignment.optimal_alignment_score]
 
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
@@ -195,7 +354,8 @@ if __name__ == "__main__":
     tbloutsDir = os.path.join(args.outputDir, "tblouts")
     os.makedirs(tbloutsDir, exist_ok=True)
     exonPredictions = [] # This will store our successful hits
-    for hmm in hmmsList:
+    for i in range(len(hmmsList)):
+        hmm = hmmsList[i]
         # Derive domtblout name
         tbloutName = os.path.join(
             tbloutsDir,
@@ -213,6 +373,9 @@ if __name__ == "__main__":
             domDict = hmmer.domDict # This is what we want out of HMMER
         # If it does exist, simply load it in
         else:
+            hmmer = ZS_HmmIO.HMMER(hmm) # We're going to reuse this later
+            hmmer.set_Evalue(args.Evalue)
+            hmmer.set_threads(args.threads) 
             domDict = ZS_HmmIO.nhmmer_parse(tbloutName, args.Evalue, extendedDetails=True)
 
         # If domDict is empty, skip this exon since we've failed to find it
@@ -220,14 +383,18 @@ if __name__ == "__main__":
             continue
         
         # Locate the best exon prediction from the domDict
-        for tbloutName in tbloutFiles:
-            domDict = ZS_HmmIO.hmmer_parse(tbloutName, Evalue, extendedDetails=True) ## Testing
-            if domDict == {}:
-                continue
-            bestPrediction = predict_exon_from_domDict(domDict)
-            if bestPrediction == None:
-                continue
-            # If we could find a single "best" exon, check if it's any good at all
-            ## TBD...
+        bestPrediction = get_prediction_from_domdict(domDict)
+        if bestPrediction == None:
+            continue
+        
+        # If we could find a single "best" exon, check if it's any good at all
+        fastaFile = files[i]
+        isGood = check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, args.genomeFile)
+        
+        if not isGood:
+            stophere ## TESTING
+        
+        # If it's good, store it for later output
+        exonPredictions.append(bestPrediction)
         
     print("Program completed successfully!")
