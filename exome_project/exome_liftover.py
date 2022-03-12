@@ -27,6 +27,9 @@ def validate_args(args):
     if args.Evalue < 0:
         print('Evalue should be greater than 0')
         quit()
+    if args.threads < 1:
+        print('Threads should be greater than or equal to 1')
+        quit()
     # Handle file output
     if os.path.isdir(args.outputDir):
         print("""Output directory already exists; note that this program will NOT
@@ -62,6 +65,9 @@ if __name__ == "__main__":
     p.add_argument("-e", dest="Evalue", required=False, type=float,
                 help="Optionally, specify the E-value cut-off for HMMER results (default==1e-20)",
                 default=1e-20)
+    p.add_argument("-t", dest="threads", required=False, type=int,
+                help="Optionally, specify the number of threads to run HMMER with (default==1)",
+                default=1)
     
     args = p.parse_args()
     validate_args(args)
@@ -75,7 +81,7 @@ if __name__ == "__main__":
     os.makedirs(hmmsDir, exist_ok=True)
     for f in files:
         hmmName = os.path.join(hmmsDir, os.path.basename(f).rsplit(".", maxsplit=1)[0] + ".hmm")
-        hmm = ZS_HmmIO.HMM(args.hmmerDir)
+        hmm = ZS_HmmIO.HMM(args.hmmerDir, isNucleotide=True)
         
         # If HMM exists, load it in
         if os.path.isfile(hmmName):
@@ -87,26 +93,27 @@ if __name__ == "__main__":
         hmmsList.append(hmm)
     
     # Use our HMMs to query the genome for possible exon hits
-    domtbloutsDir = os.path.join(args.outputDir, "domtblouts")
-    os.makedirs(domtbloutsDir, exist_ok=True)
+    tbloutsDir = os.path.join(args.outputDir, "tblouts")
+    os.makedirs(tbloutsDir, exist_ok=True)
     for hmm in hmmsList:
         # Derive domtblout name
-        domtbloutName = os.path.join(
-            domtbloutsDir,
-            "{0}.domtblout".format(os.path.basename(hmm.hmmFile).rsplit(".", maxsplit=1)[0])
+        tbloutName = os.path.join(
+            tbloutsDir,
+            "{0}.tblout".format(os.path.basename(hmm.hmmFile).rsplit(".", maxsplit=1)[0])
         )
         
         # If domtblout doesn't exist, run HMMER
-        if not os.path.isfile(domtbloutName):
+        if not os.path.isfile(tbloutName):
             hmmer = ZS_HmmIO.HMMER(hmm)
             hmmer.load_FASTA_from_file(args.genomeFile)
-            hmmer.set_output_name(domtbloutName)
+            hmmer.set_output_name(tbloutName)
             hmmer.set_Evalue(args.Evalue)
+            hmmer.set_threads(args.threads)
             hmmer.run_search()
             domDict = hmmer.domDict # This is what we want out of HMMER
         # If it does exist, simply load it in
         else:
-            domDict = ZS_HmmIO.hmmer_parse(domtbloutName, args.Evalue)
+            domDict = ZS_HmmIO.nhmmer_parse(tbloutName, args.Evalue)
 
         # Perform liftover operation
         ## TBD, need to define a function above and use it with hmmer.domDict
