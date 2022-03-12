@@ -431,6 +431,30 @@ def hmmer_parse(domtbloutFile, evalueCutoff):
                                 domDict[pid].append([did, dstart, dend, evalue])
         return domDict
 
+def nhmmer_parse(tbloutFile, evalueCutoff):
+        domDict = {}                            # We need to use a dictionary for later sorting since hmmsearch does not produce output that is ordered in the way we want to work with. hmmscan does, but it is SIGNIFICANTLY slower.
+        with open(tbloutFile, 'r') as fileIn:
+                for line in fileIn:
+                        # Skip unnecessary lines
+                        if line.startswith('#') or line == '' or line == '\n' or line == '\r\n':
+                                continue
+                        # Parse line and skip if evalue is not significant
+                        sl = line.rstrip('\r\n').split()
+                        evalue = float(sl[12]) # nhmmer and hmmsearch have same evalue [index]
+                        if evalue > float(evalueCutoff):
+                                continue
+                        # Get relevant details
+                        pid = sl[0]
+                        did = sl[2] # nhmmer is [2], not [3] like hmmsearch
+                        dstart = int(sl[6]) # nhmmer is [6], not [17] like hmmsearch
+                        dend = int(sl[7]) # nhmmer is [7], not [18] like hmmsearch
+                        # Add into domain dictionary
+                        if pid not in domDict:
+                                domDict[pid] = [[did, dstart, dend, evalue]]
+                        else:
+                                domDict[pid].append([did, dstart, dend, evalue])
+        return domDict
+
 ## Output functions
 def output_func(inputDict, outputFileName):
         with open(outputFileName, 'w') as fileOut:
