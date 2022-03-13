@@ -10,7 +10,7 @@
 ## 3) detect outliers in a MSA by sequence conservation [-]
 ## 4) detect outliers in a MSA by phylogeny mismatch [-]
 
-import os, platform, sys
+import os, platform, sys, subprocess
 from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
@@ -48,6 +48,7 @@ class MAFFT:
                 self.cline = MafftCommandline(os.path.join(mafftDir, "mafft.exe"))
         
         # Set default attributes
+        self.mafftDir = mafftDir
         self.cline.genafpair = True   # E-INSi
         self.cline.localpair = False  # L-INSi
         self.cline.thread = 1
@@ -187,6 +188,68 @@ class MAFFT:
         
         # Set flag that this FASTA object has been aligned
         FASTA_obj.isAligned = True
+    
+    def add(self, aligned_FASTA_obj, add_FASTA_obj):
+        '''
+        Handles the execution of MAFFT alignment, running in the mode where new sequences
+        are added into an existing alignment. This method otherwise behaves similarly to
+        the .run() method, but it:
+        
+            1) Creates TWO temporarys file for MAFFT to read from the TWO FASTA objects provided
+            2) Performs the alignment with MAFFT
+            3) Parses the output file and without modifying input FASTA objects
+            4) Cleans up temporary and output files
+        
+        Before calling this, you might consider the other methods of this class e.g.,
+        set_threads() and use_linsi() if you don't want the default E-INSi behaviour.
+        
+        Params:
+            aligned_FASTA_obj -- an object of ZS_SeqIO.FASTA class which has already been
+                                 aligned and is to have new sequences added into it.
+            add_FASTA_obj -- an object of ZS_SeqIO.FASTA class which has not been aligned
+                               and will be added into the existing alignment
+        Returns:
+            result_FASTA_obj -- an object of ZS_SeqIO.FASTA class which results from MAFFT
+                                adding the add_FASTA_obj into aligned_FASTA_obj
+        '''
+        # Validate input value type
+        # assert isinstance(aligned_FASTA_obj, FASTA) ## This fails -- annoying!
+        assert type(aligned_FASTA_obj).__name__ == "FASTA" or type(aligned_FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
+        assert aligned_FASTA_obj.isAligned, "aligned_FASTA_obj must be aligned first!"
+        # assert isinstance(add_FASTA_obj, FASTA)
+        assert type(add_FASTA_obj).__name__ == "FASTA" or type(add_FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
+        
+        # Create temporary files
+        tmpAlignedFileName = self._tmp_file_name_gen("mafft_aligned_tmp", "fasta")
+        aligned_FASTA_obj.write(tmpAlignedFileName, asAligned=True, withDescription=True)
+        
+        tmpAddedFileName = self._tmp_file_name_gen("mafft_added_tmp", "fasta")
+        add_FASTA_obj.write(tmpAddedFileName)
+        
+        tmpOutputFileName = self._tmp_file_name_gen("mafft_output_tmp", "fasta")
+        
+        # Format command for running
+        cmd = "{0} --thread {1} --add \"{2}\" \"{3}\" > \"{4}\"".format(
+            os.path.join(self.mafftDir, "mafft"), self.cline.thread,
+            tmpAddedFileName, tmpAlignedFileName, tmpOutputFileName
+        )
+        
+        # Run
+        run_mafft = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
+        stdout, stderr = run_mafft.communicate()
+        if stdout == '':
+            raise Exception("MAFFT error text below" + str(stderr))
+        
+        # Parse output file into new FASTA object
+        result_FASTA_obj = FASTA(tmpOutputFileName, isAligned=True)
+        
+        # Clean up temporary files
+        os.unlink(tmpAlignedFileName)
+        os.unlink(tmpAddedFileName)
+        os.unlink(tmpOutputFileName)
+        
+        # Return new result
+        return result_FASTA_obj
     
     def _tmp_file_name_gen(self, prefix, suffix):
         '''
