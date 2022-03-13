@@ -69,21 +69,30 @@ class FastASeq:
         if gapSeq != None:
             self.gap_seq = gapSeq.replace("\r", "").replace("\n", "").replace(" ", "")
     
-    def get_str(self, withAlt=False, withGap=False):
+    def get_str(self, withAlt=False, withDescription=False, withGap=False):
         '''
         Params:
-            withAlt -- A Boolean indicating whether the return should be the ID or alt
+            withAlt -- A Boolean indicating whether the return should be alt ID
+            withDescription -- A Boolean indicating whether the return should be the full description
             withGap -- A Boolean indicating whether the return should be the seq or gap_seq
-        Returns a string representation of this object with FASTA formatting
+        Returns:
+            fastaStr -- a string representation of this object with FASTA formatting
         '''
         # Validate that object allows optional parameters
-        if withAlt and type(self.alt).__name__ != "str":
+        if withAlt and not isinstance(self.alt, str):
             raise Exception("Alt ID not set on FastASeq with ID {0}".format(self.id))
-        if withGap and type(self.gap_seq).__name__ != "str":
+        if withGap and not isinstance(self.gap_seq, str):
             raise Exception("Gap seq not set on FastASeq with ID {0}".format(self.id))
+        assert isinstance(withDescription, bool)
+        assert not (withDescription and withAlt), "Can't specify withDescription and withAlt at same time!"
         
         # Produce expected output
-        id = self.id if not withAlt else self.alt
+        if not withAlt and not withDescription:
+            id = self.id
+        elif withAlt:
+            id = self.alt
+        else:
+            id = self.description
         seq = self.seq if not withGap else self.gap_seq
         return ">{0}\n{1}".format(id, seq)
     
@@ -545,7 +554,7 @@ class FASTA:
         
         return sum(shared) / len(shared)
     
-    def write(self, outputFileName, withAlt=False, asAligned=False, withConsensus=False):
+    def write(self, outputFileName, withAlt=False, withDescription=False, asAligned=False, withConsensus=False):
         '''
         Writes the FASTA object out to a file in appropriate FASTA formatting. Various
         method params allow the customisation of how the file is produced.
@@ -556,6 +565,9 @@ class FASTA:
             withAlt -- a Boolean indicating whether sequences should be labelled with their
                        ID value or with the alternative IDs provided. An error will be raised
                        if no alternative IDs exist.
+            withDescription -- a Boolean indicating whether sequences should be labelled with
+                               their ID value or with the full description name. An error will
+                               be raised if you specify this and withAlt simultaneously.
             asAligned -- a Boolean indicating whether the raw sequences or aligned sequences
                          including gap characters should be output. An error will be raised
                          if .isAligned == False or if any sequences lack a .gap_seq value.
@@ -571,6 +583,10 @@ class FASTA:
                     raise Exception(inspect.cleandoc("""
                                     Sequence with ID {0} lacks an alt ID; 
                                     can't write withAlt""".format(FastASeq_obj.id)))
+        
+        # Validate description validity
+        assert isinstance(withDescription, bool)
+        assert not (withDescription and withAlt), "Can't specify withDescription and withAlt at same time!"
         
         # Validate aligned validity and possibility
         assert isinstance(asAligned, bool)
@@ -599,7 +615,7 @@ class FASTA:
             if withConsensus:
                 fileOut.write(">consensus\n{0}\n".format(self.consensus))
             for FastASeq_obj in self.seqs:
-                s = FastASeq_obj.get_str(withAlt=withAlt, withGap=asAligned)
+                s = FastASeq_obj.get_str(withAlt=withAlt, withGap=asAligned, withDescription=withDescription)
                 fileOut.write("{0}\n".format(s))
         
     def __getitem__(self, key):
