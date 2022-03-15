@@ -224,7 +224,7 @@ class MAFFT:
         aligned_FASTA_obj.write(tmpAlignedFileName, asAligned=True, withDescription=True)
         
         tmpAddedFileName = self._tmp_file_name_gen("mafft_added_tmp", "fasta")
-        add_FASTA_obj.write(tmpAddedFileName)
+        add_FASTA_obj.write(tmpAddedFileName, withDescription=True)
         
         tmpOutputFileName = self._tmp_file_name_gen("mafft_output_tmp", "fasta")
         
