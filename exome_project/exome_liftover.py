@@ -29,6 +29,9 @@ def validate_args(args):
         print('I am unable to locate the genome FASTA file (' + args.genomeFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if args.identifier == "":
+        print('identifier cannot be empty!')
+        quit()
     # Validate numeric arguments
     if args.Evalue < 0:
         print('Evalue should be greater than 0')
@@ -359,6 +362,8 @@ if __name__ == "__main__":
                 help="Specify the location of the genome FASTA file to find exons in")
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (working and final files go here)")
+    p.add_argument("-id", dest="identifier", required=True,
+                help="Specify the species identifier to embed in sequence ID outputs")
     # Opts
     p.add_argument("-e", dest="Evalue", required=False, type=float,
                 help="Optionally, specify the E-value cut-off for HMMER results (default==1e-20)",
@@ -442,11 +447,15 @@ if __name__ == "__main__":
     # Get exon predictions as FastASeq objects
     exonFastASeqs = []
     for prediction in exonPredictions:
+        # Extract relevant details
         chrom, id, start, end, _, _, _, strand = prediction
         seq = genome_FASTA_obj[chrom].seq[start-1: end] # -1 for 0-based indexing
         if strand == "-":
             seq = ZS_SeqIO.FastASeq.get_reverse_complement(None, seq) # None fills the role of self
-        newFastASeq_obj = ZS_SeqIO.FastASeq(id, seq=seq)
+        # Produce an alt ID
+        altID = "{0} {1} chr={2} start={3} end={4}".format(id.rsplit("-")[0], args.identifier, chrom, start, end) # kill the -mx suffix in {0}
+        # Create object
+        newFastASeq_obj = ZS_SeqIO.FastASeq(id, seq=seq, alt=altID)
         exonFastASeqs.append(newFastASeq_obj)
     
     # Write results files to FASTAs for individual inspection & MAFFT running
@@ -459,7 +468,7 @@ if __name__ == "__main__":
             continue
         # Write the file
         with open(outputFileName, "w") as fileOut:
-            fileOut.write(FastASeq_obj.get_str())
+            fileOut.write(FastASeq_obj.get_str(withAlt=True))
 
     # Merge results into alignments
     mergedDir = os.path.join(args.outputDir, "merged_MSAs")
