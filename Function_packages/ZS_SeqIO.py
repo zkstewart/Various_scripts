@@ -552,7 +552,10 @@ class FASTA:
                 positionProportion.append(1 if self.seqs[x].gap_seq[i].lower() == thisPosition else 0)
             shared.append(sum(positionProportion) / len(positionProportion))
         
-        return sum(shared) / len(shared)
+        if sum(shared) == 0:
+            return 0
+        else:
+            return sum(shared) / len(shared)
     
     def write(self, outputFileName, withAlt=False, withDescription=False, asAligned=False, withConsensus=False):
         '''
