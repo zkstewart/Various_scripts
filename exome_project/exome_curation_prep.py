@@ -177,7 +177,18 @@ if __name__ == "__main__":
         FASTA_obj.seqs.sort(key = lambda x: sequenceIDs.index(x.alt))
     
     # Sort FASTA object list by conservation proportion & GC content
-    ## TBD
+    gcList = []
+    for FASTA_obj in fastaObjs:
+        gcList.append(FASTA_obj.gc_content())
+    
+    conserveList = []
+    for FASTA_obj in fastaObjs:
+        FASTA_obj.generate_consensus()
+        conserveList.append(FASTA_obj.conserved_proportion())
+    
+    sortList = [[i, round(gcList[i], 2), conserveList[i]] for i in range(len(conserveList))]
+    sortList.sort(key = lambda x: (-x[1], -x[2]))
+    fastaObjs = [fastaObjs[index] for index, _, _ in sortList]
     
     # Figure out how to concatenate FASTA files in chunks of ~50 (or whatever args.chunkSize is)
     chunkPoints = get_chunking_points(len(fastaObjs), args.chunkSize)
