@@ -4,7 +4,7 @@
 # from genome sequences on the basis of exome
 # sequencing alignments
 
-import sys, argparse, os, math, statistics, platform
+import sys, argparse, os, math, statistics, platform, hashlib, time, random
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_HmmIO, ZS_AlignIO
 if platform.system() == 'Windows':
@@ -236,12 +236,14 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
     
     # Heuristic 2: Check if the exon has a comparable E-value to sequences taken from the HMM itself
     ## Run HMMER again against the HMM's own sequences
+    tmpHash = hashlib.sha256(bytes(str(fastaFile) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+    
     FASTA_obj = ZS_SeqIO.FASTA(fastaFile, isAligned=True)
-    tmpFastaName = hmmer._tmp_file_name_gen("tmpFasta", "fasta")
+    tmpFastaName = hmmer._tmp_file_name_gen("tmpFasta" + tmpHash[0:20], "fasta")
     FASTA_obj.write(tmpFastaName)
     
     hmmer.load_FASTA_from_file(tmpFastaName)
-    tmpTbloutName = hmmer._tmp_file_name_gen("goodPred", "tblout")
+    tmpTbloutName = hmmer._tmp_file_name_gen("goodPred" + tmpHash[0:20], "tblout")
     hmmer.set_output_name(tmpTbloutName)
     hmmer.run_search()
     
