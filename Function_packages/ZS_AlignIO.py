@@ -35,7 +35,7 @@ class MAFFT:
             if not os.path.isfile(os.path.join(mafftDir, "mafft.bat")):
                 raise Exception("{0} does not exist".format(os.path.join(mafftDir, "mafft.bat")))
         else:
-            if not os.path.isfile(os.path.join(mafftDir, "mafft")) or not os.path.isfile(os.path.join(mafftDir, "mafft.exe")):
+            if not os.path.isfile(os.path.join(mafftDir, "mafft")) and not os.path.isfile(os.path.join(mafftDir, "mafft.exe")):
                 raise Exception("mafft or mafft.exe does not exist at {0}".format(mafftDir))
         
         # Establish commandline function
