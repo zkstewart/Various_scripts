@@ -312,11 +312,19 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
         consensus = FASTA_obj.generate_consensus().replace("-", "")
         ## 4.2: Get the additionalSequence bit we want to align (sans N's)
         querySequence = max(additionalSequence.lower().split("n" * LONG_GAP_LENGTH), key = lambda x: len(x)).lstrip("n").upper()
+        if querySequence == "":
+            '''It can't be rescued if this happens, since it means the extended
+            sequence bit is purely N's'''
+            return False
         ## 4.3: Align it
         if platform.system() == 'Windows':
             queryAlign, targetAlign, startIndex, score = ssw_parasail(consensus, querySequence)
         else:
             queryAlign, targetAlign, startIndex, score = ssw_skbio(consensus, querySequence)
+        if queryAlign == None:
+            '''If this has happened, then we're probably using skbio and the
+            alignment just didn't work. Haven't looked too deep into this.'''
+            return False
         ## 4.4: Check if the query aligns well, fail it if not
         ALLOWED_NONALIGNING_RATIO = 0.1 # can only miss 10% of the extra sequence
         querySequenceLen = len(querySequence)
