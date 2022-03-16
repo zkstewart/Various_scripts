@@ -128,9 +128,11 @@ def get_prediction_from_domdict(domDict):
             strand = entry1[7]
             
             evalues = [g[4] for g in possibleGaps]
-            newExponent = int(sum([math.log10(e) for e in evalues]))
-            newEvalue = eval("1e{0}".format(newExponent)) # This is wack but idk maths so...
-            
+            if 0 in evalues:
+                newEvalue = 0
+            else:
+                newExponent = int(sum([math.log10(e) for e in evalues]))
+                newEvalue = eval("1e{0}".format(newExponent)) # This is wack but idk maths so...
             newValue = [entry1[0], entry1[1], newStart, newEnd, newEvalue, newHmmStart, newHmmEnd, strand]
         
         # Update our newFlatList for downstream usage
@@ -245,6 +247,8 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
     ## Get the statistical distribution of E-values
     evalues = [value[3] for chrom in hmmer.domDict.keys() for value in hmmer.domDict[chrom]]
     evalues.sort()
+    assert evalues != [], "HMMER search against own HMM fails to find results, alignment file is out of sync probably"
+    
     medianEvalue = statistics.median(evalues)
     stdev = statistics.stdev(evalues)
     
@@ -344,6 +348,33 @@ def ssw_exons(targetString, queryString):
     
     return [queryAlign, targetAlign, startIndex, alignment.score]
 
+def write_prediction_to_fasta(prediction, genome_FASTA_obj, identifier, outputFileName):
+    '''
+    Function to take the bestPrediction list output of get_prediction_from_domdict()
+    and write it to a FASTA file.
+    
+    It's tuned for use in exome_liftover.py specifically, so keep that in mind.
+    
+    Params:
+        prediction -- a list containing [chrom, id, genomeStart, genomeEnd, evalue, hmmStart, hmmEnd, strand]
+        genome_FASTA_obj -- a ZS_SeqIO.FASTA object of the genome FASTA file.
+        identifier -- a string uniquely identifying the species for which exons are being predicted.
+        outputFileName -- a string indicating the file name and location to write the FASTA to
+    '''
+    # Extract relevant details
+    chrom, id, start, end, _, _, _, strand = prediction
+    seq = genome_FASTA_obj[chrom].seq[start-1: end] # -1 for 0-based indexing
+    if strand == "-":
+        seq = ZS_SeqIO.FastASeq.get_reverse_complement(None, seq) # None fills the role of self
+    
+    # Produce an alt ID
+    altID = "{0} {1} chr={2} start={3} end={4}".format(id.rsplit("-")[0], identifier, chrom, start, end) # kill the -mx suffix in {0}
+    
+    # Write result to FASTA
+    FastASeq_obj = ZS_SeqIO.FastASeq(id, seq=seq, alt=altID)
+    with open(outputFileName, "w") as fileOut:
+        fileOut.write(FastASeq_obj.get_str(withAlt=True))
+
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is to transform these alignments into HMMs that can
@@ -400,17 +431,22 @@ if __name__ == "__main__":
     
     # Use our HMMs to query the genome for possible exon hits
     tbloutsDir = os.path.join(args.outputDir, "tblouts")
+    fastasDir = os.path.join(args.outputDir, "fastas")
     os.makedirs(tbloutsDir, exist_ok=True)
-    exonPredictions = [] # This will store our successful hits
+    os.makedirs(fastasDir, exist_ok=True)
     for i in range(len(hmmsList)):
         hmm = hmmsList[i]
-        # Derive domtblout name
+        
+        # Derive exon FASTA name and skip if it already exists
+        exonFastaFile = os.path.join(fastasDir, os.path.basename(hmm.hmmFile).rsplit(".", maxsplit=1)[0]) + ".fasta"
+        if os.path.isfile(exonFastaFile):
+            continue
+        
+        # If tblout doesn't exist, run HMMER
         tbloutName = os.path.join(
             tbloutsDir,
             "{0}.tblout".format(os.path.basename(hmm.hmmFile).rsplit(".", maxsplit=1)[0])
         )
-        
-        # If tblout doesn't exist, run HMMER
         if not os.path.isfile(tbloutName):
             hmmer = ZS_HmmIO.HMMER(hmm)
             hmmer.load_FASTA_from_file(args.genomeFile)
@@ -429,46 +465,20 @@ if __name__ == "__main__":
         # If domDict is empty, skip this exon since we've failed to find it
         if domDict == {}:
             continue
-        
-        # Locate the best exon prediction from the domDict
+                
+        # Parse domDict and find the best exon
         bestPrediction = get_prediction_from_domdict(domDict)
         if bestPrediction == None:
             continue
-        
+    
         # If we could find a single "best" exon, check if it's any good at all
         fastaFile = files[i]
         isGood = check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_obj)
         if not isGood:
             continue
 
-        # If it's good, store it for later output
-        exonPredictions.append(bestPrediction)
-    
-    # Get exon predictions as FastASeq objects
-    exonFastASeqs = []
-    for prediction in exonPredictions:
-        # Extract relevant details
-        chrom, id, start, end, _, _, _, strand = prediction
-        seq = genome_FASTA_obj[chrom].seq[start-1: end] # -1 for 0-based indexing
-        if strand == "-":
-            seq = ZS_SeqIO.FastASeq.get_reverse_complement(None, seq) # None fills the role of self
-        # Produce an alt ID
-        altID = "{0} {1} chr={2} start={3} end={4}".format(id.rsplit("-")[0], args.identifier, chrom, start, end) # kill the -mx suffix in {0}
-        # Create object
-        newFastASeq_obj = ZS_SeqIO.FastASeq(id, seq=seq, alt=altID)
-        exonFastASeqs.append(newFastASeq_obj)
-    
-    # Write results files to FASTAs for individual inspection & MAFFT running
-    fastasDir = os.path.join(args.outputDir, "fastas")
-    os.makedirs(fastasDir, exist_ok=True)
-    for FastASeq_obj in exonFastASeqs:
-        # Prevent overwrites / enabling program to resume
-        outputFileName = "{0}.fasta".format(os.path.join(fastasDir, FastASeq_obj.id))
-        if os.path.isfile(outputFileName):
-            continue
-        # Write the file
-        with open(outputFileName, "w") as fileOut:
-            fileOut.write(FastASeq_obj.get_str(withAlt=True))
+        # If it's good, write it to file
+        write_prediction_to_fasta(bestPrediction, genome_FASTA_obj, args.identifier, exonFastaFile)
 
     # Merge results into alignments
     mergedDir = os.path.join(args.outputDir, "merged_MSAs")
