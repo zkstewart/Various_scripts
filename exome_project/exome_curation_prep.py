@@ -57,7 +57,7 @@ def get_missing_species(fastaFiles, metadataDict):
                 missingIDs.add(metadataID)
     return list(missingIDs)
 
-def set_alts(FASTA_obj):
+def set_alts(FASTA_obj, metadataDict):
     '''
     This function will receive a single FASTA object and perform
     Oz Mammals-specific processing to get an alt ID appropriately
@@ -66,7 +66,8 @@ def set_alts(FASTA_obj):
     for FastASeq_obj in FASTA_obj:
         description = FastASeq_obj.description
         metadataID = description.split(" ")[1].rsplit("_", maxsplit=1)[0] # Get just the middle part sans _S### suffix
-        FastASeq_obj.alt = metadataID
+        altID = metadataDict[metadataID]
+        FastASeq_obj.alt = altID
 
 def add_missing_seqs(FASTA_obj, sequenceIDs):
     '''
@@ -165,10 +166,10 @@ if __name__ == "__main__":
     
     # Set FASTA alt IDs
     for FASTA_obj in fastaObjs:
-        set_alts(FASTA_obj)
+        set_alts(FASTA_obj, metadataDict)
     
     # Add dummy missing sequences
-    sequenceIDs = list(metadataDict.keys())
+    sequenceIDs = list(metadataDict.values())
     for FASTA_obj in fastaObjs:
         add_missing_seqs(FASTA_obj, sequenceIDs)
     
