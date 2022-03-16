@@ -320,7 +320,7 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
         ## 4.4: Check if the query aligns well, fail it if not
         ALLOWED_NONALIGNING_RATIO = 0.1 # can only miss 10% of the extra sequence
         querySequenceLen = len(querySequence)
-        if len(queryAlign) < querySequenceLen - (querySequenceLen*ALLOWED_NONALIGNING_RATIO):
+        if len(queryAlign.replace("-", "")) < querySequenceLen - (querySequenceLen*ALLOWED_NONALIGNING_RATIO):
             return False
         ## 4.5: Check if the aligned region is where we expect it to be, fail if not
         if endDifference > startDifference: # i.e., if it's a tail extension
