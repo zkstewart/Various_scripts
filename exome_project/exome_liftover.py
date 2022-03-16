@@ -4,9 +4,13 @@
 # from genome sequences on the basis of exome
 # sequencing alignments
 
-import sys, argparse, os, math, statistics, parasail, platform
+import sys, argparse, os, math, statistics, platform
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_HmmIO, ZS_AlignIO
+if platform.system() == 'Windows':
+    import parasail
+else:
+    from skbio.alignment import StripedSmithWaterman
 
 def validate_args(args):
     # Validate input data location
@@ -309,7 +313,10 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
         ## 4.2: Get the additionalSequence bit we want to align (sans N's)
         querySequence = max(additionalSequence.lower().split("n" * LONG_GAP_LENGTH)).lstrip("n").upper()
         ## 4.3: Align it
-        queryAlign, targetAlign, startIndex, score = ssw_exons(consensus, querySequence)
+        if platform.system() == 'Windows':
+            queryAlign, targetAlign, startIndex, score = ssw_parasail(consensus, querySequence)
+        else:
+            queryAlign, targetAlign, startIndex, score = ssw_skbio(consensus, querySequence)
         ## 4.4: Check if the query aligns well, fail it if not
         ALLOWED_NONALIGNING_RATIO = 0.1 # can only miss 10% of the extra sequence
         querySequenceLen = len(querySequence)
@@ -333,7 +340,7 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
     ## If all the above heuristics pass, we can conclude that this exon is "good"
     return True
 
-def ssw_exons(targetString, queryString):
+def ssw_parasail(targetString, queryString):
     '''
     Special implementation of striped Smith Waterman alignment for exon liftover
     project.
@@ -347,6 +354,17 @@ def ssw_exons(targetString, queryString):
     startIndex = targetString.find(targetAlign.replace('-', ''))
     
     return [queryAlign, targetAlign, startIndex, alignment.score]
+
+def ssw_skbio(targetString, queryString):
+    # Perform SSW with scikit.bio implementation
+    query = StripedSmithWaterman(targetString)
+    alignment = query(queryString)
+    targetAlign = alignment.aligned_query_sequence
+    queryAlign = alignment.aligned_target_sequence
+    # Figure out where we're starting in the target with this alignment
+    startIndex = targetString.find(targetAlign.replace('-', ''))
+    
+    return [queryAlign, targetAlign, startIndex, alignment.optimal_alignment_score]
 
 def write_prediction_to_fasta(prediction, genome_FASTA_obj, identifier, outputFileName):
     '''
