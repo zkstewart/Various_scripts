@@ -27,7 +27,7 @@ def validate_args(args):
         if not os.path.isfile(os.path.join(args.mafftDir, "mafft.bat")):
             raise Exception("{0} does not exist".format(os.path.join(args.mafftDir, "mafft.bat")))
     else:
-        if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) or not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
+        if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) and not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
             raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
     if not os.path.isfile(args.genomeFile):
         print('I am unable to locate the genome FASTA file (' + args.genomeFile + ')')
