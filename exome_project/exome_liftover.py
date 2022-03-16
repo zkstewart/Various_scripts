@@ -26,9 +26,9 @@ def validate_args(args):
     if platform.system() == "Windows":
         if not os.path.isfile(os.path.join(args.mafftDir, "mafft.bat")):
             raise Exception("{0} does not exist".format(os.path.join(args.mafftDir, "mafft.bat")))
-        else:
-            if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) or not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
-                raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
+    else:
+        if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) or not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
+            raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
     if not os.path.isfile(args.genomeFile):
         print('I am unable to locate the genome FASTA file (' + args.genomeFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
@@ -311,7 +311,7 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
         ## 4.1: Create a consensus sequence for the exon
         consensus = FASTA_obj.generate_consensus().replace("-", "")
         ## 4.2: Get the additionalSequence bit we want to align (sans N's)
-        querySequence = max(additionalSequence.lower().split("n" * LONG_GAP_LENGTH)).lstrip("n").upper()
+        querySequence = max(additionalSequence.lower().split("n" * LONG_GAP_LENGTH), key = lambda x: len(x)).lstrip("n").upper()
         ## 4.3: Align it
         if platform.system() == 'Windows':
             queryAlign, targetAlign, startIndex, score = ssw_parasail(consensus, querySequence)
