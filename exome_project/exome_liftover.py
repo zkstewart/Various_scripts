@@ -516,6 +516,11 @@ if __name__ == "__main__":
         alignedFastaFile = files[i]
         exonFastaFile = os.path.join(fastasDir, os.path.basename(alignedFastaFile).rsplit(".", maxsplit=1)[0]) + ".fasta"
         
+        # Get output name & skip if it's already been done
+        outputFileName = os.path.join(mergedDir, os.path.basename(exonFastaFile))
+        if os.path.isfile(outputFileName):
+            continue
+        
         # Skip processing if the exon wasn't discovered
         if not os.path.isfile(exonFastaFile): 
             continue
@@ -529,7 +534,6 @@ if __name__ == "__main__":
         result_FASTA_obj = m.add(aligned_FASTA_obj, add_FASTA_obj)
         
         # Write output
-        outputFileName = os.path.join(mergedDir, os.path.basename(exonFastaFile))
         result_FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
     
     print("Program completed successfully!")
