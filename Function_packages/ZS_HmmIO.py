@@ -352,7 +352,7 @@ class HMMER:
         self.hmmsearch(threads=self.threads, evalue=self.Evalue, outputFileName=self.outputFileName, hmmFile=self.HMM.hmmFile, fastaFile=fileName, isNucleotide=self.HMM.isNucleotide)
         
         # Parse search results
-        self.domDict = nhmmer_parse(self.outputFileName, self.Evalue) if self.HMM.isNucleotide else hmmer_parse(self.outputFileName, self.Evalue)
+        self.domDict = nhmmer_parse(self.outputFileName, self.Evalue, extendedDetails=True) if self.HMM.isNucleotide else hmmer_parse(self.outputFileName, self.Evalue)
         
         # Clean up temporary file if relevant
         if self.FASTA_is_obj:
