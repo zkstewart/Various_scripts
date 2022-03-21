@@ -1,6 +1,6 @@
 #! python3
 # ZS_SeqIO.py
-# Contains various Classes to perform manipulations involing
+# Contains various Classes to perform manipulations involving
 # FASTA sequences and MSAs.
 
 import os, inspect
@@ -33,6 +33,23 @@ class FastASeq:
         'TTC':'F', 'TTT':'F', 'TTA':'L', 'TTG':'L',
         'TAC':'Y', 'TAT':'Y', 'TAA':'*', 'TAG':'*',
         'TGC':'C', 'TGT':'C', 'TGA':'*', 'TGG':'W',
+        # Ambiguity handling
+        'ATM':'I', 'ATW':'I', 'ATY':'I', 'ATH':'I',
+        'ACM':'T', 'ACR':'T', 'ACW':'T', 'ACS':'T', 'ACY':'T', 'ACK':'T', 'ACV':'T', 'ACH':'T', 'ACD':'T', 'ACB':'T',
+        'AAY':'N', 'AAR':'K',
+        'AGY':'S', 'AGR':'R',
+        'CTM':'L', 'CTR':'L', 'CTW':'L', 'CTS':'L', 'CTY':'L', 'CTK':'L', 'CTV':'L', 'CTH':'L', 'CTD':'L', 'CTB':'L',
+        'CCM':'P', 'CCR':'P', 'CCW':'P', 'CCS':'P', 'CCY':'P', 'CCK':'P', 'CCV':'P', 'CCH':'P', 'CCD':'P', 'CCB':'P', 
+        'CAY':'H', 'CAR':'Q',
+        'CGM':'R', 'CGR':'R', 'CGW':'R', 'CGS':'R', 'CGY':'R', 'CGK':'R', 'CGV':'R', 'CGH':'R', 'CGD':'R', 'CGB':'R', 
+        'GTM':'V', 'GTR':'V', 'GTW':'V', 'GTS':'V', 'GTY':'V', 'GTK':'V', 'GTV':'V', 'GTH':'V', 'GTD':'V', 'GTB':'V', 
+        'GCM':'A', 'GCR':'A', 'GCW':'A', 'GCS':'A', 'GCY':'A', 'GCK':'A', 'GCV':'A', 'GCH':'A', 'GCD':'A', 'GCB':'A', 
+        'GAY':'D', 'GAR':'E',
+        'GGM':'G', 'GGR':'G', 'GGW':'G', 'GGS':'G', 'GGY':'G', 'GGK':'G', 'GGV':'G', 'GGH':'G', 'GGD':'G', 'GGB':'G', 
+        'TCM':'S', 'TCR':'S', 'TCW':'S', 'TCS':'S', 'TCY':'S', 'TCK':'S', 'TCV':'S', 'TCH':'S', 'TCD':'S', 'TCB':'S', 
+        'TTY':'F', 'TTR':'L',
+        'TAY':'Y', 'TAR':'*',
+        'TGY':'C', 
     }
     
     def __init__(self, id, seq=None, alt=None, gapSeq=None):
@@ -246,6 +263,17 @@ class FastASeq:
         reverseComplement = reverseComplement.replace('t', 'A')
         reverseComplement = reverseComplement.replace('c', 'G')
         reverseComplement = reverseComplement.replace('g', 'C')
+        # Ambiguity handling
+        reverseComplement = reverseComplement.replace('m', 'K')
+        reverseComplement = reverseComplement.replace('r', 'Y')
+        reverseComplement = reverseComplement.replace('w', 'W')
+        reverseComplement = reverseComplement.replace('s', 'S')
+        reverseComplement = reverseComplement.replace('y', 'R')
+        reverseComplement = reverseComplement.replace('k', 'M')
+        reverseComplement = reverseComplement.replace('v', 'B')
+        reverseComplement = reverseComplement.replace('h', 'D')
+        reverseComplement = reverseComplement.replace('d', 'H')
+        reverseComplement = reverseComplement.replace('b', 'V')
         return reverseComplement.upper()
     
     def __str__(self):
