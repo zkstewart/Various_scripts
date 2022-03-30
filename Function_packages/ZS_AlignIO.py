@@ -10,7 +10,7 @@
 ## 3) detect outliers in a MSA by sequence conservation [-]
 ## 4) detect outliers in a MSA by phylogeny mismatch [-]
 
-import os, platform, sys, subprocess
+import os, platform, sys, subprocess, hashlib, time, random
 from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
@@ -99,7 +99,8 @@ class MAFFT:
         assert isinstance(FASTA_obj, FASTA)
         
         # Create temporary file
-        tmpFileName = self._tmp_file_name_gen("mafft_tmp", "fasta")
+        tmpHash = hashlib.sha256(bytes(str(FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        tmpFileName = self._tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
         FASTA_obj.write(tmpFileName)
         
         # Run
@@ -220,13 +221,15 @@ class MAFFT:
         assert type(add_FASTA_obj).__name__ == "FASTA" or type(add_FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
         
         # Create temporary files
-        tmpAlignedFileName = self._tmp_file_name_gen("mafft_aligned_tmp", "fasta")
+        tmpHash = hashlib.sha256(bytes(str(aligned_FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        
+        tmpAlignedFileName = self._tmp_file_name_gen("mafft_aligned_tmp" + tmpHash[0:20], "fasta")
         aligned_FASTA_obj.write(tmpAlignedFileName, asAligned=True, withDescription=True)
         
-        tmpAddedFileName = self._tmp_file_name_gen("mafft_added_tmp", "fasta")
+        tmpAddedFileName = self._tmp_file_name_gen("mafft_added_tmp" + tmpHash[0:20], "fasta")
         add_FASTA_obj.write(tmpAddedFileName, withDescription=True)
         
-        tmpOutputFileName = self._tmp_file_name_gen("mafft_output_tmp", "fasta")
+        tmpOutputFileName = self._tmp_file_name_gen("mafft_output_tmp" + tmpHash[0:20], "fasta")
         
         # Format command for running
         cmd = "{0} --thread {1} --add \"{2}\" \"{3}\" > \"{4}\"".format(

@@ -3,7 +3,7 @@
 # Contains various Classes to perform manipulations involving
 # HMMs and FASTA files using HMMER
 
-import os, subprocess, inspect, sys
+import os, subprocess, inspect, sys, hashlib, time, random
 sys.path.append(os.path.dirname(__file__))
 
 from ZS_SeqIO import FASTA
@@ -109,7 +109,8 @@ class HMM:
         # Create a temporary file if .FASTA is an object
         fileName = self.FASTA # If not self.FASTA_is_obj, then this remains our default value
         if self.FASTA_is_obj:
-            fileName = self._tmp_file_name_gen("hmmbuild_tmp", "fasta") # Overwrite the default fileName here
+            tmpHash = hashlib.sha256(bytes(str(hmmName) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+            fileName = self._tmp_file_name_gen("hmmbuild_tmp" + tmpHash[0:20], "fasta") # Overwrite the default fileName here
             self.FASTA.write(fileName, withAlt = self.useAlts, asAligned = True) # Always write asAligned since it should be an MSA
         
         # Run hmmbuild & hmmpress
@@ -345,7 +346,8 @@ class HMMER:
         # Create a temporary file if .FASTA is an object
         fileName = self.FASTA # If not self.FASTA_is_obj, then this remains our default value
         if self.FASTA_is_obj:
-            fileName = self._tmp_file_name_gen("hmmsearch_tmp", "fasta") # Overwrite the default fileName here
+            tmpHash = hashlib.sha256(bytes(str(self.FASTA.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+            fileName = self._tmp_file_name_gen("hmmsearch_tmp" + tmpHash[0:20], "fasta") # Overwrite the default fileName here
             self.FASTA.write(fileName, withAlt = self.useAlts, asAligned = False) # As a target file we don't need gaps
         
         # Run hmmsearch
