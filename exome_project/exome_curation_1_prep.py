@@ -114,6 +114,7 @@ if __name__ == "__main__":
 
     # Load FASTA files
     fastaObjs = []
+    mergeStats = [0 for _ in range(len(args.liftoverDirs))]
     for file in files:
         # Locate the base alignment file
         f = ZS_SeqIO.FASTA(file, isAligned=True)
@@ -129,13 +130,15 @@ if __name__ == "__main__":
             '''
             suffixlessBaseFile = os.path.basename(file).rsplit(".", maxsplit=1)[0] 
             loFiles = []
-            for loDir in args.liftoverDirs:
+            for i in range(len(args.liftoverDirs)):
+                loDir = args.liftoverDirs[i]
                 suffixlessLoFiles = [x.rsplit(".", maxsplit=1)[0] for x in os.listdir(loDir)] # agnostic to file suffix
                 loFileSuffixes = [x.rsplit(".", maxsplit=1)[1] for x in os.listdir(loDir)] # paired suffixes list to the above
                 
                 if suffixlessBaseFile in suffixlessLoFiles:
                     _relevantSuffix = loFileSuffixes[suffixlessLoFiles.index(suffixlessBaseFile)]
                     loFiles.append(os.path.join(loDir, suffixlessBaseFile + "." + _relevantSuffix))
+                    mergeStats[i] += 1 # Keep track of how many sequences we've merged from this liftover file
             
             # Align and merge relevant file(s) into FASTA
             for _loFile in loFiles:
@@ -147,6 +150,14 @@ if __name__ == "__main__":
         
         # Store in fasta objects list
         fastaObjs.append(f)
+    
+    # Opt: Print merge stats details if applicable
+    if args.liftoverDirs != []:
+        print("Merging details:")
+        for i in range(len(mergeStats)):
+            loDir = args.liftoverDirs[i]
+            stat = mergeStats[i]
+            print("\t{0} sequences merged from {1}".format(stat, loDir))
     
     # Set FASTA alt IDs
     for FASTA_obj in fastaObjs:
