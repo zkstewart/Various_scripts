@@ -163,7 +163,7 @@ if __name__ == "__main__":
 
     # Write output files
     for i in range(len(files)):
-        file = files[i]
+        file = os.path.basename(files[i])
         outputFileName = os.path.join(args.outputDir, file)
         
         FASTA_obj = fastaObjs[i]
