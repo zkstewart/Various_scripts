@@ -3,7 +3,7 @@
 # Follows up on exome_curation_prep.py to perform some additional
 # polishing of the MSAs including trimming and removal of indel errors.
 
-import sys, argparse, os, math
+import sys, argparse, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
 from exome_liftover import ssw_parasail
@@ -14,13 +14,6 @@ def validate_args(args):
         print('I am unable to locate the directory where the alignments files are (' + args.alignmentsDir + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.metadataFile):
-        print('I am unable to locate the metadata file (' + args.metadataFile + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
-    # Validate numeric inputs
-    if args.chunkSize < 1:
-        print("chunkSize should be at least 1")
     # Handle file output
     if os.path.isdir(args.outputDir):
         if os.listdir(args.outputDir) != []:
@@ -32,75 +25,6 @@ def validate_args(args):
             print("Created '{0}' directory as part of argument validation".format(args.outputDir))
         except:
             print("Wasn't able to create '{0}' directory; does '{1}' actually exist?".format(args.outputDir, os.path.dirname(args.outputDir)))
-
-def get_dasyurid_metadata_dict(metadataFile):
-    metadataDict = {}
-    with open(metadataFile, "r") as fileIn:
-        for line in fileIn:
-            l = line.rstrip("\r\n ").split("\t")
-            metadataDict[l[0]] = l[1]
-    return metadataDict
-
-def set_alts(FASTA_obj, metadataDict):
-    '''
-    This function will receive a single FASTA object and perform
-    Oz Mammals-specific processing to get an alt ID appropriately
-    set for each FastASeq object.
-    '''
-    for FastASeq_obj in FASTA_obj:
-        description = FastASeq_obj.description
-        metadataID = description.split(" ")[1].rsplit("_", maxsplit=1)[0] # Get just the middle part sans _S### suffix
-        altID = metadataDict[metadataID]
-        FastASeq_obj.alt = altID
-
-def add_missing_seqs(FASTA_obj, sequenceIDs):
-    '''
-    This function will receive a single FASTA object and perform
-    Oz Mammals-specific processing to add missing sequences into
-    the FASTA. The sequenceIDs object should be a list derived
-    from the metadataDict's keys.
-    '''
-    # Figure out which IDs are missing
-    altIDs = [FastASeq_obj.alt for FastASeq_obj in FASTA_obj]
-    missingIDs = [id for id in sequenceIDs if id not in altIDs]
-    
-    # Add dummy sequences to FASTA object
-    mockSequence = "-" * len(FASTA_obj[0].gap_seq) # Mock up a fully-gapped sequence
-    for mID in missingIDs:
-        dummyFastASeq_obj = ZS_SeqIO.FastASeq(mID, alt=mID, gapSeq = mockSequence)
-        FASTA_obj.insert(0, dummyFastASeq_obj) # Just insert at index = 0, we'll sort things later
-
-def get_chunking_points(numberToChunk, chunkSize):
-    '''
-    This is a general purpose function to take in a number of "things"
-    that you want to chunk, and find out how to chunk them evenly.
-    
-    Params:
-        numberToChunk -- an integer value, possibly derived from a list length as example.
-        chunkSize -- an integer value for the desired number of things per chunk.
-    '''
-    assert isinstance(numberToChunk, int)
-    assert isinstance(chunkSize, int)
-    if numberToChunk <= chunkSize:
-        raise Exception("Chunking only valid if chunkSize is smaller than numberToChunk")
-    
-    numChunks = int(numberToChunk / chunkSize)
-    rawNum = numberToChunk / numChunks # This line is more relevant in the multithreading code I took this from, but it's okay to just leave it.
-    numRoundedUp = round((rawNum % 1) * numChunks, 0) # By taking the decimal place and multiplying it by the num of chunks, we can figure out how many chunks need to be rounded up
-    
-    chunkPoints = []
-    ongoingCount = 0
-    for i in range(numChunks):
-        if i+1 <= numRoundedUp: # ngl I don't remember why this is needed; I'm borrowing this code from something I wrote a while back
-            chunkPoints.append(math.ceil(rawNum) + ongoingCount) # Round up the rawNum, and also add our ongoingCount which corresponds to the number of things already put into a chunk
-            ongoingCount += math.ceil(rawNum)
-        else:
-            chunkPoints.append(math.floor(rawNum) + ongoingCount)
-            ongoingCount += math.floor(rawNum)
-        if ongoingCount >= numberToChunk: # Without this check, if we have more chunks than things to chunk, we can end up with "extra" numbers in the list (e.g., [1, 2, 3, 4, 5, 6, 6, 6, 6, 6]).
-            break  # This doesn't actually affect program function, but for aesthetic reasons and for clarity of how this function works, I prevent this from occurring.
-    
-    return chunkPoints
 
 def solve_translation_frames(FASTA_obj):
     '''
@@ -250,15 +174,6 @@ def add_codon_seqs(FASTA_obj, solutionDict):
     for i in range(len(FASTA_obj)):
         FASTA_obj.insert(i + 1 + ongoingCount, dummySeqs[i])
         ongoingCount += 1
-
-def get_mock_genename_sequence(FASTA_obj):
-    '''
-    Very specific to this Oz Mammals project, this function helps
-    to format the gene name dummy sequence that Matt would like
-    in the FASTA file
-    '''
-    geneName = os.path.basename(FASTA_obj.fileOrder[0][0]).split("-mx.fa")[0]
-    return geneName.ljust(len(FASTA_obj[0].gap_seq), '-')
 
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the

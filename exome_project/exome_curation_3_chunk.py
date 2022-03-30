@@ -7,7 +7,6 @@
 import sys, argparse, os, math
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
-from exome_liftover import ssw_parasail
 
 def validate_args(args):
     # Validate input data location
@@ -15,6 +14,9 @@ def validate_args(args):
         print('I am unable to locate the directory where the alignments files are (' + args.alignmentsDir + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    # Validate numeric inputs
+    if args.chunkSize < 1:
+        print("chunkSize should be at least 1")
     # Handle file output
     if os.path.isdir(args.outputDir):
         if os.listdir(args.outputDir) != []:
