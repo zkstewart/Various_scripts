@@ -143,6 +143,25 @@ if __name__ == "__main__":
     problems = [testFilesBase[i] for i in range(len(results)) if results[i][3] < PROBLEMATIC]
     
     ## Problems to follow up on
-    # 'ENSSHAP00000000194-mx' has a huge gap - what's the deal?
+    # problems[3] 'ENSSHAP00000000194-mx' has a huge gap - what's the deal?
+    ## ANS: It's also part of many other sequences, so it's probably good =D
+    import pyperclip
+    for p in problems:
+        # Derive file names for comparison
+        testFileName = os.path.join(args.testDir, "{0}.{1}".format(p, testFilesSuffix))
+        expectationFileName = os.path.join(args.expectationDir,"{0}.{1}".format(p, expectationFilesSuffix))
+    
+        # Load in files as FASTA objects
+        testFASTA = ZS_SeqIO.FASTA(testFileName)
+        expectationFASTA = ZS_SeqIO.FASTA(expectationFileName)
+        
+        # Store in clipboard for analysis
+        pyperclip.copy("\n".join([testFASTA[0].get_str(), expectationFASTA[0].get_str()]))
+        
+        print("Okay, next?")
+        button = input()
+        
     
     print("Program completed successfully!")
+
+
