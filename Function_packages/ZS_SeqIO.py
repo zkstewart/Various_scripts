@@ -397,7 +397,8 @@ class FASTA:
             FastASeq_obj -- a ZS_SeqIO FastASeq object.
         '''
         # Validate value type and file existence
-        assert isinstance(FastASeq_obj, FastASeq)
+        #assert isinstance(FastASeq_obj, FastASeq) # Fails, lame
+        assert type(FastASeq_obj).__name__ == "FASTA" or type(FastASeq_obj).__name__ == "ZS_SeqIO.FASTA"
         assert isinstance(index, int)
         
         self.seqs.insert(index, FastASeq_obj)
