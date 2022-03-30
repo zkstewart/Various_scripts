@@ -1,8 +1,7 @@
 #! python3
-# exome_curation_prep.py
-# Program to enable manual curation of exome sequencing
-# to occur for the Oz Mammals Genomics initiative as part
-# of Matthew Phillips and Andrew Baker (et. al.'s) group.
+# exome_curation_autoPolish.py
+# Follows up on exome_curation_prep.py to perform some additional
+# polishing of the MSAs including trimming and removal of indel errors.
 
 import sys, argparse, os, math
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
@@ -41,22 +40,6 @@ def get_dasyurid_metadata_dict(metadataFile):
             l = line.rstrip("\r\n ").split("\t")
             metadataDict[l[0]] = l[1]
     return metadataDict
-
-def get_missing_species(fastaFiles, metadataDict):
-    '''
-    Function is just for debugging and getting an updated metadata file
-    '''
-    missingIDs = set()
-    for fastaFile in fastaFiles:
-        FASTA_obj = ZS_SeqIO.FASTA(fastaFile)
-        for FastASeq_obj in FASTA_obj:
-            description = FastASeq_obj.description
-            metadataID = description.split(" ")[1].rsplit("_", maxsplit=1)[0] # Get just the middle part sans _S### suffix
-            if metadataID in metadataDict:
-                continue
-            else:
-                missingIDs.add(metadataID)
-    return list(missingIDs)
 
 def set_alts(FASTA_obj, metadataDict):
     '''
@@ -279,21 +262,20 @@ def get_mock_genename_sequence(FASTA_obj):
 
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
-    Oz Mammals genome project. Its goal is to transform these alignments into a format that
-    is friendly for manual inspection and modification.
+    Oz Mammals genome project. Its goal is to polish these alignments to make manual inspection
+    less tedious. This includes trimming of ends (especially where it's likely to be intron
+    sequence), and removal of indel errors.
+    
+    Note: This should be step 2 in the Oz Mammals project!
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-a", dest="alignmentsDir", required=True,
                 help="Specify the directory where aligned FASTA files are located")
-    p.add_argument("-m", dest="metadataFile", required=True,
-                help="Specify the metadata file location")
     p.add_argument("-o", dest="outputDir", required=True,
-                help="Output directory location")
+                help="Output directory location (default == \"2_prep\")",
+                default="2_polish")
     # Opts
-    p.add_argument("-c", dest="chunkSize", type=int, required=False,
-                help="Optionally, specify how many exons should be concatenated in a file",
-                default=50)
     p.add_argument("--codons", dest="showCodonPositions", required=False, action="store_true",
                 help="Optionally, specify this flag if you want to produce dummy sequences containing codon numbers",
                 default=False)
@@ -303,23 +285,12 @@ if __name__ == "__main__":
     
     # Locate all files
     files = [os.path.join(args.alignmentsDir, file) for file in os.listdir(args.alignmentsDir)]
-    
-    # Parse metadata file
-    metadataDict = get_dasyurid_metadata_dict(args.metadataFile)
-    
-    ## Debugging: find missing species IDs
-    #missingIDs = get_missing_species(files, metadataDict)
-    #pyperclip.copy("\n".join(missingIDs))
-    
+
     # Load FASTA files
     fastaObjs = []
     for file in files:
         f = ZS_SeqIO.FASTA(file, isAligned=True)
         fastaObjs.append(f)
-    
-    # Set FASTA alt IDs
-    for FASTA_obj in fastaObjs:
-        set_alts(FASTA_obj, metadataDict)
     
     # Optional step: derive codon position sequences
     if args.showCodonPositions:
@@ -327,54 +298,5 @@ if __name__ == "__main__":
             solutionDict = solve_translation_frames(FASTA_obj)
             add_codon_seqs(FASTA_obj, solutionDict)
     
-    # Add dummy missing sequences
-    sequenceIDs = list(metadataDict.values())
-    for FASTA_obj in fastaObjs:
-        add_missing_seqs(FASTA_obj, sequenceIDs)
-    
-    # Sort FASTA objects to have consistent internal ordering
-    for FASTA_obj in fastaObjs:
-        FASTA_obj.seqs.sort(key = lambda x: sequenceIDs.index(x.alt))
-    
-    # Sort FASTA object list by conservation proportion & GC content
-    gcList = []
-    for FASTA_obj in fastaObjs:
-        gcList.append(FASTA_obj.gc_content())
-    
-    conserveList = []
-    for FASTA_obj in fastaObjs:
-        FASTA_obj.generate_consensus()
-        conserveList.append(FASTA_obj.conserved_proportion())
-    
-    sortList = [[i, round(gcList[i], 2), conserveList[i]] for i in range(len(conserveList))]
-    sortList.sort(key = lambda x: (-x[1], -x[2]))
-    fastaObjs = [fastaObjs[index] for index, _, _ in sortList]
-    
-    # Figure out how to concatenate FASTA files in chunks of ~50 (or whatever args.chunkSize is)
-    chunkPoints = get_chunking_points(len(fastaObjs), args.chunkSize)
-    
-    # Perform the chunking
-    concatFastaObjs = []
-    prevChunkStart = 0 # Init as 0 for first loop iteration
-    for i in range(0, len(chunkPoints)):
-        baseFASTA = fastaObjs[prevChunkStart] # We use the first FASTA in this chunk as our base and concat to it
-        geneNameSeq = get_mock_genename_sequence(baseFASTA)
-        
-        for x in range(prevChunkStart+1, chunkPoints[i]): # +1 since we're already using the first file as our base
-            concatFASTA = fastaObjs[x]
-            geneNameSeq += get_mock_genename_sequence(concatFASTA)
-            for seqIndex in range(len(concatFASTA)):
-                baseFASTA.seqs[seqIndex].extend(concatFASTA[seqIndex].gap_seq)
-        
-        dummyFastASeq_obj = ZS_SeqIO.FastASeq("GeneName", alt="GeneName", gapSeq = geneNameSeq)
-        baseFASTA.insert(0, dummyFastASeq_obj)
-        
-        concatFastaObjs.append(baseFASTA) # Store our modified FASTA with all the concatenation performed
-        prevChunkStart = chunkPoints[i]
-
     # Write output files
-    for i in range(0, len(chunkPoints)):
-        outputFileName = os.path.join(args.outputDir, "exons_chunk_{0}.fa".format(i+1))
-        FASTA_obj = concatFastaObjs[i]
-        FASTA_obj.write(outputFileName, withAlt=True, asAligned=True, withConsensus=False)
-    
+    ## TBD!
