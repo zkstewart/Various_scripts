@@ -4,10 +4,9 @@
 # to occur for the Oz Mammals Genomics initiative as part
 # of Matthew Phillips and Andrew Baker (et. al.'s) group.
 
-import sys, argparse, os, math
+import sys, argparse, os, platform
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
-from Function_packages import ZS_SeqIO
-from exome_liftover import ssw_parasail
+from Function_packages import ZS_SeqIO, ZS_AlignIO
 
 def validate_args(args):
     # Validate input data location
@@ -19,6 +18,18 @@ def validate_args(args):
         print('I am unable to locate the metadata file (' + args.metadataFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if args.liftoverDirs != []:
+        for loDir in args.liftoverDirs:
+            if not os.path.isdir(loDir):
+                print('I am unable to locate the directory where the liftover files are (' + loDir + ')')
+                print('Make sure you\'ve typed the file name or location correctly and try again.')
+                quit()
+    if platform.system() == "Windows":
+        if not os.path.isfile(os.path.join(args.mafftDir, "mafft.bat")):
+            raise Exception("{0} does not exist".format(os.path.join(args.mafftDir, "mafft.bat")))
+    else:
+        if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) and not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
+            raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
     # Handle file output
     if os.path.isdir(args.outputDir):
         if os.listdir(args.outputDir) != []:
@@ -82,16 +93,15 @@ if __name__ == "__main__":
                 help="Specify the directory where aligned FASTA files are located")
     p.add_argument("-m", dest="metadataFile", required=True,
                 help="Specify the metadata file location")
+    p.add_argument("-mafft", dest="mafftDir", required=True,
+                help="Specify the directory where the MAFFT executable (or .bat on Windows) is located")
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"1_prep\")",
                 default="prep")
     # Opts
-    p.add_argument("-c", dest="chunkSize", type=int, required=False,
-                help="Optionally, specify how many exons should be concatenated in a file",
-                default=50)
-    p.add_argument("--codons", dest="showCodonPositions", required=False, action="store_true",
-                help="Optionally, specify this flag if you want to produce dummy sequences containing codon numbers",
-                default=False)
+    p.add_argument("-l", dest="liftoverDirs", required=False, nargs="+",
+                help="Optionally, specify one or more directories where exome liftover FASTAs can be found",
+                default=[])
 
     args = p.parse_args()
     validate_args(args)
@@ -105,7 +115,37 @@ if __name__ == "__main__":
     # Load FASTA files
     fastaObjs = []
     for file in files:
+        # Locate the base alignment file
         f = ZS_SeqIO.FASTA(file, isAligned=True)
+        
+        # Opt: Add in liftover FASTA file contents
+        if args.liftoverDirs != []:
+            
+            # Locate relevant liftover file(s)
+            '''
+            This is ugly, but we have files with .fa and .fasta suffix that we need
+            to know are matched. So we need to handle just the prefixes, then reattach
+            the suffix later
+            '''
+            suffixlessBaseFile = os.path.basename(file).rsplit(".", maxsplit=1)[0] 
+            loFiles = []
+            for loDir in args.liftoverDirs:
+                suffixlessLoFiles = [x.rsplit(".", maxsplit=1)[0] for x in os.listdir(loDir)] # agnostic to file suffix
+                loFileSuffixes = [x.rsplit(".", maxsplit=1)[1] for x in os.listdir(loDir)] # paired suffixes list to the above
+                
+                if suffixlessBaseFile in suffixlessLoFiles:
+                    _relevantSuffix = loFileSuffixes[suffixlessLoFiles.index(suffixlessBaseFile)]
+                    loFiles.append(os.path.join(loDir, suffixlessBaseFile + "." + _relevantSuffix))
+            
+            # Align and merge relevant file(s) into FASTA
+            for _loFile in loFiles:
+                add_FASTA_obj = ZS_SeqIO.FASTA(_loFile)
+                
+                # Perform MAFFT --add alignment
+                m = ZS_AlignIO.MAFFT(args.mafftDir)
+                f = m.add(f, add_FASTA_obj)
+        
+        # Store in fasta objects list
         fastaObjs.append(f)
     
     # Set FASTA alt IDs

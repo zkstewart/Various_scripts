@@ -23,12 +23,6 @@ def validate_args(args):
             print("{0} does not exist at {1}".format(exe, args.hmmerDir))
             print('Make sure you\'ve typed the location correctly and try again.')
             quit()
-    if platform.system() == "Windows":
-        if not os.path.isfile(os.path.join(args.mafftDir, "mafft.bat")):
-            raise Exception("{0} does not exist".format(os.path.join(args.mafftDir, "mafft.bat")))
-    else:
-        if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) and not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
-            raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
     if not os.path.isfile(args.genomeFile):
         print('I am unable to locate the genome FASTA file (' + args.genomeFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
@@ -415,8 +409,6 @@ if __name__ == "__main__":
                 help="Specify the directory where aligned FASTA files are located")
     p.add_argument("-hmm", dest="hmmerDir", required=True,
                 help="Specify the directory where HMMER executables are located")
-    p.add_argument("-mafft", dest="mafftDir", required=True,
-                help="Specify the directory where the MAFFT executable (or .bat on Windows) is located")
     p.add_argument("-g", dest="genomeFile", required=True,
                 help="Specify the location of the genome FASTA file to find exons in")
     p.add_argument("-o", dest="outputDir", required=True,
@@ -508,32 +500,4 @@ if __name__ == "__main__":
         # If it's good, write it to file
         write_prediction_to_fasta(bestPrediction, genome_FASTA_obj, args.identifier, exonFastaFile)
 
-    # Merge results into alignments
-    mergedDir = os.path.join(args.outputDir, "merged_MSAs")
-    os.makedirs(mergedDir, exist_ok=True)
-    for i in range(len(files)):
-        # Get iteration values
-        alignedFastaFile = files[i]
-        exonFastaFile = os.path.join(fastasDir, os.path.basename(alignedFastaFile).rsplit(".", maxsplit=1)[0]) + ".fasta"
-        
-        # Get output name & skip if it's already been done
-        outputFileName = os.path.join(mergedDir, os.path.basename(exonFastaFile))
-        if os.path.isfile(outputFileName):
-            continue
-        
-        # Skip processing if the exon wasn't discovered
-        if not os.path.isfile(exonFastaFile): 
-            continue
-        
-        # Load in files as FASTA objects
-        aligned_FASTA_obj = ZS_SeqIO.FASTA(alignedFastaFile, isAligned=True)
-        add_FASTA_obj = ZS_SeqIO.FASTA(exonFastaFile)
-        
-        # Perform MAFFT --add alignment
-        m = ZS_AlignIO.MAFFT(args.mafftDir)
-        result_FASTA_obj = m.add(aligned_FASTA_obj, add_FASTA_obj)
-        
-        # Write output
-        result_FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
-    
     print("Program completed successfully!")
