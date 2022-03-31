@@ -276,6 +276,128 @@ class FastASeq:
         reverseComplement = reverseComplement.replace('b', 'V')
         return reverseComplement.upper()
     
+    def trim_left(self, length, asAligned=False):
+        '''
+        This method trims the left side of this sequence to the length
+        specified. Trimming the base sequence (asAligned=False) will behave as
+        expected. Sequence in .gap_seq will be trimmed such that any thing in .seq
+        that was trimmed will be considered a gap position in the .gap_seq attribute
+        (if it exists).
+        
+        Trimming the aligned sequence (asAligned=True) will consider gap positions
+        as part of the length. Any sequence it trims off will be updated in the .seq
+        value as well.
+        
+        Params:
+            length -- an integer indicating how many positions to trim.
+            asAligned -- a Boolean indicating whether the raw sequence or aligned sequence
+                         including gap characters should be trimmed.
+        '''
+        # Validate value type
+        assert isinstance(length, int)
+        assert length >= 0, "Length doesn't make sense as a negative integer!"
+
+        # Validate aligned validity and possibility
+        assert isinstance(asAligned, bool)
+        if asAligned:
+            if self.gap_seq == None:
+                raise Exception(inspect.cleandoc("""
+                                Sequence with ID {0} lacks a gap seq value; 
+                                can't trim asAligned""".format(self.id)))
+        
+        # Perform .seq trimming
+        if asAligned == False:
+            trimmedSeq = self.seq[0:length]
+            self.seq = self.seq[length:]
+            
+            # Update .gap_seq if relevant
+            if self.gap_seq != None:
+                trimLength = len(trimmedSeq)
+                ongoingCount = 0
+                
+                for i in range(len(self.gap_seq)):
+                    if ongoingCount >= trimLength:
+                        break
+                    
+                    letter = self.gap_seq[i]
+                    if letter == "-":
+                        continue
+                    else:
+                        self.gap_seq = self.gap_seq[0:i] + "-" + self.gap_seq[i+1:]
+                        ongoingCount += 1
+                assert trimLength == ongoingCount, "Discovered that .seq and .gap_seq attributes are out of sync while trimming!"
+        
+        # Perform .gap_seq trimming
+        else:
+            trimmedSeq = self.gap_seq[0:length]
+            self.gap_seq = self.gap_seq[length:]
+            
+            # Update .seq if relevant
+            if trimmedSeq != "-"*length: # i.e., if we didn't just trim off gap sequence
+                trimLength = len(trimmedSeq.replace("-",""))
+                self.seq = self.seq[trimLength:]
+    
+    def trim_right(self, length, asAligned=False):
+        '''
+        This method trims the right side of all FASTA sequences to the length
+        specified. Trimming the base sequence (asAligned=False) will behave as
+        expected for the .seq value. Sequence in .gap_seq will be trimmed such
+        that any thing in .seq that was trimmed will be considered a gap position
+        in the .gap_seq attribute (if it exists).
+        
+        Trimming the aligned sequence (asAligned=True) will consider gap positions
+        as part of the length. Any sequence it trims off will be updated in the .seq
+        value as well.
+        
+        Params:
+            length -- an integer indicating how many positions to trim.
+            asAligned -- a Boolean indicating whether the raw sequences or aligned sequences
+                         including gap characters should be trimmed.
+        '''
+        # Validate length type and sensibility
+        assert isinstance(length, int)
+        assert length >= 0, "Length doesn't make sense as a negative integer!"
+
+        # Validate aligned validity and possibility
+        assert isinstance(asAligned, bool)
+        if asAligned:
+            if self.gap_seq == None:
+                raise Exception(inspect.cleandoc("""
+                                Sequence with ID {0} lacks a gap seq value; 
+                                can't trim asAligned""".format(self.id)))
+    
+        # Perform .seq trimming
+        if asAligned == False:
+            trimmedSeq = self.seq[-length:]
+            self.seq = self.seq[:-length]
+            
+            # Update .gap_seq if relevant
+            if self.gap_seq != None:
+                trimLength = len(trimmedSeq)
+                ongoingCount = 0
+                
+                for i in range(len(self.gap_seq)-1, -1, -1): # Loop through from right -> left
+                    if ongoingCount >= trimLength:
+                        break
+                    
+                    letter = self.gap_seq[i]
+                    if letter == "-":
+                        continue
+                    else:
+                        self.gap_seq = self.gap_seq[0:i] + "-" + self.gap_seq[i+1:]
+                        ongoingCount += 1
+                assert trimLength == ongoingCount, "Discovered that .seq and .gap_seq attributes are out of sync while trimming!"
+        
+        # Perform .gap_seq trimming
+        else:
+            trimmedSeq = self.gap_seq[-length:]
+            self.gap_seq = self.gap_seq[:-length]
+            
+            # Update .seq if relevant
+            if trimmedSeq != "-"*length: # i.e., if we didn't just trim off gap sequence
+                trimLength = len(trimmedSeq.replace("-",""))
+                self.seq = self.seq[:-trimLength]
+    
     def __str__(self):
         seq = self.seq if self.seq != None else self.gap_seq
         return ">{0}\n{1}".format(self.id, seq)
@@ -402,6 +524,80 @@ class FASTA:
         assert isinstance(index, int)
         
         self.seqs.insert(index, FastASeq_obj)
+    
+    def trim_left(self, length, asAligned=False):
+        '''
+        This method trims the left side of all FASTA sequences to the length
+        specified. Trimming the base sequence (asAligned=False) will behave as
+        expected for the .seq value. Sequence in .gap_seq will be trimmed such
+        that any thing in .seq that was trimmed will be considered a gap position
+        in the .gap_seq attribute (if it exists).
+        
+        Trimming the aligned sequence (asAligned=True) will consider gap positions
+        as part of the length. Any sequence it trims off will be updated in the .seq
+        value as well.
+        
+        Params:
+            length -- an integer indicating how many positions to trim.
+            asAligned -- a Boolean indicating whether the raw sequences or aligned sequences
+                         including gap characters should be trimmed.
+        '''
+        # Validate value type
+        assert isinstance(length, int)
+        assert length >= 0, "Length doesn't make sense as a negative integer!"
+
+        # Validate aligned validity and possibility
+        assert isinstance(asAligned, bool)
+        if asAligned:
+            if not self.isAligned:
+                raise Exception("FASTA object isn't flagged as being aligned; cant trim asAligned")
+            for FastASeq_obj in self.seqs:
+                if FastASeq_obj.gap_seq == None:
+                    raise Exception(inspect.cleandoc("""
+                                    Sequence with ID {0} lacks a gap seq value; 
+                                    can't trim asAligned""".format(FastASeq_obj.id)))
+        
+        # Pass along trim method command to all contained FastASeq objects
+        if asAligned == False:
+            for FastASeq_obj in self.seqs:
+                FastASeq_obj.trim_left(length, asAligned)
+    
+    def trim_right(self, length, asAligned=False):
+        '''
+        This method trims the right side of all FASTA sequences to the length
+        specified. Trimming the base sequence (asAligned=False) will behave as
+        expected for the .seq value. Sequence in .gap_seq will be trimmed such
+        that any thing in .seq that was trimmed will be considered a gap position
+        in the .gap_seq attribute (if it exists).
+        
+        Trimming the aligned sequence (asAligned=True) will consider gap positions
+        as part of the length. Any sequence it trims off will be updated in the .seq
+        value as well.
+        
+        Params:
+            length -- an integer indicating how many positions to trim.
+            asAligned -- a Boolean indicating whether the raw sequences or aligned sequences
+                         including gap characters should be trimmed.
+        '''
+        # Validate length type and sensibility
+        assert isinstance(length, int)
+        assert length >= 0, "Length doesn't make sense as a negative integer!"
+
+        # Validate aligned validity and possibility
+        assert isinstance(asAligned, bool)
+        if asAligned:
+            if not self.isAligned:
+                raise Exception("FASTA object isn't flagged as being aligned; cant trim asAligned")
+            for FastASeq_obj in self.seqs:
+                if FastASeq_obj.gap_seq == None:
+                    raise Exception(inspect.cleandoc("""
+                                    Sequence with ID {0} lacks a gap seq value; 
+                                    can't trim asAligned""".format(FastASeq_obj.id)))
+        
+        # Pass along trim method command to all contained FastASeq objects
+        if asAligned == False:
+            for FastASeq_obj in self.seqs:
+                FastASeq_obj.trim_right(length, asAligned)
     
     def set_alt_ids_via_list(self, altList):
         '''
