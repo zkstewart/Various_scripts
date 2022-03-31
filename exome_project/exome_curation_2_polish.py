@@ -14,6 +14,22 @@ def validate_args(args):
         print('I am unable to locate the directory where the alignments files are (' + args.alignmentsDir + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    for file in args.gff3s:
+        if not os.path.isfile(file):
+            print('I am unable to locate the GFF3 file (' + file + ')')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+    for dir in args.liftovers:
+        if not os.path.isdir(dir):
+            print('I am unable to locate the liftover directory (' + dir + ')')
+            print('Make sure you\'ve typed the directory location correctly and try again.')
+            quit()
+    # Validate liftovers argument
+    if len(args.gff3s) != len(args.liftovers):
+        print("gff3s and liftovers arguments need to be paired, which means we should receive the same number of values.")
+        print("You provided {0} gff3 and {1} liftovers arguments.".format(len(args.gff3s), len(args.liftovers)))
+        print("Fix this issue and try again.")
+        quit()
     # Handle file output
     if os.path.isdir(args.outputDir):
         if os.listdir(args.outputDir) != []:
@@ -175,6 +191,201 @@ def add_codon_seqs(FASTA_obj, solutionDict):
         FASTA_obj.insert(i + 1 + ongoingCount, dummySeqs[i])
         ongoingCount += 1
 
+def get_cds_coords(gff3File):
+    '''
+    Parses a GFF3 file and locates CDS start and stop coordinates from within
+    each chromosome.
+    
+    Params:
+        gff3File -- a string indicating the known location of a GFF3 file
+    Returns:
+        cdsCoords -- a dictionary with chromosome: [[start, end], ... [start, end]]
+                      structure.
+    '''
+    cdsCoords = {}
+    with open(gff3File, "r") as fileIn:
+        for line in fileIn:
+            # Handle header lines
+            if line.startswith("#") or line == "\n" or line == "\r\n":
+                continue
+            
+            # Extract relevant details
+            l = line.rstrip("\r\n").split("\t")
+            chrom = l[0]
+            annotType = l[2]
+            start = int(l[3])
+            end = int(l[4])
+            
+            # Set up storage structure at the start of each chromosome
+            if chrom not in cdsCoords:
+                cdsCoords[chrom] = []
+
+            # Store CDS details
+            if annotType == "CDS":
+                coords = [start, end]
+                cdsCoords[chrom].append(coords)
+            
+    return cdsCoords
+
+def trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList):
+    '''
+    trims a ZS_SeqIO.FASTA object to the coordinates range indicated by annotated CDS
+    coordinates.
+    
+    Params:
+        alignFastaFile -- a string indicating the FASTA file that generated FASTA_obj.
+                          We need this because the file name prefix should match a file
+                          in our liftoverFilesList, and that's how we know which sequence
+                          to grab.
+        FASTA_obj -- a ZS_SeqIO.FASTA instance, containing all the sequences
+                     indicated by the idsList parameter.
+        cdsCoordsList -- a list containing one or more cdsCoords dictionar(y/ies) which
+                     itself has a chromosome: [[start, end], ... [start, end]] structure.
+                     The number of dictionaries in this list must match the number of values
+                     provided in the idsList parameter.
+        liftoverFilesList -- a list containing one or more lists which provide the locations of
+                             liftover-ed exon sequences from genomes. This should be paired with
+                             the GFF3s that made the cdsCoordsList values.
+    Returns:
+        wasTrimmed -- a Boolean indicating whether trimming occurred successfully or not.
+    '''
+    assert len(cdsCoordsList) == len(liftoverFilesList), "Can't trim FASTA if param lengths don't match"
+    
+    # Locate relevant liftover files
+    fastaPrefix = os.path.basename(alignFastaFile).rsplit(".", maxsplit=1)[0]
+    foundFiles = [None for _ in liftoverFilesList] # Keep files ordered same as cdsCoordsList
+    for i in range(len(liftoverFilesList)):
+        for file in liftoverFilesList[i]:
+            if os.path.basename(file).startswith(fastaPrefix):
+                foundFiles[i] = file
+                break
+    
+    # Abort if we can't trim like this
+    noneFound = all([value == None for value in foundFiles])
+    if noneFound:
+        return False
+    
+    # Parse liftover files
+    seqs = [None if file == None else ZS_SeqIO.FASTA(file)[0] for file in foundFiles] # Keep seqs ordered same as cdsCoordsList
+
+    # Get liftover sequence IDs and start:end coordinates
+    coords = [None for _ in cdsCoordsList] # Keep coords ordered same as cdsCoordsList
+    for i in range(len(seqs)):
+        if seqs[i] == None:
+            continue
+        
+        chrom = seqs[i].description.split("chr=")[1].split(" start=")[0]
+        start, end = seqs[i].description.split("start=")[1].split(" end=")
+        coords[i] = [chrom, int(start), int(end)]
+    
+    # See if any liftover coords match to CDS coords
+    matches = [None for _ in cdsCoordsList] # Keep coords ordered same as cdsCoordsList
+    for i in range(len(coords)):
+        if coords[i] == None:
+            continue
+        chrom, start, end = coords[i]
+        
+        # Check through cdsCoords dictionary
+        cdsCoords = cdsCoordsList[i]
+        hits = []
+        if chrom not in cdsCoords:
+            continue
+        else:
+            for cdsStart, cdsEnd in cdsCoords[chrom]:
+                if cdsStart <= end and start <= cdsEnd:
+                    hit = [cdsStart, cdsEnd]
+                    if hit not in hits:
+                        hits.append(hit)
+        if len(hits) > 1:
+            print("Oh no! Multiple cdsCoords hits!")
+            print("Details: FASTA prefix={0}, coords={1}, hits={2}".format(fastaPrefix, coords, hits))
+            print("We're going to continue by just using the first hit only...")
+        
+        # Store hit if possibly
+        if hits != []:
+            matches[i] = hits[0]
+    
+    # Abort if we didn't find any matches
+    noneFound = all([value == None for value in matches])
+    if noneFound:
+        return False
+    
+    # If we did find matches, get our sequence IDs
+    ids = [None if seq == None else seq.description.split(" ")[1] for seq in seqs] # seq.description structure is ENSSH... Species_ID... chr=...
+
+    # Locate relevant sequences from FASTA_obj by their ID
+    fastaSeqs = [x for x in ids] # copy ids list
+    for FastASeq_obj in FASTA_obj:
+        if FastASeq_obj.description in fastaSeqs:
+            index = fastaSeqs.index(FastASeq_obj.description) # keep things in order always!
+            fastaSeqs[index] = FastASeq_obj
+    
+    # Find optimistic boundaries for exon CDS
+    '''
+    i.e., if we have more than one match, pick the longest section of CDS
+    based on all matches. We do the difference calculations to give us an offset
+    from 0.
+    
+    For example, if the current start position of the sequence we're assessing
+    is considered 0 in the MSA, a value of -4 means we'll start our MSA 4 positions to
+    the left of the sequence and no further. If the end position is also considered 0,
+    a value of 4 would mean we'll end our MSA 4 positions to the right of the sequence.
+    So -ve == left, +ve == right.
+    '''
+    boundaries = [None for _ in cdsCoordsList]
+    for i in range(len(matches)):
+        match = matches[i]
+        if match == None:
+            continue
+        chrom, startCoord, endCoord = coords[i]
+        
+        startDifference = match[0] - startCoord
+        endDifference =  match[1] - endCoord
+        
+        boundaries[i] = [startDifference, endDifference]
+    
+    # Compare theoretical optimistic boundaries to actual gapped sequences to see where the most optimistic boundaries are
+    '''
+    Our theoretical boundaries were just computed. Because the gapped sequences might start at
+    different positions, we need to relate their starts to the MSA's true coordinates to see
+    where any trimming should occur, if at all.
+    '''
+    bestStart, bestEnd = None, None # more -ve is better for start, more +ve is better for end
+    for i in range(len(boundaries)):
+        fastaSeq = fastaSeqs[i]
+        if fastaSeq == None:
+            continue
+        startOffset, endOffset = boundaries[i]
+        
+        firstLetter = fastaSeq.seq[0]
+        msaStart = fastaSeq.gap_seq.find(firstLetter)
+        newStart = msaStart + startOffset
+        
+        lastLetter = fastaSeq.seq[-1]
+        msaEnd = len(fastaSeq.gap_seq) - fastaSeq.gap_seq[::-1].find(lastLetter)
+        newEnd = msaEnd + endOffset
+        
+        if bestStart == None:
+            bestStart = newStart
+        else:
+            bestStart = min([bestStart, newStart])
+        
+        if bestEnd == None:
+            bestEnd = newEnd
+        else:
+            bestEnd = max([bestEnd, newEnd])
+    
+    # Make start and end positions possible
+    bestStart = 0 if bestStart < 0 else bestStart
+    bestEnd = len(fastaSeq.gap_seq) if bestEnd > len(fastaSeq.gap_seq) else bestEnd
+    
+    # Trim any excess sequence
+    startTrim = bestStart
+    endTrim = len(fastaSeq.gap_seq) - bestEnd
+    
+    FASTA_obj.trim_left(startTrim, asAligned=True)
+    FASTA_obj.trim_right(endTrim, asAligned=True)
+
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is to polish these alignments to make manual inspection
@@ -187,6 +398,14 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-a", dest="alignmentsDir", required=True,
                 help="Specify the directory where aligned FASTA files are located")
+    p.add_argument("-g", dest="gff3s", required=True, nargs="+",
+                help="Specify one or more GFF3s to provide CDS boundary information")
+    p.add_argument("-lo", dest="liftovers", required=True, nargs="+",
+                help="Specify one or more liftover exon FASTAs dirs paired to the gff3s")
+    # p.add_argument("-ids", dest="ids", required=True, nargs="+",
+    #             help="""Specify one or more species IDs to locate sequences within
+    #             alignments. These IDs should be ordered equivalently to the GFF3s, and
+    #             this script expects them to be formatted as 1_prep would do.""")
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"2_prep\")",
                 default="2_polish")
@@ -198,20 +417,39 @@ if __name__ == "__main__":
     args = p.parse_args()
     validate_args(args)
     
-    # Locate all files
+    # Locate all aligned FASTA files
     files = [os.path.join(args.alignmentsDir, file) for file in os.listdir(args.alignmentsDir)]
 
-    # Load FASTA files
+    # Load aligned FASTA files
     fastaObjs = []
     for file in files:
         f = ZS_SeqIO.FASTA(file, isAligned=True)
         fastaObjs.append(f)
     
-    # Optional step: derive codon position sequences
-    if args.showCodonPositions:
-        for FASTA_obj in fastaObjs:
-            solutionDict = solve_translation_frames(FASTA_obj)
-            add_codon_seqs(FASTA_obj, solutionDict)
+    # Parse GFF3 files
+    cdsCoordsList = []
+    for file in args.gff3s:
+        cdsCoordsList.append(get_cds_coords(file))
+    
+    # Locate liftover FASTA files
+    liftoverFilesList = []
+    for dir in args.liftovers:
+        loFiles = [os.path.join(dir, file) for file in os.listdir(dir)]
+        liftoverFilesList.append(loFiles)
+        
+    # Update CDS boundaries for each exon sequence (where possible)
+    for i in range(len(files)):
+        alignFastaFile = files[i]
+        FASTA_obj = fastaObjs[i]
+        trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList)
+    
+    
+    # # Optional step: derive codon position sequences
+    # if args.showCodonPositions:
+    #     for FASTA_obj in fastaObjs:
+    #         solutionDict = solve_translation_frames(FASTA_obj)
+    #         add_codon_seqs(FASTA_obj, solutionDict)
     
     # Write output files
     ## TBD!
+    print("Program completed successfully!")

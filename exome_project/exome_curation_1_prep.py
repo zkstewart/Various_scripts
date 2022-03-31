@@ -180,3 +180,4 @@ if __name__ == "__main__":
         FASTA_obj = fastaObjs[i]
         FASTA_obj.write(outputFileName, withAlt=True, asAligned=True, withConsensus=False)
     
+    print("Program completed successfully!")
