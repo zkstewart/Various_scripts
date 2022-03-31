@@ -251,6 +251,8 @@ def trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, lif
     '''
     assert len(cdsCoordsList) == len(liftoverFilesList), "Can't trim FASTA if param lengths don't match"
     
+    INTRON_PCT = 0.33 # Arbitrary, we'll flag any sequences as potential introns if this threshold is met or exceeded
+    
     # Locate relevant liftover files
     fastaPrefix = os.path.basename(alignFastaFile).rsplit(".", maxsplit=1)[0]
     foundFiles = [None for _ in liftoverFilesList] # Keep files ordered same as cdsCoordsList
@@ -280,6 +282,7 @@ def trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, lif
     
     # See if any liftover coords match to CDS coords
     matches = [None for _ in cdsCoordsList] # Keep coords ordered same as cdsCoordsList
+    intronicFlags = []
     for i in range(len(coords)):
         if coords[i] == None:
             continue
@@ -296,14 +299,29 @@ def trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, lif
                     hit = [cdsStart, cdsEnd]
                     if hit not in hits:
                         hits.append(hit)
-        if len(hits) > 1:
-            print("Oh no! Multiple cdsCoords hits!")
-            print("Details: FASTA prefix={0}, coords={1}, hits={2}".format(fastaPrefix, coords, hits))
-            print("We're going to continue by just using the first hit only...")
         
-        # Store hit if possibly
+        # Check to see if we're in what looks to be an intron
+        if hits != []:
+            "The below list comprehension will check if every sequence position is covered by a hit"
+            overlappedPositions = sum([1 for x in range(start, end+1) for hitStart, hitEnd in hits if x >= hitStart and x <= hitEnd])
+            seqLen = len(seqs[i].seq)
+            pctNoOverlap = (seqLen - overlappedPositions) / seqLen
+            if pctNoOverlap >= INTRON_PCT:
+                intronicFlags.append(True)
+            else:
+                intronicFlags.append(False)
+                
+        # If there are multiple hits, join the coordinate ranges
+        if len(hits) > 1:
+            hits = [[min([hit[0] for hit in hits]), max([hit[1] for hit in hits])]]
+        
+        # Store hit if possible
         if hits != []:
             matches[i] = hits[0]
+    
+    # Raise intronic warning flag if relevant
+    if all(intronicFlags):
+        print("WARNING: {0} likely contains intronic sequence...".format(os.path.basename(alignFastaFile)))
     
     # Abort if we didn't find any matches
     noneFound = all([value == None for value in matches])
@@ -311,7 +329,7 @@ def trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, lif
         return False
     
     # If we did find matches, get our sequence IDs
-    ids = [None if seq == None else seq.description.split(" ")[1] for seq in seqs] # seq.description structure is ENSSH... Species_ID... chr=...
+    ids = [None if seqs[i] == None or matches[i] == None else seqs[i].description.split(" ")[1] for i in range(len(seqs))] # seq.description structure is ENSSH... Species_ID... chr=...
 
     # Locate relevant sequences from FASTA_obj by their ID
     fastaSeqs = [x for x in ids] # copy ids list
@@ -332,7 +350,7 @@ def trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, lif
     a value of 4 would mean we'll end our MSA 4 positions to the right of the sequence.
     So -ve == left, +ve == right.
     '''
-    boundaries = [None for _ in cdsCoordsList]
+    boundaries = [None for _ in ids]
     for i in range(len(matches)):
         match = matches[i]
         if match == None:
@@ -374,14 +392,16 @@ def trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, lif
             bestEnd = newEnd
         else:
             bestEnd = max([bestEnd, newEnd])
+        
+        gapSeqLength = len(fastaSeq.gap_seq) # Set this variable to use it below
     
     # Make start and end positions possible
     bestStart = 0 if bestStart < 0 else bestStart
-    bestEnd = len(fastaSeq.gap_seq) if bestEnd > len(fastaSeq.gap_seq) else bestEnd
+    bestEnd = gapSeqLength if bestEnd > gapSeqLength else bestEnd
     
     # Trim any excess sequence
     startTrim = bestStart
-    endTrim = len(fastaSeq.gap_seq) - bestEnd
+    endTrim = gapSeqLength - bestEnd
     
     FASTA_obj.trim_left(startTrim, asAligned=True)
     FASTA_obj.trim_right(endTrim, asAligned=True)
@@ -441,7 +461,9 @@ if __name__ == "__main__":
     for i in range(len(files)):
         alignFastaFile = files[i]
         FASTA_obj = fastaObjs[i]
-        trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList)
+        trimmed = trim_SeqIO_FASTA_to_CDS_coords(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList)
+        if trimmed == False:
+            print("Unable to trim {0}; no representative liftovers".format(alignFastaFile))
     
     
     # # Optional step: derive codon position sequences
