@@ -558,9 +558,8 @@ class FASTA:
                                     can't trim asAligned""".format(FastASeq_obj.id)))
         
         # Pass along trim method command to all contained FastASeq objects
-        if asAligned == False:
-            for FastASeq_obj in self.seqs:
-                FastASeq_obj.trim_left(length, asAligned)
+        for FastASeq_obj in self.seqs:
+            FastASeq_obj.trim_left(length, asAligned)
     
     def trim_right(self, length, asAligned=False):
         '''
@@ -595,9 +594,8 @@ class FASTA:
                                     can't trim asAligned""".format(FastASeq_obj.id)))
         
         # Pass along trim method command to all contained FastASeq objects
-        if asAligned == False:
-            for FastASeq_obj in self.seqs:
-                FastASeq_obj.trim_right(length, asAligned)
+        for FastASeq_obj in self.seqs:
+            FastASeq_obj.trim_right(length, asAligned)
     
     def set_alt_ids_via_list(self, altList):
         '''
