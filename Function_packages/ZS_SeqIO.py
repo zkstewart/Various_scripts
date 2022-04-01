@@ -296,6 +296,8 @@ class FastASeq:
         # Validate value type
         assert isinstance(length, int)
         assert length >= 0, "Length doesn't make sense as a negative integer!"
+        if length == 0: # Trimming with length 0 has no impact, and this prevents [:-0] issue
+            return
 
         # Validate aligned validity and possibility
         assert isinstance(asAligned, bool)
@@ -357,6 +359,8 @@ class FastASeq:
         # Validate length type and sensibility
         assert isinstance(length, int)
         assert length >= 0, "Length doesn't make sense as a negative integer!"
+        if length == 0: # Trimming with length 0 has no impact, and this prevents [:-0] issue
+            return
 
         # Validate aligned validity and possibility
         assert isinstance(asAligned, bool)
