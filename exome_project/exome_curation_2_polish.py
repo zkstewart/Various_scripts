@@ -232,7 +232,7 @@ def get_cds_coords(gff3File):
             
     return cdsCoords
 
-def trim_SeqIO_FASTA(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_PCT=0.33):
+def trim_SeqIO_FASTA_evidenced(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_PCT=0.33):
     '''
     trims a ZS_SeqIO.FASTA object to the coordinates range indicated by annotated CDS
     coordinates.
@@ -259,7 +259,8 @@ def trim_SeqIO_FASTA(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList
                       of removing intron flanks.
     Returns:
         wasTrimmed -- a Boolean indicating whether trimming occurred successfully or not.
-        reason -- a string explaining why we didn't trim (if relevant) or just None if we did trim,
+        pctTrimmed -- a float value indicating what proportion of the alignment was trimmed.
+        reason -- a string explaining why we didn't trim (if relevant) or just None if we did trim.
     '''
     assert len(cdsCoordsList) == len(liftoverFilesList), "Can't trim FASTA if param lengths don't match"
     assert isinstance(INTRON_PCT, float) or isinstance(INTRON_PCT, int), "INTRON_PCT must be a float!"
@@ -277,7 +278,7 @@ def trim_SeqIO_FASTA(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList
     # Abort if we can't trim like this
     noneFound = all([value == None for value in foundFiles])
     if noneFound:
-        return False, "No liftover files"
+        return False, 0.0, "No liftover files"
     
     # Parse liftover files
     seqs = [None if file == None else ZS_SeqIO.FASTA(file)[0] for file in foundFiles] # Keep seqs ordered same as cdsCoordsList
@@ -342,7 +343,7 @@ def trim_SeqIO_FASTA(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList
     # Abort if we didn't find any matches
     noneFound = all([value == None for value in matches])
     if noneFound:
-        return False, "No CDS hits"
+        return False, 0.0, "No CDS hits"
     
     # If we did find matches, get our sequence IDs
     ids = [None if seqs[i] == None or matches[i] == None else seqs[i].description.split(" ")[1] for i in range(len(seqs))] # seq.description structure is ENSSH... Species_ID... chr=...
@@ -359,9 +360,9 @@ def trim_SeqIO_FASTA(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList
         print("WARNING: {0} likely contains intronic sequence; will attempt to trim...".format(os.path.basename(alignFastaFile)))
     return _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList)
 
-def _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList, PROBLEM_THRESHOLD=0.25):
+def _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList, PROBLEM_THRESHOLD=0.66):
     '''
-    Hidden function for use by trim_SeqIO_FASTA(). This will enact trimming behaviour to remove
+    Hidden function for use by trim_SeqIO_FASTA_evidenced(). This will enact trimming behaviour to remove
     what is likely to be intronic sequence.
     
     Intron trimming assumes the exon is surrounded by one or more intron flanks of varying length.
@@ -420,7 +421,7 @@ def _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList, PR
             
     # Return warning if we failed to find boundaries like this
     if all([r == None for r in alignResults]):
-        return False, "Failed to get a good alignment from overlapping CDS"
+        return False, 0.0, "Failed to get a good alignment from overlapping CDS"
     
     # Map ungapped boundaries to the aligned sequences
     trueBoundaries = []
@@ -445,8 +446,9 @@ def _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList, PR
             
             if sequenceOngoingCount == result[0]:
                 trueStart = x
-            elif sequenceOngoingCount == result[1]:
+            elif sequenceOngoingCount + 1 == result[1]: # also +1 here for reasons
                 trueEnd = x + 1 # +1 to offset range not being inclusive, or something
+                break
 
             sequenceOngoingCount += 1
         assert trueStart != None and trueEnd != None
@@ -466,11 +468,26 @@ def _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList, PR
     FASTA_obj.trim_left(startTrim, asAligned=True)
     FASTA_obj.trim_right(endTrim, asAligned=True)
     
-    return True, None # indicate that trimming worked successfully
+    # Calculate how much was trimmed for tracking purposes
+    pctTrimmed = (startTrim + endTrim) / len(gappedFastaSeqStr)
+    
+    return True, pctTrimmed, None # indicate that trimming worked successfully
+
+def trim_SeqIO_FASTA_denovo(FASTA_obj):
+    '''
+    Trims a ZS_SeqIO.FASTA object to the best guess boundaries of the CDS region.
+    It does this without genomic evidence (hence "de novo") by assessment of how
+    to get the longest uninterrupted (i.e., no stop codons) region from a MSA.
+    
+    Params:
+        FASTA_obj -- a ZS_SeqIO.FASTA instance
+    '''
+    ## TBD...
+    pass
 
 def _CDS_coords_trimming(FASTA_obj, coords, matches, ids, fastaSeqs):
     '''
-    Hidden function for use by trim_SeqIO_FASTA(). This will enact trimming behaviour based on CDS coords
+    Hidden function for use by trim_SeqIO_FASTA_evidenced(). This will enact trimming behaviour based on CDS coords
     when the intron flag was not raised. As such, this function will simply trim the MSA to the best
     estimated coordinates for one or more of the genomic annotation's CDS regions.
     
@@ -635,17 +652,22 @@ if __name__ == "__main__":
         genomesList.append(g)
         
     # Update CDS boundaries for each exon sequence (where possible)
+    log = []
     for i in range(len(files)):
         alignFastaFile = files[i] # i=5 for testing intron trim
         FASTA_obj = fastaObjs[i]
-        trimmed, reason = trim_SeqIO_FASTA(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList)
+        trimmed, pctTrimmed, reason = trim_SeqIO_FASTA_evidenced(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList)
         if trimmed == False:
-            if reason == "No liftover files":
-                print("Unable to trim {0}; no representative liftovers".format(alignFastaFile))
-                ## TBD: Special trimming procedure without liftover files
-            else:
-                print("Unable to trim {0}; reason = {1}".format(alignFastaFile, reason))
+            explanation = "Unable to trim {0} normally; reason = {1}".format(alignFastaFile, reason)
+            print(explanation); log.append(explanation)
+            if reason == "Failed to get a good alignment from overlapping CDS":
                 stophere # For development in IPython
+            ## TBD: Special trimming procedure without liftover files
+            trimmed, pctTrimmed, reason = trim_SeqIO_FASTA_denovo(FASTA_obj)
+        else:
+            explanation = "Amount trimmed from {0} = {1}%".format(alignFastaFile, round(pctTrimmed*100, 2))
+            print(explanation)
+            log.append(explanation)
 
     
     # # Optional step: derive codon position sequences
