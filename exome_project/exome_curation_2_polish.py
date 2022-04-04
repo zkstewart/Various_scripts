@@ -4,6 +4,7 @@
 # polishing of the MSAs including trimming and removal of indel errors.
 
 import sys, argparse, os
+import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
 from exome_liftover import ssw_parasail
@@ -69,6 +70,8 @@ def solve_translation_frames(FASTA_obj):
     # Obtain translations in the three strand=1 frames
     for i in range(len(FASTA_obj)):
         FastASeq_obj = FASTA_obj[i]
+        if FastASeq_obj.seq == "": # skip empty/dummy seqs
+            continue
         
         results = [] # contains triples of [seq, frame, hasStopCodon (bool)]
         for frame in range(0, 3):
@@ -80,6 +83,8 @@ def solve_translation_frames(FASTA_obj):
     solutionDict = {} # contains [index] = [seq, frame, hasStopCodon]
     problemDict = {} # contains [index] = [[seq, frame, hasStopCodon], ... +2 more frames]
     for i in range(len(FASTA_obj)):
+        if i not in resultsDict:
+            continue
         results = resultsDict[i]
         
         # Handle easy-to-solve scenarios
@@ -261,6 +266,8 @@ def trim_SeqIO_FASTA_evidenced(alignFastaFile, FASTA_obj, cdsCoordsList, liftove
         wasTrimmed -- a Boolean indicating whether trimming occurred successfully or not.
         pctTrimmed -- a float value indicating what proportion of the alignment was trimmed.
         reason -- a string explaining why we didn't trim (if relevant) or just None if we did trim.
+        intronFlag -- a Boolean indicating whether the intronic sequence flag was raised (i.e.,
+                      if this sequence is very likely to contain a significant portion of intron sequence)
     '''
     assert len(cdsCoordsList) == len(liftoverFilesList), "Can't trim FASTA if param lengths don't match"
     assert isinstance(INTRON_PCT, float) or isinstance(INTRON_PCT, int), "INTRON_PCT must be a float!"
@@ -278,7 +285,7 @@ def trim_SeqIO_FASTA_evidenced(alignFastaFile, FASTA_obj, cdsCoordsList, liftove
     # Abort if we can't trim like this
     noneFound = all([value == None for value in foundFiles])
     if noneFound:
-        return False, 0.0, "No liftover files"
+        return False, 0.0, "No liftover files", False
     
     # Parse liftover files
     seqs = [None if file == None else ZS_SeqIO.FASTA(file)[0] for file in foundFiles] # Keep seqs ordered same as cdsCoordsList
@@ -343,7 +350,7 @@ def trim_SeqIO_FASTA_evidenced(alignFastaFile, FASTA_obj, cdsCoordsList, liftove
     # Abort if we didn't find any matches
     noneFound = all([value == None for value in matches])
     if noneFound:
-        return False, 0.0, "No CDS hits"
+        return False, 0.0, "No CDS hits", False
     
     # If we did find matches, get our sequence IDs
     ids = [None if seqs[i] == None or matches[i] == None else seqs[i].description.split(" ")[1] for i in range(len(seqs))] # seq.description structure is ENSSH... Species_ID... chr=...
@@ -356,11 +363,10 @@ def trim_SeqIO_FASTA_evidenced(alignFastaFile, FASTA_obj, cdsCoordsList, liftove
             fastaSeqs[index] = FastASeq_obj
     
     # Enter into trimming phase
-    if all(intronicFlags):
-        print("WARNING: {0} likely contains intronic sequence; will attempt to trim...".format(os.path.basename(alignFastaFile)))
-    return _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList)
+    wasTrimmed, pctTrimmed, reason = _intron_trimming(FASTA_obj, coords, matches, fastaSeqs, genomesList)
+    return wasTrimmed, pctTrimmed, reason, all(intronicFlags)
 
-def _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList, PROBLEM_THRESHOLD=0.66):
+def _intron_trimming(FASTA_obj, coords, matches, fastaSeqs, genomesList, PROBLEM_THRESHOLD=0.66):
     '''
     Hidden function for use by trim_SeqIO_FASTA_evidenced(). This will enact trimming behaviour to remove
     what is likely to be intronic sequence.
@@ -371,6 +377,10 @@ def _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList, PR
     Params:
         PROBLEM_THRESHOLD -- a float value indicating what proportion of the genomic exon sequence
                              is allowed to NOT align against the MSA exon sequence.
+    Returns:
+        wasTrimmed -- a Boolean indicating whether trimming occurred successfully or not.
+        pctTrimmed -- a float value indicating what proportion of the alignment was trimmed.
+        reason -- a string explaining why we didn't trim (if relevant) or just None if we did trim.
     '''
     assert isinstance(PROBLEM_THRESHOLD, float)
     assert 0 <= PROBLEM_THRESHOLD <= 1
@@ -409,8 +419,9 @@ def _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList, PR
             fastaSeqAlign, exonAlign, score = fwd_fastaSeqAlign, fwd_exonAlign, fwd_score
 
         # Stop if things didn't work well
-        unalignedPct = 1 - (len(exonAlign) / len(exonSeqStr))
-        if unalignedPct >= PROBLEM_THRESHOLD:
+        exonUnalignedPct = 1 - (len(exonAlign) / len(exonSeqStr))
+        msaUnalignedPct = 1 - (len(fastaSeqAlign) / len(fastaSeqStr))
+        if exonUnalignedPct >= PROBLEM_THRESHOLD and msaUnalignedPct >= PROBLEM_THRESHOLD:
             alignResults.append(None)
         # If things did work well, figure out where our boundaries should be
         else:
@@ -473,7 +484,7 @@ def _intron_trimming(FASTA_obj, coords, matches, ids, fastaSeqs, genomesList, PR
     
     return True, pctTrimmed, None # indicate that trimming worked successfully
 
-def trim_SeqIO_FASTA_denovo(FASTA_obj):
+def trim_SeqIO_FASTA_denovo(FASTA_obj, EXCLUSION_PCT=0.90, PROBLEM_THRESHOLD=0.66):
     '''
     Trims a ZS_SeqIO.FASTA object to the best guess boundaries of the CDS region.
     It does this without genomic evidence (hence "de novo") by assessment of how
@@ -481,120 +492,150 @@ def trim_SeqIO_FASTA_denovo(FASTA_obj):
     
     Params:
         FASTA_obj -- a ZS_SeqIO.FASTA instance
+        EXCLUSION_PCT -- a float value indicating the proportion of sequences that
+                         must have their stop codons excluded within the selected region.
+                         E.g., if 0.90, then 90% of the sequences must NOT contain a stop
+                         codon within the selected region.
+        PROBLEM_THRESHOLD -- a float value indicating what proportion of the MSA is allowed 
+                             to be trimmed using this function. Higher proportions will
+                             NOT be trimmed to prevent major malfunctions.
+    Returns:
+        wasTrimmed -- a Boolean indicating whether trimming occurred successfully or not.
+        pctTrimmed -- a float value indicating what proportion of the alignment was trimmed.
+        reason -- a string explaining why we didn't trim (if relevant) or just None if we did trim.
     '''
-    ## TBD...
-    pass
-
-def _CDS_coords_trimming(FASTA_obj, coords, matches, ids, fastaSeqs):
-    '''
-    Hidden function for use by trim_SeqIO_FASTA_evidenced(). This will enact trimming behaviour based on CDS coords
-    when the intron flag was not raised. As such, this function will simply trim the MSA to the best
-    estimated coordinates for one or more of the genomic annotation's CDS regions.
+    assert isinstance(EXCLUSION_PCT, float) or isinstance(EXCLUSION_PCT, int)
+    assert 0 <= EXCLUSION_PCT <= 1, "EXCLUSION_PCT must be between 0 or 1 (inclusive of 0 and 1)"
     
-    Currently deprecated, being kept around in case I want to scavenge its code for later.
-    '''
+    assert isinstance(PROBLEM_THRESHOLD, float) or isinstance(PROBLEM_THRESHOLD, int)
+    assert 0 <= PROBLEM_THRESHOLD <= 1, "PROBLEM_THRESHOLD must be between 0 or 1 (inclusive of 0 and 1)"
     
-    # Find optimistic boundaries for exon CDS
-    '''
-    i.e., if we have more than one match, pick the longest section of CDS
-    based on all matches. We do the difference calculations to give us an offset
-    from 0.
+    EXCLUSION_PCT = int(EXCLUSION_PCT*100)
     
-    For example, if the current start position of the sequence we're assessing
-    is considered 0 in the MSA, a value of -4 means we'll start our MSA 4 positions to
-    the left of the sequence and no further. If the end position is also considered 0,
-    a value of 4 would mean we'll end our MSA 4 positions to the right of the sequence.
-    So -ve == left, +ve == right.
-    '''
-    boundaries = [None for _ in ids]
-    for i in range(len(matches)):
-        match = matches[i]
-        if match == None:
+    # Get sequence translations
+    solutionDict = solve_translation_frames(FASTA_obj)
+    
+    # Locate longest segment boundaries for each sequence that excludes stop codons
+    boundaries = []
+    for i in range(len(FASTA_obj)):
+        if i not in solutionDict:
             continue
-        chrom, startCoord, endCoord = coords[i]
         
-        startDifference = match[0] - startCoord
-        endDifference =  match[1] - endCoord
+        FastASeq_obj = FASTA_obj[i]
+        translationSeq, frame, hasStopCodon = solutionDict[i]
         
-        boundaries[i] = [startDifference, endDifference]
-    
-    # Compare theoretical optimistic boundaries to actual gapped sequences to see where the most optimistic boundaries are
-    '''
-    Our theoretical boundaries were just computed. Because the gapped sequences might start at
-    different positions, we need to relate their starts to the MSA's true coordinates to see
-    where any trimming should occur, if at all.
-    '''
-    
-    bestStart, bestEnd = None, None # more -ve is better for start, more +ve is better for end
-    for i in range(len(boundaries)):
-        fastaSeq = fastaSeqs[i]
-        if fastaSeq == None:
-            continue
-        startOffset, endOffset = boundaries[i]
-        
-        # Find our new start, with offset adjusted to actual sequence positions excluding gaps
-        firstLetter = fastaSeq.seq[0]
-        msaStart = fastaSeq.gap_seq.find(firstLetter)
-        sequenceOngoingCount = 0
-        if startOffset < 0:
-            iterRange = range(msaStart-1,-1,-1)
+        # If there's no stop codons, just put the maximal sequence length in
+        if not hasStopCodon:
+            boundaries.append([0, len(FastASeq_obj.gap_seq)])
+        # If there are stop codons, find the borders for the longest section excluding stop codons
         else:
-            iterRange = range(msaStart, len(fastaSeq.gap_seq))
-        for x in iterRange:
-            if sequenceOngoingCount == startOffset:
-                newStart = x
-                break
+            longestSection = max(translationSeq.split("*"), key=len)
+            proteinStart = longestSection.find(longestSection)
+            proteinEnd = proteinStart + len(longestSection)
             
-            letter = fastaSeq.gap_seq[x]
-            if letter == "-":
-                continue
-            else:
-                sequenceOngoingCount += 1
-        #newStart = msaStart + startOffset
-        
-        lastLetter = fastaSeq.seq[-1]
-        msaEnd = len(fastaSeq.gap_seq) - fastaSeq.gap_seq[::-1].find(lastLetter)
-        sequenceOngoingCount = 0
-        if endOffset < 0:
-            iterRange = range(msaEnd-1,-1,-1)
-        else:
-            iterRange = range(msaEnd, len(fastaSeq.gap_seq))
-        for x in iterRange:
-            if sequenceOngoingCount == endOffset or x == len(fastaSeq.gap_seq) - 1:
-                newEnd = x + 1 # counter act range not being inclusive, or something
-                break
+            # Translate .seq positions to .gap_seq positions
+            ongoingPositionCount = 0
+            for x in range(len(FastASeq_obj.gap_seq)):
+                letter = FastASeq_obj.gap_seq[x]
+                if letter == "-":
+                    continue
+                
+                if ongoingPositionCount == proteinStart*3:
+                    startIndex = x
+                if ongoingPositionCount == proteinEnd*3:
+                    endIndex = x # proteinEnd marks the first position of the stop codon, setting this to endIndex will exclude it
+                
+                ongoingPositionCount += 1
             
-            letter = fastaSeq.gap_seq[x]
-            if letter == "-":
-                continue
-            else:
-                sequenceOngoingCount += 1
-        #newEnd = msaEnd + endOffset
-        
-        if bestStart == None:
-            bestStart = newStart
-        else:
-            bestStart = min([bestStart, newStart])
-        
-        if bestEnd == None:
-            bestEnd = newEnd
-        else:
-            bestEnd = max([bestEnd, newEnd])
-        
-        gapSeqLength = len(fastaSeq.gap_seq) # Set this variable to use it below
+            boundaries.append([startIndex, endIndex])
     
-    # Make start and end positions possible
-    bestStart = 0 if bestStart < 0 else bestStart
-    bestEnd = gapSeqLength if bestEnd > gapSeqLength else bestEnd
+    # Find true boundaries which maximise sequence length according to EXCLUSION_PCT threshold
+    '''
+    It's not precise, but the below code intends to trim our MSA to only the section that best
+    accounts for ~{EXCLUSION_PCT}% of the start and stop sites in boundaries. As such, if ~{EXCLUSION_PCT}%
+    == 90%, then 90% of our boundaries should have their start site LESS THAN OR EQUAL TO the
+    selected start site, and 90% of the boundaries should have their end site GREATER THAN OR
+    EQUAL TO the selected end site. It's messy but it should do the job!
+    '''
+    trueStartIndex = np.percentile([x[0] for x in boundaries], EXCLUSION_PCT)
+    trueEndIndex = np.percentile([x[1] for x in boundaries], 100-EXCLUSION_PCT) # Need to get percentile in reverse, kinda
     
-    # Trim any excess sequence
-    startTrim = bestStart
-    endTrim = gapSeqLength - bestEnd
+    # Check to see how much we will trim
+    startTrim = int(trueStartIndex) # No need to change
+    endTrim = len(FASTA_obj[0].gap_seq) - int(trueEndIndex) # any FastASeq will do, they should all be the same length
+    pctTrimmed = (startTrim + endTrim) / len(FASTA_obj[0].gap_seq)
+    if pctTrimmed > PROBLEM_THRESHOLD:
+        return False, 0.0, "De novo trimming would trim {0}%; exceeds {1}% threshold".format(round(pctTrimmed*100, 2), PROBLEM_THRESHOLD*100)
     
+    # Trim to boundaries
     FASTA_obj.trim_left(startTrim, asAligned=True)
     FASTA_obj.trim_right(endTrim, asAligned=True)
+        
+    return True, pctTrimmed, None # indicate that trimming worked successfully
+
+def trim_SeqIO_noninformative_flanks(FASTA_obj, INFO_DROP_PCT=0.95):
+    '''
+    Trims a ZS_SeqIO.FASTA object to remove non-informative flanks i.e.,
+    sequence that is ALMOST ENTIRELY only gap ("-") or unknown ("N") across
+    entire columns on the left and right sides of the MSA.
     
-    return True # indicate that trimming worked successfully
+    Params:
+        FASTA_obj -- a ZS_SeqIO.FASTA instance
+        INFO_DROP_PCT -- a float value indicating what percentage of the MSA members
+                         must be informative to avoid being trimmed. If left at the
+                         default 0.95, then 5% or more of the sequences must be informative
+                         to avoid having the head or tail position trimmed.
+    Returns:
+        pctTrimmed -- a float value indicating what proportion of the alignment was trimmed.
+    '''
+    assert isinstance(INFO_DROP_PCT, float) or isinstance(INFO_DROP_PCT, int)
+    assert 0 <= INFO_DROP_PCT <= 1, "INFO_DROP_PCT must be between 0 or 1 (inclusive of 0 and 1)"
+    
+    startTrim = 0
+    for i in range(len(FASTA_obj[0].gap_seq)):
+        isNonInformative = [FastASeq_obj.gap_seq[i].lower() in ["n", "-"] for FastASeq_obj in FASTA_obj]
+        nonInfoPct = sum(isNonInformative) / len(isNonInformative)
+        
+        if nonInfoPct > INFO_DROP_PCT:
+            startTrim += 1
+        else:
+            break
+    
+    endTrim = 0
+    for i in range(len(FASTA_obj[0].gap_seq)-1, -1, -1):
+        isNonInformative = [FastASeq_obj.gap_seq[i].lower() in ["n", "-"] for FastASeq_obj in FASTA_obj]
+        nonInfoPct = sum(isNonInformative) / len(isNonInformative)
+        
+        if nonInfoPct > INFO_DROP_PCT:
+            endTrim += 1
+        else:
+            break
+    
+    # Trim to boundaries
+    FASTA_obj.trim_left(startTrim, asAligned=True)
+    FASTA_obj.trim_right(endTrim, asAligned=True)
+        
+    return pctTrimmed
+
+def _tmp_file_name_gen(prefix, suffix):
+        '''
+        Hidden function for use by this script.
+        Params:
+            prefix -- a string for a file prefix e.g., "tmp"
+            suffix -- a string for a file suffix e.g., "fasta". Note that we don't
+                      use a "." in this, since it's inserted between prefix and suffix
+                      automatically.
+        Returns:
+            tmpName -- a string for a file name which does not exist in the current dir.
+        '''
+        ongoingCount = 1
+        while True:
+            if not os.path.isfile("{0}.{1}".format(prefix, suffix)):
+                return "{0}.{1}".format(prefix, suffix)
+            elif os.path.isfile("{0}.{1}.{2}".format(prefix, ongoingCount, suffix)):
+                ongoingCount += 1
+            else:
+                return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
@@ -650,32 +691,54 @@ if __name__ == "__main__":
     for file in args.genomes:
         g = ZS_SeqIO.FASTA(file)
         genomesList.append(g)
-        
-    # Update CDS boundaries for each exon sequence (where possible)
-    log = []
+    
+    # Trimming
+    log = [[
+        "wasTrimmed", "trimMethod", "pctTrimmed",
+        "reason", "intronFlag", "noninfoPctTrimmed",
+        "initialLength", "trimmedLength"
+    ]]
     for i in range(len(files)):
+        # Get details for this MSA
         alignFastaFile = files[i] # i=5 for testing intron trim
         FASTA_obj = fastaObjs[i]
-        trimmed, pctTrimmed, reason = trim_SeqIO_FASTA_evidenced(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList)
-        if trimmed == False:
-            explanation = "Unable to trim {0} normally; reason = {1}".format(alignFastaFile, reason)
-            print(explanation); log.append(explanation)
-            if reason == "Failed to get a good alignment from overlapping CDS":
-                stophere # For development in IPython
-            ## TBD: Special trimming procedure without liftover files
-            trimmed, pctTrimmed, reason = trim_SeqIO_FASTA_denovo(FASTA_obj)
+        initialLength = len(FASTA_obj[0].gap_seq) # hold onto for later statistics
+        trimMethod = None # default for later logging
+        
+        # Perform trimming with standard procedure
+        trimmed, pctTrimmed, reason, intronFlag = trim_SeqIO_FASTA_evidenced(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList)
+        if trimmed == True:
+            trimMethod = "intronTrim"
+        
+        # Perform trimming with de novo procedure
         else:
-            explanation = "Amount trimmed from {0} = {1}%".format(alignFastaFile, round(pctTrimmed*100, 2))
-            print(explanation)
-            log.append(explanation)
-
+            trimmed, pctTrimmed, reason = trim_SeqIO_FASTA_denovo(FASTA_obj)
+            if trimmed == True:
+                trimMethod = "denovoTrim"
+        
+        # Perform trimming to remove non-informative sites
+        noninfoPctTrimmed = trim_SeqIO_noninformative_flanks(FASTA_obj)
+        
+        # Statistics and logging
+        endLength = len(FASTA_obj[0].gap_seq)
+        log.append([
+            "Y" if trimmed else "N",
+            trimMethod if trimMethod != None else ".",
+            "." if trimmed == False else str(round(pctTrimmed*100, 2)),
+            "." if reason == None else reason,
+            "Y" if intronFlag else "N",
+            str(round(noninfoPctTrimmed*100, 2)),
+            str(initialLength),
+            str(endLength)
+        ])
+        
+        # Write output FASTA file
+        outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
+        FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
+        
+    # Write output logging file
+    logFileName = _tmp_file_name_gen("2_polish_log", "txt")
+    with open(logFileName, "w") as fileOut:
+        fileOut.write("\n".join(["\t".join(l) for l in log]))
     
-    # # Optional step: derive codon position sequences
-    # if args.showCodonPositions:
-    #     for FASTA_obj in fastaObjs:
-    #         solutionDict = solve_translation_frames(FASTA_obj)
-    #         add_codon_seqs(FASTA_obj, solutionDict)
-    
-    # Write output files
-    ## TBD!
     print("Program completed successfully!")
