@@ -8,6 +8,7 @@ import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
 from exome_liftover import ssw_parasail
+from copy import deepcopy
 
 def validate_args(args):
     # Validate input data location
@@ -35,6 +36,10 @@ def validate_args(args):
         print("gff3s and liftovers arguments need to be paired, which means we should receive the same number of values.")
         print("You provided {0} gff3 and {1} liftovers arguments.".format(len(args.gff3s), len(args.liftovers)))
         print("Fix this issue and try again.")
+        quit()
+    # Validate numeric arguments
+    if args.deferToDenovoPct < 0 or args.deferToDenovoPct > 1:
+        print("deferToDenovoPct must be >= 0 and <= 1")
         quit()
     # Handle file output
     if os.path.isdir(args.outputDir):
@@ -611,13 +616,13 @@ def trim_SeqIO_noninformative_flanks(FASTA_obj, INFO_DROP_PCT=0.95):
         else:
             break
     
+    # Calculate statistics
+    pctTrimmed = (startTrim + endTrim) / len(FASTA_obj[0].gap_seq)
+    
     # Trim to boundaries
     FASTA_obj.trim_left(startTrim, asAligned=True)
     FASTA_obj.trim_right(endTrim, asAligned=True)
     
-    # Calculate statistics
-    pctTrimmed = (startTrim + endTrim) / len(FASTA_obj[0].gap_seq)
-        
     return pctTrimmed
 
 def _tmp_file_name_gen(prefix, suffix):
@@ -661,7 +666,10 @@ if __name__ == "__main__":
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"2_prep\")",
                 default="2_polish")
-
+    # Opts
+    p.add_argument("-d", dest="deferToDenovoPct", required=False, type=float,
+                help="Output directory location (default == \"2_prep\")",
+                default=0.60)
     args = p.parse_args()
     validate_args(args)
     
@@ -705,13 +713,19 @@ if __name__ == "__main__":
         trimMethod = None # default for later logging
         
         # Perform trimming with standard procedure
+        backup_FASTA_obj = deepcopy(FASTA_obj)
         trimmed, pctTrimmed, reason, intronFlag = trim_SeqIO_FASTA_evidenced(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList)
-        if trimmed == True:
+        if trimmed == True and pctTrimmed < args.deferToDenovoPct:
             trimMethod = "intronTrim"
         
         # Perform trimming with de novo procedure
+        elif trimmed == True and pctTrimmed >= args.deferToDenovoPct:
+            denovoTrimmed, denovoPctTrimmed, denovoReason = trim_SeqIO_FASTA_denovo(backup_FASTA_obj, PROBLEM_THRESHOLD=1.0) # unlock trimming here since as long as it's better than intron we take it
+            if denovoTrimmed == True and denovoPctTrimmed < pctTrimmed: # we'll only defer to de novo trimming if it trims less than intron trimming
+                trimMethod = "denovoTrim"
+                FASTA_obj, trimmed, pctTrimmed, reason = backup_FASTA_obj, denovoTrimmed, denovoPctTrimmed, "De novo trimming is less than intron trimming"
         else:
-            trimmed, pctTrimmed, reason = trim_SeqIO_FASTA_denovo(FASTA_obj)
+            trimmed, pctTrimmed, reason = trim_SeqIO_FASTA_denovo(backup_FASTA_obj)
             if trimmed == True:
                 trimMethod = "denovoTrim"
         
