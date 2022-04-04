@@ -614,6 +614,9 @@ def trim_SeqIO_noninformative_flanks(FASTA_obj, INFO_DROP_PCT=0.95):
     # Trim to boundaries
     FASTA_obj.trim_left(startTrim, asAligned=True)
     FASTA_obj.trim_right(endTrim, asAligned=True)
+    
+    # Calculate statistics
+    pctTrimmed = (startTrim + endTrim) / len(FASTA_obj[0].gap_seq)
         
     return pctTrimmed
 
@@ -658,10 +661,6 @@ if __name__ == "__main__":
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"2_prep\")",
                 default="2_polish")
-    # Opts
-    p.add_argument("--codons", dest="showCodonPositions", required=False, action="store_true",
-                help="Optionally, specify this flag if you want to produce dummy sequences containing codon numbers",
-                default=False)
 
     args = p.parse_args()
     validate_args(args)
@@ -693,7 +692,7 @@ if __name__ == "__main__":
         genomesList.append(g)
     
     # Trimming
-    log = [[
+    log = [["fileName",
         "wasTrimmed", "trimMethod", "pctTrimmed",
         "reason", "intronFlag", "noninfoPctTrimmed",
         "initialLength", "trimmedLength"
@@ -722,6 +721,7 @@ if __name__ == "__main__":
         # Statistics and logging
         endLength = len(FASTA_obj[0].gap_seq)
         log.append([
+            os.path.basename(alignFastaFile),
             "Y" if trimmed else "N",
             trimMethod if trimMethod != None else ".",
             "." if trimmed == False else str(round(pctTrimmed*100, 2)),
