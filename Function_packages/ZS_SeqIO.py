@@ -419,7 +419,7 @@ class FastASeq:
         return "FastASeq(id='{0}',seq='{1}',alt={4}{2}{4},gap_seq={5}{3}{5})".format(
             self.id, self.seq if len(self.seq) < 200 else "{0}...{1}".format(self.seq[0:100], self.seq[-100:]),
             self.alt,
-            self.gap_seq if len(self.gap_seq) < 200 else "{0}...{1}".format(self.gap_seq[0:100], self.gap_seq[-100:]),
+            "<None>" if self.gap_seq == None else self.gap_seq if len(self.gap_seq) < 200 else "{0}...{1}".format(self.gap_seq[0:100], self.gap_seq[-100:]),
             "'" if self.alt != None else "", "'" if self.gap_seq != None else ""
         )
 
