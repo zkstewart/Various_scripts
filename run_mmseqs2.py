@@ -128,10 +128,16 @@ def indexmms2(mmseqs2dir, query, tmpdir, threads):
         with open(dbname + ".idxComplete", "w") as fileOut:
             fileOut.write("Index completed")
 
-def runmms2(mmseqs2dir, queryDB, targetDB, tmpdir, searchName, params):
+def runmms2(mmseqs2dir, queryDB, targetDB, tmpdir, searchName, searchType, params):
+        '''
+        params = [evalue, threads, num_iterations, sensitivity, alt_ali]
+        '''
+        assert searchType in ["blastn", "tblastx"]
+        searchType = "2" if searchType == "blastn" else "3"
+        
         import os, subprocess
         # Format command
-        cmd = os.path.join(mmseqs2dir, 'mmseqs') + ' search "' + queryDB + '" "' + targetDB + '" "' + searchName + '" "' + tmpdir + '" -e {} --threads {} --num-iterations {} -s {} --alt-ali {}'.format(*params)
+        cmd = '{} search "{}" "{}" "{}" "{}" --search-type {} -e {} --threads {} --num-iterations {} -s {} --alt-ali {}'.format(os.path.join(mmseqs2dir, 'mmseqs'), queryDB, targetDB, searchName, tmpdir, searchType, *params)
         print("# " + cmd)
         # Run query
         run_mms2 = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -215,6 +221,8 @@ def main():
                           help="Specify the sensitivity number to be provided as an argument (default == 7)")
         p.add_argument("-a", "--alt-ali", dest="alt_ali", type = int, default = 0,
                           help="Specify the number of alternative alignments (similar to BLAST's HSPs) to be provided as an argument (default == 0)")
+        p.add_argument("-st", "--searchtype", dest="searchtype", default="blastn", choices=["blastn", "tblastx"],
+                          help="Specify whether you to run BLASTN or TBLASTX; (default==blastn)")
         p.add_argument("-i", "--index_skip", dest="skip_index", action="store_true", default=False,
                           help="Optionally specify whether you want to skip the indexing step")
         p.add_argument("-bs", "--blast_sort", dest="blast_sort", action="store_true", default=False,
@@ -338,7 +346,7 @@ def main():
                 else:
                         query = os.path.join(args.querydir, args.query + "_profileDB")
                 target = os.path.join(args.targetdir, targetName)
-                runmms2(args.mmseqs2dir, query, target, tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), params)
+                runmms2(args.mmseqs2dir, query, target, tmpdir, os.path.join(args.outputdir, args.output + '_mms2SEARCH'), args.searchtype, params)
         else:  
                 print('Skipping MMseqs2 search...[If you want to re-run the search, delete the previous file (' + os.path.join(args.outputdir, args.output) + '_mms2SEARCH) and the mms2tmp directory]')
                 log_update(logName, 'Skipping MMseqs2 search...[If you want to re-run the search, delete the previous file (' + os.path.join(args.outputdir, args.output) + '_mms2SEARCH) and the mms2tmp directory]')
