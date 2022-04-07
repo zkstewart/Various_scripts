@@ -3,12 +3,11 @@
 # Follows up on exome_curation_prep.py to perform some additional
 # polishing of the MSAs including trimming and removal of indel errors.
 
-import sys, argparse, os, subprocess
+import sys, argparse, os, subprocess, hashlib, time, random
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
 from exome_liftover import ssw_parasail
-from copy import deepcopy
 
 def validate_args(args):
     # Validate input data location
@@ -647,7 +646,7 @@ def _tmp_file_name_gen(prefix, suffix):
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 #### RE-DO OF INTRON LOCATING
-def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, INTRON_CHAR="4"):
+def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, transcriptomesFilesList, INTRON_CHAR="4"):
     '''
     Receives a ZS_SeqIO.FASTA object representing a MSA. Using genomic annotation(s) for one or 
     more of the sequences present in the MSA, this function will attempt to locate MSA columnar
@@ -671,6 +670,8 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
         liftoverFilesList -- a list containing one or more lists which provide the locations of
                              liftover-ed exon sequences from genomes. This should be paired with
                              the GFF3s that made the cdsCoordsList values.
+        transcriptomesFilesList -- a list containing one or more strings indicating the locations
+                                   of transcriptome FASTA files.
         INTRON_CHAR -- a string containing a single character for how the intron position will
                        be represented within the dummy sequence output.
     Returns:
@@ -882,7 +883,7 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
     # Return result string otherwise and pct for logging purposes
     return dummyString, pctIntron, "evidenced"
 
-def _evidenceless_intron_locations(FASTA_obj, INTRON_CHAR, PROBLEM_THRESHOLD=0.66):
+def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR, PROBLEM_THRESHOLD=0.66):
     '''
     Hidden function for use by get_intron_locations(). This will enact intron prediction behaviour
     based on the genome annotations.
@@ -904,72 +905,50 @@ def _evidenceless_intron_locations(FASTA_obj, INTRON_CHAR, PROBLEM_THRESHOLD=0.6
     '''
     assert isinstance(PROBLEM_THRESHOLD, float)
     assert 0 <= PROBLEM_THRESHOLD <= 1, "PROBLEM_THRESHOLD must be between 0 or 1 (inclusive of 0 and 1)"
-        
-    # Get sequence translations
-    solutionDict = solve_translation_frames(FASTA_obj)
     
-    # Locate longest segment boundaries for each sequence that excludes stop codons
-    boundaries = []
-    for i in range(len(FASTA_obj)):
-        if i not in solutionDict:
-            continue
-        
-        FastASeq_obj = FASTA_obj[i]
-        translationSeq, frame, hasStopCodon = solutionDict[i]
-        
-        # If there's no stop codons, just put the maximal sequence length in
-        if not hasStopCodon:
-            boundaries.append([0, len(FastASeq_obj.gap_seq)])
-        # If there are stop codons, find the borders for the longest section excluding stop codons
-        else:
-            longestSection = max(translationSeq.split("*"), key=len)
-            proteinStart = longestSection.find(longestSection)
-            proteinEnd = proteinStart + len(longestSection)
-            
-            # Translate .seq positions to .gap_seq positions
-            ongoingPositionCount = 0
-            for x in range(len(FastASeq_obj.gap_seq)):
-                letter = FastASeq_obj.gap_seq[x]
-                if letter == "-":
-                    continue
-                
-                if ongoingPositionCount == proteinStart*3:
-                    startIndex = x
-                if ongoingPositionCount == proteinEnd*3:
-                    endIndex = x # proteinEnd marks the first position of the stop codon, setting this to endIndex will exclude it
-                
-                ongoingPositionCount += 1
-            
-            boundaries.append([startIndex, endIndex])
+    # Make sure transcriptome files are ready for BLAST
+    for transcriptomeFile in transcriptomesFilesList:
+        if not blastdb_exists(transcriptomeFile):
+            makeblastdb(transcriptomeFile, "nucl")
     
-    # Find true boundaries which maximise sequence length according to EXCLUSION_PCT threshold
-    '''
-    It's not precise, but the below code intends to trim our MSA to only the section that best
-    accounts for ~{EXCLUSION_PCT}% of the start and stop sites in boundaries. As such, if ~{EXCLUSION_PCT}%
-    == 90%, then 90% of our boundaries should have their start site LESS THAN OR EQUAL TO the
-    selected start site, and 90% of the boundaries should have their end site GREATER THAN OR
-    EQUAL TO the selected end site. It's messy but it should do the job!
-    '''
-    trueStartIndex = np.percentile([x[0] for x in boundaries], EXCLUSION_PCT)
-    trueEndIndex = np.percentile([x[1] for x in boundaries], 100-EXCLUSION_PCT) # Need to get percentile in reverse, kinda
+    # Get representative sequences for BLAST
+    ## TBD
     
-    # Check to see how much we will trim
-    startTrim = int(trueStartIndex) # No need to change
-    endTrim = len(FASTA_obj[0].gap_seq) - int(trueEndIndex) # any FastASeq will do, they should all be the same length
-    pctTrimmed = (startTrim + endTrim) / len(FASTA_obj[0].gap_seq)
-    if pctTrimmed > PROBLEM_THRESHOLD:
-        return False, 0.0, "De novo trimming would trim {0}%; exceeds {1}% threshold".format(round(pctTrimmed*100, 2), PROBLEM_THRESHOLD*100)
+    # Write sequences to file(?)
+    ## TBD
     
-    # Trim to boundaries
-    FASTA_obj.trim_left(startTrim, asAligned=True)
-    FASTA_obj.trim_right(endTrim, asAligned=True)
+    # Run BLAST
+    egSeq=FASTA_obj[0]    
+    blastDict = get_blast_results(egSeq, transcriptomeFile, "blastn", 10, 1)
+    
+    # Predict CDS from BLAST results...
+    ## TBD
     
     return False
 
 ## BLAST-specific functions
 # It would be good for me to make a ZS_BlastIO, wouldn't it?
+def blastdb_exists(fastaFile):
+    '''
+    Relies on a simple assumption that a .nsq file's presence
+    indicates that a BLAST database was successfully created
+    from the FASTA file.
+    '''
+    return os.path.isfile("{0}.nsq".format(fastaFile))
+
 def makeblastdb(dbFastaFile, dbType):
-    assert dbType.lower() in ['nucl', 'nucleotide', 'prot', 'protein']
+    assert dbType.lower() in ['nucl', 'nucleotide', 'prot', 'protein'] or dbType.lower() in ['blastp', 'blastn', 'tblastn', 'tblastx']
+    
+    # Handle BLAST mode dbType values
+    if dbType.lower() in ['blastp', 'blastn', 'tblastn', 'tblastx']:
+        if dbType.lower() == "blastp":
+            dbType = "prot"
+        elif dbType == "blastn":
+            dbType = "nucl"
+        elif dbType == "tblastn":
+            dbType = "nucl"
+        elif dbType == "tblastx": # I think?
+            dbType = "prot"
     
     cmd = 'makeblastdb -in "{}" -dbtype {} -out "{}"'.format(dbFastaFile, dbType, dbFastaFile)
     run_makedb = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
@@ -977,7 +956,7 @@ def makeblastdb(dbFastaFile, dbType):
     if makedberr.decode("utf-8") != '':
             raise Exception('Makeblastdb error text below\n' + makedberr.decode("utf-8")) 
 
-def run_blast(queryFasta, dbFastaFile, blastType, evalue, threads, outFile):
+def blast(queryFasta, dbFastaFile, blastType, evalue, threads, outFile):
     blastType = blastType.lower()
     assert blastType in ['blastp', 'blastn', 'tblastn', 'tblastx']
     
@@ -985,7 +964,115 @@ def run_blast(queryFasta, dbFastaFile, blastType, evalue, threads, outFile):
     run_blast = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
     blastout, blasterr = run_blast.communicate()
     if blasterr.decode("utf-8") != '':
-            raise Exception('BLAST error text below\n' + blasterr.decode("utf-8")) 
+            raise Exception('BLAST error text below\n' + blasterr.decode("utf-8"))
+
+def parse_blast_hit_coords(resultFile, evalueCutoff):
+    # Set up
+    blastDict = {}
+    # Main loop
+    with open(resultFile, 'r') as fileIn:
+        for line in fileIn:
+            # Extract details
+            sl = line.split('\t')
+            qid = sl[0]
+            tid = sl[1]
+            qstart = sl[6]
+            qend = sl[7]
+            tstart = sl[8]
+            tend = sl[9]
+            evalue = sl[10]
+            # Skip if evalue isn't significant
+            if float(evalue) > float(evalueCutoff):
+                continue
+            # Store result
+            if qid not in blastDict:
+                blastDict[qid] = [[tid, qstart, qend, tstart, tend, evalue]]
+            else:
+                blastDict[qid].append([tid, qstart, qend, tstart, tend, evalue])
+    # Sort individual entries in blastDict
+    for value in blastDict.values():
+        value.sort(key = lambda x: float(x[5]))
+    # Return dict
+    return blastDict
+
+def get_blast_results(query, target, blastType, evalue, threads):
+    assert blastType.lower() in ['blastp', 'blastn', 'tblastn', 'tblastx']
+    assert type(query).__name__ == "str" \
+        or type(query).__name__ == "FASTA" \
+        or type(query).__name__ == "ZS_SeqIO.FASTA" \
+        or type(query).__name__ == "FastASeq" \
+        or type(query).__name__ == "ZS_SeqIO.FastASeq"
+    assert type(target).__name__ == "str" \
+        or type(target).__name__ == "FASTA" \
+        or type(target).__name__ == "ZS_SeqIO.FASTA" \
+        or type(target).__name__ == "FastASeq" \
+        or type(target).__name__ == "ZS_SeqIO.FastASeq"
+    
+    # Get a hash for temporary file creation
+    queryForHash = query if isinstance(query, str) \
+                         else query.fileOrder[0][0] if type(query).__name__ == "ZS_SeqIO.FASTA" or type(query).__name__ == "FASTA" \
+                         else query.id
+    targetForHash = target if isinstance(target, str) \
+                         else target.fileOrder[0][0] if type(target).__name__ == "ZS_SeqIO.FASTA" or type(target).__name__ == "FASTA" \
+                         else target.id
+    tmpHash = hashlib.sha256(bytes(queryForHash + targetForHash + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+    
+    # If we've received a ZS_SeqIO.FastASeq query, make it into a SeqIO.FASTA object
+    if type(query).__name__ == "FastASeq" or type(query).__name__ == "ZS_SeqIO.FastASeq":
+        tmpFastaName = _tmp_file_name_gen("query_fasta_tmp" + tmpHash[0:20], "fasta")
+        with open(tmpFastaName, "w") as fileOut:
+            fileOut.write(">{0}\n{1}\n".format(query.id, query.seq))
+        query = ZS_SeqIO.FASTA(tmpFastaName)
+        os.unlink(tmpFastaName)
+    
+    # If we've received a ZS_SeqIO.FastASeq target, make it into a SeqIO.FASTA object
+    if type(target).__name__ == "FastASeq" or type(target).__name__ == "ZS_SeqIO.FastASeq":
+        tmpFastaName = _tmp_file_name_gen("target_fasta_tmp" + tmpHash[0:20], "fasta")
+        with open(tmpFastaName, "w") as fileOut:
+            fileOut.write(">{0}\n{1}\n".format(target.id, target.seq))
+        target = ZS_SeqIO.FASTA(tmpFastaName)
+        os.unlink(tmpFastaName)
+    
+    # If we've received a ZS_SeqIO.FASTA query, make it into a file
+    '''
+    If I adapt this code into a BlastIO function, it should do magics with the 
+    FASTA object to set alt IDs to unique, non-messy values, then associate the
+    results back by index or something. I'm not doing that here.
+    '''
+    tmpQueryName = None
+    if type(query).__name__ == "FASTA" or type(query).__name__ == "ZS_SeqIO.FASTA":
+        tmpQueryName = _tmp_file_name_gen("blast_query_tmp" + tmpHash[0:20], "fasta")
+        query.write(tmpQueryName)
+        
+    # If we've received a ZS_SeqIO.FASTA target, make it into a file
+    tmpTargetName = None
+    if type(target).__name__ == "FASTA" or type(target).__name__ == "ZS_SeqIO.FASTA":
+        tmpTargetName = _tmp_file_name_gen("blast_target_tmp" + tmpHash[0:20], "fasta")
+        target.write(tmpTargetName)
+    
+    # Make sure target file is ready for BLAST
+    if not blastdb_exists(target):
+        makeblastdb(target, blastType.lower())
+    
+    # Run BLAST
+    tmpResultName = _tmp_file_name_gen("blast_result_tmp" + tmpHash[0:20], "outfmt6")
+    blast(
+        tmpQueryName if tmpQueryName != None else query,
+        tmpTargetName if tmpTargetName != None else target,
+        blastType.lower(),
+        evalue, threads, tmpResultName
+    )
+    
+    # Parse BLAST results
+    blastDict = parse_blast_hit_coords(tmpResultName, evalue)
+    
+    # Clean up & return
+    if tmpQueryName != None:
+        os.unlink(tmpQueryName)
+    if tmpTargetName != None:
+        os.unlink(tmpTargetName)
+    os.unlink(tmpResultName)
+    return blastDict
 
 #### END RE-DO
 
@@ -1049,7 +1136,7 @@ if __name__ == "__main__":
         FASTA_obj = fastaObjs[i]
         
         # Perform intron prediction
-        result = get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, INTRON_CHAR=args.INTRON_CHAR)
+        result = get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, args.transcriptomes, INTRON_CHAR=args.INTRON_CHAR)
         if result != False:
             dummyString, pctIntron, mode = result
             
