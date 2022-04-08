@@ -8,6 +8,7 @@ import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
 from exome_liftover import ssw_parasail
+from copy import deepcopy
 
 def validate_args(args):
     # Validate input data location
@@ -697,7 +698,7 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
     # Split operation into evidenced mode and evidence-less mode depending on whether we have genomic evidence
     noneFound = all([value == None for value in foundFiles])
     if noneFound:
-        return _evidenceless_intron_locations(FASTA_obj, INTRON_CHAR)
+        return _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR)
     
     # Parse liftover files
     seqs = [None if file == None else ZS_SeqIO.FASTA(file)[0] for file in foundFiles] # Keep seqs ordered same as cdsCoordsList
@@ -738,7 +739,7 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
     # Once again, split operation into evidenced mode or evidenceless depending on whether we have genomic evidence
     noneFound = all([value == None for value in gff3Coords])
     if noneFound:
-        return _evidenceless_intron_locations(FASTA_obj, INTRON_CHAR)
+        return _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR)
     
     # If we did find matches, get our sequence IDs
     ids = [None if seqs[i] == None or gff3Coords[i] == None else seqs[i].description.split(" ")[1] for i in range(len(seqs))] # seq.description structure is ENSSH... Species_ID... chr=...
@@ -752,7 +753,7 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
     
     # Enter into evidenced mode of operation
     evidencedResult = _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR)
-    return evidencedResult if evidencedResult != False else _evidenceless_intron_locations(FASTA_obj, INTRON_CHAR) # if the PROBLEM_THRESHOLD is triggered, use evidenceless mode
+    return evidencedResult if evidencedResult != False else _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR) # if the PROBLEM_THRESHOLD is triggered, use evidenceless mode
 
 def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR, PROBLEM_THRESHOLD=0.66):
     '''
@@ -831,7 +832,7 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
                 if sequenceOngoingCount == adjustedMatchStart:
                     if msaStart == None or x < msaStart:
                         msaStart = x
-                elif sequenceOngoingCount == adjustedMatchEnd: # also +1 here for reasons ## Turned off +1 to ongoingCount, problems??
+                if sequenceOngoingCount == adjustedMatchEnd: # also +1 here for reasons ## Turned off +1 to ongoingCount, problems??
                     if msaEnd == None or x > msaEnd:
                         msaEnd = x + 1 # +1 to offset range not being inclusive, or something
                     break
@@ -842,27 +843,7 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
         msaCoords.append([msaStart, msaEnd])
     
     # Merge MSA match coordinates into a flat list of contiguous coordinates
-    '''
-    Because there may be multiple genomes being used, we might have redundant coordinate
-    ranges. This redundancy can be a benefit since we can merge the coordinates optimistically
-    to get the largest possible non-intronic regions.
-    '''
-    mergeIndex = 0
-    while mergeIndex < len(msaCoords):
-        iterate = True
-        
-        for i in range(mergeIndex + 1, len(msaCoords)):
-            match1Start, match1End = msaCoords[mergeIndex]
-            match2Start, match2End = msaCoords[i]
-            if match1Start <= match2End and match2Start <= match1End: # i.e., if they overlap
-                newMatchStart = min(match1Start, match2Start)
-                newMatchEnd = max(match1End, match2End)
-                msaCoords[mergeIndex] = [newMatchStart, newMatchEnd]
-                del msaCoords[i]
-                iterate = False
-        
-        if iterate:
-            mergeIndex += 1
+    msaCoords = _merge_coords_list(msaCoords)
     
     # Create a string with ${INTRON_CHAR}'s for introns, and gaps for CDS positions
     dummyString = ""
@@ -883,7 +864,7 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
     # Return result string otherwise and pct for logging purposes
     return dummyString, pctIntron, "evidenced"
 
-def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR, PROBLEM_THRESHOLD=0.66):
+def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR, PROBLEM_THRESHOLD=0.66, REPRESENTATIVE_PERCENTILE=90, BLAST_EVALUE_CUTOFF=1e-5, IDENTITY_PCT_CUTOFF=75.00):
     '''
     Hidden function for use by get_intron_locations(). This will enact intron prediction behaviour
     based on the genome annotations.
@@ -892,6 +873,13 @@ def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CH
         PROBLEM_THRESHOLD -- a float value indicating what proportion of the MSA is allowed to
                              be predicted as being "intronic" before we suspect that this prediction
                              method might be flawed.
+        REPRESENTATIVE_PERCENTILE -- an integer value between 0 and 100 (inclusive) to indicate what
+                                     portion of sequences, sorted by length, we should consider to be
+                                     representative of the MSA as a whole.
+        BLAST_EVALUE_CUTOFF -- a float/int value representing the E-value to use as a cut-off threshold
+                               when retrieving BLAST results for potential exon regions.
+        IDENTITY_PCT_CUTOFF -- a float/int value representing the BLAST identity percentage to use as a
+                               cut-off threshold for retrieving BLAST results for potential exon regions.
     Returns:
         If successful:
             dummyString -- a string value indicating the predicted intron positions as INTRON_CHAR
@@ -906,25 +894,139 @@ def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CH
     assert isinstance(PROBLEM_THRESHOLD, float)
     assert 0 <= PROBLEM_THRESHOLD <= 1, "PROBLEM_THRESHOLD must be between 0 or 1 (inclusive of 0 and 1)"
     
+    assert isinstance(REPRESENTATIVE_PERCENTILE, int)
+    assert 0 <= REPRESENTATIVE_PERCENTILE <= 100, "PROBLEM_THRESHOLD must be between 0 or 100 (inclusive of 0 and 1)"
+    
+    assert isinstance(BLAST_EVALUE_CUTOFF, float) or isinstance(BLAST_EVALUE_CUTOFF, int)
+    assert 0 <= BLAST_EVALUE_CUTOFF, "BLAST_EVALUE_CUTOFF must be a positive number"
+    
+    assert isinstance(IDENTITY_PCT_CUTOFF, float) or isinstance(IDENTITY_PCT_CUTOFF, int)
+    assert 0 <= IDENTITY_PCT_CUTOFF, "IDENTITY_PCT_CUTOFF must be a positive number; set to 0 if you don't want an identity percentage cut-off"
+    
     # Make sure transcriptome files are ready for BLAST
     for transcriptomeFile in transcriptomesFilesList:
         if not blastdb_exists(transcriptomeFile):
             makeblastdb(transcriptomeFile, "nucl")
     
-    # Get representative sequences for BLAST
-    ## TBD
+    # Assess the length distribution of sequences in the MSA
+    lengths = []
+    for FastASeq_obj in FASTA_obj:
+        seqLen = len(FastASeq_obj.seq.upper().replace("-","").replace("N","")) # we want the informative length, not absolute length
+        lengths.append(seqLen)
+    lengthCutoff = np.percentile([l for l in lengths if l > 0], REPRESENTATIVE_PERCENTILE) # we don't want to bias the distribution with 0's
     
-    # Write sequences to file(?)
-    ## TBD
+    # Get best representative sequences for BLAST
+    representatives = []
+    for i in range(len(FASTA_obj)):
+        if lengths[i] < lengthCutoff:
+            continue
+        
+        representatives.append(FASTA_obj[i])
     
-    # Run BLAST
-    egSeq=FASTA_obj[0]    
-    blastDict = get_blast_results(egSeq, transcriptomeFile, "blastn", 10, 1)
+    # Reduce representatives to a more manageable number with CD-HIT
+    dummy_FASTA_obj = deepcopy(FASTA_obj)
+    dummy_FASTA_obj.seqs = representatives # create a FASTA and sidestep the init requirement that it be a file... yes, I'm aware of the problem there
+    params = [0.8, 5, 1, 0.9, 0.9, 4000, 1] # [0.9, 5, 1, 0.0, 0.0, 400, 1] is default, we want to change aS and aL specifically, but also the similarity param
+    clustered_FASTA_obj = get_cdhit_results(r"D:\Bioinformatics\Protein_analysis\cdhit-master\cdhit-master", dummy_FASTA_obj, params)
+
+    # Get BLAST results
+    blastDict = get_blast_results(clustered_FASTA_obj, transcriptomeFile, "blastn", BLAST_EVALUE_CUTOFF, 2)
+    if blastDict == {}:
+        return False # if we have no results, we can't use this method of intron prediction
     
-    # Predict CDS from BLAST results...
-    ## TBD
+    # Predict CDS from BLAST results
+    seqCoords = []
+    for key, value in blastDict.items():
+        for targetID, identityPct, qstart, qend, tstart, tend, evalue in value:
+            identityPct, qstart, qend, tstart, tend, evalue = float(identityPct), int(qstart), int(qend), int(tstart), int(tend), float(evalue)
+            if identityPct < IDENTITY_PCT_CUTOFF or evalue > BLAST_EVALUE_CUTOFF:
+                continue
+            # qstart, qend = min(qstart, qend), max(qstart, qend) # shouldn't be necessary, BLAST always orders query coords and does strand stuff to target...?
+            seqCoords.append([key, qstart, qend])
     
-    return False
+    # Map CDS coordinates to the MSA sequence positions
+    '''
+    This works similarly to what's seen in _evidenced_intron_locations(), but we
+    don't have to do as complex a set of operations here.
+    '''
+    msaCoords = []
+    for i in range(len(seqCoords)):
+        queryID, qstart, qend = seqCoords[i]
+        
+        # Get the query sequence
+        for FastASeq_obj in FASTA_obj:
+            if FastASeq_obj.id == queryID:
+                break
+        assert FastASeq_obj.id == queryID
+        gappedFastaSeqStr = FastASeq_obj.gap_seq
+        
+        # Iterate through gap_seq and perform the mapping of coordinates
+        msaStart, msaEnd = None, None
+        sequenceOngoingCount = 0
+        
+        for x in range(len(gappedFastaSeqStr)):
+            letter = gappedFastaSeqStr[x]
+            if letter == "-":
+                continue
+            
+            if sequenceOngoingCount == qstart - 1: # -1 here since qstart is 1-based
+                msaStart = x
+            elif sequenceOngoingCount == qend - 1: # -1 here since qend is 1-based
+                msaEnd = x + 1 # +1 to offset range not being inclusive, or something
+                break
+            
+            sequenceOngoingCount += 1
+        assert msaStart != None and msaEnd != None
+        
+        msaCoords.append([msaStart, msaEnd])
+    
+    # Merge MSA match coordinates into a flat list of contiguous coordinates
+    msaCoords = _merge_coords_list(msaCoords)
+    
+    # Create a string with ${INTRON_CHAR}'s for introns, and gaps for CDS positions
+    dummyString = ""
+    for i in range(len(gappedFastaSeqStr)): # doesn't matter which seq we use, gappedFastaSeqStr is already defined above and is not None
+        isCds = any([True for matchStart,matchEnd in msaCoords if i<=matchEnd and i>=matchStart])
+        if isCds:
+            dummyString += "-"
+        else:
+            dummyString += INTRON_CHAR
+    
+    # Return failure flag (False) if PROBLEM_THRESHOLD is exceeded
+    if pctIntron > PROBLEM_THRESHOLD:
+        return False
+    
+    # Return result string otherwise and pct for logging purposes
+    return dummyString, pctIntron, "evidenceless"
+
+def _merge_coords_list(coords):
+    '''
+    Helper function pulled out because it's used in _evidenced... and _evidenceless...
+    functions.
+    
+    Because there may be multiple genomes/transcriptomes being used, we might have redundant
+    coordinate ranges. This redundancy can be a benefit since we can merge the coordinates
+    optimistically to get the largest possible non-intronic regions.
+    '''
+    mergeIndex = 0
+    while mergeIndex < len(coords):
+        iterate = True
+        
+        for i in range(mergeIndex + 1, len(coords)):
+            match1Start, match1End = coords[mergeIndex]
+            match2Start, match2End = coords[i]
+            if match1Start <= match2End and match2Start <= match1End: # i.e., if they overlap
+                newMatchStart = min(match1Start, match2Start)
+                newMatchEnd = max(match1End, match2End)
+                coords[mergeIndex] = [newMatchStart, newMatchEnd]
+                del coords[i]
+                iterate = False
+                break
+        
+        if iterate:
+            mergeIndex += 1
+    
+    return coords
 
 ## BLAST-specific functions
 # It would be good for me to make a ZS_BlastIO, wouldn't it?
@@ -976,6 +1078,7 @@ def parse_blast_hit_coords(resultFile, evalueCutoff):
             sl = line.split('\t')
             qid = sl[0]
             tid = sl[1]
+            identityPct = sl[2]
             qstart = sl[6]
             qend = sl[7]
             tstart = sl[8]
@@ -986,16 +1089,25 @@ def parse_blast_hit_coords(resultFile, evalueCutoff):
                 continue
             # Store result
             if qid not in blastDict:
-                blastDict[qid] = [[tid, qstart, qend, tstart, tend, evalue]]
+                blastDict[qid] = [[tid, identityPct, qstart, qend, tstart, tend, evalue]]
             else:
-                blastDict[qid].append([tid, qstart, qend, tstart, tend, evalue])
+                blastDict[qid].append([tid, identityPct, qstart, qend, tstart, tend, evalue])
     # Sort individual entries in blastDict
     for value in blastDict.values():
-        value.sort(key = lambda x: float(x[5]))
+        value.sort(key = lambda x: float(x[6])) # sort by evalue
     # Return dict
     return blastDict
 
 def get_blast_results(query, target, blastType, evalue, threads):
+    '''
+    This function pipelines the process of obtaining BLAST results. Intermediate files are
+    deleted automatically, and hence this function will only result in the return of the
+    blastDict object.
+    
+    Returns:
+        blastDict -- a dict with structure:
+            query_id: [[target_id, identity_pct, query_start, query_end, target_start, target_end, evalue], ...]
+    '''
     assert blastType.lower() in ['blastp', 'blastn', 'tblastn', 'tblastx']
     assert type(query).__name__ == "str" \
         or type(query).__name__ == "FASTA" \
@@ -1074,6 +1186,113 @@ def get_blast_results(query, target, blastType, evalue, threads):
     os.unlink(tmpResultName)
     return blastDict
 
+## CDHIT-specific functions
+# It would be good for me to make a ZS_ClustIO, wouldn't it?
+def validate_cdhit_params(params):
+    assert isinstance(params, list), "params should be a list"
+    assert len(params) == 7, "params should be a list containing 7 values"
+    c, n, G, aS, aL, M, T = params
+    assert isinstance(c, float) and 0<=c<=1, "c param should be a float between 0 and 1 (inclusive)"
+    assert isinstance(n, int) and 2<=n<=5, "n param should be an int between 2 and 5 (inclusive)"
+    assert isinstance(G, int) and (G == 0 or G == 1), "G param should be an int equal to 0 or 1"
+    assert isinstance(aS, float) and 0<=aS<=1, "aS param should be a float between 0 and 1 (inclusive)"
+    assert isinstance(aL, float) and 0<=aL<=1, "aL param should be a float between 0 and 1 (inclusive)"
+    assert isinstance(M, int) and M >= 100, "M param should be an int of reasonable value (at least greater than 100 Mbytes)"
+    assert isinstance(T, int), "T param should be an int"
+
+def cdhit(cdhitDir, outputDir, inputFasta, outputFasta, params):
+    '''
+    If no params value is provided, defaults will be set as per the below information.
+    
+    Params = [-c, -n, -G, -aS, -aL, -M, -T]
+        or...
+    Params = [
+        sequence identity threshold (default == 0.9),
+        word length (default == 5),
+        global sequence identity (0 == local, 1 == global; default == 1),
+        alignment coverage for shorter sequence (default == 0.0),
+        alignment coverage for longer sequence (default == 0.0),
+        max memory in megabytes (default == 400),
+        threads (0 uses all available; default == 1)
+    ]
+    '''
+    assert os.path.isfile(os.path.join(cdhitDir, 'cd-hit')) or os.path.isfile(os.path.join(cdhitDir, 'cd-hit.exe')), "cd-hit executable not found at {}".format(cdhitDir)
+    assert os.path.isdir(outputDir), "output directory does not exist; I want you to do that for me"
+    assert os.path.isfile(inputFasta), "input fasta file does not exist"
+    assert os.path.basename(outputFasta) == outputFasta, "output fasta file needs to be just the file name; its location is specified in the outputDir method parameter"
+    assert not os.path.isfile(outputFasta), "output fasta file already exists; I don't want to overwrite it"
+    if params == None:
+        params = [0.9, 5, 1, 0.0, 0.0, 400, 1]
+    else:
+        validate_cdhit_params(params)
+    
+    cmd = "{} -i {} -o {} -c {} -n {} -G {} -aS {} -aL {} -M {} -T {}".format(os.path.join(cdhitDir, 'cd-hit'), inputFasta, os.path.join(outputDir, outputFasta), *params)
+    run_cdhit = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
+    cdout, cderr = run_cdhit.communicate()
+    if cderr.decode("utf-8") != '':
+        raise Exception('CD-HIT Error text below' + str(cderr.decode("utf-8")))
+
+def get_cdhit_results(cdhitDir, input, params):
+    '''
+    If I do this as a ClustIO class or something, params will do away and we'll refer to
+    self attributes.
+    
+    Returns:
+        FASTA_obj -- a ZS_SeqIO.FASTA object of the clustered CD-HIT results
+    '''
+    assert type(input).__name__ == "str" \
+        or type(input).__name__ == "FASTA" \
+        or type(input).__name__ == "ZS_SeqIO.FASTA" \
+        or type(input).__name__ == "FastASeq" \
+        or type(input).__name__ == "ZS_SeqIO.FastASeq"
+    validate_cdhit_params(params)
+    
+    # Get a hash for temporary file creation
+    inputForHash = input if isinstance(input, str) \
+                         else input.fileOrder[0][0] if type(input).__name__ == "ZS_SeqIO.FASTA" or type(input).__name__ == "FASTA" \
+                         else input.id
+    tmpHash = hashlib.sha256(bytes(inputForHash + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+    
+    # If we've received a ZS_SeqIO.FastASeq input, make it into a SeqIO.FASTA object
+    if type(input).__name__ == "FastASeq" or type(input).__name__ == "ZS_SeqIO.FastASeq":
+        tmpFastaName = _tmp_file_name_gen("input_fasta_tmp" + tmpHash[0:20], "fasta")
+        with open(tmpFastaName, "w") as fileOut:
+            fileOut.write(">{0}\n{1}\n".format(input.id, input.seq))
+        input = ZS_SeqIO.FASTA(tmpFastaName)
+        os.unlink(tmpFastaName)
+    
+    # If we've received a ZS_SeqIO.FASTA input, make it into a file
+    '''
+    If I adapt this code into a ClustIO function, it should do magics with the 
+    FASTA object to set alt IDs to unique, non-messy values, then associate the
+    results back by index or something. I'm not doing that here.
+    '''
+    tmpInputName = None
+    if type(input).__name__ == "FASTA" or type(input).__name__ == "ZS_SeqIO.FASTA":
+        tmpInputName = _tmp_file_name_gen("cdhit_input_tmp" + tmpHash[0:20], "fasta")
+        input.write(tmpInputName)
+    
+    # Run CD-HIT
+    tmpResultName = _tmp_file_name_gen("cdhit_result_tmp" + tmpHash[0:20], "fasta")
+    cdhit(
+        cdhitDir,
+        ".", # "" for working dir being current one
+        tmpInputName if tmpInputName != None else input,
+        tmpResultName,
+        params
+    )
+    
+    # Parse CD-HIT results
+    result_FASTA_obj = ZS_SeqIO.FASTA(tmpResultName)
+
+    # Clean up & return
+    if tmpInputName != None:
+        os.unlink(tmpInputName)
+    os.unlink(tmpResultName)
+    os.unlink(tmpResultName + ".clstr")
+    
+    return result_FASTA_obj
+
 #### END RE-DO
 
 if __name__ == "__main__":
@@ -1082,6 +1301,9 @@ if __name__ == "__main__":
     less tedious. This includes prediction of intron regions and inclusion of a >Codons dummy
     sequence at the start of the FASTA with these positions indicated. It additionally trims
     the borders of the MSA to remove non-informative flank regions.
+    
+    Some programs are assumed to be available in the system PATH. These include the BLAST program
+    suite, as well as cd-hit.
     
     Note: This should be step 2 in the Oz Mammals project!
     """
@@ -1143,7 +1365,10 @@ if __name__ == "__main__":
             # Insert dummy sequence into FASTA_obj
             dummyFastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq=dummyString)
             FASTA_obj.insert(0, dummyFastASeq_obj)
+        elif result[2] == "evidenceless":
+            print("evidenceless; i={0}... pctIntron={1}".format(i, result[1]))
         else:
+            print("failed to work; i={0}...".format(i))
             stophere
         
         # Perform trimming to remove non-informative sites
