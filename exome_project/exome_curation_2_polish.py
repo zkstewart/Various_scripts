@@ -647,7 +647,7 @@ def _tmp_file_name_gen(prefix, suffix):
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 #### RE-DO OF INTRON LOCATING
-def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, transcriptomesFilesList, INTRON_CHAR="4"):
+def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, transcriptomesFilesList, INTRON_CHAR="4", PROBLEM_THRESHOLD=0.90):
     '''
     Receives a ZS_SeqIO.FASTA object representing a MSA. Using genomic annotation(s) for one or 
     more of the sequences present in the MSA, this function will attempt to locate MSA columnar
@@ -675,6 +675,9 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
                                    of transcriptome FASTA files.
         INTRON_CHAR -- a string containing a single character for how the intron position will
                        be represented within the dummy sequence output.
+        PROBLEM_THRESHOLD -- a float value indicating what proportion of the MSA is allowed to
+                             be predicted as being "intronic" before we suspect that the genomic
+                             annotations might be flawed.
     Returns:
         If successful:
             dummyString -- a string value indicating the predicted intron positions as INTRON_CHAR
@@ -752,10 +755,16 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
             fastaSeqs[index] = FastASeq_obj
     
     # Enter into evidenced mode of operation
-    evidencedResult = _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR)
-    return evidencedResult if evidencedResult != False else _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR) # if the PROBLEM_THRESHOLD is triggered, use evidenceless mode
+    evidencedResult = evidencedString, evidencedPctIntron, evidencedMode = _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR)
+    if evidencedPctIntron > PROBLEM_THRESHOLD:
+        evidencelessResult = _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR)
+        if evidencelessResult != False:
+            evidencelessString, evidencelessPctIntron, evidencelessMode = evidencelessResult
+            if evidencelessPctIntron < evidencedPctIntron:
+                return evidencelessResult # If evidenceless succeeds and predicts less intron, we'll go with that
+    return evidencedResult # _evidenced function will ALWAYS return a value, but _evidenceless won't necessarily do that
 
-def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR, PROBLEM_THRESHOLD=0.66):
+def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR):
     '''
     Hidden function for use by get_intron_locations(). This will enact intron prediction behaviour
     based on the genome annotations.
@@ -763,10 +772,6 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
     Mental note: gff3Coords translates to the GFF3 CDS matches!
                  liftoverCoords translates to the genomic position of the HMMER extracted sequence!
     
-    Params:
-        PROBLEM_THRESHOLD -- a float value indicating what proportion of the MSA is allowed to
-                             be predicted as being "intronic" before we suspect that the genomic
-                             annotations might be flawed.
     Returns:
         If successful:
             dummyString -- a string value indicating the predicted intron positions as INTRON_CHAR
@@ -778,9 +783,7 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
         If unsuccessful:
             False -- just a False boolean indicating that this process failed.
     '''
-    assert isinstance(PROBLEM_THRESHOLD, float)
-    assert 0 <= PROBLEM_THRESHOLD <= 1, "PROBLEM_THRESHOLD must be between 0 or 1 (inclusive of 0 and 1)"
-    
+
     # Map match coordinates to the MSA sequence positions
     msaCoords = []
     for i in range(len(gff3Coords)):
@@ -857,22 +860,15 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
     # Calculate how much would be marked as intron
     pctIntron = dummyString.count(INTRON_CHAR) / len(dummyString)
     
-    # Return failure flag (False) if PROBLEM_THRESHOLD is exceeded
-    if pctIntron > PROBLEM_THRESHOLD:
-        return False
-    
     # Return result string otherwise and pct for logging purposes
     return dummyString, pctIntron, "evidenced"
 
-def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR, PROBLEM_THRESHOLD=0.66, REPRESENTATIVE_PERCENTILE=90, BLAST_EVALUE_CUTOFF=1e-5, IDENTITY_PCT_CUTOFF=75.00):
+def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR, REPRESENTATIVE_PERCENTILE=90, BLAST_EVALUE_CUTOFF=1e-5, IDENTITY_PCT_CUTOFF=75.00):
     '''
     Hidden function for use by get_intron_locations(). This will enact intron prediction behaviour
     based on the genome annotations.
 
     Params:
-        PROBLEM_THRESHOLD -- a float value indicating what proportion of the MSA is allowed to
-                             be predicted as being "intronic" before we suspect that this prediction
-                             method might be flawed.
         REPRESENTATIVE_PERCENTILE -- an integer value between 0 and 100 (inclusive) to indicate what
                                      portion of sequences, sorted by length, we should consider to be
                                      representative of the MSA as a whole.
@@ -891,9 +887,6 @@ def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CH
         If unsuccessful:
             False -- just a False boolean indicating that this process failed.
     '''
-    assert isinstance(PROBLEM_THRESHOLD, float)
-    assert 0 <= PROBLEM_THRESHOLD <= 1, "PROBLEM_THRESHOLD must be between 0 or 1 (inclusive of 0 and 1)"
-    
     assert isinstance(REPRESENTATIVE_PERCENTILE, int)
     assert 0 <= REPRESENTATIVE_PERCENTILE <= 100, "PROBLEM_THRESHOLD must be between 0 or 100 (inclusive of 0 and 1)"
     
@@ -1002,11 +995,7 @@ def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CH
     # Calculate how much would be marked as intron
     pctIntron = dummyString.count(INTRON_CHAR) / len(dummyString)
     
-    # Return failure flag (False) if PROBLEM_THRESHOLD is exceeded
-    if pctIntron > PROBLEM_THRESHOLD:
-        return False
-    
-    # Return result string otherwise and pct for logging purposes
+    # Return result string and pct for logging purposes
     return dummyString, pctIntron, "evidenceless"
 
 def _merge_coords_list(coords):
