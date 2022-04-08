@@ -579,7 +579,7 @@ def trim_SeqIO_FASTA_denovo(FASTA_obj, EXCLUSION_PCT=0.90, PROBLEM_THRESHOLD=0.6
         
     return True, pctTrimmed, None # indicate that trimming worked successfully
 
-def trim_noninformative_flanks(FASTA_obj, INFO_DROP_PCT=0.95):
+def trim_noninformative_flanks(FASTA_obj, INFO_DROP_PCT=0.98):
     '''
     Trims a ZS_SeqIO.FASTA object to remove non-informative flanks i.e.,
     sequence that is ALMOST ENTIRELY only gap ("-") or unknown ("N") across
@@ -589,7 +589,7 @@ def trim_noninformative_flanks(FASTA_obj, INFO_DROP_PCT=0.95):
         FASTA_obj -- a ZS_SeqIO.FASTA instance
         INFO_DROP_PCT -- a float value indicating what percentage of the MSA members
                          must be informative to avoid being trimmed. If left at the
-                         default 0.95, then 5% or more of the sequences must be informative
+                         default 0.98, then 2% or more of the sequences must be informative
                          to avoid having the head or tail position trimmed.
     Returns:
         pctTrimmed -- a float value indicating what proportion of the alignment was trimmed.
@@ -928,9 +928,16 @@ def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CH
     dummy_FASTA_obj.seqs = representatives # create a FASTA and sidestep the init requirement that it be a file... yes, I'm aware of the problem there
     params = [0.8, 5, 1, 0.9, 0.9, 4000, 1] # [0.9, 5, 1, 0.0, 0.0, 400, 1] is default, we want to change aS and aL specifically, but also the similarity param
     clustered_FASTA_obj = get_cdhit_results(r"D:\Bioinformatics\Protein_analysis\cdhit-master\cdhit-master", dummy_FASTA_obj, params)
-
+    
     # Get BLAST results
-    blastDict = get_blast_results(clustered_FASTA_obj, transcriptomeFile, "blastn", BLAST_EVALUE_CUTOFF, 2)
+    blastDict = {}
+    for transcriptomeFile in transcriptomesFilesList:
+        _tmpBlastDict = get_blast_results(clustered_FASTA_obj, transcriptomeFile, "blastn", BLAST_EVALUE_CUTOFF, 2)
+        for key, value in _tmpBlastDict.items():
+            if key not in blastDict:
+                blastDict[key] = value
+            else:
+                blastDict[key] += value
     if blastDict == {}:
         return False # if we have no results, we can't use this method of intron prediction
     
@@ -991,6 +998,9 @@ def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CH
             dummyString += "-"
         else:
             dummyString += INTRON_CHAR
+    
+    # Calculate how much would be marked as intron
+    pctIntron = dummyString.count(INTRON_CHAR) / len(dummyString)
     
     # Return failure flag (False) if PROBLEM_THRESHOLD is exceeded
     if pctIntron > PROBLEM_THRESHOLD:
@@ -1365,8 +1375,8 @@ if __name__ == "__main__":
             # Insert dummy sequence into FASTA_obj
             dummyFastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq=dummyString)
             FASTA_obj.insert(0, dummyFastASeq_obj)
-        elif result[2] == "evidenceless":
-            print("evidenceless; i={0}... pctIntron={1}".format(i, result[1]))
+            if mode == "evidenceless":
+                print("evidenceless; i={0}... pctIntron={1}".format(i, result[1]))
         else:
             print("failed to work; i={0}...".format(i))
             stophere
