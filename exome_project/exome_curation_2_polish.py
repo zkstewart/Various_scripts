@@ -647,7 +647,7 @@ def _tmp_file_name_gen(prefix, suffix):
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 #### RE-DO OF INTRON LOCATING
-def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, transcriptomesFilesList, INTRON_CHAR="4", PROBLEM_THRESHOLD=0.90):
+def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, transcriptomesFilesList, INTRON_CHAR="4"):
     '''
     Receives a ZS_SeqIO.FASTA object representing a MSA. Using genomic annotation(s) for one or 
     more of the sequences present in the MSA, this function will attempt to locate MSA columnar
@@ -675,9 +675,6 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
                                    of transcriptome FASTA files.
         INTRON_CHAR -- a string containing a single character for how the intron position will
                        be represented within the dummy sequence output.
-        PROBLEM_THRESHOLD -- a float value indicating what proportion of the MSA is allowed to
-                             be predicted as being "intronic" before we suspect that the genomic
-                             annotations might be flawed.
     Returns:
         If successful:
             dummyString -- a string value indicating the predicted intron positions as INTRON_CHAR
@@ -701,7 +698,8 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
     # Split operation into evidenced mode and evidence-less mode depending on whether we have genomic evidence
     noneFound = all([value == None for value in foundFiles])
     if noneFound:
-        return _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR)
+        evidencelessResult = _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR) # may sometimes just return False
+        return False if evidencelessResult == False else [*evidencelessResult, "evidenceless"]
     
     # Parse liftover files
     seqs = [None if file == None else ZS_SeqIO.FASTA(file)[0] for file in foundFiles] # Keep seqs ordered same as cdsCoordsList
@@ -742,7 +740,8 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
     # Once again, split operation into evidenced mode or evidenceless depending on whether we have genomic evidence
     noneFound = all([value == None for value in gff3Coords])
     if noneFound:
-        return _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR)
+        evidencelessResult = _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR) # may sometimes just return False
+        return False if evidencelessResult == False else [*evidencelessResult, "evidenceless"]
     
     # If we did find matches, get our sequence IDs
     ids = [None if seqs[i] == None or gff3Coords[i] == None else seqs[i].description.split(" ")[1] for i in range(len(seqs))] # seq.description structure is ENSSH... Species_ID... chr=...
@@ -754,15 +753,25 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
             index = fastaSeqs.index(FastASeq_obj.description) # keep things in order always!
             fastaSeqs[index] = FastASeq_obj
     
-    # Enter into evidenced mode of operation
-    evidencedResult = evidencedString, evidencedPctIntron, evidencedMode = _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR)
-    if evidencedPctIntron > PROBLEM_THRESHOLD:
-        evidencelessResult = _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR)
-        if evidencelessResult != False:
-            evidencelessString, evidencelessPctIntron, evidencelessMode = evidencelessResult
-            if evidencelessPctIntron < evidencedPctIntron:
-                return evidencelessResult # If evidenceless succeeds and predicts less intron, we'll go with that
-    return evidencedResult # _evidenced function will ALWAYS return a value, but _evidenceless won't necessarily do that
+    # Run both modes of operation
+    '''
+    I used to do this where I preferred "evidenced" results over "evidenceless" results, and would
+    only opt to run evidenceless where evidenced failed or had a high percentage of intron being predicted.
+    Now, I think it's better to just run both, and combine their results. This is because, ultimately,
+    I want my results to be as lenient as possible. The best way to ensure that is to have multiple
+    unrelated methods agree on the same outcome.
+    '''
+    evidencedResult = evidencedString, evidencedPctIntron = _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR) # always returns a result
+    evidencelessResult = _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR) # may sometimes just return False
+    
+    # Combine both results where possible
+    if evidencelessResult != False:
+        evidencelessString, evidencelessPctIntron = evidencelessResult
+        mergedString, mergedPctIntron = merge_intron_strings(evidencedString, evidencelessString)
+        return mergedString, mergedPctIntron, "merged"
+    # Otherwise, just return the result we have
+    else:
+        return evidencedString, evidencedPctIntron, "evidenced"
 
 def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR):
     '''
@@ -778,8 +787,6 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
                            and CDS positions as "-"
             pctIntron -- a float value indicating what proportion of the alignment was predicted
                          to be intronic.
-            mode -- a string with the value "evidenced" to indicate that trimming occurred using
-                    this function, and not with _evidenceless_intron_locations().
         If unsuccessful:
             False -- just a False boolean indicating that this process failed.
     '''
@@ -861,7 +868,7 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
     pctIntron = dummyString.count(INTRON_CHAR) / len(dummyString)
     
     # Return result string otherwise and pct for logging purposes
-    return dummyString, pctIntron, "evidenced"
+    return dummyString, pctIntron
 
 def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CHAR, REPRESENTATIVE_PERCENTILE=90, BLAST_EVALUE_CUTOFF=1e-5, IDENTITY_PCT_CUTOFF=75.00):
     '''
@@ -996,7 +1003,7 @@ def _evidenceless_intron_locations(FASTA_obj, transcriptomesFilesList, INTRON_CH
     pctIntron = dummyString.count(INTRON_CHAR) / len(dummyString)
     
     # Return result string and pct for logging purposes
-    return dummyString, pctIntron, "evidenceless"
+    return dummyString, pctIntron
 
 def _merge_coords_list(coords):
     '''
@@ -1026,6 +1033,38 @@ def _merge_coords_list(coords):
             mergeIndex += 1
     
     return coords
+
+def merge_intron_strings(string1, string2):
+    '''
+    Function intended to take two FASTA-like aligned strings containing
+    gap characters ("-") and intron characters (anything) and produces
+    a merged output wherein agreeing positions are retained as-is, and
+    disagreeing positions are written as gap characters.
+    
+    Params:
+        string1 / string2 -- a string encoding the gapped alignment of a FASTA sequence.
+    '''
+    assert len(string1) == len(string2), "Strings don't match; they're not the same length!"
+    assert len(set(string1.upper())) == 2, "First string param has more than 2 unique characters in it"
+    assert len(set(string2.upper())) == 2, "Second string param has more than 2 unique characters in it"
+    
+    mergedString = ""
+    for i in range(len(string1)):
+        letter1 = string1[i].upper()
+        letter2 = string2[i].upper()
+        if letter1 == letter2:
+            mergedString += letter1
+        else:
+            mergedString += "-"
+    
+    nonGapChars = (string1 + string2).replace("-","").upper() # we've already asserted there's only 2 unique character in the sequence
+    if len(nonGapChars) == 0:
+        pctIntron = 0.0 # if we have no non-gap characters, nothing has been marked as being intronic
+    else:
+        INTRON_CHAR = nonGapChars[0] # just get the first character since they're all identical
+        pctIntron = mergedString.count(INTRON_CHAR) / len(mergedString)
+    
+    return mergedString, pctIntron
 
 ## BLAST-specific functions
 # It would be good for me to make a ZS_BlastIO, wouldn't it?
@@ -1372,7 +1411,8 @@ if __name__ == "__main__":
         
         # Perform trimming to remove non-informative sites
         initialLength = len(FASTA_obj[0].gap_seq) # hold onto for later statistics
-        pctTrimmed = trim_noninformative_flanks(FASTA_obj)
+        # pctTrimmed = trim_noninformative_flanks(FASTA_obj) # turn it off for now to assess things
+        pctTrimmed = 0.0
         endLength = len(FASTA_obj[0].gap_seq)
         
         # Statistics and logging
