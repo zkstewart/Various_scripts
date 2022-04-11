@@ -1045,8 +1045,8 @@ def merge_intron_strings(string1, string2):
         string1 / string2 -- a string encoding the gapped alignment of a FASTA sequence.
     '''
     assert len(string1) == len(string2), "Strings don't match; they're not the same length!"
-    assert len(set(string1.upper())) == 2, "First string param has more than 2 unique characters in it"
-    assert len(set(string2.upper())) == 2, "Second string param has more than 2 unique characters in it"
+    assert len(set(string1.upper())) <= 2, "First string param has more than 2 unique characters in it"
+    assert len(set(string2.upper())) <= 2, "Second string param has more than 2 unique characters in it"
     
     mergedString = ""
     for i in range(len(string1)):
@@ -1403,11 +1403,6 @@ if __name__ == "__main__":
             # Insert dummy sequence into FASTA_obj
             dummyFastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq=dummyString)
             FASTA_obj.insert(0, dummyFastASeq_obj)
-            if mode == "evidenceless":
-                print("evidenceless; i={0}... pctIntron={1}".format(i, result[1]))
-        else:
-            print("failed to work; i={0}...".format(i))
-            stophere
         
         # Perform trimming to remove non-informative sites
         initialLength = len(FASTA_obj[0].gap_seq) # hold onto for later statistics
