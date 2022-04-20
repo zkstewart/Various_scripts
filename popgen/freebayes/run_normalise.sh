@@ -56,7 +56,7 @@ bcftools norm -m+ -Oz -o ${PREFIX}.rejoin.vcf.gz -N ${PREFIX}.split.vcf.gz # wit
 bcftools norm -f ${GENOMEDIR}/${GENOME} -Ov -o ${PREFIX}.normalised.vcf ${PREFIX}.rejoin.vcf.gz
 
 # > STEP 8: vt decompose SNPs
-vt decompose ${PREFIX}.normalised.vcf > ${PREFIX}.decomposed.vcf
+vt decompose_blocksub ${PREFIX}.normalised.vcf > ${PREFIX}.decomposed.vcf
 cp ${PREFIX}.decomposed.vcf uncompressed/${PREFIX}.decomposed.vcf
 bgzip ${PREFIX}.decomposed.vcf
 bcftools index ${PREFIX}.decomposed.vcf.gz
