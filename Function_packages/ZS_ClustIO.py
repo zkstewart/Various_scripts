@@ -4,7 +4,6 @@
 # string fasta files, ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects.
 
 import os, sys, subprocess, hashlib, time, random, shutil
-from copy import deepcopy
 
 sys.path.append(os.path.dirname(__file__))
 from ZS_SeqIO import FASTA
@@ -229,7 +228,7 @@ class CDHIT:
         else:
             program = os.path.join(self.cdhitDir if self.cdhitDir != None else "", 'cd-hit')
         
-        cmd = f"{program} -i {fasta} -o {os.path.join(outputDir, outputFasta)} -c {self.identity} -n {self} -G {0 if self.local else 1} -aS {self.shorter_cov_pct} -aL {self.longer_cov_pct} -M {self.mem} -T {self.threads}"
+        cmd = f"{program} -i {fasta} -o {os.path.join(outputDir, outputFasta)} -c {self.identity} -n {self.word_length} -G {0 if self.local else 1} -aS {self.shorter_cov_pct} -aL {self.longer_cov_pct} -M {self.mem} -T {self.threads}"
         run_cdhit = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
         cdout, cderr = run_cdhit.communicate()
         if cderr.decode("utf-8") != '':
@@ -264,14 +263,16 @@ class CDHIT:
         # Parse CD-HIT results
         result_FASTA_obj = FASTA(tmpResultName)
         
-        # Clean up and return (if relevant)
+        # Clean up f temporary file
+        if fIsTemporary:
+            os.unlink(f)
+        
+        # Clean up results and return (if relevant)
         if self.clean:
             os.unlink(tmpResultName)
-            if fIsTemporary != None:
-                os.unlink(f)
-                os.unlink(f + ".clstr")
+            os.unlink(tmpResultName + ".clstr")
             return result_FASTA_obj, None
-        # Or just return
+        # Or just return results
         else:
             return result_FASTA_obj, tmpResultName
     
@@ -318,7 +319,7 @@ class CDHIT:
         
         return f, isTemporary
     
-    def _tmp_file_name_gen(prefix, suffix):
+    def _tmp_file_name_gen(self, prefix, suffix):
         '''
         Hidden function for use by this Class when creating temporary files.
         Params:
