@@ -7,7 +7,7 @@ import os, sys, subprocess, hashlib, time, random
 from copy import deepcopy
 
 sys.path.append(os.path.dirname(__file__))
-from ZS_SeqIO import FASTA, FastASeq
+from ZS_SeqIO import FASTA
 
 class BLAST:
     '''
@@ -42,12 +42,15 @@ class BLAST:
             or type(target).__name__ == "ZS_SeqIO.FASTA" \
             or type(target).__name__ == "FastASeq" \
             or type(target).__name__ == "ZS_SeqIO.FastASeq"
+        assert isinstance(blastAlgorithm, str)
         
         # Validate that inputs exist if specified as a string (file location)
         if type(query).__name__ == "str" and not os.path.isfile(query):
             raise Exception("Query parameter is a string, but does not point to an existing file location")
         if type(target).__name__ == "str" and not os.path.isfile(target):
             raise Exception("Target parameter is a string, but does not point to an existing file location")
+        self.query = query
+        self.target = target
         
         # Set default attributes
         self.set_blastAlgorithm(blastAlgorithm)
@@ -223,14 +226,15 @@ class BLAST:
         '''
         This function pipelines the process of obtaining BLAST results. Intermediate files are
         deleted automatically, and hence this function will only result in the return of the
-        blastDict object.
+        blastDict object. However, if self.clean is False, we will leave the output BLAST file
+        (but still clean up any temporary FASTA files).
         
         Returns:
             blastDict -- a dict with structure:
                 query_id: [[target_id, identity_pct, query_start, query_end, target_start, target_end, evalue], ...]
             blastResultFile -- a string indicating the file name of the results file. If self.clean is True,
                                this will instead return None.
-        '''        
+        '''
         # Get file names for query and target after data type coercion
         q, qIsTemporary = self._get_filename_for_query_or_target(self.query)
         t, tIsTemporary = self._get_filename_for_query_or_target(self.target)
