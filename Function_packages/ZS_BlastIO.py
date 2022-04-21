@@ -4,7 +4,6 @@
 # using ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects.
 
 import os, sys, subprocess, hashlib, time, random
-from copy import deepcopy
 
 sys.path.append(os.path.dirname(__file__))
 from ZS_SeqIO import FASTA
@@ -130,10 +129,19 @@ class BLAST:
         '''
         return os.path.isfile("{0}.nsq".format(fastaFile))
     
-    def makeblastdb(self):
+    def makeblastdb(self, fastaFile):
         '''
-        Makes a database out of the .target value for use in BLAST search.
+        Makes a database out of the provided value for use in BLAST search.
+        
+        This method behaves statically to allow the .target value
+        to come in multiple different data types.
+        
+        Parameters:
+            fastaFile -- a string indicating the full path to the
+                         FASTA file we want to create a database for.
         '''
+        assert isinstance(fastaFile, str)
+        
         # Coerce algorithm into molecule type
         if self.blastAlgorithm.lower() == "blastp":
             dbType = "prot"
@@ -147,7 +155,7 @@ class BLAST:
             raise Exception("blastAlgorithm attribute \"{0}\" is not recognised by makeblastdb method".format(self.blastAlgorithm.lower()))
 
         # Format and run command
-        cmd = 'makeblastdb -in "{0}" -dbtype {1} -out "{0}"'.format(self.target, dbType)
+        cmd = 'makeblastdb -in "{0}" -dbtype {1} -out "{0}"'.format(fastaFile, dbType)
         run_makedb = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         makedbout, makedberr = run_makedb.communicate()
         if makedberr.decode("utf-8") != '':
@@ -241,27 +249,39 @@ class BLAST:
         
         # Make sure target file is ready for BLAST
         if not self.blastdb_exists(t):
-            self.makeblastdb()
+            self.makeblastdb(t)
         
         # Get hash for temporary file creation
         tmpHash = hashlib.sha256(bytes(q + t + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         
         # Run BLAST
-        tmpResultName = self._tmp_file_name_gen("{0}.vs.{1}_{2}".format(q, t, tmpHash[0:20]), "outfmt6")
+        tmpResultName = self._tmp_file_name_gen("{0}.vs.{1}_{2}".format(q.rsplit(".", maxsplit=1)[0], t.rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "outfmt6")
         self.blast(q, t, tmpResultName)
         
         # Parse BLAST results
         blastDict = self.parse_blast_hit_coords(tmpResultName)
         
-        # Clean up and return (if relevant)
+        # Clean up q and t temporary files
+        if qIsTemporary:
+            os.unlink(q)
+            qDir = os.path.dirname(q)
+            for file in os.listdir(qDir if qDir != "" else "."): # kill off any temporary database files too
+                file = os.path.join(qDir, file)
+                if file.startswith(q):
+                    os.unlink(file)
+        if tIsTemporary:
+            os.unlink(t)
+            tDir = os.path.dirname(t)
+            for file in os.listdir(tDir if tDir != "" else "."): # kill off any temporary database files too
+                file = os.path.join(tDir, file)
+                if file.startswith(t):
+                    os.unlink(file)
+        
+        # Clean up results and return (if relevant)
         if self.clean:
             os.unlink(tmpResultName)
-            if qIsTemporary != None:
-                os.unlink(q)
-            if tIsTemporary != None:
-                os.unlink(t)
             return blastDict, None
-        # Or just return
+        # Or just return results
         else:
             return blastDict, tmpResultName
     
@@ -309,7 +329,7 @@ class BLAST:
         
         return qt, isTemporary
     
-    def _tmp_file_name_gen(prefix, suffix):
+    def _tmp_file_name_gen(self, prefix, suffix):
         '''
         Hidden function for use by this Class when creating temporary files.
         Params:
