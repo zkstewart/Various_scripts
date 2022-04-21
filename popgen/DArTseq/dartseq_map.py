@@ -121,6 +121,12 @@ def main():
     It allows for fastq.gz file format as input.
     It assumes the bwa executable can be found in environment variables; otherwise
     the shell script will need to be modified.
+    
+    The species ID column should contain unique values for each sample. It should
+    also be the prefix to each .fq.gz file!
+    
+    The genotype columns should, when concatenated, render a unique
+    value for each sample as well.
     """
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-d", dest="demultiplexedDirectory",
