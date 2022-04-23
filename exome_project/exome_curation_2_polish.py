@@ -1,13 +1,11 @@
 #! python3
-# exome_curation_autoPolish.py
+# exome_curation_polish.py
 # Follows up on exome_curation_prep.py to perform some additional
-# polishing of the MSAs including trimming and removal of indel errors.
+# polishing of the MSAs including prediction of intron regions.
 
-import sys, argparse, os, subprocess, hashlib, time, random
-import numpy as np
+import sys, argparse, os, re
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
-from copy import deepcopy
 
 def validate_args(args):
     # Validate input data location
@@ -24,11 +22,6 @@ def validate_args(args):
         if not os.path.isdir(dir):
             print('I am unable to locate the liftover directory (' + dir + ')')
             print('Make sure you\'ve typed the directory location correctly and try again.')
-            quit()
-    for file in args.transcriptomes:
-        if not os.path.isfile(file):
-            print('I am unable to locate the transcriptome file (' + file + ')')
-            print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
     # Validate liftovers argument
     if len(args.gff3s) != len(args.liftovers):
@@ -110,7 +103,7 @@ def _tmp_file_name_gen(prefix, suffix):
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 #### RE-DO OF INTRON LOCATING
-def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, transcriptomesFilesList, INTRON_CHAR="4"):
+def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR="4"):
     '''
     Receives a ZS_SeqIO.FASTA object representing a MSA. Using genomic annotation(s) for one or 
     more of the sequences present in the MSA, this function will attempt to locate MSA columnar
@@ -134,8 +127,8 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
         liftoverFilesList -- a list containing one or more lists which provide the locations of
                              liftover-ed exon sequences from genomes. This should be paired with
                              the GFF3s that made the cdsCoordsList values.
-        transcriptomesFilesList -- a list containing one or more strings indicating the locations
-                                   of transcriptome FASTA files.
+        genomesList -- a list containing ZS_SeqIO.FASTA instances of the genome sequences paired
+                       to the GFF3s that created the cdsCoordsList values.
         INTRON_CHAR -- a string containing a single character for how the intron position will
                        be represented within the dummy sequence output.
     Returns:
@@ -158,7 +151,7 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
                 foundFiles[i] = file
                 break
     
-    # Split operation into evidenced mode and evidence-less mode depending on whether we have genomic evidence
+    # If we have no genomic exons, we can't predict introns; stop here
     noneFound = all([value == None for value in foundFiles])
     if noneFound:
         return False
@@ -167,14 +160,32 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
     seqs = [None if file == None else ZS_SeqIO.FASTA(file)[0] for file in foundFiles] # Keep seqs ordered same as cdsCoordsList
 
     # Get liftover sequence IDs and start:end coordinates
+    '''
+    I don't think my coordinates are reliable, I've probably made a mistake. I'm going
+    to directly retrieve them from the genome to prevent any mishaps.
+    '''
     liftoverCoords = [None for _ in cdsCoordsList] # Keep coords ordered same as cdsCoordsList
     for i in range(len(seqs)):
         if seqs[i] == None:
             continue
-        
         chrom = seqs[i].description.split("chr=")[1].split(" start=")[0]
-        start, end = seqs[i].description.split("start=")[1].split(" end=")
-        liftoverCoords[i] = [chrom, int(start), int(end)]
+        
+        # Find the start and end coordinates from the genome sequence
+        start, end = None, None
+        search = re.search(seqs[i].seq, genomesList[i][chrom].seq, re.IGNORECASE)
+        if search == None:
+            search = re.search(seqs[i].get_reverse_complement(), genomesList[i][chrom].seq, re.IGNORECASE)
+        assert search != None, "Exon sequence doesn't match; Zac has messed something up"
+        start, end = search.span()
+        start += 1 # we want to keep things 0-based
+        
+        liftoverCoords[i] = [chrom, start, end]
+        
+        # Testing section
+        'This is to see if my coordinate prediction IS actually faulty'
+        seqStart, seqEnd = seqs[i].description.split("start=")[1].split(" end=")
+        if int(seqStart) != start and end != seqEnd:
+            print("These coords don't match; file={0}, start={1} vs {2}, end={3} vs {4}".format(alignFastaFile, start, seqStart, end, seqEnd))
     
     # See if any liftover coords match to GFF3 CDS coords
     gff3Coords = [None for _ in liftoverCoords] # Keep coords ordered same as cdsCoordsList
@@ -199,7 +210,7 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
         if hits != []:
             gff3Coords[i] = hits
     
-    # Once again, split operation into evidenced mode or evidenceless depending on whether we have genomic evidence
+    # If we don't have genomic evidence, we can't predict introns; stop here
     noneFound = all([value == None for value in gff3Coords])
     if noneFound:
         return False
@@ -214,14 +225,10 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
             index = fastaSeqs.index(FastASeq_obj.description) # keep things in order always!
             fastaSeqs[index] = FastASeq_obj
     
-    # Run both modes of operation
-    '''
-    I used to do this where I preferred "evidenced" results over "evidenceless" results, and would
-    only opt to run evidenceless where evidenced failed or had a high percentage of intron being predicted.
-    Now, I think it's better to just run both, and combine their results. This is because, ultimately,
-    I want my results to be as lenient as possible. The best way to ensure that is to have multiple
-    unrelated methods agree on the same outcome.
-    '''
+    # Run intron locating method
+    '''This pattern lets me plug and play different versions for testing, and
+    reduces mental burden by keeping this method to just the locating of relevant
+    evidence. The downstream function does the heavy lifting and logical work.'''
     evidencedString, evidencedPctIntron = evidencedString, evidencedPctIntron = _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR) # always returns a result
     return evidencedString, evidencedPctIntron, "evidenced"
 
@@ -229,6 +236,9 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
     '''
     Hidden function for use by get_intron_locations(). This will enact intron prediction behaviour
     based on the genome annotations.
+    
+    It will also TRIM the MSA to the region covered by at least one genomic exon,
+    since we can't know what, outside of this region, is intronic or not.
     
     Mental note: gff3Coords translates to the GFF3 CDS matches!
                  liftoverCoords translates to the genomic position of the HMMER extracted sequence!
@@ -242,7 +252,6 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
         If unsuccessful:
             False -- just a False boolean indicating that this process failed.
     '''
-
     # Map match coordinates to the MSA sequence positions
     msaCoords = []
     for i in range(len(gff3Coords)):
@@ -316,10 +325,41 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
         else:
             dummyString += INTRON_CHAR
     
+    # Find out how much to trim from the left and right
+    '''
+    The goal here is to trim the MSA to just the regions which have a genomic exon
+    represented. It's NOT to trim to the outer borders of the predicted CDS region,
+    since we actually want those regions to be noted as intronic if they exist.
+    '''
+    startTrim = 0
+    for i in range(len(FASTA_obj[0].gap_seq)):
+        isGap = [FastASeq_obj.gap_seq[i] == "-" for FastASeq_obj in fastaSeqs]
+        
+        if all(isGap):
+            startTrim += 1
+        else:
+            break
+    endTrim = 0
+    for i in range(len(FASTA_obj[0].gap_seq)-1, -1, -1):
+        isGap = [FastASeq_obj.gap_seq[i] == "-" for FastASeq_obj in fastaSeqs]
+        
+        if all(isGap):
+            endTrim += 1
+        else:
+            break
+    
+    # Trim the MSA, and the dummy string
+    FASTA_obj.trim_left(startTrim, asAligned=True)
+    FASTA_obj.trim_right(endTrim, asAligned=True)
+    if endTrim == 0:
+        dummyString = dummyString[startTrim:]
+    else:
+        dummyString = dummyString[startTrim:-endTrim]
+    
     # Calculate how much would be marked as intron
     pctIntron = dummyString.count(INTRON_CHAR) / len(dummyString)
     
-    # Return result string otherwise and pct for logging purposes
+    # Return result string pct for logging purposes
     return dummyString, pctIntron
 
 def _merge_coords_list(coords):
@@ -371,11 +411,11 @@ if __name__ == "__main__":
                 help="Specify one or more GFF3s to provide CDS boundary information")
     p.add_argument("-lo", dest="liftovers", required=True, nargs="+",
                 help="Specify one or more liftover exon FASTAs dirs paired to the gff3s")
+    p.add_argument("-ge", dest="genomes", required=True, nargs="+",
+                help="Specify one or more genomes to provide paired to the gff3s")
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"2_prep\")",
                 default="2_polish")
-    p.add_argument("-t", dest="transcriptomes", required=True, nargs="+",
-                help="Specify one or more transcriptomes for intron prediction in absence of liftover data")
     # Opts
     p.add_argument("--INTRON_CHAR", dest="INTRON_CHAR", required=False,
                 help="Optionally, specify what character should be used to denote intron positions (default==\"4\")",
@@ -397,6 +437,12 @@ if __name__ == "__main__":
     for file in args.gff3s:
         cdsCoordsList.append(get_cds_coords(file))
     
+    # Parse genomes
+    genomesList = []
+    for file in args.genomes:
+        g = ZS_SeqIO.FASTA(file)
+        genomesList.append(g)
+    
     # Locate liftover FASTA files
     liftoverFilesList = []
     for dir in args.liftovers:
@@ -405,15 +451,17 @@ if __name__ == "__main__":
     
     # Intron prediction
     log = [[
-        "fileName", "predictionMode", "pctIntron"
+        "fileName", "predictionMode", "pctIntron",
+        "initialLength", "trimmedLength", "pctTrimmed"
     ]]
     for i in range(len(files)):
         # Get details for this MSA
         alignFastaFile = files[i] # i=5 for testing intron trim
         FASTA_obj = fastaObjs[i]
+        initialLength = len(FASTA_obj[0].gap_seq) # hold onto for later statistics
         
         # Perform intron prediction
-        result = get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, args.transcriptomes, INTRON_CHAR=args.INTRON_CHAR)
+        result = get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, args.genomes, INTRON_CHAR=args.INTRON_CHAR)
         if result != False:
             dummyString, pctIntron, mode = result
             
@@ -422,10 +470,14 @@ if __name__ == "__main__":
             FASTA_obj.insert(0, dummyFastASeq_obj)
         
         # Statistics and logging
+        trimmedLength = len(FASTA_obj[0].gap_seq)
         log.append([
             os.path.basename(alignFastaFile),
             mode if result != False else ".",
-            str(round(pctIntron*100, 2)) if result != False else "."
+            str(round(pctIntron*100, 2)) if result != False else ".",
+            initialLength,
+            trimmedLength,
+            (initialLength - trimmedLength) / initialLength # gives % trimmed
         ])
         
         # Write output FASTA file
