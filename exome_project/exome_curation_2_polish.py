@@ -484,25 +484,27 @@ def solve_translation_frames(FASTA_obj):
     
     return solutionDict
 
-def get_intron_locations_denovo(FASTA_obj, INTRON_CHAR="4", EXCLUSION_PCT=0.90):
+def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
     '''
     Trims a ZS_SeqIO.FASTA object to the best guess boundaries of the CDS region.
     It does this without genomic evidence (hence "de novo") by assessment of how
     to get the longest uninterrupted (i.e., no stop codons) region from a MSA.
     
+    This behaves differently to get_intron_locations_genomic() in that we are
+    actually TRIMMING to the predicted CDS region, rather than just noting where
+    the intron sequence is with the intron characters ("4"s usually)
+    
     Params:
         FASTA_obj -- a ZS_SeqIO.FASTA instance
-        INTRON_CHAR -- a string containing a single character for how the intron position will
-                       be represented within the dummy sequence output.
         EXCLUSION_PCT -- a float value indicating the proportion of sequences that
                          must have their stop codons excluded within the predicted CDS region.
                          E.g., if 0.90, then 90% of the sequences must NOT contain a stop
                          codon within the region.
     Returns:
-        dummyString -- a string value indicating the predicted intron positions as INTRON_CHAR
-                       and CDS positions as "-"
+        dummyString -- a string value with "-" for every character position; intended to
+                       mimic get_intron_locations_genomic()'s return.
         pctIntron -- a float value indicating what proportion of the alignment was predicted
-                     to be intronic.
+                     to be intronic and was hence trimmed
         mode -- a string indicating that denovo prediction occurred
     '''
     assert isinstance(EXCLUSION_PCT, float) or isinstance(EXCLUSION_PCT, int)
@@ -558,12 +560,18 @@ def get_intron_locations_denovo(FASTA_obj, INTRON_CHAR="4", EXCLUSION_PCT=0.90):
     trueStartIndex = np.percentile([x[0] for x in boundaries], EXCLUSION_PCT)
     trueEndIndex = np.percentile([x[1] for x in boundaries], 100-EXCLUSION_PCT) # Need to get percentile in reverse, kinda
     
-    # Create a string with ${INTRON_CHAR}'s for introns, and gaps for CDS positions
-    dummyString = "".join(["-" if i<trueEndIndex and i>=trueStartIndex else "4" for i in range(len(FASTA_obj[0].gap_seq))])
+    # Find out how much to trim from the left and right
+    startTrim = int(trueStartIndex) # No need to change
+    endTrim = len(FASTA_obj[0].gap_seq) - int(trueEndIndex) # any FastASeq will do, they should all be the same length
+    pctIntron = (startTrim + endTrim) / len(FASTA_obj[0].gap_seq) # calculate before we trim
     
-    # Calculate how much would be marked as intron
-    pctIntron = dummyString.count(INTRON_CHAR) / len(dummyString)
+    # Trim the MSA, and the dummy string
+    FASTA_obj.trim_left(startTrim, asAligned=True)
+    FASTA_obj.trim_right(endTrim, asAligned=True)
     
+    # Create a dummy string with only gaps to mimic genomic intron location prediction
+    dummyString = "-"*len(FASTA_obj[0].gap_seq)
+        
     # Return result string pct for logging purposes, as well as method of operation
     return dummyString, pctIntron, "denovo"
 
@@ -639,7 +647,7 @@ if __name__ == "__main__":
         # Perform intron prediction
         result = get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR=args.INTRON_CHAR)
         if result == False:
-            result = get_intron_locations_denovo(FASTA_obj, INTRON_CHAR=args.INTRON_CHAR)
+            result = trim_intron_locations_denovo(FASTA_obj)
         dummyString, pctIntron, mode = result
         
         # Insert dummy sequence into FASTA_obj
