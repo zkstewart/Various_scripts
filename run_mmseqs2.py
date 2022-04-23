@@ -30,6 +30,13 @@ def validate_args(args):
                 print('The specified output directory does not exist (i.e., "' + args.outputdir + ')".')
                 print('Create this directory first and then try again.')
                 quit()
+        # Validate temporary directory
+        if args.tmpDir == "":
+            print("-tmp needs to be given a value with at least one character")
+            quit()
+        elif os.path.basename(args.tmpDir) != args.tmpDir:
+            print("-tmp needs to be a basename only; it must be written to the current working directory")
+            quit()
         # Validate mmseqs location
         if args.mmseqs2dir != '':
                 if not os.path.isfile(os.path.join(args.mmseqs2dir, 'mmseqs')) and not os.path.isfile(os.path.join(args.mmseqs2dir, 'mmseqs.exe')):
@@ -203,12 +210,15 @@ def main():
         usage = """Wrapper script to perform MMseqs2 search. Provide the arguments below."""
         # Required
         p = argparse.ArgumentParser(description=usage)
-        p.add_argument("-q", "--query", dest="query", type = str,
+        p.add_argument("-q", "--query", dest="query", type = str, required = True,
                           help="Specify the file to be used as a query")
-        p.add_argument("-t", "--target", dest="target", type = str,
+        p.add_argument("-t", "--target", dest="target", type = str, required = True,
                           help="Specify the file to be used as a target; this can be the same as the query.")
-        p.add_argument("-o", "--output", dest="output", type = str,
+        p.add_argument("-o", "--output", dest="output", type = str, required = True,
                           help="Specify the prefix of the output files (can include the path to direct intermediate and output files to a specific location e.g., /home/example_dir/mmseqsout)")
+        p.add_argument("-tmp", "--tmpDir", dest="tmpDir", type = str, required = True,
+                          help="Specify location to write temporary files to; this will be used when resuming a run, so keep it UNIQUE to a single run")
+        # Optional
         p.add_argument("-m", "--mmseqs2dir", dest="mmseqs2dir", type = str, default = "",
                           help="Specify the directory where the MMseqs2 executable is located; if it is accessible from your PATH, you can leave this blank")
         p.add_argument("-e", "--evalue", dest="evalue", type = float, default = 10,
@@ -243,7 +253,7 @@ def main():
         print('Program arguments appear to be OK. If you have any errors, try deleting the mms2tmp folder and try again.')
         
         # Make temporary folder
-        tmpdir = os.path.join(args.outputdir, 'mms2tmp')
+        tmpdir = os.path.join(args.outputdir, args.tmpDir)
         if not os.path.isdir(tmpdir):
                 os.mkdir(tmpdir)
 
