@@ -4,8 +4,10 @@
 # polishing of the MSAs including prediction of intron regions.
 
 import sys, argparse, os, re
+import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
+from exome_liftover import ssw_parasail
 
 def validate_args(args):
     # Validate input data location
@@ -102,8 +104,8 @@ def _tmp_file_name_gen(prefix, suffix):
             else:
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
-#### RE-DO OF INTRON LOCATING
-def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR="4"):
+## Intron locating based on genomic evidence
+def get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR="4"):
     '''
     Receives a ZS_SeqIO.FASTA object representing a MSA. Using genomic annotation(s) for one or 
     more of the sequences present in the MSA, this function will attempt to locate MSA columnar
@@ -184,7 +186,7 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
         # Testing section
         'This is to see if my coordinate prediction IS actually faulty'
         seqStart, seqEnd = seqs[i].description.split("start=")[1].split(" end=")
-        if int(seqStart) != start and end != seqEnd:
+        if int(seqStart) != start or end != int(seqEnd):
             print("These coords don't match; file={0}, start={1} vs {2}, end={3} vs {4}".format(alignFastaFile, start, seqStart, end, seqEnd))
     
     # See if any liftover coords match to GFF3 CDS coords
@@ -234,7 +236,7 @@ def get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFiles
 
 def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR):
     '''
-    Hidden function for use by get_intron_locations(). This will enact intron prediction behaviour
+    Hidden function for use by get_intron_locations_genomic(). This will enact intron prediction behaviour
     based on the genome annotations.
     
     It will also TRIM the MSA to the region covered by at least one genomic exon,
@@ -333,7 +335,7 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
     '''
     startTrim = 0
     for i in range(len(FASTA_obj[0].gap_seq)):
-        isGap = [FastASeq_obj.gap_seq[i] == "-" for FastASeq_obj in fastaSeqs]
+        isGap = [FastASeq_obj.gap_seq[i] == "-" for FastASeq_obj in fastaSeqs if FastASeq_obj != None]
         
         if all(isGap):
             startTrim += 1
@@ -341,7 +343,7 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
             break
     endTrim = 0
     for i in range(len(FASTA_obj[0].gap_seq)-1, -1, -1):
-        isGap = [FastASeq_obj.gap_seq[i] == "-" for FastASeq_obj in fastaSeqs]
+        isGap = [FastASeq_obj.gap_seq[i] == "-" for FastASeq_obj in fastaSeqs if FastASeq_obj != None]
         
         if all(isGap):
             endTrim += 1
@@ -390,6 +392,180 @@ def _merge_coords_list(coords):
             mergeIndex += 1
     
     return coords
+
+## Intron locating based on parsimony
+def solve_translation_frames(FASTA_obj):
+    '''
+    This function will make a best attempt guess at the starting frame for
+    sequences within the FASTA object.
+    
+    NOTE: This function assumes the strand for the translation is ALWAYS
+    the positive strand. If that's not the case, you're gonna have problems.
+    Since we're handling MSAs, they should already all be in the same strand,
+    so maybe you ought to reverse complement them all before running this
+    function.
+    
+    Params:
+        FASTA_obj -- a ZS_SeqIO.FASTA object
+    Returns:
+        solutionDict -- a dictionary with [index] = [seq, frame, hasStopCodon (bool)] structure
+                        where index maps to the FASTA_obj.seqs list.
+    '''
+    resultsDict = {} # contains [index] = [[seq, frame, hasStopCodon], ... +2 more frames]
+    
+    # Obtain translations in the three strand=1 frames
+    for i in range(len(FASTA_obj)):
+        FastASeq_obj = FASTA_obj[i]
+        if FastASeq_obj.seq == "": # skip empty/dummy seqs
+            continue
+        
+        results = [] # contains triples of [seq, frame, hasStopCodon (bool)]
+        for frame in range(0, 3):
+            seq, strand, frame = FastASeq_obj.get_translation(strand=1, frame=frame)
+            results.append([seq, frame, "*" in seq[:-1]]) # don't count the last position since that can be normal
+        resultsDict[i] = results
+    
+    # Loop back through and find easy-to-solve and hard-to-solve scenarios
+    solutionDict = {} # contains [index] = [seq, frame, hasStopCodon]
+    problemDict = {} # contains [index] = [[seq, frame, hasStopCodon], ... +2 more frames]
+    for i in range(len(FASTA_obj)):
+        if i not in resultsDict:
+            continue
+        results = resultsDict[i]
+        
+        # Handle easy-to-solve scenarios
+        numWithoutStopCodons = sum([1 for r in results if r[2] == False])
+        if numWithoutStopCodons == 1:
+            solutionDict[i] = [r for r in results if r[2] == False][0]
+            continue
+        
+        # Note hard-to-solve scenarios
+        else:
+            problemDict[i] = resultsDict[i]
+    
+    # Find the best solution to problem sequences
+    for i, results in problemDict.items():
+        scores = [[], [], []] # will store scores for frame 0, 1, and 2
+        for j in range(0, 3):
+            problemSeq, _, _ = results[j]
+            for x, solution in solutionDict.items():
+                solutionSeq, _, _ = solution
+                _, _, _, score = ssw_parasail(problemSeq, solutionSeq)
+                scores[j].append(score)
+        
+        # Calculate two indicative metrics
+        maxIndividualScores = [[max(scores[frame]), frame] for frame in range(0, 3)] # Gives [[score, frame], ... +2 frames]
+        totalScores = [[sum(scores[frame]), frame] for frame in range(0, 3)] # Gives [[score, frame], ... +2 frames]
+        
+        maxIndividualScoresFrame = max(maxIndividualScores, key = lambda x: x[0])[1]
+        maxTotalScoresFrame = max(totalScores, key = lambda x: x[0])[1]
+        
+        # Find the best frame from two indicative metrics
+        if maxIndividualScoresFrame == maxTotalScoresFrame:
+            bestFrame = maxIndividualScoresFrame
+        # Find the best frame by picking the most informative of the two metrics
+        else:
+            individualScoreDifference = max(maxIndividualScores, key = lambda x: x[0])[0] / min(maxIndividualScores, key = lambda x: x[0])[0]
+            totalScoreDifference = max(totalScores, key = lambda x: x[0])[0] / min(totalScores, key = lambda x: x[0])[0]
+
+            individualScoreDifference = round(individualScoreDifference, 2)
+            totalScoreDifference = round(totalScoreDifference, 2)
+            
+            if totalScoreDifference > individualScoreDifference: # we're checking to see which metric separates the data most
+                bestFrame = maxTotalScoresFrame
+            elif individualScoreDifference > totalScoreDifference:
+                bestFrame = maxIndividualScoresFrame
+            # Just pick a best-guess frame and alert the user to this occurrence
+            else:
+                bestFrame = maxTotalScoresFrame # assume total score sum should be most indicative
+                print("Failed to find a good frame for FASTA based on {0}".format(FASTA_obj.fileOrder[0][0]))
+        
+        solutionDict[i] = results[bestFrame]
+    
+    return solutionDict
+
+def get_intron_locations_denovo(FASTA_obj, INTRON_CHAR="4", EXCLUSION_PCT=0.90):
+    '''
+    Trims a ZS_SeqIO.FASTA object to the best guess boundaries of the CDS region.
+    It does this without genomic evidence (hence "de novo") by assessment of how
+    to get the longest uninterrupted (i.e., no stop codons) region from a MSA.
+    
+    Params:
+        FASTA_obj -- a ZS_SeqIO.FASTA instance
+        INTRON_CHAR -- a string containing a single character for how the intron position will
+                       be represented within the dummy sequence output.
+        EXCLUSION_PCT -- a float value indicating the proportion of sequences that
+                         must have their stop codons excluded within the predicted CDS region.
+                         E.g., if 0.90, then 90% of the sequences must NOT contain a stop
+                         codon within the region.
+    Returns:
+        dummyString -- a string value indicating the predicted intron positions as INTRON_CHAR
+                       and CDS positions as "-"
+        pctIntron -- a float value indicating what proportion of the alignment was predicted
+                     to be intronic.
+        mode -- a string indicating that denovo prediction occurred
+    '''
+    assert isinstance(EXCLUSION_PCT, float) or isinstance(EXCLUSION_PCT, int)
+    assert 0 <= EXCLUSION_PCT <= 1, "EXCLUSION_PCT must be between 0 or 1 (inclusive of 0 and 1)"
+    
+    EXCLUSION_PCT = int(EXCLUSION_PCT*100)
+    
+    # Get sequence translations
+    solutionDict = solve_translation_frames(FASTA_obj)
+    
+    # Locate longest segment boundaries for each sequence that excludes stop codons
+    boundaries = []
+    for i in range(len(FASTA_obj)):
+        if i not in solutionDict:
+            continue
+        
+        FastASeq_obj = FASTA_obj[i]
+        translationSeq, frame, hasStopCodon = solutionDict[i]
+        
+        # If there's no stop codons, just put the maximal sequence length in
+        if not hasStopCodon:
+            boundaries.append([0, len(FastASeq_obj.gap_seq)])
+        # If there are stop codons, find the borders for the longest section excluding stop codons
+        else:
+            longestSection = max(translationSeq.split("*"), key=len)
+            proteinStart = longestSection.find(longestSection)
+            proteinEnd = proteinStart + len(longestSection)
+            
+            # Translate .seq positions to .gap_seq positions
+            ongoingPositionCount = 0
+            for x in range(len(FastASeq_obj.gap_seq)):
+                letter = FastASeq_obj.gap_seq[x]
+                if letter == "-":
+                    continue
+                
+                if ongoingPositionCount == proteinStart*3:
+                    startIndex = x
+                if ongoingPositionCount == proteinEnd*3:
+                    endIndex = x # proteinEnd marks the first position of the stop codon, setting this to endIndex will exclude it
+                
+                ongoingPositionCount += 1
+            
+            boundaries.append([startIndex, endIndex])
+    
+    # Find true boundaries which maximise sequence length according to EXCLUSION_PCT threshold
+    '''
+    It's not precise, but the below code intends to trim our MSA to only the section that best
+    accounts for ~{EXCLUSION_PCT}% of the start and stop sites in boundaries. As such, if ${EXCLUSION_PCT}%
+    == 90%, then 90% of our boundaries should have their start site LESS THAN OR EQUAL TO the
+    selected start site, and 90% of the boundaries should have their end site GREATER THAN OR
+    EQUAL TO the selected end site. It's messy but it should do the job!
+    '''
+    trueStartIndex = np.percentile([x[0] for x in boundaries], EXCLUSION_PCT)
+    trueEndIndex = np.percentile([x[1] for x in boundaries], 100-EXCLUSION_PCT) # Need to get percentile in reverse, kinda
+    
+    # Create a string with ${INTRON_CHAR}'s for introns, and gaps for CDS positions
+    dummyString = "".join(["-" if i<trueEndIndex and i>=trueStartIndex else "4" for i in range(len(FASTA_obj[0].gap_seq))])
+    
+    # Calculate how much would be marked as intron
+    pctIntron = dummyString.count(INTRON_CHAR) / len(dummyString)
+    
+    # Return result string pct for logging purposes, as well as method of operation
+    return dummyString, pctIntron, "denovo"
 
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
@@ -461,13 +637,14 @@ if __name__ == "__main__":
         initialLength = len(FASTA_obj[0].gap_seq) # hold onto for later statistics
         
         # Perform intron prediction
-        result = get_intron_locations(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, args.genomes, INTRON_CHAR=args.INTRON_CHAR)
-        if result != False:
-            dummyString, pctIntron, mode = result
-            
-            # Insert dummy sequence into FASTA_obj
-            dummyFastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq=dummyString)
-            FASTA_obj.insert(0, dummyFastASeq_obj)
+        result = get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR=args.INTRON_CHAR)
+        if result == False:
+            result = get_intron_locations_denovo(FASTA_obj, INTRON_CHAR=args.INTRON_CHAR)
+        dummyString, pctIntron, mode = result
+        
+        # Insert dummy sequence into FASTA_obj
+        dummyFastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq=dummyString)
+        FASTA_obj.insert(0, dummyFastASeq_obj)
         
         # Statistics and logging
         trimmedLength = len(FASTA_obj[0].gap_seq)
@@ -483,7 +660,7 @@ if __name__ == "__main__":
         # Write output FASTA file
         outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
         FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
-        
+    
     # Write output logging file
     logFileName = _tmp_file_name_gen("2_polish_log", "txt")
     with open(logFileName, "w") as fileOut:
