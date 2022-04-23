@@ -94,7 +94,7 @@ if __name__ == "__main__":
     
     # Locate all files
     files = [os.path.join(args.alignmentsDir, file) for file in os.listdir(args.alignmentsDir)]
-
+    
     # Load FASTA files
     fastaObjs = []
     for file in files:
@@ -133,6 +133,7 @@ if __name__ == "__main__":
         
         dummyFastASeq_obj = ZS_SeqIO.FastASeq("GeneName", alt="GeneName", gapSeq = geneNameSeq)
         baseFASTA.insert(0, dummyFastASeq_obj)
+        baseFASTA.make_uppercase() # just to enforce conformity
         
         concatFastaObjs.append(baseFASTA) # Store our modified FASTA with all the concatenation performed
         prevChunkStart = chunkPoints[i]
