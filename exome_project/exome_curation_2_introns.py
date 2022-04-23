@@ -516,6 +516,44 @@ def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
     solutionDict = solve_translation_frames(FASTA_obj)
     
     # Locate longest segment boundaries for each sequence that excludes stop codons
+    boundaries = _get_segment_boundaries(FASTA_obj, solutionDict)
+    
+    # Find true boundaries which maximise sequence length according to EXCLUSION_PCT threshold
+    '''
+    It's not precise, but the below code intends to trim our MSA to only the section that best
+    accounts for ~{EXCLUSION_PCT}% of the start and stop sites in boundaries. As such, if ${EXCLUSION_PCT}%
+    == 90%, then 90% of our boundaries should have their start site LESS THAN OR EQUAL TO the
+    selected start site, and 90% of the boundaries should have their end site GREATER THAN OR
+    EQUAL TO the selected end site. It's messy but it should do the job!
+    '''
+    trueStartIndex = np.percentile([x[0] for x in boundaries], EXCLUSION_PCT)
+    trueEndIndex = np.percentile([x[1] for x in boundaries], 100-EXCLUSION_PCT) # Need to get percentile in reverse, kinda
+    
+    # Find out how much to trim from the left and right
+    startTrim = int(trueStartIndex) # No need to change
+    endTrim = len(FASTA_obj[0].gap_seq) - int(trueEndIndex) # any FastASeq will do, they should all be the same length
+    pctIntron = (startTrim + endTrim) / len(FASTA_obj[0].gap_seq) # calculate before we trim
+    
+    # Trim the MSA, and the dummy string
+    FASTA_obj.trim_left(startTrim, asAligned=True)
+    FASTA_obj.trim_right(endTrim, asAligned=True)
+    
+    # Create a dummy string with only gaps to mimic genomic intron location prediction
+    dummyString = "-"*len(FASTA_obj[0].gap_seq)
+        
+    # Return result string pct for logging purposes, as well as method of operation
+    return dummyString, pctIntron, "denovo"
+
+def _get_segment_boundaries(FASTA_obj, solutionDict):
+    '''
+    Hidden method of trim_intron_locations_denovo() for getting the bounded region
+    in which no stop codons exist for each sequence in the FASTA_obj, depending
+    on the results of solve_translation_frames() [i.e., solutionDict].
+    
+    This is pulled out into a separate function to 1) reduce the mental burden
+    of interpretting trim_intron_locations_denovo(), but moreso so 2) I can reuse
+    the function in 3_polish.
+    '''
     boundaries = []
     for i in range(len(FASTA_obj)):
         if i not in solutionDict:
@@ -548,42 +586,14 @@ def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
                 ongoingPositionCount += 1
             
             boundaries.append([startIndex, endIndex])
-    
-    # Find true boundaries which maximise sequence length according to EXCLUSION_PCT threshold
-    '''
-    It's not precise, but the below code intends to trim our MSA to only the section that best
-    accounts for ~{EXCLUSION_PCT}% of the start and stop sites in boundaries. As such, if ${EXCLUSION_PCT}%
-    == 90%, then 90% of our boundaries should have their start site LESS THAN OR EQUAL TO the
-    selected start site, and 90% of the boundaries should have their end site GREATER THAN OR
-    EQUAL TO the selected end site. It's messy but it should do the job!
-    '''
-    trueStartIndex = np.percentile([x[0] for x in boundaries], EXCLUSION_PCT)
-    trueEndIndex = np.percentile([x[1] for x in boundaries], 100-EXCLUSION_PCT) # Need to get percentile in reverse, kinda
-    
-    # Find out how much to trim from the left and right
-    startTrim = int(trueStartIndex) # No need to change
-    endTrim = len(FASTA_obj[0].gap_seq) - int(trueEndIndex) # any FastASeq will do, they should all be the same length
-    pctIntron = (startTrim + endTrim) / len(FASTA_obj[0].gap_seq) # calculate before we trim
-    
-    # Trim the MSA, and the dummy string
-    FASTA_obj.trim_left(startTrim, asAligned=True)
-    FASTA_obj.trim_right(endTrim, asAligned=True)
-    
-    # Create a dummy string with only gaps to mimic genomic intron location prediction
-    dummyString = "-"*len(FASTA_obj[0].gap_seq)
-        
-    # Return result string pct for logging purposes, as well as method of operation
-    return dummyString, pctIntron, "denovo"
+    return boundaries
 
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
-    Oz Mammals genome project. Its goal is to polish these alignments to make manual inspection
-    less tedious. This includes prediction of intron regions and inclusion of a >Codons dummy
-    sequence at the start of the FASTA with these positions indicated. It additionally trims
-    the borders of the MSA to remove non-informative flank regions.
-    
-    Some programs are assumed to be available in the system PATH. These include the BLAST program
-    suite, as well as cd-hit.
+    Oz Mammals genome project. Its goal is to annotate where probable intronic sequences
+    are in the alignment. When a lack of genomic evidence is available, it will instead
+    instead trim the MSA to only the region that most probably contains CDS, excluding
+    regions which have an abundance of stop codons indicating that they're non-coding.
     
     Note: This should be step 2 in the Oz Mammals project!
     """
