@@ -4,10 +4,10 @@
 # and attempts to fix indel errors present in a subset of the alignments.
 # If they all have indels, god help you since I can't.
 
-import sys, argparse, os
+import sys, argparse, os, re, platform
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
-from Function_packages import ZS_SeqIO
+from Function_packages import ZS_SeqIO, ZS_AlignIO
 from exome_liftover import ssw_parasail
 from copy import deepcopy
 from exome_curation_2_introns import solve_translation_frames, _get_segment_boundaries
@@ -18,6 +18,17 @@ def validate_args(args):
         print('I am unable to locate the directory where the alignments files are (' + args.alignmentsDir + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if not os.path.isdir(args.mafftDir):
+        print('I am unable to locate the directory where the MAFFT executables are (' + args.alignmentsDir + ')')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
+    else:
+        if platform.system() == "Windows":
+            if not os.path.isfile(os.path.join(args.mafftDir, "mafft.bat")):
+                raise Exception("{0} does not exist".format(os.path.join(args.mafftDir, "mafft.bat")))
+        else:
+            if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) and not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
+                raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
     # Handle file output
     if os.path.isdir(args.outputDir):
         if os.listdir(args.outputDir) != []:
@@ -30,20 +41,26 @@ def validate_args(args):
         except:
             print("Wasn't able to create '{0}' directory; does '{1}' actually exist?".format(args.outputDir, os.path.dirname(args.outputDir)))
 
-def polish_MSA_denovo(FASTA_obj):
+def polish_MSA_denovo(FASTA_obj, mafftDir):
     '''
     Polishes a ZS_SeqIO.FASTA object to remove probable indel errors from sequences.
     It does this without genomic evidence (hence "de novo") by assessment of how
     a subset of sequences containing stop codons differ to the majority which lack
-    that stop codon. When a simple error can be identifier, it will rectify it.
+    that stop codon. When a simple error can be identified, it will rectify it.
+    
+    It will also perform MSA realignment after codon fixing using codon-based alignment
+    with MAFFT.
     
     Params:
         FASTA_obj -- a ZS_SeqIO.FASTA instance
+        mafftDir -- a string indicating the location of the MAFFT executable files.
     Returns:
-        TBD -- unsure what this needs to return at preset
+        result_FASTA_obj -- a new ZS_SeqIO.FASTA instance with indels polished and
+                            the MSA realigned by codons.
     '''
     
     assert FASTA_obj[0].id == "Codons", "FASTA lacks a Codons line at its start!"
+    mafftAligner = ZS_AlignIO.MAFFT(mafftDir) # set up here for use later
     
     # Get the coordinate spans of exons
     'NOTE: This will give 0-based numbers appropriate for range i.e., end not inclusive'
@@ -76,7 +93,11 @@ def polish_MSA_denovo(FASTA_obj):
         exon_FASTA_objs.append(exon_FASTA_obj)
     
     # For each exon region, find and polish indels!
-    for exon_FASTA_obj in exon_FASTA_objs:
+    codonsProblemLeft = []
+    codonsProblemRight = []
+    for x in range(len(exon_FASTA_objs)):
+        exon_FASTA_obj = exon_FASTA_objs[x]
+        
         # Remove the codons line
         "It gets in the way now when doing translations, we can put it in again later"
         codons_FastASeq_obj = exon_FASTA_obj[0]
@@ -106,16 +127,11 @@ def polish_MSA_denovo(FASTA_obj):
         endTrim = len(exon_FASTA_obj[0].gap_seq) - int(trueEndIndex) # any FastASeq will do, they should all be the same length
         exon_FASTA_obj.trim_left(startTrim, asAligned=True)
         exon_FASTA_obj.trim_right(endTrim, asAligned=True)
-        
-        codonsProblemLeft = "5"*startTrim # This will be left-appended to the codons sequence for this subregion
-        codonsProblemRight = "5"*endTrim # And this will be right-appended to the ...
-        
+
         # Predict our solutionDict again if needed
         "If we've changed our sequence region, we might need to update our translations"
         if startTrim != 0 or endTrim != 0:
              solutionDict = solve_translation_frames(exon_FASTA_obj)
-        
-        # 
         
         # Loop through solutionDict and polish sequences that need it
         for problemIndex, value in solutionDict.items():
@@ -134,51 +150,206 @@ def polish_MSA_denovo(FASTA_obj):
                     continue
                 else:
                     targetNuclSeq = exon_FASTA_obj[targetIndex].seq
-                    problemAlign, targetAlign, startIndex, score = ssw_parasail(nuclSeq, targetNuclSeq)
+                    targetAlign, problemAlign, startIndex, score = ssw_parasail(nuclSeq, targetNuclSeq) # this function has poorly ordered outputs
                     matches.append([problemAlign, targetAlign, startIndex, score])
             matches.sort(key = lambda x: -x[3]) # order by score
-            bestMatch = matches[0]
             
-            # Try to see if there's any easily fixable indel errors
-            ## TBD...
-        
-        
-        # # Identify our best sequences
-        # seqs = []
-        # for i in range(len(exon_FASTA_obj)):
-        #     FastASeq_obj = exon_FASTA_obj[i]
-        #     if i not in solutionDict:
-        #         continue
-        #     else:
-        #         seq, frame, hasStopCodon = solutionDict[i]
-        #         if not hasStopCodon:
-        #             seqs.append(seq)
-        
-        # lengthCutoff = np.percentile([len(s) for s in seqs], 100-EXCLUSION_PCT)
-        # MAXIMUM_GOOD_SEQS = 10 # hard-coded, we just want to minimise wasted time when there's lots of good sequences
-        # bestSeqs = []
-        # for i in range(len(seqs)):
-        #     if len(bestSeqs) >= MAXIMUM_GOOD_SEQS:
-        #         break
+            # Check all matches to see what fix they suggest
+            SCORE_CUTOFF = np.percentile([x[3] for x in matches], 100-EXCLUSION_PCT) # borrow EXCLUSION_PCT which is 90
+            fix = _get_suggested_fix_from_ssw_matches(matches, nuclSeq, SCORE_CUTOFF)
+            if fix == []:
+                continue
             
-        #     if len(seqs[i]) >= lengthCutoff:
-        #         bestSeqs.append(seqs[i])
-        # # 
-        # '''
-        # It's important to consider something at this point. solve_translation_frames() is not
-        # guaranteed to provide a good answer. It will only provide a good answer if at least one
-        # sequence does NOT contain stop codons in it. If that doesn't prove true, it simply
-        # won't work.
-        # '''
-        # ongoingCount=0
-        # for x in range(min(solutionDict.keys()), max(solutionDict.keys())+1):
-        #     if x not in solutionDict:
-        #         continue
-        #     else:
-        #         b = boundaries[ongoingCount]
-        #         s = solutionDict[x]
-        #         ongoingCount +=1
+            # If we found a fix to make, get the edited sequence
+            editedSeq = _enact_fix_to_seq(fix, exon_FASTA_obj[problemIndex].seq)
+            
+            # Then, update the sequence in our exon_FASTA_obj
+            exon_FASTA_obj[problemIndex].seq = editedSeq
+            exon_FASTA_obj[problemIndex].gap_seq = None # make sure we know that our gap_seq is no longer valid
         
+        # Align edited exon region
+        mafftAligner.run_nucleotide_as_protein(exon_FASTA_obj, findBestFrame=True)
+        
+        # Briefly fix up any MAFFT weirdness
+        "I think my codon system kinda fucks up the last codon by missing 1-2 gaps at times"
+        maxLen = max([len(FastASeq_obj.gap_seq) for FastASeq_obj in exon_FASTA_obj])
+        for FastASeq_obj in exon_FASTA_obj:
+            if len(FastASeq_obj.gap_seq) != maxLen:
+                FastASeq_obj.gap_seq += "-"*(maxLen - len(FastASeq_obj.gap_seq))
+        
+        # Take note of how much we trimmed WITHIN the exon region
+        codonsProblemLeft.append(startTrim)
+        codonsProblemRight.append(endTrim)
+        
+    # Merge the edited exon regions back into the overall sequence
+    for x in range(len(exonCoords)-1, -1, -1): # iterate backwards through coords since we know they're ordered ascendingly
+        # Get values for this iteration
+        exonStart, exonEnd = exonCoords[x]
+        problemLeft = codonsProblemLeft[x]
+        problemRight = codonsProblemRight[x]
+        exon_FASTA_obj = exon_FASTA_objs[x]
+        
+        # First, get our Codons sequence for this exon region and insert it
+        codons_FastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq="5"*problemLeft + "-"*len(exon_FASTA_obj[0].gap_seq) + "5"*problemRight)
+        exon_FASTA_obj.insert(0, codons_FastASeq_obj)
+        
+        # Then, get our trimmed slices of the original sequence
+        left_FASTA_obj = FASTA_obj.slice_cols(0, exonStart)
+        right_FASTA_obj = FASTA_obj.slice_cols(exonEnd, len(FASTA_obj[0].gap_seq))
+        
+        # Write the exon and right FASTA objects to temporary files
+        "We only do this because of how the FASTA.concat() method is implemented"
+        exonTmpFileName = _tmp_file_name_gen("exon", "fasta")
+        rightTmpFileName = _tmp_file_name_gen("right", "fasta")
+        exon_FASTA_obj.write(exonTmpFileName, asAligned=True)
+        right_FASTA_obj.write(rightTmpFileName, asAligned=True)
+        
+        # Merge the left, right, and exon FASTAs
+        left_FASTA_obj.concat(exonTmpFileName)
+        left_FASTA_obj.concat(rightTmpFileName)
+        
+        # Overwrite FASTA_obj with the new exon-edited version
+        FASTA_obj = left_FASTA_obj
+        
+    return FASTA_obj # this has the same variable name, but its value is DIFFERENT than the input
+
+def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALIGN_PCT=0.80, GOOD_GAPS_NUM=2):
+    '''
+    Hidden function for use by polish_MSA_denovo(). It's been pulled aside here since it's quite
+    complex and I don't want it being a mental burden when interpretting the parent function.
+
+    Importantly, the fixes will never overlap.
+    
+    Parameters:
+        GOOD_ALIGN_PCT -- arbitary, hard-coded magic number. I don't think we should change this.
+        GOOD_GAPS_NUM -- arbitary, hard-coded magic number. 2 sounds right to me, yknow?
+    Returns:
+        fixes -- a list with format of: [[start, end, nLength], ...]. It should
+                 used to make changes to the sequence, eventually.
+    '''
+    fixes = [] # format of 
+    for problemAlign, targetAlign, startIndex, score in matches:
+        # Limit ourselves to only good matches for indel fixing
+        ## 1) Skip anything with a score that doesn't meet cut-off
+        if score < score_cutoff:
+            continue
+        
+        ## 2) Check if the alignment is good based on % overlap
+        pctOverlap = len(problemAlign) / len(nuclSeq)
+        if pctOverlap < GOOD_ALIGN_PCT:
+            continue
+        
+        ## 3) Check if it's only 1 or 2 (max?) gap opens in either sequence
+        problemGaps = list(re.finditer(r"-+", problemAlign))
+        targetGaps = list(re.finditer(r"-+", targetAlign))
+        numGaps = len(problemGaps) + len(targetGaps)
+        if numGaps > GOOD_GAPS_NUM or numGaps == 0: # if we have no gaps, the stop codon has to be substitution related
+            continue # we're not going to fix substitution errors, only indels
+        
+        # If we found a good match (i.e., we get here), see if there's anything to fix
+        fix = []
+        for gap in problemGaps:
+            '''
+            Here, the rationale is that gaps in the problem sequence mean it's MISSING
+            something. Under that assumption, it's easy for us to just add N's into this
+            gap region that maintain the reading frame, and everything should just work.
+            '''
+            gapLen = len(gap.group())
+            gapFrame = gapLen % 3 # this will give 0, 1, or 2
+            # If gapFrame isn't 0 (gapLen not divisible by 3), add N's to address the situation
+            if gapFrame != 0:
+                #gapPatch = "N"*(gapFrame) # gives a length of N's to insert
+                start = gap.span()[0] + startIndex # + startIndex to give a consistent position in the sequence
+                end = gap.span()[0] + gapFrame + startIndex # we're replacing only the length of "-"s that we want to be "n"s
+                fix.append([start, end, gapFrame])
+                # ongoingCount = 0
+                # for j in range(gap.span()[0], gap.span()[1]): # iterate through gap positions
+                #     if ongoingCount == gapFrame: # exit condition
+                #         break
+                #     newProblemAlign = newProblemAlign[0:j] + "N" + newProblemAlign[j+1:]
+                #     ongoingCount += 1
+        for gap in targetGaps:
+            '''
+            Here, the rationale is that gaps in the target sequence mean the problem sequence
+            has ADDED something incorrectly. Under that assumption, it's non-trivial finding
+            which position(s) have the problem especially if the gap region is longer than 3 base
+            pairs. The safe solution is to REPLACE this entire region in the problem sequence
+            with N's that fix the reading frame, and everything should still work.
+            '''
+            gapLen = len(gap.group())
+            gapFrame = gapLen % 3 # this will give 0, 1, or 2
+            # If gapFrame isn't 0 (gapLen not divisible by 3), use N's to address the situation
+            if gapFrame != 0:
+                #gapPatch = "N"*(gapLen-gapFrame) # gives a length of N's with appropriate shortening for good reading frame
+                start = gap.span()[0] + startIndex # we're just going to replace the entire gap region
+                end = gap.span()[1] + startIndex
+                fix.append([start, end, gapLen-gapFrame])
+                #newProblemAlign = newProblemAlign[0:gap.span()[0]] + gapPatch + newProblemAlign[gap.span()[1]:]
+        fixes.append(fix)
+    
+    # Find the most consistently supported fix
+    fixesCounts = {}
+    ongoingCount = 0
+    for fix in fixes:
+        if ongoingCount == 0:
+            fixesCounts[ongoingCount] = [fix, 1]
+            ongoingCount += 1
+        else:
+            found = False
+            for i in range(0, ongoingCount):
+                if fixesCounts[i][0] == fix:
+                    fixesCounts[i][1] += 1
+                    found = True
+                    break
+            if found == False:
+                fixesCounts[ongoingCount] = [fix, 1]
+    
+    bestFix = [None, 0]
+    for value in fixesCounts.values():
+        if value[1] > bestFix[1]:
+            bestFix = value
+    
+    # Return the most supported fix
+    return bestFix[0]
+
+def _enact_fix_to_seq(fix, seq):
+    '''
+    Hidden function for use by polish_MSA_denovo(). Its goal is to take a fix identified by
+    _get_suggested_fix_from_ssw_matches() and make the changes to the given sequence.
+    
+    NOTE: This is NOT the .gap_seq value, it is the .seq value!
+    
+    Return:
+        editedGapSeq -- the fixed gapSeq.
+    '''
+    
+    # Sort fixes in descending order
+    fix.sort(key = lambda x: -x[1]) # doesn't matter if we sort by start or end since it's non-overlapping
+    
+    # Iterate through fixes and make all suggested changes
+    for start, end, nLength in fix:
+        seq = seq[0:start] + "N"*nLength + seq[end:]
+    return seq
+
+def _tmp_file_name_gen(prefix, suffix):
+        '''
+        Hidden function for use by this script.
+        Params:
+            prefix -- a string for a file prefix e.g., "tmp"
+            suffix -- a string for a file suffix e.g., "fasta". Note that we don't
+                      use a "." in this, since it's inserted between prefix and suffix
+                      automatically.
+        Returns:
+            tmpName -- a string for a file name which does not exist in the current dir.
+        '''
+        ongoingCount = 1
+        while True:
+            if not os.path.isfile("{0}.{1}".format(prefix, suffix)):
+                return "{0}.{1}".format(prefix, suffix)
+            elif os.path.isfile("{0}.{1}.{2}".format(prefix, ongoingCount, suffix)):
+                ongoingCount += 1
+            else:
+                return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
@@ -193,6 +364,8 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-a", dest="alignmentsDir", required=True,
                 help="Specify the directory where aligned FASTA files are located")
+    p.add_argument("-m", dest="mafftDir", required=True,
+                help="Specify the directory where MAFFT executables are located")
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"3_polish\")",
                 default="3_polish")
@@ -211,10 +384,14 @@ if __name__ == "__main__":
     # Polishing
     for i in range(len(files)):
         # Get details for this MSA
-        alignFastaFile = files[i]
+        alignFastaFile = files[i] # i=8 for first bug with fix.sort, fix is None somehow
         FASTA_obj = fastaObjs[i]
         
         # Perform polishing procedure
+        FASTA_obj = polish_MSA_denovo(FASTA_obj, args.mafftDir)
+        
+        # Number codons
+        ## TBD
         
         # Write output FASTA file
         outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
