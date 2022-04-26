@@ -228,7 +228,7 @@ def _get_exon_coords(FASTA_obj):
         exonCoords.append([start, i+1]) # +1 to make end non-inclusive
     return exonCoords
 
-def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALIGN_PCT=0.80, GOOD_GAPS_NUM=2):
+def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALIGN_PCT=0.60, GOOD_GAPS_NUM=2):
     '''
     Hidden function for use by polish_MSA_denovo(). It's been pulled aside here since it's quite
     complex and I don't want it being a mental burden when interpretting the parent function.
@@ -242,7 +242,7 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALI
         fixes -- a list with format of: [[start, end, nLength], ...]. It should
                  used to make changes to the sequence, eventually.
     '''
-    fixes = [] # format of 
+    fixes = []
     for problemAlign, targetAlign, startIndex, score in matches:
         # Limit ourselves to only good matches for indel fixing
         ## 1) Skip anything with a score that doesn't meet cut-off
@@ -250,13 +250,21 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALI
             continue
         
         ## 2) Check if the alignment is good based on % overlap
-        pctOverlap = len(problemAlign) / len(nuclSeq)
+        pctOverlap = len(problemAlign.replace("-","")) / len(nuclSeq)
         if pctOverlap < GOOD_ALIGN_PCT:
             continue
         
         ## 3) Check if it's only 1 or 2 (max?) gap opens in either sequence
-        problemGaps = list(re.finditer(r"-+", problemAlign))
-        targetGaps = list(re.finditer(r"-+", targetAlign))
+        problemGapsHits = list(re.finditer(r"-+", problemAlign))
+        problemGaps = [] # we're going to drop any gaps divisible by 3 because they shouldn't matter
+        for gap in problemGapsHits:
+            if len(gap.group()) % 3 != 0:
+                problemGaps.append(gap)
+        targetGapsHits = list(re.finditer(r"-+", targetAlign))
+        targetGaps = []
+        for gap in targetGapsHits:
+            if len(gap.group()) % 3 != 0:
+                targetGaps.append(gap)
         numGaps = len(problemGaps) + len(targetGaps)
         if numGaps > GOOD_GAPS_NUM or numGaps == 0: # if we have no gaps, the stop codon has to be substitution related
             continue # we're not going to fix substitution errors, only indels
@@ -301,6 +309,10 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALI
                 fix.append([start, end, gapLen-gapFrame])
                 #newProblemAlign = newProblemAlign[0:gap.span()[0]] + gapPatch + newProblemAlign[gap.span()[1]:]
         fixes.append(fix)
+    
+    # Abort operation if we've found no valid fixes
+    if fixes == []:
+        return fixes
     
     # Find the most consistently supported fix
     fixesCounts = {}
@@ -477,7 +489,7 @@ if __name__ == "__main__":
     # Polishing
     for i in range(len(files)):
         # Get details for this MSA
-        alignFastaFile = files[i] # i=8 for first bug with fix.sort, fix is None somehow
+        alignFastaFile = files[i]
         FASTA_obj = fastaObjs[i]
         
         # Perform polishing procedure
