@@ -96,7 +96,8 @@ class MAFFT:
             FASTA_obj -- an object of ZS_SeqIO.FASTA class.
         '''
         # Validate input value type
-        assert isinstance(FASTA_obj, FASTA)
+        assert type(FASTA_obj).__name__ == "FASTA" or type(FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
+        #assert isinstance(FASTA_obj, FASTA)
         
         # Create temporary file
         tmpHash = hashlib.sha256(bytes(str(FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
@@ -152,7 +153,8 @@ class MAFFT:
         with closely related sequences.
         '''
         # Validate input value type
-        assert isinstance(FASTA_obj, FASTA)
+        assert type(FASTA_obj).__name__ == "FASTA" or type(FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
+        #assert isinstance(FASTA_obj, FASTA)
         assert isinstance(findBestFrame, bool)
         assert isinstance(strand, int)
         assert strand in [1, -1]
@@ -273,14 +275,6 @@ class MAFFT:
                 ongoingCount += 1
             else:
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
-
-class MSA:
-    '''
-    Relevant attributes include:
-        TBD
-    '''
-    def __init__(self):
-        raise NotImplementedError()
 
 if __name__ == "__main__":
     pass
