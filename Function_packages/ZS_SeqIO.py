@@ -6,6 +6,7 @@
 import os, inspect
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
+from copy import deepcopy
 
 class FastASeq:
     '''
@@ -156,6 +157,11 @@ class FastASeq:
         it is a nucleotide or protein already, the onus is on you as a user to not be
         dumb. An error will be raised if you try to translate a protein into a protein.
         
+        Developer's note: I used to have a bug in here with relation to the frame.
+        Conceptually, if we are obtaining frame 2 (0-based), we're only trimming 1
+        position from the start. And if we're obtaining frame 1, we're trimming 2
+        positions from the start. Frame 0 involves no trimming.
+        
         Params:
             findBestFrame -- a Boolean indicating whether you want this program to find
                              the longest translation for the sequence. This is relevant
@@ -191,8 +197,9 @@ class FastASeq:
                 return self._dna_to_protein(self.seq), strand, frame
             else:
                 nuc = self.seq if strand == 1 else self.get_reverse_complement()
-                length = 3 * ((len(nuc)-frame) // 3)
-                frameNuc = nuc[frame:frame+length]
+                trimAmount = 0 if frame == 0 else 1 if frame == 2 else 2
+                length = 3 * ((len(nuc)-trimAmount) // 3)
+                frameNuc = nuc[trimAmount:trimAmount+length]
                 frameProt = self._dna_to_protein(frameNuc)
                 return frameProt, strand, frame
         # Handle other cases
@@ -201,8 +208,9 @@ class FastASeq:
             for strand in [1, -1]:
                 nuc = self.seq if strand == 1 else self.get_reverse_complement()
                 for frame in range(3):
-                    length = 3 * ((len(nuc)-frame) // 3)
-                    frameNuc = nuc[frame:frame+length]
+                    trimAmount = 0 if frame == 0 else 1 if frame == 2 else 2
+                    length = 3 * ((len(nuc)-trimAmount) // 3)
+                    frameNuc = nuc[trimAmount:trimAmount+length]
                     frameProt = self._dna_to_protein(frameNuc)
                     orfs = frameProt.split("*")
                     for orf in orfs:
@@ -611,6 +619,49 @@ class FASTA:
         # Pass along trim method command to all contained FastASeq objects
         for FastASeq_obj in self.seqs:
             FastASeq_obj.trim_right(length, asAligned)
+    
+    def slice_cols(self, start, end):
+        '''
+        This method returns a slice of the FASTA object's columns within the specified
+        range (end non-inclusive same as range() function). It returns this as a NEW object
+        rather than modifying the existing object.
+        
+        Note that this method is only relevant for aligned FASTA objects. It will return
+        an error if .isAligned is not True.
+        
+        Params:
+            start -- an integer indicating which column to start from (inclusive, 0-based)
+            end -- an integer indicating which column to stop at (non-inclusive, 0-based)
+        Returns:
+            FASTA_obj -- a new FASTA object.
+        '''
+        # Validate that this object is aligned
+        if not self.isAligned:
+            raise Exception("FASTA object isn't flagged as being aligned; cant slice columns")
+        for FastASeq_obj in self.seqs:
+            if FastASeq_obj.gap_seq == None:
+                raise Exception(inspect.cleandoc("""
+                                Sequence with ID {0} lacks a gap seq value; 
+                                can't slice columns""".format(FastASeq_obj.id)))
+        
+        # Validate value types and sensibility
+        assert isinstance(start, int)
+        assert isinstance(end, int)
+        assert start >= 0, "start doesn't make sense as a negative integer!"
+        assert end <= len(self.seqs[0].gap_seq), "end doesn't make sense if it's longer than the aligned length ({0})!".format(len(self.seqs[0].gap_seq))
+        
+        # Perform slice operation
+        '''
+        We can consider this slice operation as a kind of "trimming" where we want to trim
+        from the right and left any sequence surrounding our chosen slice.
+        '''
+        result_FASTA_obj = deepcopy(self) # make a copy of this object for making changes to
+        startTrim = start
+        endTrim = len(self.seqs[0].gap_seq) - end
+        for FastASeq_obj in result_FASTA_obj:
+            FastASeq_obj.trim_left(startTrim, asAligned=True)
+            FastASeq_obj.trim_right(endTrim, asAligned=True)
+        return result_FASTA_obj
     
     def set_alt_ids_via_list(self, altList):
         '''
