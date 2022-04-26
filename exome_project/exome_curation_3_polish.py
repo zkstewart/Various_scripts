@@ -7,6 +7,7 @@
 import sys, argparse, os, re, platform
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
+from collections import Counter
 from Function_packages import ZS_SeqIO, ZS_AlignIO
 from exome_liftover import ssw_parasail
 from copy import deepcopy
@@ -63,20 +64,7 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
     mafftAligner = ZS_AlignIO.MAFFT(mafftDir) # set up here for use later
     
     # Get the coordinate spans of exons
-    'NOTE: This will give 0-based numbers appropriate for range i.e., end not inclusive'
-    exonCoords = []
-    start, end = None, None
-    for i in range(len(FASTA_obj[0].gap_seq)):
-        letter = FASTA_obj[0].gap_seq[i]
-        if start == None and letter == "-": # any other letter at this point will be the intron letter
-            start = i
-        elif start != None and letter != "-":
-            end = i # since we've gone past the border of the CDS region, taking 'i' will be range acceptable
-        if start != None and end != None:
-            exonCoords.append([start, end])
-            start, end = None, None # reset, so this gives us the chance to find more exons
-    if start != None: # this means we found a start but never got to the stop
-        exonCoords.append([start, i+1]) # +1 to make end non-inclusive
+    exonCoords = _get_exon_coords(FASTA_obj)
     
     # Get copies of all exon regions from within the FASTA object
     exon_FASTA_objs = []
@@ -127,7 +115,7 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         endTrim = len(exon_FASTA_obj[0].gap_seq) - int(trueEndIndex) # any FastASeq will do, they should all be the same length
         exon_FASTA_obj.trim_left(startTrim, asAligned=True)
         exon_FASTA_obj.trim_right(endTrim, asAligned=True)
-
+        
         # Predict our solutionDict again if needed
         "If we've changed our sequence region, we might need to update our translations"
         if startTrim != 0 or endTrim != 0:
@@ -180,7 +168,7 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         # Take note of how much we trimmed WITHIN the exon region
         codonsProblemLeft.append(startTrim)
         codonsProblemRight.append(endTrim)
-        
+    
     # Merge the edited exon regions back into the overall sequence
     for x in range(len(exonCoords)-1, -1, -1): # iterate backwards through coords since we know they're ordered ascendingly
         # Get values for this iteration
@@ -190,12 +178,15 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         exon_FASTA_obj = exon_FASTA_objs[x]
         
         # First, get our Codons sequence for this exon region and insert it
-        codons_FastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq="5"*problemLeft + "-"*len(exon_FASTA_obj[0].gap_seq) + "5"*problemRight)
+        codons_FastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq="-"*len(exon_FASTA_obj[0].gap_seq))
         exon_FASTA_obj.insert(0, codons_FastASeq_obj)
         
         # Then, get our trimmed slices of the original sequence
-        left_FASTA_obj = FASTA_obj.slice_cols(0, exonStart)
-        right_FASTA_obj = FASTA_obj.slice_cols(exonEnd, len(FASTA_obj[0].gap_seq))
+        "+ and - the problem left/right bits since they modify our coordinates of the exon region"
+        left_FASTA_obj = FASTA_obj.slice_cols(0, exonStart + problemLeft)
+        left_FASTA_obj[0].gap_seq = left_FASTA_obj[0].gap_seq[0: exonStart] + "5"*problemLeft
+        right_FASTA_obj = FASTA_obj.slice_cols(exonEnd - problemRight, len(FASTA_obj[0].gap_seq))
+        right_FASTA_obj[0].gap_seq = "5"*problemRight + right_FASTA_obj[0].gap_seq[exonEnd: ]
         
         # Write the exon and right FASTA objects to temporary files
         "We only do this because of how the FASTA.concat() method is implemented"
@@ -208,10 +199,34 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         left_FASTA_obj.concat(exonTmpFileName)
         left_FASTA_obj.concat(rightTmpFileName)
         
-        # Overwrite FASTA_obj with the new exon-edited version
+        # Overwrite FASTA_obj with the new exon-edited version & clean up
         FASTA_obj = left_FASTA_obj
+        os.unlink(exonTmpFileName)
+        os.unlink(rightTmpFileName)
         
     return FASTA_obj # this has the same variable name, but its value is DIFFERENT than the input
+
+def _get_exon_coords(FASTA_obj):
+    '''
+    Hidden method for getting exon coordinates based on the Codons line.
+    
+    NOTE: This will give 0-based numbers appropriate for range i.e.,
+    end not inclusive
+    '''
+    exonCoords = []
+    start, end = None, None
+    for i in range(len(FASTA_obj[0].gap_seq)):
+        letter = FASTA_obj[0].gap_seq[i]
+        if start == None and letter == "-": # any other letter at this point will be the intron letter EDIT: or, "5" to be ignored
+            start = i
+        elif start != None and letter != "-":
+            end = i # since we've gone past the border of the CDS region, taking 'i' will be range acceptable
+        if start != None and end != None:
+            exonCoords.append([start, end])
+            start, end = None, None # reset, so this gives us the chance to find more exons
+    if start != None: # this means we found a start but never got to the stop
+        exonCoords.append([start, i+1]) # +1 to make end non-inclusive
+    return exonCoords
 
 def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALIGN_PCT=0.80, GOOD_GAPS_NUM=2):
     '''
@@ -303,6 +318,7 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALI
                     break
             if found == False:
                 fixesCounts[ongoingCount] = [fix, 1]
+                ongoingCount += 1
     
     bestFix = [None, 0]
     for value in fixesCounts.values():
@@ -351,12 +367,89 @@ def _tmp_file_name_gen(prefix, suffix):
             else:
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
+def add_codon_numbers(FASTA_obj):
+    '''
+    This function will modify the FASTA object's Codons line to have codon numbering.
+    
+    Developer's note: I used to have a bug in here with relation to the frame.
+    Conceptually, if we are obtaining frame 2 (0-based), we're only trimming 1
+    position from the start. And if we're obtaining frame 1, we're trimming 2
+    positions from the start. Frame 0 involves no trimming.
+    
+    Returns no values since it modifies FASTA_obj directly.
+    
+    Params:
+        FASTA_obj -- a ZS_SeqIO.FASTA object
+    '''
+    
+    # Get the exon coordinates for numbering
+    exonCoords = _get_exon_coords(FASTA_obj)
+    
+    # Loop through exon coordinates to figure out which frame the region is in
+    exonFrames = []
+    for exonStart, exonEnd in exonCoords:
+        # Get a slice of the exon region
+        exon_FASTA_obj = FASTA_obj.slice_cols(exonStart, exonEnd)
+        
+        # Check what the starting frame is predicted to be for each sequence
+        startingFrames = []
+        for exon_FastASeq_obj in exon_FASTA_obj:
+            if exon_FastASeq_obj.id == "Codons":
+                continue
+            elif exon_FastASeq_obj.gap_seq.replace("-","") == "": # skip empty sequences
+                continue
+            
+            # Get the translation
+            _, _, frame = exon_FastASeq_obj.get_translation(True)
+            
+            # Map the translation start to MSA coordinates
+            '''
+            Not every sequence will start at the very border of the exon region.
+            In truncated sequences, we need to know where it is starting.
+            '''
+            for x in range(len(exon_FastASeq_obj.gap_seq)):
+                letter = exon_FastASeq_obj.gap_seq[x]
+                if letter != "-":
+                    msaStart = x
+                    break
+            
+            # Backtrack the frame to the start of the MSA if necessary
+            '''
+            For truncated sequences, we can derive the intended frame for the first
+            MSA position based on where its start position and translation frame is.
+            '''
+            for x in range(msaStart-1, -1, -1):
+                if frame == 0:
+                    frame = 2
+                else:
+                    frame -= 1
+            
+            startingFrames.append(frame)
+        
+        # Figure out which frame is most supported by consensus
+        mostCommonStartingFrame = max(Counter(startingFrames))
+        exonFrames.append(mostCommonStartingFrame)
+    
+    # For each exon region, add the frame numbering in
+    for i in range(len(exonCoords)):
+        exonStart, exonEnd = exonCoords[i]
+        frame = exonFrames[i]
+        
+        ongoingFrameCount = frame + 1 # we'll write it 1-based to the >Codons line
+        for x in range(exonStart, exonEnd):
+            FASTA_obj[0].gap_seq = FASTA_obj[0].gap_seq[:x] + str(ongoingFrameCount) + FASTA_obj[0].gap_seq[x+1:]
+            ongoingFrameCount = 1 if ongoingFrameCount == 3 else ongoingFrameCount + 1
+
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is to remove indel errors from a MSA that has
     been previously subjected to exome_curation_2_introns.py. Specifically, it uses the
     information of which regions are coding to identify probable indel errors present in
     a minority of the sequences.
+    
+    It will also realign the MSA using a codon-aware method (i.e., translation to protein,
+    alignment, then untranslating the alignment) and add the codon numbering into the
+    >Codons line.
     
     Note: This should be step 3 in the Oz Mammals project!
     """
@@ -391,7 +484,7 @@ if __name__ == "__main__":
         FASTA_obj = polish_MSA_denovo(FASTA_obj, args.mafftDir)
         
         # Number codons
-        ## TBD
+        add_codon_numbers(FASTA_obj)
         
         # Write output FASTA file
         outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
