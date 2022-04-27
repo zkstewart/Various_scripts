@@ -416,6 +416,8 @@ def solve_translation_frames(FASTA_obj):
     # Obtain translations in the three strand=1 frames
     for i in range(len(FASTA_obj)):
         FastASeq_obj = FASTA_obj[i]
+        if FastASeq_obj.id == "Codons": # skip the >Codons line
+            continue
         if FastASeq_obj.seq == "": # skip empty/dummy seqs
             continue
         
@@ -432,6 +434,10 @@ def solve_translation_frames(FASTA_obj):
         if i not in resultsDict:
             continue
         results = resultsDict[i]
+        
+        # Skip blank sequences
+        if all([r[0] == "" for r in results]):
+            continue
         
         # Handle easy-to-solve scenarios
         numWithoutStopCodons = sum([1 for r in results if r[2] == False])
