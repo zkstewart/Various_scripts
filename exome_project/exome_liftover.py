@@ -7,9 +7,8 @@
 import sys, argparse, os, math, statistics, platform, hashlib, time, random
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_HmmIO, ZS_AlignIO
-if platform.system() == 'Windows':
-    import parasail
-else:
+import parasail # need to import this always to handle modules importing our ssw_parasail function
+if platform.system() != 'Windows':
     from skbio.alignment import StripedSmithWaterman
 
 def validate_args(args):
