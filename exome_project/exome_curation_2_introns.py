@@ -571,7 +571,6 @@ def _get_segment_boundaries(FASTA_obj, solutionDict):
     for i in range(len(FASTA_obj)):
         if i not in solutionDict:
             continue
-        
         FastASeq_obj = FASTA_obj[i]
         translationSeq, frame, hasStopCodon = solutionDict[i]
         
@@ -581,11 +580,12 @@ def _get_segment_boundaries(FASTA_obj, solutionDict):
         # If there are stop codons, find the borders for the longest section excluding stop codons
         else:
             longestSection = max(translationSeq.split("*"), key=len)
-            proteinStart = longestSection.find(longestSection)
+            proteinStart = translationSeq.find(longestSection)
             proteinEnd = proteinStart + len(longestSection)
             
             # Translate .seq positions to .gap_seq positions
             ongoingPositionCount = 0
+            startIndex, endIndex = None, None
             for x in range(len(FastASeq_obj.gap_seq)):
                 letter = FastASeq_obj.gap_seq[x]
                 if letter == "-":
@@ -593,11 +593,16 @@ def _get_segment_boundaries(FASTA_obj, solutionDict):
                 
                 if ongoingPositionCount == proteinStart*3:
                     startIndex = x
-                if ongoingPositionCount == proteinEnd*3:
-                    endIndex = x # proteinEnd marks the first position of the stop codon, setting this to endIndex will exclude it
+                if ongoingPositionCount+1 == proteinEnd*3: # +1 to handle sequences that end early and have all gap at end
+                    endIndex = x+1 # proteinEnd marks the first position of the stop codon, setting this to endIndex will exclude it
                 
                 ongoingPositionCount += 1
+            assert startIndex != None and endIndex != None
             
+            # Adjust endIndex when translationSeq does not end in a stop codon
+            "This means it's probably been truncated, or it's just an exon MSA stopped at the correct position"
+            if proteinEnd == len(translationSeq):
+                endIndex = len(FastASeq_obj.gap_seq)
             boundaries.append([startIndex, endIndex])
     return boundaries
 
