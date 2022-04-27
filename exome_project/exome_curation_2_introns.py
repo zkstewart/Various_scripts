@@ -3,7 +3,7 @@
 # Follows up on exome_curation_prep.py to perform some additional
 # polishing of the MSAs including prediction of intron regions.
 
-import sys, argparse, os, re
+import sys, argparse, os, re, math
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
@@ -449,11 +449,18 @@ def solve_translation_frames(FASTA_obj):
         else:
             problemDict[i] = resultsDict[i]
     
+    # Abort if we can't solve this problem
+    if solutionDict == {}:
+        return None
+    
     # Find the best solution to problem sequences
     for i, results in problemDict.items():
         scores = [[], [], []] # will store scores for frame 0, 1, and 2
         for j in range(0, 3):
             problemSeq, _, _ = results[j]
+            if problemSeq == "":
+                scores[j].append(-math.inf)
+                continue
             for x, solution in solutionDict.items():
                 solutionSeq, _, _ = solution
                 _, _, _, score = ssw_parasail(problemSeq, solutionSeq)
