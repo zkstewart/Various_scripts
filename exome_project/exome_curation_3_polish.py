@@ -116,10 +116,18 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         exon_FASTA_obj.trim_left(startTrim, asAligned=True)
         exon_FASTA_obj.trim_right(endTrim, asAligned=True)
         
+        # Take note of how much we trimmed WITHIN the exon region
+        codonsProblemLeft.append(startTrim)
+        codonsProblemRight.append(endTrim)
+        
         # Predict our solutionDict again if needed
         "If we've changed our sequence region, we might need to update our translations"
         if startTrim != 0 or endTrim != 0:
              solutionDict = solve_translation_frames(exon_FASTA_obj)
+        
+        # Abort if we found no solutions after trimming
+        if solutionDict == None:
+            continue
         
         # Loop through solutionDict and polish sequences that need it
         for problemIndex, value in solutionDict.items():
@@ -164,10 +172,6 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         for FastASeq_obj in exon_FASTA_obj:
             if len(FastASeq_obj.gap_seq) != maxLen:
                 FastASeq_obj.gap_seq += "-"*(maxLen - len(FastASeq_obj.gap_seq))
-        
-        # Take note of how much we trimmed WITHIN the exon region
-        codonsProblemLeft.append(startTrim)
-        codonsProblemRight.append(endTrim)
     
     # Merge the edited exon regions back into the overall sequence
     for x in range(len(exonCoords)-1, -1, -1): # iterate backwards through coords since we know they're ordered ascendingly
