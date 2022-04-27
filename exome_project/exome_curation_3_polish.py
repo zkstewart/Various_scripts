@@ -184,9 +184,9 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         # Then, get our trimmed slices of the original sequence
         "+ and - the problem left/right bits since they modify our coordinates of the exon region"
         left_FASTA_obj = FASTA_obj.slice_cols(0, exonStart + problemLeft)
-        left_FASTA_obj[0].gap_seq = left_FASTA_obj[0].gap_seq[0: exonStart] + "5"*problemLeft
+        left_FASTA_obj[0].gap_seq = left_FASTA_obj[0].gap_seq[0: exonStart] + "5"*problemLeft # replace problemLeft length with 5's
         right_FASTA_obj = FASTA_obj.slice_cols(exonEnd - problemRight, len(FASTA_obj[0].gap_seq))
-        right_FASTA_obj[0].gap_seq = "5"*problemRight + right_FASTA_obj[0].gap_seq[exonEnd: ]
+        right_FASTA_obj[0].gap_seq = "5"*problemRight + right_FASTA_obj[0].gap_seq[problemRight: ] # replace problemRight length with 5's
         
         # Write the exon and right FASTA objects to temporary files
         "We only do this because of how the FASTA.concat() method is implemented"
