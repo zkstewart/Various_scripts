@@ -719,7 +719,7 @@ if __name__ == "__main__":
         liftoverFilesList.append(loFiles)
     
     # Main processing loop
-    logFileName = _tmp_file_name_gen("2_polish_log", "txt")
+    logFileName = _tmp_file_name_gen("2_introns_log", "txt")
     with open(logFileName, "w") as logFileOut:
         # Begin writing output logging file
         logFileOut.write("{0}\n".format(
