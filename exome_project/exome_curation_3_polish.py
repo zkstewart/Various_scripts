@@ -221,9 +221,9 @@ def _get_exon_coords(FASTA_obj):
     start, end = None, None
     for i in range(len(FASTA_obj[0].gap_seq)):
         letter = FASTA_obj[0].gap_seq[i]
-        if start == None and letter == "-": # any other letter at this point will be the intron letter EDIT: or, "5" to be ignored
+        if start == None and (letter == "-" or letter in ["1", "2", "3"]):
             start = i
-        elif start != None and letter != "-":
+        elif start != None and (letter != "-" and letter not in ["1", "2", "3"]):
             end = i # since we've gone past the border of the CDS region, taking 'i' will be range acceptable
         if start != None and end != None:
             exonCoords.append([start, end])
@@ -285,16 +285,9 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALI
             gapFrame = gapLen % 3 # this will give 0, 1, or 2
             # If gapFrame isn't 0 (gapLen not divisible by 3), add N's to address the situation
             if gapFrame != 0:
-                #gapPatch = "N"*(gapFrame) # gives a length of N's to insert
                 start = gap.span()[0] + startIndex # + startIndex to give a consistent position in the sequence
                 end = gap.span()[0] + gapFrame + startIndex # we're replacing only the length of "-"s that we want to be "n"s
                 fix.append([start, end, gapFrame])
-                # ongoingCount = 0
-                # for j in range(gap.span()[0], gap.span()[1]): # iterate through gap positions
-                #     if ongoingCount == gapFrame: # exit condition
-                #         break
-                #     newProblemAlign = newProblemAlign[0:j] + "N" + newProblemAlign[j+1:]
-                #     ongoingCount += 1
         for gap in targetGaps:
             '''
             Here, the rationale is that gaps in the target sequence mean the problem sequence
@@ -307,11 +300,9 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALI
             gapFrame = gapLen % 3 # this will give 0, 1, or 2
             # If gapFrame isn't 0 (gapLen not divisible by 3), use N's to address the situation
             if gapFrame != 0:
-                #gapPatch = "N"*(gapLen-gapFrame) # gives a length of N's with appropriate shortening for good reading frame
                 start = gap.span()[0] + startIndex # we're just going to replace the entire gap region
                 end = gap.span()[1] + startIndex
                 fix.append([start, end, gapLen-gapFrame])
-                #newProblemAlign = newProblemAlign[0:gap.span()[0]] + gapPatch + newProblemAlign[gap.span()[1]:]
         fixes.append(fix)
     
     # Abort operation if we've found no valid fixes
@@ -460,6 +451,74 @@ def add_codon_numbers(FASTA_obj):
             FASTA_obj[0].gap_seq = FASTA_obj[0].gap_seq[:x] + str(ongoingFrameCount) + FASTA_obj[0].gap_seq[x+1:]
             ongoingFrameCount = 1 if ongoingFrameCount == 3 else ongoingFrameCount + 1
 
+def fix_codons_oddity(FASTA_obj, LARGE_GAP=50):
+    '''
+    This function looks at 1-3 nucleotides at the start and end of an MSA sequence
+    and tries to fix any oddities relating to there being large gap regions
+    before and/or after the end and/or start of the sequence.
+    
+    In short, the MSA untranslation might leave little bits of nucleotides adrift
+    that were not included in the translated region. This function will reunite them
+    with the rest of the CDS so we don't have weird gap regions.
+    
+    Params:
+        LARGE_GAP -- an integer giving an arbitrary cut-off by which we determine
+                     that a gap is sufficiently large to suggest that we should unite
+                     a displaced codon to the rest of the sequence.
+    '''
+    
+    firstPositionRegex  = re.compile(r"^-*?[^-]")
+    lastPositionRegex = re.compile(r"[^-]-*?$")
+    
+    gapAfterRegex = re.compile(r"-+[^-]?")
+    gapBeforeRegex = re.compile(r"[^-]?-+")
+    
+    # Get the exon coordinates for numbering
+    exonCoords = _get_exon_coords(FASTA_obj)
+    
+    # Loop through exon coordinates and fix the oddities
+    for exonStart, exonEnd in exonCoords:
+        for FastASeq_obj in FASTA_obj:
+            if FastASeq_obj.id == "Codons":
+                continue
+            exonGapSeq = FastASeq_obj.gap_seq[exonStart:exonEnd]
+            if exonGapSeq.replace("-", "") == "":
+                continue
+            
+            # Find first and last positions in the alignment
+            firstPosition = firstPositionRegex.search(exonGapSeq).span()[0]
+            lastPosition = lastPositionRegex.search(exonGapSeq).span()[0]
+            
+            # Find the nearest gap to the start and end positions
+            gapAfterFirstPosition = gapAfterRegex.search(exonGapSeq[firstPosition:])
+            for gapBeforeLastPosition in gapBeforeRegex.finditer(exonGapSeq[:lastPosition]):
+                continue # this just gets us the last value in the iteration
+            
+            # Handle gaps at the start
+            if gapAfterFirstPosition != None:
+                gapAfterStart, gapAfterEnd = gapAfterFirstPosition.span()
+                if gapAfterStart - 3 <= firstPosition and (gapAfterEnd - gapAfterStart) > LARGE_GAP:
+                    # Collect the displaced nucleotide(s)
+                    codonSeq = exonGapSeq[firstPosition:gapAfterStart].replace("-", "")
+                    # Overwrite the gap region
+                    exonGapSeq = exonGapSeq[0: firstPosition] + "-"*(gapAfterEnd - gapAfterStart) + exonGapSeq[gapAfterEnd-1:]
+                    # Place the nucleotides at their selected position
+                    exonGapSeq = exonGapSeq[0: gapAfterEnd-1-len(codonSeq)] + codonSeq + exonGapSeq[gapAfterEnd-1:] # first -1 for 0-based, second -1 for non-inclusive range
+            
+            # Handle gaps at the end
+            if gapBeforeLastPosition != None:
+                gapBeforeStart, gapBeforeEnd = gapBeforeLastPosition.span()
+                if gapBeforeEnd + 3 >= lastPosition and (gapBeforeEnd - gapBeforeStart) > LARGE_GAP:
+                    # Collect the displaced nucleotide(s)
+                    codonSeq = exonGapSeq[gapBeforeStart:].replace("-", "")
+                    # Overwrite the gap region
+                    exonGapSeq = exonGapSeq[0: gapBeforeStart] + "-"*len(exonGapSeq[gapBeforeStart:])
+                    # Place the nucleotides at their selected position
+                    exonGapSeq = exonGapSeq[0: gapBeforeStart] + codonSeq + exonGapSeq[gapBeforeStart+len(codonSeq):]
+            
+            # Store the updated gap sequence value
+            FastASeq_obj.gap_seq = FastASeq_obj.gap_seq[0:exonStart] + exonGapSeq + FastASeq_obj.gap_seq[exonEnd:]
+
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is to remove indel errors from a MSA that has
@@ -511,6 +570,15 @@ if __name__ == "__main__":
         
         # Number codons
         add_codon_numbers(FASTA_obj)
+        
+        # Fix up MSA oddity
+        '''
+        In this case, the oddity is how the MSA is untranslated. Occasionally,
+        you'll find a huge gap separating the parts of a codon that weren't translated
+        (if the translation isn't in frame 0) from the part that was translated. It's a
+        little unrealistic, so I'd like to nip that in the bud right now.
+        '''
+        fix_codons_oddity(FASTA_obj)
         
         # Write output FASTA file
         FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
