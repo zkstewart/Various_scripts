@@ -349,6 +349,10 @@ def _enact_fix_to_seq(fix, seq):
     Hidden function for use by polish_MSA_denovo(). Its goal is to take a fix identified by
     _get_suggested_fix_from_ssw_matches() and make the changes to the given sequence.
     
+    Changes are made using ambiguous characters i.e., "n"s. Note that these will be
+    lowercase. It's probably a good idea to make the rest of the sequence uppercase, so
+    it's obvious where these fixes have occurred.
+    
     NOTE: This is NOT the .gap_seq value, it is the .seq value!
     
     Return:
@@ -360,7 +364,7 @@ def _enact_fix_to_seq(fix, seq):
     
     # Iterate through fixes and make all suggested changes
     for start, end, nLength in fix:
-        seq = seq[0:start] + "N"*nLength + seq[end:]
+        seq = seq[0:start] + "n"*nLength + seq[end:]
     return seq
 
 def _tmp_file_name_gen(prefix, suffix):
@@ -488,6 +492,7 @@ if __name__ == "__main__":
     fastaObjs = []
     for file in files:
         f = ZS_SeqIO.FASTA(file, isAligned=True)
+        f.make_uppercase()
         fastaObjs.append(f)
     
     # Polishing
@@ -495,6 +500,11 @@ if __name__ == "__main__":
         # Get details for this MSA
         alignFastaFile = files[i]
         FASTA_obj = fastaObjs[i]
+        outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
+        
+        # Skip if we've already processed this file
+        if os.path.isfile(outputFileName):
+            continue
         
         # Perform polishing procedure
         FASTA_obj = polish_MSA_denovo(FASTA_obj, args.mafftDir)
@@ -503,7 +513,6 @@ if __name__ == "__main__":
         add_codon_numbers(FASTA_obj)
         
         # Write output FASTA file
-        outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
         FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
     
     print("Program completed successfully!")
