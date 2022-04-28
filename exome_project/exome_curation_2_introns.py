@@ -557,7 +557,7 @@ def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
     # Return result string pct for logging purposes, as well as method of operation
     return dummyString, pctIntron, "denovo"
 
-def _get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.10):
+def _get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.25):
     '''
     Hidden method of trim_intron_locations_denovo() for getting the bounded region
     in which no stop codons exist for each sequence in the FASTA_obj, depending
@@ -581,12 +581,21 @@ def _get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.10):
     boundaries_with_extension = []
     '''
     When determining boundaries, we generally want to have truncated sequences
-    (i.e., those that don't reach the end naturally) support a full length MSA.
+    (i.e., those whose ORF does not end in the MSA) support a full length MSA.
     We do this with the boundaries_with_extension list, and determine whether we
     want the extensions to be supported depending on our NATURAL_PCT cut-off.
+    
+    We use our trunacted_ lists to see 1) how many sequences have nucleotides at
+    the start and/or end of the sequence, and 2) of those sequences, how many
+    have an ORF which extends beyond those positions? This information tells
+    us if we should have truncated sequences which do NOT have nucleotides at
+    the start and/or end of the sequence to have their boundaries assumed to
+    be at the boundaries of the MSA. This matters because it will, using the
+    np.percentile cut-off system seen here and in exome_curation_3_polish.py,
+    lead to us "soft-trimming" less of the sequence than we might otherwise.
     '''
-    reaches_end_naturally = []
-    reaches_start_naturally = []
+    truncated_start = []
+    truncated_end = []
     for i in range(len(FASTA_obj)):
         if i not in solutionDict:
             continue
@@ -618,16 +627,18 @@ def _get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.10):
         # Store the unextended boundary details now
         boundaries.append([startIndex, endIndex])
         
-        # Figure out if our MSA is naturally hitting the starts and ends
-        if startIndex == 0:
-            reaches_start_naturally.append(True)
-        else:
-            reaches_start_naturally.append(False)
+        # Figure out if our MSA is touching the starts and ends, and if it is, is it truncated?
+        if FastASeq_obj.gap_seq[0] != "-":
+            if startIndex == 0:
+                truncated_start.append(True)
+            else:
+                truncated_start.append(False)
         
-        if endIndex == len(FastASeq_obj.gap_seq):
-            reaches_end_naturally.append(True)
-        else:
-            reaches_end_naturally.append(False)
+        if FastASeq_obj.gap_seq[-1] != "-":
+            if endIndex == len(FastASeq_obj.gap_seq):
+                truncated_end.append(True)
+            else:
+                truncated_end.append(False)
         
         # Adjust startIndex when the longestSection starts at the beginning of the translationSeq
         if proteinStart == 0 or not hasStopCodon:
@@ -635,18 +646,18 @@ def _get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.10):
         
         # Adjust endIndex when translationSeq does not end in a stop codon
         "This means it's probably been truncated, or it's just an exon MSA stopped at the correct position"
-        if proteinEnd == len(translationSeq):
+        if proteinEnd == len(translationSeq) or not hasStopCodon:
             endIndex = len(FastASeq_obj.gap_seq)
         
         # Store the extended boundary details now
         boundaries_with_extension.append([startIndex, endIndex])
     
     # Adjust our boundaries to include or exclude extensions appropriately
-    if (sum(reaches_start_naturally) / len(reaches_start_naturally)) > NATURAL_PCT:
+    if (sum(truncated_start) / len(truncated_start)) > NATURAL_PCT:
         for j in range(len(boundaries)):
             boundaries[j][0] = boundaries_with_extension[j][0]
     
-    if (sum(reaches_end_naturally) / len(reaches_end_naturally)) > NATURAL_PCT:
+    if (sum(truncated_end) / len(truncated_end)) > NATURAL_PCT:
         for j in range(len(boundaries)):
             boundaries[j][1] = boundaries_with_extension[j][1]
 
