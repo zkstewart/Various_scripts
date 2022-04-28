@@ -661,45 +661,50 @@ if __name__ == "__main__":
         loFiles = [os.path.join(dir, file) for file in os.listdir(dir)]
         liftoverFilesList.append(loFiles)
     
-    # Intron prediction
-    log = [[
-        "fileName", "predictionMode", "pctIntron",
-        "initialLength", "trimmedLength", "pctTrimmed"
-    ]]
-    for i in range(len(files)):
-        # Get details for this MSA
-        alignFastaFile = files[i] # i=5 for testing intron trim
-        FASTA_obj = fastaObjs[i]
-        initialLength = len(FASTA_obj[0].gap_seq) # hold onto for later statistics
-        
-        # Perform intron prediction
-        result = get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR=args.INTRON_CHAR)
-        if result == False:
-            result = trim_intron_locations_denovo(FASTA_obj)
-        dummyString, pctIntron, mode = result
-        
-        # Insert dummy sequence into FASTA_obj
-        dummyFastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq=dummyString)
-        FASTA_obj.insert(0, dummyFastASeq_obj)
-        
-        # Statistics and logging
-        trimmedLength = len(FASTA_obj[0].gap_seq)
-        log.append([
-            os.path.basename(alignFastaFile),
-            mode if result != False else ".",
-            str(round(pctIntron*100, 2)) if result != False else ".",
-            initialLength,
-            trimmedLength,
-            (initialLength - trimmedLength) / initialLength # gives % trimmed
-        ])
-        
-        # Write output FASTA file
-        outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
-        FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
-    
-    # Write output logging file
+    # Main processing loop
     logFileName = _tmp_file_name_gen("2_polish_log", "txt")
-    with open(logFileName, "w") as fileOut:
-        fileOut.write("\n".join(["\t".join(l) for l in log]))
+    with open(logFileName, "w") as logFileOut:
+        # Begin writing output logging file
+        logFileOut.write("{0}\n".format(
+            "\t".join([
+                    "fileName", "predictionMode", "pctIntron", "initialLength", "trimmedLength", "pctTrimmed"
+                ])
+            )
+        )
+        # Intron prediction
+        for i in range(len(files)):
+            # Get details for this MSA
+            alignFastaFile = files[i] # i=5 for testing intron trim
+            FASTA_obj = fastaObjs[i]
+            initialLength = len(FASTA_obj[0].gap_seq) # hold onto for later statistics
+            
+            # Perform intron prediction
+            result = get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR=args.INTRON_CHAR)
+            if result == False:
+                result = trim_intron_locations_denovo(FASTA_obj)
+            dummyString, pctIntron, mode = result
+            
+            # Insert dummy sequence into FASTA_obj
+            dummyFastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq=dummyString)
+            FASTA_obj.insert(0, dummyFastASeq_obj)
+            
+            # Write output FASTA file
+            outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
+            FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
+            
+            # Write statistics and logging information
+            trimmedLength = len(FASTA_obj[0].gap_seq)
+            pctTrimmed = (initialLength - trimmedLength) / initialLength
+            logFileOut.write("{0}\n".format(
+                "\t".join([
+                        os.path.basename(alignFastaFile),
+                        mode if result != False else ".",
+                        str(round(pctIntron*100, 2)) if result != False else ".",
+                        str(initialLength),
+                        str(trimmedLength),
+                        str(pctTrimmed)
+                    ])
+                )
+            )
     
     print("Program completed successfully!")
