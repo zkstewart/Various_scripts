@@ -557,7 +557,7 @@ def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
     # Return result string pct for logging purposes, as well as method of operation
     return dummyString, pctIntron, "denovo"
 
-def _get_segment_boundaries(FASTA_obj, solutionDict):
+def _get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.10):
     '''
     Hidden method of trim_intron_locations_denovo() for getting the bounded region
     in which no stop codons exist for each sequence in the FASTA_obj, depending
@@ -566,44 +566,90 @@ def _get_segment_boundaries(FASTA_obj, solutionDict):
     This is pulled out into a separate function to 1) reduce the mental burden
     of interpretting trim_intron_locations_denovo(), but moreso so 2) I can reuse
     the function in 3_polish.
+    
+    Params:
+        NATURAL_PCT -- a float ratio between 0 and 1 (inclusive) indicating the
+                       percentage of sequences that must naturally reach the end
+                       i.e., have their best ORF reach up to the end of the MSA,
+                       in order for us to extend any truncated sequences to the end
+                       as well. Basically, it's just a way of controlling truncated
+                       sequences so they can "back up" any sequences which naturally
+                       reach the end, or have them provide evidence against those
+                       sequences when there aren't enough of them.
     '''
     boundaries = []
+    boundaries_with_extension = []
+    '''
+    When determining boundaries, we generally want to have truncated sequences
+    (i.e., those that don't reach the end naturally) support a full length MSA.
+    We do this with the boundaries_with_extension list, and determine whether we
+    want the extensions to be supported depending on our NATURAL_PCT cut-off.
+    '''
+    reaches_end_naturally = []
+    reaches_start_naturally = []
     for i in range(len(FASTA_obj)):
         if i not in solutionDict:
             continue
         FastASeq_obj = FASTA_obj[i]
         translationSeq, frame, hasStopCodon = solutionDict[i]
         
-        # If there's no stop codons, just put the maximal sequence length in
-        if not hasStopCodon:
-            boundaries.append([0, len(FastASeq_obj.gap_seq)])
-        # If there are stop codons, find the borders for the longest section excluding stop codons
+        # Find the borders for the longest section excluding stop codons
+        longestSection = max(translationSeq.split("*"), key=len)
+        proteinStart = translationSeq.find(longestSection)
+        proteinEnd = proteinStart + len(longestSection)
+        
+        # Translate .seq positions to .gap_seq positions
+        ongoingPositionCount = 0
+        startIndex, endIndex = None, None
+        for x in range(len(FastASeq_obj.gap_seq)):
+            letter = FastASeq_obj.gap_seq[x]
+            if letter == "-":
+                continue
+            
+            if ongoingPositionCount == proteinStart*3:
+                startIndex = x
+            if ongoingPositionCount+1 >= proteinEnd*3: # +1 to handle sequences that end early and have all gap at end
+                "The >= is important above for various reasons I've come to semi-understand"
+                endIndex = x+1 # proteinEnd marks the first position of the stop codon, setting this to endIndex will exclude it
+            
+            ongoingPositionCount += 1
+        assert startIndex != None and endIndex != None
+        
+        # Store the unextended boundary details now
+        boundaries.append([startIndex, endIndex])
+        
+        # Figure out if our MSA is naturally hitting the starts and ends
+        if startIndex == 0:
+            reaches_start_naturally.append(True)
         else:
-            longestSection = max(translationSeq.split("*"), key=len)
-            proteinStart = translationSeq.find(longestSection)
-            proteinEnd = proteinStart + len(longestSection)
-            
-            # Translate .seq positions to .gap_seq positions
-            ongoingPositionCount = 0
-            startIndex, endIndex = None, None
-            for x in range(len(FastASeq_obj.gap_seq)):
-                letter = FastASeq_obj.gap_seq[x]
-                if letter == "-":
-                    continue
-                
-                if ongoingPositionCount == proteinStart*3:
-                    startIndex = x
-                if ongoingPositionCount+1 == proteinEnd*3: # +1 to handle sequences that end early and have all gap at end
-                    endIndex = x+1 # proteinEnd marks the first position of the stop codon, setting this to endIndex will exclude it
-                
-                ongoingPositionCount += 1
-            assert startIndex != None and endIndex != None
-            
-            # Adjust endIndex when translationSeq does not end in a stop codon
-            "This means it's probably been truncated, or it's just an exon MSA stopped at the correct position"
-            if proteinEnd == len(translationSeq):
-                endIndex = len(FastASeq_obj.gap_seq)
-            boundaries.append([startIndex, endIndex])
+            reaches_start_naturally.append(False)
+        
+        if endIndex == len(FastASeq_obj.gap_seq):
+            reaches_end_naturally.append(True)
+        else:
+            reaches_end_naturally.append(False)
+        
+        # Adjust startIndex when the longestSection starts at the beginning of the translationSeq
+        if proteinStart == 0 or not hasStopCodon:
+            startIndex = 0
+        
+        # Adjust endIndex when translationSeq does not end in a stop codon
+        "This means it's probably been truncated, or it's just an exon MSA stopped at the correct position"
+        if proteinEnd == len(translationSeq):
+            endIndex = len(FastASeq_obj.gap_seq)
+        
+        # Store the extended boundary details now
+        boundaries_with_extension.append([startIndex, endIndex])
+    
+    # Adjust our boundaries to include or exclude extensions appropriately
+    if (sum(reaches_start_naturally) / len(reaches_start_naturally)) > NATURAL_PCT:
+        for j in range(len(boundaries)):
+            boundaries[j][0] = boundaries_with_extension[j][0]
+    
+    if (sum(reaches_end_naturally) / len(reaches_end_naturally)) > NATURAL_PCT:
+        for j in range(len(boundaries)):
+            boundaries[j][1] = boundaries_with_extension[j][1]
+
     return boundaries
 
 if __name__ == "__main__":
