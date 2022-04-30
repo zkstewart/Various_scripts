@@ -491,6 +491,7 @@ def fix_codons_oddity(FASTA_obj, LARGE_GAP=50):
             
             # Find the nearest gap to the start and end positions
             gapAfterFirstPosition = gapAfterRegex.search(exonGapSeq[firstPosition:])
+            gapBeforeLastPosition = None # create variable now in case the regex finds nothing
             for gapBeforeLastPosition in gapBeforeRegex.finditer(exonGapSeq[:lastPosition]):
                 continue # this just gets us the last value in the iteration
             
