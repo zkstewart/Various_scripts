@@ -462,52 +462,106 @@ class FASTA:
         self.isAligned = isAligned
         self.add(fastaFile, isAligned)
     
-    def add(self, fastaFile, isAligned=False):
+    def add(self, fasta, isAligned=False):
         '''
         This method will read in the fastaFile and add the sequences vertically into
         the FASTA object (via appending to the internal .seqs list).
         
+        This method acts like an overloaded method i.e., you can provide either a string
+        for a file location, or a ZS_SeqIO.FASTA object.
+        
         Params:
-            fastaFile -- a string providing the file name with or without the path to
-                         find this file; will be interpreted by os.path
-            isAligned -- a Boolean indicating whether the file contents have been aligned
+            fasta -- a string providing the file name with or without the path to
+                     find this file; will be interpreted by os.path... OR, a ZS_SeqIO.FASTA
+                     object.
+            isAligned -- a Boolean indicating whether the fasta contents have been aligned
         '''
-        # Validate value type and file existence
-        assert isinstance(fastaFile, str)
+        # Validate parameter type
         assert isinstance(isAligned, bool)
-        if not os.path.isfile(fastaFile):
-            raise Exception("{0} does not exist; can't load".format(fastaFile))
+        
+        # Diverge into one of the two overload methods
+        if isinstance(fasta, str):
+            if not os.path.isfile(fasta):
+                raise Exception("{0} does not exist; can't add".format(fasta))
+            else:
+                self._add_from_file(fasta, isAligned)
+        elif type(fasta).__name__ == "FASTA" or type(fasta).__name__ == "ZS_SeqIO.FASTA":
+            self._add_from_object(fasta, isAligned) # don't need isAligned for this
+        else:
+            raise Exception("Unknown type '{0}' provided to FASTA.add()".format(type(fasta).__name__))
     
+    def _add_from_object(self, FASTA_obj, isAligned):
+        # Stop potential infinite looping bug
+        "If FASTA_obj == self, then it'll loop infinitely. I don't entirely understand why, I only have a hunch."
+        FASTA_obj = deepcopy(FASTA_obj)
+        # Validate that adding sequences will work
+        "We do this check first so we don't modify the object unless we're sure it will work"
+        for FastASeq_obj in FASTA_obj:
+            if isAligned and FastASeq_obj.gap_seq == None:
+                raise Exception("FastASeq object with id '{0}' should be aligned but has no .gap_seq value; adding sequences failed".format(FastASeq_obj.id))
+        # Add sequences to alignment
+        for FastASeq_obj in FASTA_obj:
+            self.seqs.append(FastASeq_obj)
+        
+        self.fileOrder.append(["object", "add"])
+    
+    def _add_from_file(self, fastaFile, isAligned):
         # Load in file & add sequences to alignment
         with open(fastaFile, "r") as fileIn:
             for id, seq in SimpleFastaParser(fileIn):
                 if isAligned:
-                    seqObj = FastASeq(id=id, gapSeq=seq)
+                    FastASeq_obj = FastASeq(id=id, gapSeq=seq)
                 else:
-                    seqObj = FastASeq(id=id, seq=seq)
-                self.seqs.append(seqObj)
+                    FastASeq_obj = FastASeq(id=id, seq=seq)
+                self.seqs.append(FastASeq_obj)
         
         self.fileOrder.append([fastaFile, "add"])
     
-    def concat(self, fastaFile):
+    def concat(self, fasta):
         '''
-        This method will read in the fastaFile and add the sequences horizontally into
-        the FASTA object. This occurs via concatenating each sequence in fastaFile to the
+        This method will read in the fasta parameter and add the sequences horizontally into
+        this (self) FASTA object. This occurs via concatenating each sequence in fasta to the
         internal .seqs list assuming equivalent ordering. Note that we do not need to
         provide a isAligned Boolean for this method since we can figure out whether the
         file is expected to be aligned via an implicit assumption that presence of .gap_seq
         attributes in the underlying FastASeq objects means that it is aligned (see method
         header of the extend() method in FastASeq class).
         
+        This method acts like an overloaded method i.e., you can provide either a string
+        for a file location, or a ZS_SeqIO.FASTA object.
+        
         Params:
-            fastaFile -- a string providing the file name with or without the path to
-                         find this file; will be interpreted by os.path
+            fasta -- a string providing the file name with or without the path to
+                     find this file; will be interpreted by os.path... OR, a ZS_SeqIO.FASTA
+                     object.
         '''
-        # Validate value type and file existence
-        assert isinstance(fastaFile, str)
-        if not os.path.isfile(fastaFile):
-            raise Exception("{0} does not exist; can't load".format(fastaFile))
-
+        # Diverge into one of the two overload methods
+        if isinstance(fasta, str):
+            if not os.path.isfile(fasta):
+                raise Exception("{0} does not exist; can't concat".format(fasta))
+            else:
+                self._concat_from_file(fasta)
+        elif type(fasta).__name__ == "FASTA" or type(fasta).__name__ == "ZS_SeqIO.FASTA":
+            self._concat_from_object(fasta)
+        else:
+            raise Exception("Unknown type '{0}' provided to FASTA.concat()".format(type(fasta).__name__))
+    
+    def _concat_from_object(self, FASTA_obj):
+        # Validate that concatenating object is compatible
+        if len(FASTA_obj) != len(self.seqs):
+            raise Exception("Concatenation not possible as sequence count differs")
+        
+        # Perform concatenation
+        for i in range(len(FASTA_obj)):
+            FastASeq_obj = FASTA_obj[i]
+            if FastASeq_obj.gap_seq != None:
+                self.seqs[i].extend(FastASeq_obj.gap_seq)
+            else:
+                self.seqs[i].extend(FastASeq_obj.seq)
+        
+        self.fileOrder.append(["object", "concat"])
+    
+    def _concat_from_file(self, fastaFile):
         # Validate that concatenating file is compatible
         '''
         This is a crude estimator but it's quicker than
