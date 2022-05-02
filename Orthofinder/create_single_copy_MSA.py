@@ -106,6 +106,36 @@ def trim_noninformative_flanks(FASTA_obj, isNucleotide=True, ALLOWED_NONINFO_PCT
     
     return pctTrimmed
 
+def replace_nonstandard_aminoacids(FASTA_obj):
+    '''
+    Replaces amino acid characters that aren't within the standard list of amino acids.
+    Prevents issues with MAFFT alignment and later phylogenetic analysis.
+    
+    Note that it will make all sequences upper case.
+    '''
+    STANDARD_AMINO_ACIDS = [
+        "A", "C", "D", "E", "F",
+        "G", "H", "I", "K", "L",
+        "M", "N", "P", "Q", "R",
+        "S", "T", "V", "W", "Y",
+    ]
+    for FastASeq_obj in FASTA_obj:
+        if FastASeq_obj.gap_seq != None:
+            seq = FastASeq_obj.gap_seq.upper()
+        else:
+            seq = FastASeq_obj.seq.upper()
+        
+        for i in range(len(seq)):
+            letter = seq[i]
+            if letter != "-" and letter not in STANDARD_AMINO_ACIDS:
+                seq = seq[0:i] + "X" + seq[i+1:]
+        
+        if FastASeq_obj.gap_seq != None:
+            FastASeq_obj.gap_seq = seq
+            FastASeq_obj.seq = seq.replace("-", "")
+        else:
+            FastASeq_obj.seq = seq
+
 if __name__ == "__main__":
     #### USER INPUT SECTION
     usage = """%(prog)s will take all the files inside the Single_Copy_Orthologue_Sequences
@@ -156,6 +186,11 @@ if __name__ == "__main__":
     if args.newIDsList != None:
         for FASTA_obj in fastaObjs:
             FASTA_obj.set_ids_via_list(args.newIDsList)
+    
+    # Replace characters that don't conform to standard amino acid coding
+    if not args.is_nucleotide:
+        for FASTA_obj in fastaObjs:
+            replace_nonstandard_aminoacids(FASTA_obj)
     
     # Align FASTA objects
     mafftAligner = ZS_AlignIO.MAFFT(args.mafftDir) # set up here for use later
