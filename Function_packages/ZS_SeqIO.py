@@ -681,6 +681,24 @@ class FASTA:
         # Update FastASeq objects with IDs list
         for i in range(len(altList)):
             self.seqs[i].alt = altList[i]
+    
+    def set_ids_via_list(self, idsList):
+        '''
+        The number of values in the list must match that of the FASTA or an
+        error will be raised. The order is assumed to match that of the FASTA
+        file(s) that are stored in self.seqs.
+        '''
+        # Validate value type & compatibility
+        assert isinstance(idsList, list)
+        if len(idsList) != len(self.seqs):
+            raise Exception(inspect.cleandoc(f"""
+                Alt ID setting not possible as sequence count differs.
+                Num alt IDs={len(idsList)}, Num FASTA seqs={len(self.seqs)}
+            """))
+        
+        # Update FastASeq objects with IDs list
+        for i in range(len(idsList)):
+            self.seqs[i].id = idsList[i]
         
     def set_alt_ids_via_dict(self, altDict):
         '''
@@ -700,6 +718,25 @@ class FASTA:
         for i in range(len(self.seqs)):
             alt = altDict[self.seqs.id]
             self.seqs[i].alt = alt
+    
+    def set_ids_via_dict(self, idsDict):
+        '''
+        When using this function, all values in the FASTA must be discovered as
+        a key within idsDict or an error will be raised.
+        '''
+        # Validate value type & compatibility
+        assert isinstance(idsDict, dict)
+        numFound = sum([1 for FastASeq_obj in self.seqs if FastASeq_obj.id in idsDict])            
+        if numFound != len(self.seqs):
+            raise Exception(inspect.cleandoc(f"""
+                Alt ID setting not possible as not all sequences were discovered
+                Num found IDs={numFound}, Num FASTA seqs={len(self.seqs)}
+            """))
+        
+        # Update FastASeq objects with IDs list
+        for i in range(len(self.seqs)):
+            id = idsDict[self.seqs.id]
+            self.seqs[i].id = id
     
     def set_alt_ids_via_file(self, altFile):
         '''
@@ -739,6 +776,45 @@ class FASTA:
             self.set_alt_ids_via_dict(altDict)
         else:
             self.set_alt_ids_via_list(altList)
+    
+    def set_ids_via_file(self, idsFile):
+        '''
+        This method accepts two kinds of IDs file. The first is a simple list with one
+        value per line. In this case, we assume the list is ordered equivalently to the
+        original FASTA file that was loaded in. The second case is a key:value
+        list separated by tabs. In this case the order can differ, and the list can
+        contain more entries than present in the FASTA.
+        '''
+        # Validate value type and file existence
+        assert isinstance(idsFile, str)
+        if not os.path.isfile(idsFile):
+            raise Exception("{0} does not exist; can't update alt IDs".format(idsFile))
+        
+        # Check what format the alt file is in
+        isDict = False # isList is an implied value opposite to isDict
+        with open(idsFile, "r") as fileIn:
+            for line in fileIn:
+                if "\t" in line:
+                    isDict = True
+                break
+               
+        # Parse altFile
+        idsList, idsDict = [], {}
+        with open(idsFile, "r") as fileIn:
+            for line in fileIn:
+                line = line.rstrip("\r\n ")
+                if isDict:
+                    l = line.split("\t")
+                    idsDict[l[0]] = l[1] # bidirectional indexing
+                    idsDict[l[1]] = l[0] # allows ID file to be orig:alt or alt:orig
+                else:
+                    idsList.append(line)
+        
+        # Update FastASeq objects with our appropriate alt ID structure
+        if isDict:
+            self.set_ids_via_dict(idsDict)
+        else:
+            self.set_ids_via_list(idsList)
     
     def make_uppercase(self):
         '''
