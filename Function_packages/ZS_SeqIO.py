@@ -150,12 +150,17 @@ class FastASeq:
         if self.gap_seq != None:
             self.gap_seq += seq.replace("\r", "").replace("\n", "").replace(" ", "")
     
-    def get_translation(self, findBestFrame=False, strand=1, frame=0):
+    def get_translation(self, findBestFrame=False, strand=None, frame=None):
         '''
         This method will translate a nucleotide sequence into its peptide sequence
         with a standard translation table. Since this class is not yet aware of whether
         it is a nucleotide or protein already, the onus is on you as a user to not be
         dumb. An error will be raised if you try to translate a protein into a protein.
+        
+        This function allows you to constrain the finding of a best frame by specifying
+        findBestFrame as True, and setting one of the strand or frame values. If you set
+        strand=1, we'll find the best translation frame within the +ve strand. If you set
+        frame=0, we'll find the best strand (+ve or -ve) with an ORF starting at frame 0.
         
         Developer's note: I used to have a bug in here with relation to the frame.
         Conceptually, if we are obtaining frame 2 (0-based), we're only trimming 1
@@ -186,10 +191,19 @@ class FastASeq:
         '''
         # Validate input type & values
         assert isinstance(findBestFrame, bool)
-        assert isinstance(strand, int)
-        assert strand in [1, -1]
-        assert isinstance(frame, int)
-        assert frame in range(0, 3)
+        assert isinstance(strand, int) or strand == None
+        if isinstance(strand, int):
+            assert strand in [1, -1], "Strand was provided but was not an appropriate value"
+        assert isinstance(frame, int) or frame == None
+        if isinstance(frame, int):
+            assert frame in range(0, 3), "Frame was provided but was not an appropriate value"
+        
+        # Prevent incompatible parameter combination
+        if findBestFrame == False:
+            assert strand != None and frame != None, "If findBestFrame is False, you must set strand and frame values"
+        if findBestFrame == True:
+            "It doesn't make sense to findBestFrame if we've told it the strand and frame to search in"
+            assert strand == None or frame == None, "If findBestFrame is True, strand and/or frame values must NOT be set"
         
         # Handle normal cases (findBestFrame is False)
         if not findBestFrame:
@@ -205,9 +219,11 @@ class FastASeq:
         # Handle other cases
         else:
             longest = [0, "", strand, frame] # [length, sequence, strand, frame]
-            for strand in [1, -1]:
+            strandsToCheck = [1, -1] if strand == None else [strand]
+            framesToCheck = range(3) if frame == None else range(frame, frame+1)
+            for strand in strandsToCheck:
                 nuc = self.seq if strand == 1 else self.get_reverse_complement()
-                for frame in range(3):
+                for frame in framesToCheck:
                     trimAmount = 0 if frame == 0 else 1 if frame == 2 else 2
                     length = 3 * ((len(nuc)-trimAmount) // 3)
                     frameNuc = nuc[trimAmount:trimAmount+length]
