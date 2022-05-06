@@ -453,49 +453,76 @@ def solve_translation_frames(FASTA_obj):
     if solutionDict == {}:
         return None
     
+    # Enforce consistency in solutionDict values
+    '''
+    Sometimes, the true translation can have a stop codon towards the start/end of the sequence
+    but otherwise show the same signs as an "easy-to-solve" sequence. It's a bit of a conundrum.
+    '''
+    if len(solutionDict) > 2: # won't work unless we have a few here
+        for i, _ in solutionDict.items():
+            scores = _calculate_solution_scores(resultsDict[i], solutionDict, skipIndex=i) # will store scores for frame 0, 1, and 2
+            
+            # Calculate metrics to find the best frame
+            bestFrame = _use_scores_metrics_to_get_best_frame(scores)
+            
+            # Update the solutionDict value
+            solutionDict[i] = resultsDict[i][bestFrame]
+    
     # Find the best solution to problem sequences
     for i, results in problemDict.items():
-        scores = [[], [], []] # will store scores for frame 0, 1, and 2
-        for j in range(0, 3):
-            problemSeq, _, _ = results[j]
-            if problemSeq == "":
-                scores[j].append(-math.inf)
-                continue
-            for x, solution in solutionDict.items():
-                solutionSeq, _, _ = solution
-                _, _, _, score = ssw_parasail(problemSeq, solutionSeq)
-                scores[j].append(score)
+        scores = _calculate_solution_scores(results, solutionDict) # will store scores for frame 0, 1, and 2
         
-        # Calculate two indicative metrics
-        maxIndividualScores = [[max(scores[frame]), frame] for frame in range(0, 3)] # Gives [[score, frame], ... +2 frames]
-        totalScores = [[sum(scores[frame]), frame] for frame in range(0, 3)] # Gives [[score, frame], ... +2 frames]
+        # Calculate metrics to find the best frame
+        bestFrame = _use_scores_metrics_to_get_best_frame(scores)
         
-        maxIndividualScoresFrame = max(maxIndividualScores, key = lambda x: x[0])[1]
-        maxTotalScoresFrame = max(totalScores, key = lambda x: x[0])[1]
-        
-        # Find the best frame from two indicative metrics
-        if maxIndividualScoresFrame == maxTotalScoresFrame:
-            bestFrame = maxIndividualScoresFrame
-        # Find the best frame by picking the most informative of the two metrics
-        else:
-            individualScoreDifference = max(maxIndividualScores, key = lambda x: x[0])[0] / min(maxIndividualScores, key = lambda x: x[0])[0]
-            totalScoreDifference = max(totalScores, key = lambda x: x[0])[0] / min(totalScores, key = lambda x: x[0])[0]
-
-            individualScoreDifference = round(individualScoreDifference, 2)
-            totalScoreDifference = round(totalScoreDifference, 2)
-            
-            if totalScoreDifference > individualScoreDifference: # we're checking to see which metric separates the data most
-                bestFrame = maxTotalScoresFrame
-            elif individualScoreDifference > totalScoreDifference:
-                bestFrame = maxIndividualScoresFrame
-            # Just pick a best-guess frame and alert the user to this occurrence
-            else:
-                bestFrame = maxTotalScoresFrame # assume total score sum should be most indicative
-                print("Failed to find a good frame for FASTA based on {0}".format(FASTA_obj.fileOrder[0][0]))
-        
+        # Add the problem sequence into our solutionDict
         solutionDict[i] = results[bestFrame]
     
     return solutionDict
+
+def _calculate_solution_scores(results, solutionDict, skipIndex=None):
+    scores = [[], [], []] # will store scores for frame 0, 1, and 2
+    for j in range(0, 3):
+        targetSeq, _, _ = results[j]
+        if targetSeq == "":
+            scores[j].append(-math.inf)
+            continue
+        for x, solution in solutionDict.items():
+            if skipIndex != None and x == skipIndex:
+                continue
+            solutionSeq, _, _ = solution
+            _, _, _, score = ssw_parasail(targetSeq, solutionSeq)
+            scores[j].append(score)
+    return scores
+
+def _use_scores_metrics_to_get_best_frame(scores):
+    # Calculate two indicative metrics
+    maxIndividualScores = [[max(scores[frame]), frame] for frame in range(0, 3)] # Gives [[score, frame], ... +2 frames]
+    totalScores = [[sum(scores[frame]), frame] for frame in range(0, 3)] # Gives [[score, frame], ... +2 frames]
+    
+    maxIndividualScoresFrame = max(maxIndividualScores, key = lambda x: x[0])[1]
+    maxTotalScoresFrame = max(totalScores, key = lambda x: x[0])[1]
+    
+    # Find the best frame from two indicative metrics
+    if maxIndividualScoresFrame == maxTotalScoresFrame:
+        bestFrame = maxIndividualScoresFrame
+    # Find the best frame by picking the most informative of the two metrics
+    else:
+        individualScoreDifference = max(maxIndividualScores, key = lambda x: x[0])[0] / min(maxIndividualScores, key = lambda x: x[0])[0]
+        totalScoreDifference = max(totalScores, key = lambda x: x[0])[0] / min(totalScores, key = lambda x: x[0])[0]
+
+        individualScoreDifference = round(individualScoreDifference, 2)
+        totalScoreDifference = round(totalScoreDifference, 2)
+        
+        if totalScoreDifference > individualScoreDifference: # we're checking to see which metric separates the data most
+            bestFrame = maxTotalScoresFrame
+        elif individualScoreDifference > totalScoreDifference:
+            bestFrame = maxIndividualScoresFrame
+        # Just pick a best-guess frame and alert the user to this occurrence
+        else:
+            bestFrame = maxTotalScoresFrame # assume total score sum should be most indicative
+            print("Failed to find a good frame for FASTA based on {0}".format(FASTA_obj.fileOrder[0][0]))
+    return bestFrame
 
 def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
     '''
