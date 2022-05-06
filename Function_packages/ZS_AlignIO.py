@@ -136,14 +136,14 @@ class MAFFT:
         # Clean up temporary file
         os.unlink(tmpFileName)
     
-    def run_nucleotide_as_protein(self, FASTA_obj, findBestFrame=False, strand=1, frame=0):
+    def run_nucleotide_as_protein(self, FASTA_obj, strand=None, frame=None):
         '''
         Refer to method header of run() for the fundamentals of this method.
         Refer to FastASeq method header of get_translation() for descriptions
         of the other parameters.
         
         What this method does differently to run() is that it will:
-
+        
             1) Translate nucleotides into their corresponding protein sequence
             2) Align the protein sequences
             3) Map the gaps in the protein alignment back to the nucleotide sequence
@@ -151,33 +151,92 @@ class MAFFT:
         In effect, it allows nucleotide sequences to be aligned as codons rather than
         as individual base pairs, which might be more biologically relevant when dealing
         with closely related sequences.
+        
+        Note that findBestFrame is an implicit parameter. If strand is None or the indexed list
+        value is None, and/or the frame value is similar, then findBestFrame will be set to True
+        since we'll need to derive the appropriate strand and/or frame depending on which is None.
+        If you set both strand and frame, or the indexed list value is set, then we obviously
+        don't need to find how to translate it now do we?
+        
+        Parameters:
+            findBestFrame -- a boolean indicating whether we should get the FastASeq.get_translation()
+                             function figure out the best translation.
+            strand -- one of three types; 1) an integer of 1 to get a +ve strand translation, or -1 for 
+                      a -ve strand translation, 2) None to not constrain strandedness of the translation
+                      if findBestFrame is True, or 3) a list of integers and/or None.
+            frame -- one of three types; 1) an integer in the range(0,3) corresponding to 0-based
+                     frame number, 2) None None to not constrain the frame of the translation
+                     if findBestFrame is True, or 3) a list of integers and/or None.
         '''
-        # Validate input value type
+        # Validate input FASTA parameter
         assert type(FASTA_obj).__name__ == "FASTA" or type(FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
-        #assert isinstance(FASTA_obj, FASTA)
-        assert isinstance(findBestFrame, bool)
-        assert isinstance(strand, int)
-        assert strand in [1, -1]
-        assert isinstance(frame, int)
-        assert frame in range(0, 3)
+        
+        # Validate strand parameter
+        assert isinstance(strand, int) or strand == None or isinstance(strand, list)
+        if isinstance(strand, int):
+            assert strand in [1, -1], "Strand was provided but was not an appropriate value"
+        if isinstance(strand, list):
+            for _strand in strand:
+                if isinstance(_strand, int):
+                    assert _strand in [1, -1], "Strand was provided as a list, but contains inappropriate value(s)"
+                else:
+                    assert _strand == None, "Strand was provided as a list, but contains unknown types"
+        
+        # Validate frame parameter
+        assert isinstance(frame, int) or frame == None or isinstance(frame, list)
+        if isinstance(frame, int):
+            assert frame in range(0, 3), "Frame was provided but was not an appropriate value"
+        if isinstance(frame, list):
+            for _frame in frame:
+                if isinstance(_frame, int):
+                    assert _frame in range(0,3), "Frame was provided as a list, but contains inappropriate value(s)"
+                else:
+                    assert _frame == None, "Frame was provided as a list, but contains unknown types"
         
         # Create a dummy FASTA object with our translations
         dummy = deepcopy(FASTA_obj)
+        strands, frames = [], []
         for i in range(len(dummy)):
-            protein, strand, frame = dummy.seqs[i].get_translation(findBestFrame, strand, frame)
+            # Get the appropriate strand/frame values
+            if isinstance(strand, list):
+                _strand = strand[i]
+            else:
+                _strand = strand
+            if isinstance(frame, list):
+                _frame = frame[i]
+            else:
+                _frame = frame
+            
+            # Run the translation
+            if _strand != None and _frame != None:
+                protein, _strand, _frame = dummy.seqs[i].get_translation(False, _strand, _frame)
+            else:
+                protein, _strand, _frame = dummy.seqs[i].get_translation(True, _strand, _frame)
+            # Update and store results
+            strands.append(_strand)
+            frames.append(_frame)
             dummy.seqs[i].seq = protein
         
         # Align it
         self.run(dummy)
         
         # Map back aligned proteins to their original nucleotide counterparts
+        longestTrimAmount = 0
+        trimAmounts = []
         for i in range(len(dummy)):
+            # if dummy[i].id == "Phascogale_calura_AM_M44886":
+            #     stophere
+            strand = strands[i]
+            frame = frames[i]
             nuc = FASTA_obj[i].seq if strand == 1 else FASTA_obj[i].get_reverse_complement()
             alignedProt = dummy[i].gap_seq
             
             # Perform mapping procedure
-            alignedNuc = nuc[0: frame] # put any extra bits before frame start in now
-            codonIndex = frame
+            trimAmount = 0 if frame == 0 else 1 if frame == 2 else 2
+            trimAmounts.append(trimAmount)
+            longestTrimAmount = max(trimAmount, longestTrimAmount)
+            alignedNuc = nuc[0: trimAmount] # put any extra bits before frame start in now
+            codonIndex = trimAmount
             for proteinIndex in range(0, len(alignedProt)):
                 if alignedProt[proteinIndex] != "-":
                     alignedNuc += nuc[codonIndex: codonIndex+3] # codon length == 3
@@ -188,6 +247,18 @@ class MAFFT:
             
             # Update original FASTA values
             FASTA_obj[i].gap_seq = alignedNuc
+        
+        # Add in any gap sequence necessary to accommodate trimmed bits
+        for i in range(len(dummy)):
+            trimAmount = trimAmounts[i]
+            FASTA_obj[i].gap_seq = "-"*(longestTrimAmount-trimAmount) + FASTA_obj[i].gap_seq
+        
+        # Briefly fix up any weirdness
+        "I think my codon system kinda fucks up the last codon by missing 1-2 gaps at times"
+        maxLen = max([len(FastASeq_obj.gap_seq) for FastASeq_obj in FASTA_obj])
+        for FastASeq_obj in FASTA_obj:
+            if len(FastASeq_obj.gap_seq) != maxLen:
+                FastASeq_obj.gap_seq += "-"*(maxLen - len(FastASeq_obj.gap_seq))
         
         # Set flag that this FASTA object has been aligned
         FASTA_obj.isAligned = True
