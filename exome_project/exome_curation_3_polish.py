@@ -293,6 +293,7 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALI
             # If gapFrame isn't 0 (gapLen not divisible by 3), add N's to address the situation
             if gapFrame != 0:
                 start = gap.span()[0] + startIndex # + startIndex to give a consistent position in the sequence
+                "Upon reflection, I don't know WHY I add gapFrame instead of using .span()[1], but... yolo?"
                 end = gap.span()[0] + gapFrame + startIndex # we're replacing only the length of "-"s that we want to be "n"s
                 fix.append([start, end, gapFrame])
         for gap in targetGaps:
@@ -362,7 +363,7 @@ def _enact_fix_to_seq(fix, seq):
     
     # Iterate through fixes and make all suggested changes
     for start, end, nLength in fix:
-        seq = seq[0:start] + "n"*nLength + seq[end:]
+        seq = seq[0:start] + "n"*nLength + seq[end-1:] # -1 since end is range() i.e., non-inclusive
     return seq
 
 def _tmp_file_name_gen(prefix, suffix):
