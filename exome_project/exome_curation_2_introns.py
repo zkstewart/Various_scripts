@@ -526,18 +526,20 @@ def _calculate_solution_scores(resultsDict, solutionDict, memoryDict, thisSeqID)
                 continue
             # Speed up operation with memoryDict
             try:
+                solutionFrame = solution[1]
                 try:
-                    score = memoryDict[thisSeqID][j][otherSeqID]
+                    score = memoryDict[thisSeqID][j][otherSeqID][solutionFrame]
                 except:
-                    score = memoryDict[otherSeqID][j][thisSeqID]
+                    score = memoryDict[otherSeqID][solutionFrame][thisSeqID][j]
             except:
             # Otherwise, do it anew
-                solutionSeq, _, _ = solution
+                solutionSeq, solutionFrame, _ = solution
                 _, _, _, score = ssw_parasail(targetSeq, solutionSeq)
                 # Store it into memoryDict
                 memoryDict.setdefault(thisSeqID, {})
                 memoryDict[thisSeqID].setdefault(j, {})
-                memoryDict[thisSeqID][j][otherSeqID] = score
+                memoryDict[thisSeqID][j].setdefault(otherSeqID, {})
+                memoryDict[thisSeqID][j][otherSeqID][solutionFrame] = score
             scores[j].append(score)
     
     return scores
