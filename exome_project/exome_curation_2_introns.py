@@ -408,32 +408,32 @@ def solve_translation_frames(FASTA_obj):
     Params:
         FASTA_obj -- a ZS_SeqIO.FASTA object
     Returns:
-        solutionDict -- a dictionary with [index] = [seq, frame, hasStopCodon (bool)] structure
-                        where index maps to the FASTA_obj.seqs list.
+        solutionDict -- a dictionary with structure like:
+            {
+                sequence_id: [seq, frame, hasStopCodon (bool)]
+            }
     '''
-    resultsDict = {} # contains [index] = [[seq, frame, hasStopCodon], ... +2 more frames]
-    
     # Obtain translations in the three strand=1 frames
-    for i in range(len(FASTA_obj)):
-        FastASeq_obj = FASTA_obj[i]
+    resultsDict = {} # same structure as solutionDict, but +2 more frames
+    for FastASeq_obj in FASTA_obj:
         if FastASeq_obj.id == "Codons": # skip the >Codons line
             continue
-        if FastASeq_obj.seq == "": # skip empty/dummy seqs
+        elif FastASeq_obj.seq == "": # skip empty/dummy seqs
             continue
         
         results = [] # contains triples of [seq, frame, hasStopCodon (bool)]
         for frame in range(0, 3):
             seq, strand, frame = FastASeq_obj.get_translation(strand=1, frame=frame)
             results.append([seq, frame, "*" in seq[:-1]]) # don't count the last position since that can be normal
-        resultsDict[i] = results
+        resultsDict[FastASeq_obj.id] = results
     
     # Loop back through and find easy-to-solve and hard-to-solve scenarios
-    solutionDict = {} # contains [index] = [seq, frame, hasStopCodon]
-    problemDict = {} # contains [index] = [[seq, frame, hasStopCodon], ... +2 more frames]
-    for i in range(len(FASTA_obj)):
-        if i not in resultsDict:
+    solutionDict = {}
+    problemDict = {} # same structure as solutionDict, but +2 more frames
+    for FastASeq_obj in FASTA_obj:
+        if FastASeq_obj.id not in resultsDict:
             continue
-        results = resultsDict[i]
+        results = resultsDict[FastASeq_obj.id]
         
         # Skip blank sequences
         if all([r[0] == "" for r in results]):
@@ -442,12 +442,12 @@ def solve_translation_frames(FASTA_obj):
         # Handle easy-to-solve scenarios
         numWithoutStopCodons = sum([1 for r in results if r[2] == False])
         if numWithoutStopCodons == 1:
-            solutionDict[i] = [r for r in results if r[2] == False][0]
+            solutionDict[FastASeq_obj.id] = [r for r in results if r[2] == False][0]
             continue
         
         # Note hard-to-solve scenarios
         else:
-            problemDict[i] = resultsDict[i]
+            problemDict[FastASeq_obj.id] = resultsDict[FastASeq_obj.id]
     
     # Abort if we can't solve this problem
     if solutionDict == {}:
@@ -457,45 +457,92 @@ def solve_translation_frames(FASTA_obj):
     '''
     Sometimes, the true translation can have a stop codon towards the start/end of the sequence
     but otherwise show the same signs as an "easy-to-solve" sequence. It's a bit of a conundrum.
+    
+    Also, note that memoryDict will behave like a dynamic programming table with structure like:
+        {
+            thisIndex: {
+                frame1: {
+                    x1: [...],
+                    x2: [...],
+                    ...
+                },
+                frame2: {
+                    ...
+                },
+                frame3: {
+                    ...
+                }
+            },
+            otherKey: ...
+        }
     '''
     if len(solutionDict) > 2: # won't work unless we have a few here
-        for i, _ in solutionDict.items():
-            scores = _calculate_solution_scores(resultsDict[i], solutionDict, skipIndex=i) # will store scores for frame 0, 1, and 2
+        memoryDict = {} # this will speed up program execution to remember solved comparisons
+        for seqID in solutionDict.keys():
+            scores = _calculate_solution_scores(resultsDict, solutionDict, memoryDict, seqID) # will store scores for frame 0, 1, and 2
             
             # Calculate metrics to find the best frame
-            bestFrame = _use_scores_metrics_to_get_best_frame(scores)
+            bestFrame = _use_scores_metrics_to_get_best_frame(scores, resultsDict[seqID])
             
-            # Update the solutionDict value
-            solutionDict[i] = resultsDict[i][bestFrame]
+            # Update the solutionDict value if applicable
+            if bestFrame != solutionDict[seqID][1]:
+                solutionDict[seqID] = resultsDict[seqID][bestFrame] # we do this since the sequence has changed
+                _reset_memory_dict_index(memoryDict, seqID) # and hence any scores associated to it are irrelevant
     
     # Find the best solution to problem sequences
-    for i, results in problemDict.items():
-        scores = _calculate_solution_scores(results, solutionDict) # will store scores for frame 0, 1, and 2
+    for seqID in problemDict.keys():
+        scores = _calculate_solution_scores(resultsDict, solutionDict, memoryDict, seqID) # will store scores for frame 0, 1, and 2
         
         # Calculate metrics to find the best frame
-        bestFrame = _use_scores_metrics_to_get_best_frame(scores)
+        bestFrame = _use_scores_metrics_to_get_best_frame(scores, resultsDict[seqID])
         
         # Add the problem sequence into our solutionDict
-        solutionDict[i] = results[bestFrame]
+        solutionDict[seqID] = resultsDict[seqID][bestFrame]
     
     return solutionDict
 
-def _calculate_solution_scores(results, solutionDict, skipIndex=None):
+def _reset_memory_dict_index(memoryDict, thisSeqID):
+    memoryDict[thisSeqID] = {} # forget the parent index
+    indicesToForget = []
+    for key, frameDict in memoryDict.items():
+        for frame, scoreDict in frameDict.items():
+            for otherSeqID, score in scoreDict.items():
+                if otherSeqID == thisSeqID:
+                    indicesToForget.append([key, frame, otherSeqID])
+    for key, frame, otherSeqID in indicesToForget:
+        del memoryDict[key][frame][otherSeqID] # forget the results for other parents to this index
+
+def _calculate_solution_scores(resultsDict, solutionDict, memoryDict, thisSeqID):
     scores = [[], [], []] # will store scores for frame 0, 1, and 2
+    results = resultsDict[thisSeqID]
     for j in range(0, 3):
         targetSeq, _, _ = results[j]
         if targetSeq == "":
             scores[j].append(-math.inf)
             continue
-        for x, solution in solutionDict.items():
-            if skipIndex != None and x == skipIndex:
+        for otherSeqID, solution in solutionDict.items():
+            # Skip self-comparison
+            if otherSeqID == thisSeqID: # skip self comparison if relevant
                 continue
-            solutionSeq, _, _ = solution
-            _, _, _, score = ssw_parasail(targetSeq, solutionSeq)
+            # Speed up operation with memoryDict
+            try:
+                try:
+                    score = memoryDict[thisSeqID][j][otherSeqID]
+                except:
+                    score = memoryDict[otherSeqID][j][thisSeqID]
+            except:
+            # Otherwise, do it anew
+                solutionSeq, _, _ = solution
+                _, _, _, score = ssw_parasail(targetSeq, solutionSeq)
+                # Store it into memoryDict
+                memoryDict.setdefault(thisSeqID, {})
+                memoryDict[thisSeqID].setdefault(j, {})
+                memoryDict[thisSeqID][j][otherSeqID] = score
             scores[j].append(score)
+    
     return scores
 
-def _use_scores_metrics_to_get_best_frame(scores):
+def _use_scores_metrics_to_get_best_frame(scores, results):
     # Calculate two indicative metrics
     maxIndividualScores = [[max(scores[frame]), frame] for frame in range(0, 3)] # Gives [[score, frame], ... +2 frames]
     totalScores = [[sum(scores[frame]), frame] for frame in range(0, 3)] # Gives [[score, frame], ... +2 frames]
@@ -514,12 +561,22 @@ def _use_scores_metrics_to_get_best_frame(scores):
         individualScoreDifference = round(individualScoreDifference, 2)
         totalScoreDifference = round(totalScoreDifference, 2)
         
-        if totalScoreDifference > individualScoreDifference: # we're checking to see which metric separates the data most
+        # If the two metrics are similar, try to base it off of the number of stop codons
+        individualCodonsCount = results[maxIndividualScoresFrame][0].count("*")
+        totalCodonsCount = results[maxTotalScoresFrame][0].count("*")
+        bestFrame = None
+        if (individualScoreDifference / 2) < totalScoreDifference and (totalScoreDifference / 2) < individualScoreDifference:
+            if individualCodonsCount < totalCodonsCount:
+                bestFrame = maxIndividualScoresFrame
+            elif totalCodonsCount < individualCodonsCount:
+                bestFrame = maxTotalScoresFrame
+        # If the two metrics are dissimilar, or codons count doesn't separarate them, find the best one
+        if bestFrame == None and totalScoreDifference > individualScoreDifference: # we're checking to see which metric separates the data most
             bestFrame = maxTotalScoresFrame
-        elif individualScoreDifference > totalScoreDifference:
+        elif bestFrame == None and individualScoreDifference > totalScoreDifference:
             bestFrame = maxIndividualScoresFrame
         # Just pick a best-guess frame and alert the user to this occurrence
-        else:
+        elif bestFrame == None:
             bestFrame = maxTotalScoresFrame # assume total score sum should be most indicative
             print("Failed to find a good frame for FASTA based on {0}".format(FASTA_obj.fileOrder[0][0]))
     return bestFrame
@@ -623,11 +680,10 @@ def _get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.25):
     '''
     truncated_start = []
     truncated_end = []
-    for i in range(len(FASTA_obj)):
-        if i not in solutionDict:
+    for FastASeq_obj in FASTA_obj:
+        if FastASeq_obj.id not in solutionDict:
             continue
-        FastASeq_obj = FASTA_obj[i]
-        translationSeq, frame, hasStopCodon = solutionDict[i]
+        translationSeq, frame, hasStopCodon = solutionDict[FastASeq_obj.id]
         
         # Find the borders for the longest section excluding stop codons
         longestSection = max(translationSeq.split("*"), key=len)
