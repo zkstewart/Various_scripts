@@ -131,22 +131,24 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         
         # Loop through solutionDict and polish sequences that need it
         polishedSequences = False
-        for problemIndex, value in solutionDict.items():
+        for problemSeqID, value in solutionDict.items():
+            #if problemSeqID == tid:
+            #    stophere
             protSeq, frame, hasStopCodon = value
-            nuclSeq = exon_FASTA_obj[problemIndex].seq
+            nuclSeq = exon_FASTA_obj[problemSeqID].seq
             if not hasStopCodon: # no changes needed here
                 continue
             
             # Loop through all solutionDict values and find the best match to this problem one
             matches = []
-            for targetIndex, _value in solutionDict.items():
-                if targetIndex == problemIndex:
+            for targetSeqID, _value in solutionDict.items():
+                if targetSeqID == problemSeqID:
                     continue
                 _, _, targetHasStopCodon = _value
                 if targetHasStopCodon:
                     continue
                 else:
-                    targetNuclSeq = exon_FASTA_obj[targetIndex].seq
+                    targetNuclSeq = exon_FASTA_obj[targetSeqID].seq
                     targetAlign, problemAlign, startIndex, score = ssw_parasail(nuclSeq, targetNuclSeq) # this function has poorly ordered outputs
                     matches.append([problemAlign, targetAlign, startIndex, score])
             matches.sort(key = lambda x: -x[3]) # order by score
@@ -159,11 +161,11 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
             
             # If we found a fix to make, get the edited sequence
             polishedSequences = True # if we get to here, we'll want to recomputer the solutionDict again
-            editedSeq = _enact_fix_to_seq(fix, exon_FASTA_obj[problemIndex].seq)
+            editedSeq = _enact_fix_to_seq(fix, exon_FASTA_obj[problemSeqID].seq)
             
             # Then, update the sequence in our exon_FASTA_obj
-            exon_FASTA_obj[problemIndex].seq = editedSeq
-            exon_FASTA_obj[problemIndex].gap_seq = None # make sure we know that our gap_seq is no longer valid
+            exon_FASTA_obj[problemSeqID].seq = editedSeq
+            exon_FASTA_obj[problemSeqID].gap_seq = None # make sure we know that our gap_seq is no longer valid
         
         # Recompute solutionDict if necessary
         if polishedSequences == True:
