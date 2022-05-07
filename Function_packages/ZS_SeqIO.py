@@ -162,11 +162,6 @@ class FastASeq:
         strand=1, we'll find the best translation frame within the +ve strand. If you set
         frame=0, we'll find the best strand (+ve or -ve) with an ORF starting at frame 0.
         
-        Developer's note: I used to have a bug in here with relation to the frame.
-        Conceptually, if we are obtaining frame 2 (0-based), we're only trimming 1
-        position from the start. And if we're obtaining frame 1, we're trimming 2
-        positions from the start. Frame 0 involves no trimming.
-        
         Params:
             findBestFrame -- a Boolean indicating whether you want this program to find
                              the longest translation for the sequence. This is relevant
@@ -211,9 +206,8 @@ class FastASeq:
                 return self._dna_to_protein(self.seq), strand, frame
             else:
                 nuc = self.seq if strand == 1 else self.get_reverse_complement()
-                trimAmount = 0 if frame == 0 else 1 if frame == 2 else 2
-                length = 3 * ((len(nuc)-trimAmount) // 3)
-                frameNuc = nuc[trimAmount:trimAmount+length]
+                length = 3 * ((len(nuc)-frame) // 3)
+                frameNuc = nuc[frame:frame+length]
                 frameProt = self._dna_to_protein(frameNuc)
                 return frameProt, strand, frame
         # Handle other cases
@@ -224,9 +218,8 @@ class FastASeq:
             for strand in strandsToCheck:
                 nuc = self.seq if strand == 1 else self.get_reverse_complement()
                 for frame in framesToCheck:
-                    trimAmount = 0 if frame == 0 else 1 if frame == 2 else 2
-                    length = 3 * ((len(nuc)-trimAmount) // 3)
-                    frameNuc = nuc[trimAmount:trimAmount+length]
+                    length = 3 * ((len(nuc)-frame) // 3)
+                    frameNuc = nuc[frame:frame+length]
                     frameProt = self._dna_to_protein(frameNuc)
                     orfs = frameProt.split("*")
                     for orf in orfs:
