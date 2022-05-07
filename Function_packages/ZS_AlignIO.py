@@ -224,19 +224,23 @@ class MAFFT:
         longestTrimAmount = 0
         trimAmounts = []
         for i in range(len(dummy)):
-            # if dummy[i].id == "Phascogale_calura_AM_M44886":
-            #     stophere
-            strand = strands[i]
-            frame = frames[i]
-            nuc = FASTA_obj[i].seq if strand == 1 else FASTA_obj[i].get_reverse_complement()
+            _strand = strands[i]
+            _frame = frames[i]
+            nuc = FASTA_obj[i].seq if _strand == 1 else FASTA_obj[i].get_reverse_complement()
             alignedProt = dummy[i].gap_seq
             
             # Perform mapping procedure
-            trimAmount = 0 if frame == 0 else 1 if frame == 2 else 2
-            trimAmounts.append(trimAmount)
-            longestTrimAmount = max(trimAmount, longestTrimAmount)
-            alignedNuc = nuc[0: trimAmount] # put any extra bits before frame start in now
-            codonIndex = trimAmount
+            '''
+            trimAmount will let us know how much gap sequence we need to add into the front of
+            every sequence. Note that it's only relevant when the sequence runs up to the beginning
+            of the MSA, otherwise we set it to 0 since there's gonna be gap there anyway. It just
+            helps to equalise different frame starts.
+            '''
+            trimAmount = _frame if _frame != None else 0 # _frame will only be None if the sequence is entirely empty
+            trimAmounts.append(trimAmount if alignedProt[0] != "-" else 0) # tri
+            longestTrimAmount = max(trimAmount if alignedProt[0] != "-" else 0, longestTrimAmount)
+            alignedNuc = nuc[0: _frame] # put any extra bits before _frame start in now
+            codonIndex = _frame
             for proteinIndex in range(0, len(alignedProt)):
                 if alignedProt[proteinIndex] != "-":
                     alignedNuc += nuc[codonIndex: codonIndex+3] # codon length == 3
