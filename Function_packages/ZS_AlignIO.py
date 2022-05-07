@@ -221,8 +221,7 @@ class MAFFT:
         self.run(dummy)
         
         # Map back aligned proteins to their original nucleotide counterparts
-        longestTrimAmount = 0
-        trimAmounts = []
+        trimmedBits = []
         for i in range(len(dummy)):
             _strand = strands[i]
             _frame = frames[i]
@@ -230,16 +229,7 @@ class MAFFT:
             alignedProt = dummy[i].gap_seq
             
             # Perform mapping procedure
-            '''
-            trimAmount will let us know how much gap sequence we need to add into the front of
-            every sequence. Note that it's only relevant when the sequence runs up to the beginning
-            of the MSA, otherwise we set it to 0 since there's gonna be gap there anyway. It just
-            helps to equalise different frame starts.
-            '''
-            trimAmount = _frame if _frame != None else 0 # _frame will only be None if the sequence is entirely empty
-            trimAmounts.append(trimAmount if alignedProt[0] != "-" else 0) # tri
-            longestTrimAmount = max(trimAmount if alignedProt[0] != "-" else 0, longestTrimAmount)
-            alignedNuc = nuc[0: _frame] # put any extra bits before _frame start in now
+            alignedNuc = ""
             codonIndex = _frame
             for proteinIndex in range(0, len(alignedProt)):
                 if alignedProt[proteinIndex] != "-":
@@ -247,22 +237,38 @@ class MAFFT:
                     codonIndex += 3 # iterate our nucleotide position marker
                 else:
                     alignedNuc += "---"
+            
+            # Add in any leftover bits e.g., stop codons wherever they fall
+            '''
+            This means, any leftover bit not included in the translation goes as
+            close to the nearest sequence position as possible
+            '''
+            alignedNuc = alignedNuc.rstrip("-") # we'll pad gaps below
             alignedNuc += nuc[codonIndex:] # add any potential stop codons back
             
             # Update original FASTA values
             FASTA_obj[i].gap_seq = alignedNuc
+            
+            # Retain any bits we trimmed off from the start
+            trimmedBits.append(nuc[0:_frame])
         
-        # Add in any gap sequence necessary to accommodate trimmed bits
-        for i in range(len(dummy)):
-            trimAmount = trimAmounts[i]
-            FASTA_obj[i].gap_seq = "-"*(longestTrimAmount-trimAmount) + FASTA_obj[i].gap_seq
-        
-        # Briefly fix up any weirdness
-        "I think my codon system kinda fucks up the last codon by missing 1-2 gaps at times"
+        # Pad out the end of the sequence for anything we rstripped earlier
         maxLen = max([len(FastASeq_obj.gap_seq) for FastASeq_obj in FASTA_obj])
         for FastASeq_obj in FASTA_obj:
             if len(FastASeq_obj.gap_seq) != maxLen:
                 FastASeq_obj.gap_seq += "-"*(maxLen - len(FastASeq_obj.gap_seq))
+        
+        # Add in any bits we trimmed off from the start now
+        for i in range(len(FASTA_obj)):
+            FastASeq_obj = FASTA_obj[i]
+            trimmedBit = trimmedBits[i]
+            FastASeq_obj.gap_seq = trimmedBit + FastASeq_obj.gap_seq.lstrip("-")
+        
+        # Pad out the start of the sequence for anything we lstripped just above
+        maxLen = max([len(FastASeq_obj.gap_seq) for FastASeq_obj in FASTA_obj])
+        for FastASeq_obj in FASTA_obj:
+            if len(FastASeq_obj.gap_seq) != maxLen:
+                FastASeq_obj.gap_seq = "-"*(maxLen - len(FastASeq_obj.gap_seq)) + FastASeq_obj.gap_seq
         
         # Set flag that this FASTA object has been aligned
         FASTA_obj.isAligned = True
