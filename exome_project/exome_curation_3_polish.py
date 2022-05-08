@@ -33,8 +33,7 @@ def validate_args(args):
     # Handle file output
     if os.path.isdir(args.outputDir):
         if os.listdir(args.outputDir) != []:
-            print(args.outputDir + ' already contains files. Specify a new location or move any existing files elsewhere.')
-            quit()
+            print(args.outputDir + ' already contains files. I am assuming that we are resuming a run.')
     else:
         try:
             os.mkdir(args.outputDir)
