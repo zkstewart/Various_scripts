@@ -123,7 +123,7 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         # Predict our solutionDict again if needed
         "If we've changed our sequence region, we might need to update our translations"
         if startTrim != 0 or endTrim != 0:
-             solutionDict = solve_translation_frames(exon_FASTA_obj)
+            solutionDict = solve_translation_frames(exon_FASTA_obj)
         
         # Abort if we found no solutions after trimming
         if solutionDict == None:
@@ -152,13 +152,12 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
             matches.sort(key = lambda x: -x[3]) # order by score
             
             # Check all matches to see what fix they suggest
-            SCORE_CUTOFF = np.percentile([x[3] for x in matches], 100-EXCLUSION_PCT) # borrow EXCLUSION_PCT which is 90
-            fix = _get_suggested_fix_from_ssw_matches(matches, nuclSeq, SCORE_CUTOFF)
+            fix = _get_suggested_fix_from_ssw_matches(matches, nuclSeq)
             if fix == []:
                 continue
             
             # If we found a fix to make, get the edited sequence
-            polishedSequences = True # if we get to here, we'll want to recomputer the solutionDict again
+            polishedSequences = True # if we get to here, we'll want to recompute the solutionDict again
             editedSeq = _enact_fix_to_seq(fix, exon_FASTA_obj[problemSeqID].seq)
             
             # Then, update the sequence in our exon_FASTA_obj
@@ -240,11 +239,11 @@ def _get_exon_coords(FASTA_obj):
         exonCoords.append([start, i+1]) # +1 to make end non-inclusive
     return exonCoords
 
-def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALIGN_PCT=0.60, GOOD_GAPS_NUM=2):
+def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, GOOD_ALIGN_PCT=0.60, GOOD_GAPS_NUM=2):
     '''
     Hidden function for use by polish_MSA_denovo(). It's been pulled aside here since it's quite
     complex and I don't want it being a mental burden when interpretting the parent function.
-
+    
     Importantly, the fixes will never overlap.
     
     Parameters:
@@ -254,11 +253,24 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, score_cutoff, GOOD_ALI
         fixes -- a list with format of: [[start, end, nLength], ...]. It should
                  used to make changes to the sequence, eventually.
     '''
+    # Find a good cut-off to use
+    if len(matches) <= 20:
+         SCORE_CUTOFF = np.percentile([x[3] for x in matches], 10) # drop the worst 10% only
+    else:
+        # Find a cut-off that ensures at least ~20 matches [this is an arbitrary cut-off]
+        DESIRABLE_NUMBER = 20
+        for x in [90, 70, 50, 30, 20, 15]: # 15 will always be out fallback condition
+            SCORE_CUTOFF = np.percentile([x[3] for x in matches], x)
+            numMatchesWithCutoff = sum([1 for m in matches if m[3] >= SCORE_CUTOFF])
+            if numMatchesWithCutoff >= DESIRABLE_NUMBER:
+                break
+    
+    # Find our fixes
     fixes = []
     for problemAlign, targetAlign, startIndex, score in matches:
         # Limit ourselves to only good matches for indel fixing
         ## 1) Skip anything with a score that doesn't meet cut-off
-        if score < score_cutoff:
+        if score < SCORE_CUTOFF:
             continue
         
         ## 2) Check if the alignment is good based on % overlap
