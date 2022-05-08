@@ -577,10 +577,9 @@ def _use_scores_metrics_to_get_best_frame(scores, results):
             bestFrame = maxTotalScoresFrame
         elif bestFrame == None and individualScoreDifference > totalScoreDifference:
             bestFrame = maxIndividualScoresFrame
-        # Just pick a best-guess frame and alert the user to this occurrence
+        # Just pick a best-guess frame [but silently now]
         elif bestFrame == None:
             bestFrame = maxTotalScoresFrame # assume total score sum should be most indicative
-            print("Failed to find a good frame for FASTA based on {0}".format(FASTA_obj.fileOrder[0][0]))
     return bestFrame
 
 def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
