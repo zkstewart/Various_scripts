@@ -476,8 +476,8 @@ def solve_translation_frames(FASTA_obj):
             otherKey: ...
         }
     '''
+    memoryDict = {} # this will speed up program execution to remember solved comparisons
     if len(solutionDict) > 2: # won't work unless we have a few here
-        memoryDict = {} # this will speed up program execution to remember solved comparisons
         for seqID in solutionDict.keys():
             scores = _calculate_solution_scores(resultsDict, solutionDict, memoryDict, seqID) # will store scores for frame 0, 1, and 2
             
@@ -490,6 +490,7 @@ def solve_translation_frames(FASTA_obj):
                 _reset_memory_dict_index(memoryDict, seqID) # and hence any scores associated to it are irrelevant
     
     # Find the best solution to problem sequences
+    memoryDict = {} # reset memory dict since solution->solution comparisons don't happen below
     for seqID in problemDict.keys():
         scores = _calculate_solution_scores(resultsDict, solutionDict, memoryDict, seqID) # will store scores for frame 0, 1, and 2
         
