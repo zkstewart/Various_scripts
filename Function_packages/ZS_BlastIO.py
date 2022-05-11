@@ -201,7 +201,7 @@ class BLAST:
         with open(outfmt6File, 'r') as fileIn:
             for line in fileIn:
                 # Extract details
-                sl = line.split('\t')
+                sl = line.rstrip("\r\n").split('\t')
                 qid = sl[0]
                 tid = sl[1]
                 identityPct = float(sl[2])
@@ -210,7 +210,7 @@ class BLAST:
                 tstart = int(sl[8])
                 tend = int(sl[9])
                 evalue = float(sl[10])
-                bitscore = int(sl[11])
+                bitscore = float(sl[11])
                 
                 # Skip if evalue isn't significant
                 if evalue > self.evalue: # filter here since self.evalue might differ between BLAST run and parsing now
