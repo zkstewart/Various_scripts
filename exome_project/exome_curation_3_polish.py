@@ -19,6 +19,10 @@ def validate_args(args):
         print('I am unable to locate the directory where the alignments files are (' + args.alignmentsDir + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if not os.path.isfile(args.transcriptomeFile):
+        print('I am unable to locate the transcriptome file (' + args.transcriptomeFile + ')')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
     if not os.path.isdir(args.mafftDir):
         print('I am unable to locate the directory where the MAFFT executables are (' + args.alignmentsDir + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
@@ -41,7 +45,7 @@ def validate_args(args):
         except:
             print("Wasn't able to create '{0}' directory; does '{1}' actually exist?".format(args.outputDir, os.path.dirname(args.outputDir)))
 
-def polish_MSA_denovo(FASTA_obj, mafftDir):
+def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
     '''
     Polishes a ZS_SeqIO.FASTA object to remove probable indel errors from sequences.
     It does this without genomic evidence (hence "de novo") by assessment of how
@@ -53,6 +57,9 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
     
     Params:
         FASTA_obj -- a ZS_SeqIO.FASTA instance
+        transcriptomeFile -- a string indicating the location of a transcriptome
+                             file which we can BLAST against when solving hard
+                             scenarios.
         mafftDir -- a string indicating the location of the MAFFT executable files.
     Returns:
         result_FASTA_obj -- a new ZS_SeqIO.FASTA instance with indels polished and
@@ -91,7 +98,7 @@ def polish_MSA_denovo(FASTA_obj, mafftDir):
         exon_FASTA_obj.seqs = exon_FASTA_obj.seqs[1:]
         
         # Get sequence translations
-        solutionDict = solve_translation_frames(exon_FASTA_obj)
+        solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
         
         # Get the boundaries for this exon region that excludes stop codons
         "We do this here since it wasn't applied to genomic evidenced intron predictions"
@@ -488,6 +495,8 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-a", dest="alignmentsDir", required=True,
                 help="Specify the directory where aligned FASTA files are located")
+    p.add_argument("-t", dest="transcriptomeFile", required=True,
+                help="Specify the location of a single representative (protein) transcriptome file")
     p.add_argument("-m", dest="mafftDir", required=True,
                 help="Specify the directory where MAFFT executables are located")
     p.add_argument("-o", dest="outputDir", required=True,
@@ -518,7 +527,7 @@ if __name__ == "__main__":
             continue
         
         # Perform polishing procedure
-        FASTA_obj = polish_MSA_denovo(FASTA_obj, args.mafftDir)
+        FASTA_obj = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir)
         
         # Number codons
         add_codon_numbers(FASTA_obj)
