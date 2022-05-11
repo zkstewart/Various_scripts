@@ -97,8 +97,7 @@ class MAFFT:
         '''
         # Validate input value type
         assert type(FASTA_obj).__name__ == "FASTA" or type(FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
-        #assert isinstance(FASTA_obj, FASTA)
-        
+                
         # Create temporary file
         tmpHash = hashlib.sha256(bytes(str(FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         tmpFileName = self._tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
@@ -212,6 +211,17 @@ class MAFFT:
                 protein, _strand, _frame = dummy.seqs[i].get_translation(False, _strand, _frame)
             else:
                 protein, _strand, _frame = dummy.seqs[i].get_translation(True, _strand, _frame)
+            
+            # Modify stop codons to be "X"s
+            '''
+            We need to do this since MAFFT will NOT report stop codons in the output sequence,
+            which poses problems for us when mapping codon positions back. However, we don't
+            need to actively track these instances since our untranslation works by just reading
+            the character and mapping it to the next 3 nucleotides - regardless of what the
+            character is. Hence, it's easy to just sub out *'s for X's and it'll just work!
+            '''
+            protein = protein.replace("*", "X")
+            
             # Update and store results
             strands.append(_strand)
             frames.append(_frame)
