@@ -804,13 +804,15 @@ def _get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.25):
         boundaries_with_extension.append([startIndex, endIndex])
     
     # Adjust our boundaries to include or exclude extensions appropriately
-    if (sum(truncated_start) / len(truncated_start)) > NATURAL_PCT:
-        for j in range(len(boundaries)):
-            boundaries[j][0] = boundaries_with_extension[j][0]
+    if len(truncated_start) > 0:
+        if (sum(truncated_start) / len(truncated_start)) > NATURAL_PCT:
+            for j in range(len(boundaries)):
+                boundaries[j][0] = boundaries_with_extension[j][0]
     
-    if (sum(truncated_end) / len(truncated_end)) > NATURAL_PCT:
-        for j in range(len(boundaries)):
-            boundaries[j][1] = boundaries_with_extension[j][1]
+    if len(truncated_end) > 0:
+        if (sum(truncated_end) / len(truncated_end)) > NATURAL_PCT:
+            for j in range(len(boundaries)):
+                boundaries[j][1] = boundaries_with_extension[j][1]
 
     return boundaries
 
