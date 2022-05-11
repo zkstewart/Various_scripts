@@ -3,16 +3,20 @@
 # Follows up on exome_curation_prep.py to perform some additional
 # polishing of the MSAs including prediction of intron regions.
 
-import sys, argparse, os, re, math
+import sys, argparse, os, re, math, random
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
-from Function_packages import ZS_SeqIO
+from Function_packages import ZS_SeqIO, ZS_BlastIO
 from exome_liftover import ssw_parasail
 
 def validate_args(args):
     # Validate input data location
     if not os.path.isdir(args.alignmentsDir):
         print('I am unable to locate the directory where the alignments files are (' + args.alignmentsDir + ')')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
+    if not os.path.isfile(args.transcriptomeFile):
+        print('I am unable to locate the transcriptome file (' + args.transcriptomeFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     for file in args.gff3s:
@@ -394,7 +398,7 @@ def _merge_coords_list(coords):
     return coords
 
 ## Intron locating based on parsimony
-def solve_translation_frames(FASTA_obj):
+def solve_translation_frames(FASTA_obj, transcriptomeFile):
     '''
     This function will make a best attempt guess at the starting frame for
     sequences within the FASTA object.
@@ -407,6 +411,9 @@ def solve_translation_frames(FASTA_obj):
     
     Params:
         FASTA_obj -- a ZS_SeqIO.FASTA object
+        transcriptomeFile -- a string indicating the location of a transcriptome
+                             file which we can BLAST against when solving hard
+                             scenarios.
     Returns:
         solutionDict -- a dictionary with structure like:
             {
@@ -427,31 +434,13 @@ def solve_translation_frames(FASTA_obj):
             results.append([seq, frame, "*" in seq[:-1]]) # don't count the last position since that can be normal
         resultsDict[FastASeq_obj.id] = results
     
-    # Loop back through and find easy-to-solve and hard-to-solve scenarios
-    solutionDict = {}
-    problemDict = {} # same structure as solutionDict, but +2 more frames
-    for FastASeq_obj in FASTA_obj:
-        if FastASeq_obj.id not in resultsDict:
-            continue
-        results = resultsDict[FastASeq_obj.id]
-        
-        # Skip blank sequences
-        if all([r[0] == "" for r in results]):
-            continue
-        
-        # Handle easy-to-solve scenarios
-        numWithoutStopCodons = sum([1 for r in results if r[2] == False])
-        if numWithoutStopCodons == 1:
-            solutionDict[FastASeq_obj.id] = [r for r in results if r[2] == False][0]
-            continue
-        
-        # Note hard-to-solve scenarios
-        else:
-            problemDict[FastASeq_obj.id] = resultsDict[FastASeq_obj.id]
+    # Loop back through our resultsDict to find easy-to-solve and hard-to-solve scenarios
+    solutionDict, problemDict = _simple_scenario_handler(FASTA_obj, resultsDict)
     
-    # Abort if we can't solve this problem
-    if solutionDict == {}:
-        return None
+    # If we didn't find many easy-to-solve scenarios with simple handling, get more advanced
+    DESIRABLE_NUMBER=5 # arbitrary, should work for the oz mammals exomes project
+    if len(solutionDict) <= DESIRABLE_NUMBER:
+        solutionDict, problemDict = _advanced_scenario_handler(FASTA_obj, resultsDict, transcriptomeFile)
     
     # Enforce consistency in solutionDict values
     '''
@@ -501,6 +490,80 @@ def solve_translation_frames(FASTA_obj):
         solutionDict[seqID] = resultsDict[seqID][bestFrame]
     
     return solutionDict
+
+def _simple_scenario_handler(FASTA_obj, resultsDict):
+    # Loop back through and find easy-to-solve and hard-to-solve scenarios
+    solutionDict = {}
+    problemDict = {} # same structure as solutionDict, but +2 more frames
+    for FastASeq_obj in FASTA_obj:
+        if FastASeq_obj.id not in resultsDict:
+            continue
+        results = resultsDict[FastASeq_obj.id]
+        
+        # Skip blank sequences
+        if all([r[0] == "" for r in results]) or all([r[0].upper().replace("X","") == "" for r in results]) or all([r[0].upper().replace("N","") == "" for r in results]):
+            continue
+        
+        # Handle easy-to-solve scenarios
+        numWithoutStopCodons = sum([1 for r in results if r[2] == False])
+        if numWithoutStopCodons == 1:
+            solutionDict[FastASeq_obj.id] = [r for r in results if r[2] == False][0]
+            continue
+
+        # Note hard-to-solve scenarios
+        else:
+            problemDict[FastASeq_obj.id] = resultsDict[FastASeq_obj.id]
+    
+    return solutionDict, problemDict
+
+def _advanced_scenario_handler(FASTA_obj, resultsDict, transcriptomeFile, DESIRABLE_NUMBER=50):
+    '''
+    Function to find solutions in a more advanced way via BLAST. It will randomly iterate through
+    our FASTA object and exert effort to find up to DESIRABLE_NUMBER sequences for our solutionDict.
+    The randomness should ensure that we get full representation of the sequences in the MSA.
+    For that to prove true, DESIRABLE_NUMBER needs to be set to an appropriate value.
+    
+    Params:
+        DESIRABLE_NUMBER -- an integer value indicating the number of solutions we want to exert
+                            BLAST effots to find a solution for.
+    '''
+    # Loop back through and find easy-to-solve and hard-to-solve scenarios
+    solutionDict = {}
+    problemDict = {} # same structure as solutionDict, but +2 more frames
+    for FastASeq_obj in sorted(FASTA_obj.seqs,key=lambda _: random.random()):
+        if FastASeq_obj.id not in resultsDict:
+            continue
+        results = resultsDict[FastASeq_obj.id]
+        
+        # Skip blank sequences
+        if all([r[0] == "" for r in results]) or all([r[0].upper().replace("X","") == "" for r in results]) or all([r[0].upper().replace("N","") == "" for r in results]):
+            continue
+        
+        # Handle easy-to-solve scenarios
+        numWithoutStopCodons = sum([1 for r in results if r[2] == False])
+        if numWithoutStopCodons == 1:
+            solutionDict[FastASeq_obj.id] = [r for r in results if r[2] == False][0] # r[2] == hasStopCodons bool value
+            continue
+        
+        # Handle hard-to-solve scenarios
+        if len(solutionDict) < DESIRABLE_NUMBER:
+            blastResults = [] # holds the best E-value, or +inf if no result found
+            for seq, _, _ in results:
+                # Set up our BLAST handler
+                blaster = ZS_BlastIO.BLAST(ZS_SeqIO.FastASeq("eg", seq=seq), transcriptomeFile, "blastp")
+                blaster.set_threads(4)
+                # Run BLAST
+                blastDict, _ = blaster.get_blast_results() # throw away the tmpBlastName since it will be None
+                blastResults.append(blastDict["eg"][0][6] if "eg" in blastDict else math.inf)
+            if min(blastResults) != math.inf:
+                bestFrame = blastResults.index(min(blastResults))
+                solutionDict[FastASeq_obj.id] = results[bestFrame]
+                continue
+
+        # Note unsolveable/not solved (if DESIRABLE_NUMBER is met) scenarios
+        problemDict[FastASeq_obj.id] = resultsDict[FastASeq_obj.id]
+    
+    return solutionDict, problemDict
 
 def _reset_memory_dict_index(memoryDict, thisSeqID):
     memoryDict[thisSeqID] = {} # forget the parent index
@@ -583,7 +646,7 @@ def _use_scores_metrics_to_get_best_frame(scores, results):
             bestFrame = maxTotalScoresFrame # assume total score sum should be most indicative
     return bestFrame
 
-def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
+def trim_intron_locations_denovo(FASTA_obj, transcriptomeFile, EXCLUSION_PCT=0.90):
     '''
     Trims a ZS_SeqIO.FASTA object to the best guess boundaries of the CDS region.
     It does this without genomic evidence (hence "de novo") by assessment of how
@@ -595,6 +658,9 @@ def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
     
     Params:
         FASTA_obj -- a ZS_SeqIO.FASTA instance
+        transcriptomeFile -- a string indicating the location of a transcriptome file.
+                             This will be used to identify the best translation frame for
+                             sequences where this isn't readily apparent.
         EXCLUSION_PCT -- a float value indicating the proportion of sequences that
                          must have their stop codons excluded within the predicted CDS region.
                          E.g., if 0.90, then 90% of the sequences must NOT contain a stop
@@ -612,7 +678,7 @@ def trim_intron_locations_denovo(FASTA_obj, EXCLUSION_PCT=0.90):
     EXCLUSION_PCT = int(EXCLUSION_PCT*100)
     
     # Get sequence translations
-    solutionDict = solve_translation_frames(FASTA_obj)
+    solutionDict = solve_translation_frames(FASTA_obj, transcriptomeFile)
     
     # Locate longest segment boundaries for each sequence that excludes stop codons
     boundaries = _get_segment_boundaries(FASTA_obj, solutionDict)
@@ -767,6 +833,8 @@ if __name__ == "__main__":
                 help="Specify one or more liftover exon FASTAs dirs paired to the gff3s")
     p.add_argument("-ge", dest="genomes", required=True, nargs="+",
                 help="Specify one or more genomes to provide paired to the gff3s")
+    p.add_argument("-t", dest="transcriptomeFile", required=True,
+                help="Specify the location of a single representative (protein) transcriptome file")
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"2_prep\")",
                 default="2_polish")
@@ -823,7 +891,7 @@ if __name__ == "__main__":
             # Perform intron prediction
             result = get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR=args.INTRON_CHAR)
             if result == False:
-                result = trim_intron_locations_denovo(FASTA_obj)
+                result = trim_intron_locations_denovo(FASTA_obj, args.transcriptomeFile)
             dummyString, pctIntron, mode = result
             
             # Insert dummy sequence into FASTA_obj
