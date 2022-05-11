@@ -34,6 +34,10 @@ def validate_args(args):
         else:
             if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) and not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
                 raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
+    # Validate numeric inputs
+    if args.threads < 1:
+        print("threads argument must be a positive integer greater than 0")
+        quit()
     # Handle file output
     if os.path.isdir(args.outputDir):
         if os.listdir(args.outputDir) != []:
@@ -45,7 +49,7 @@ def validate_args(args):
         except:
             print("Wasn't able to create '{0}' directory; does '{1}' actually exist?".format(args.outputDir, os.path.dirname(args.outputDir)))
 
-def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
+def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
     '''
     Polishes a ZS_SeqIO.FASTA object to remove probable indel errors from sequences.
     It does this without genomic evidence (hence "de novo") by assessment of how
@@ -61,6 +65,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
                              file which we can BLAST against when solving hard
                              scenarios.
         mafftDir -- a string indicating the location of the MAFFT executable files.
+        threads -- an integer indicating how many threads to run MAFFT alignment with.
     Returns:
         result_FASTA_obj -- a new ZS_SeqIO.FASTA instance with indels polished and
                             the MSA realigned by codons.
@@ -68,6 +73,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
     
     assert FASTA_obj[0].id == "Codons", "FASTA lacks a Codons line at its start!"
     mafftAligner = ZS_AlignIO.MAFFT(mafftDir) # set up here for use later
+    mafftAligner.set_threads(threads)
     
     # Get the coordinate spans of exons
     exonCoords = _get_exon_coords(FASTA_obj)
@@ -129,7 +135,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
         # Predict our solutionDict again if needed
         "If we've changed our sequence region, we might need to update our translations"
         if startTrim != 0 or endTrim != 0:
-            solutionDict = solve_translation_frames(exon_FASTA_obj)
+            solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
         
         # Abort if we found no solutions after trimming
         if solutionDict == None:
@@ -172,7 +178,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
         
         # Recompute solutionDict if necessary
         if polishedSequences == True:
-            solutionDict = solve_translation_frames(exon_FASTA_obj)
+            solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
         
         # Get the frames to translation the sequences into from solutionDict
         frames = []
@@ -502,6 +508,9 @@ if __name__ == "__main__":
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"3_polish\")",
                 default="3_polish")
+    # Opts
+    p.add_argument("--threads", dest="threads", required=False, type=int, default=1,
+                help="Optionally specify how many threads to perform MAFFT alignment with")
     args = p.parse_args()
     validate_args(args)
     
@@ -527,7 +536,7 @@ if __name__ == "__main__":
             continue
         
         # Perform polishing procedure
-        FASTA_obj = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir)
+        FASTA_obj = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir, args.threads)
         
         # Number codons
         add_codon_numbers(FASTA_obj)
