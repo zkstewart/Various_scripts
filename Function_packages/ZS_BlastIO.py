@@ -112,7 +112,7 @@ class BLAST:
 
     def blastdb_exists(self, fastaFile):
         '''
-        Relies on a simple assumption that a .nsq file's presence
+        Relies on a simple assumption that a .nsq or .psq file's presence
         indicates that a BLAST database was successfully created
         from the FASTA file.
         
@@ -127,7 +127,7 @@ class BLAST:
             dbExists -- a Boolean where True means the database exists,
                         and False means it does not exist.
         '''
-        return os.path.isfile("{0}.nsq".format(fastaFile))
+        return os.path.isfile("{0}.nsq".format(fastaFile)) or os.path.isfile("{0}.psq".format(fastaFile))
     
     def makeblastdb(self, fastaFile):
         '''
