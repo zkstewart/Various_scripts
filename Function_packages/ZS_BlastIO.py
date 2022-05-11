@@ -255,7 +255,7 @@ class BLAST:
         tmpHash = hashlib.sha256(bytes(q + t + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         
         # Run BLAST
-        tmpResultName = self._tmp_file_name_gen("{0}.vs.{1}_{2}".format(q.rsplit(".", maxsplit=1)[0], t.rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "outfmt6")
+        tmpResultName = self._tmp_file_name_gen("{0}.vs.{1}_{2}".format(os.path.basename(q).rsplit(".", maxsplit=1)[0], os.path.basename(t).rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "outfmt6")
         self.blast(q, t, tmpResultName)
         
         # Parse BLAST results
