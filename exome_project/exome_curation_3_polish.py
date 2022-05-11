@@ -388,7 +388,25 @@ def _enact_fix_to_seq(fix, seq):
     
     # Iterate through fixes and make all suggested changes
     for start, end, nLength in fix:
-        seq = seq[0:start] + "n"*nLength + seq[end-1:] # -1 since end is range() i.e., non-inclusive
+        if nLength == 0:
+            """
+            In this case, we want to EXCLUDE stuff. Start IS an index that we want to exclude
+            since that's where the gap region begins. End is range() indexed, but it maps to
+            the last position OF THE gap region. Hence, if we did [end-1:], we'd include stuff
+            that we want to kill.
+            """
+            seq = seq[0:start] + seq[end:] # this will cut out all the inbetween bit
+        else:
+            """In this case, we want to INSERT stuff. In this instance, start is NOT an index
+            we want to exclude. However, because of how fix calculates indices, start actually
+            maps to the first position of the GAP region. Hence, we can use [0:start] to include
+            all the sequence we want.
+            
+            Next, we know that we're not actually deleting anything. The end index will map to
+            the first position AFTER the gap region. Hence, we use [end-1:] since end is range()
+            indexed, so we can include it properly.
+            """
+            seq = seq[0:start] + "n"*nLength + seq[end-1:] # -1 since end is range() i.e., non-inclusive
     return seq
 
 def _tmp_file_name_gen(prefix, suffix):
