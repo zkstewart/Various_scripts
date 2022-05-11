@@ -912,7 +912,7 @@ if __name__ == "__main__":
                         str(round(pctIntron*100, 2)) if result != False else ".",
                         str(initialLength),
                         str(trimmedLength),
-                        str(pctTrimmed)
+                        str(round(pctTrimmed*100, 2))
                     ])
                 )
             )
