@@ -69,6 +69,10 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
     Returns:
         result_FASTA_obj -- a new ZS_SeqIO.FASTA instance with indels polished and
                             the MSA realigned by codons.
+        exonFrames -- a list of dictionaries containing the predicted translation frame
+                      for all the sequences this could be derived for. Mostly useful
+                      for codon numbering. Key = seqID, value = frame (int). List indexes
+                      correspond to exon regions ordered as per _get_exon_coords().
     '''
     
     assert FASTA_obj[0].id == "Codons", "FASTA lacks a Codons line at its start!"
@@ -95,6 +99,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
     # For each exon region, find and polish indels!
     codonsProblemLeft = []
     codonsProblemRight = []
+    exonFrames = []
     for x in range(len(exon_FASTA_objs)):
         exon_FASTA_obj = exon_FASTA_objs[x]
         
@@ -182,12 +187,15 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         
         # Get the frames to translation the sequences into from solutionDict
         frames = []
+        thisExonFrames = {}
         for FastASeq_obj in exon_FASTA_obj:
             seqID = FastASeq_obj.id
             if seqID not in solutionDict:
                 frames.append(None)
             else:
                 frames.append(solutionDict[seqID][1])
+                thisExonFrames[seqID] = solutionDict[seqID][1]
+        exonFrames.append(thisExonFrames)
         
         # Align edited exon region
         mafftAligner.run_nucleotide_as_protein(exon_FASTA_obj, strand=1, frame=frames) # always search on strand=1 for an ORF
@@ -227,7 +235,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         os.unlink(exonTmpFileName)
         os.unlink(rightTmpFileName)
         
-    return FASTA_obj # this has the same variable name, but its value is DIFFERENT than the input
+    return FASTA_obj, exonFrames # this has the same variable name, but its value is DIFFERENT than the input
 
 def _get_exon_coords(FASTA_obj):
     '''
@@ -429,7 +437,7 @@ def _tmp_file_name_gen(prefix, suffix):
             else:
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
-def add_codon_numbers(FASTA_obj):
+def add_codon_numbers(FASTA_obj, exonFrames):
     '''
     This function will modify the FASTA object's Codons line to have codon numbering.
     
@@ -441,15 +449,19 @@ def add_codon_numbers(FASTA_obj):
     Returns no values since it modifies FASTA_obj directly.
     
     Params:
-        FASTA_obj -- a ZS_SeqIO.FASTA object
+        FASTA_obj -- a ZS_SeqIO.FASTA object.
+        exonFrames -- a list of dictionaries containing the predicted translation frame
+                      for all the sequences this could be derived for via the polishing
+                      function.
     '''
     
     # Get the exon coordinates for numbering
     exonCoords = _get_exon_coords(FASTA_obj)
     
     # Loop through exon coordinates to figure out which frame the region is in
-    exonFrames = []
-    for exonStart, exonEnd in exonCoords:
+    exonBestFrames = []
+    for j in range(len(exonCoords)):
+        exonStart, exonEnd = exonCoords[j]
         # Get a slice of the exon region
         exon_FASTA_obj = FASTA_obj.slice_cols(exonStart, exonEnd)
         
@@ -458,11 +470,14 @@ def add_codon_numbers(FASTA_obj):
         for exon_FastASeq_obj in exon_FASTA_obj:
             if exon_FastASeq_obj.id == "Codons":
                 continue
-            elif exon_FastASeq_obj.gap_seq.replace("-","") == "": # skip empty sequences
+            elif len(exon_FastASeq_obj.gap_seq.replace("-","")) < 3: # skip empty sequences / ones without a single codon
                 continue
             
-            # Get the translation
-            _, _, frame = exon_FastASeq_obj.get_translation(True)
+            # Get the translation frame
+            if exon_FastASeq_obj.id in exonFrames[j]:
+                frame = exonFrames[j][exon_FastASeq_obj.id]
+            else:
+                _, _, frame = exon_FastASeq_obj.get_translation(True)
             
             # Map the translation start to MSA coordinates
             '''
@@ -489,13 +504,13 @@ def add_codon_numbers(FASTA_obj):
             startingFrames.append(frame)
         
         # Figure out which frame is most supported by consensus
-        mostCommonStartingFrame = max(Counter(startingFrames))
-        exonFrames.append(mostCommonStartingFrame)
+        mostCommonStartingFrame = Counter(startingFrames).most_common(1)[0][0]
+        exonBestFrames.append(mostCommonStartingFrame)
     
     # For each exon region, add the frame numbering in
     for i in range(len(exonCoords)):
         exonStart, exonEnd = exonCoords[i]
-        frame = exonFrames[i]
+        frame = exonBestFrames[i]
         
         ongoingFrameCount = frame + 1 # we'll write it 1-based to the >Codons line
         for x in range(exonStart, exonEnd):
@@ -554,10 +569,10 @@ if __name__ == "__main__":
             continue
         
         # Perform polishing procedure
-        FASTA_obj = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir, args.threads)
+        FASTA_obj, exonFrames = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir, args.threads)
         
         # Number codons
-        add_codon_numbers(FASTA_obj)
+        add_codon_numbers(FASTA_obj, exonFrames)
         
         # Write output FASTA file
         FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
