@@ -4,7 +4,7 @@
 # and attempts to fix indel errors present in a subset of the alignments.
 # If they all have indels, god help you since I can't.
 
-import sys, argparse, os, re, platform
+import sys, argparse, os, re, platform, statistics
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from collections import Counter
@@ -155,18 +155,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
                 continue
             
             # Loop through all solutionDict values and find the best match to this problem one
-            matches = []
-            for targetSeqID, _value in solutionDict.items():
-                if targetSeqID == problemSeqID:
-                    continue
-                _, _, targetHasStopCodon = _value
-                if targetHasStopCodon:
-                    continue
-                else:
-                    targetNuclSeq = exon_FASTA_obj[targetSeqID].seq
-                    targetAlign, problemAlign, startIndex, score = ssw_parasail(nuclSeq, targetNuclSeq) # this function has poorly ordered outputs
-                    matches.append([problemAlign, targetAlign, startIndex, score])
-            matches.sort(key = lambda x: -x[3]) # order by score
+            matches = _obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, nuclSeq, solutionDict)
             
             # Check all matches to see what fix they suggest
             fix = _get_suggested_fix_from_ssw_matches(matches, nuclSeq)
@@ -186,19 +175,24 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
             solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
         
         # Get the frames to translation the sequences into from solutionDict
-        frames = []
-        thisExonFrames = {}
-        for FastASeq_obj in exon_FASTA_obj:
-            seqID = FastASeq_obj.id
-            if seqID not in solutionDict:
-                frames.append(None)
-            else:
-                frames.append(solutionDict[seqID][1])
-                thisExonFrames[seqID] = solutionDict[seqID][1]
+        frames, thisExonFrames = _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict)
         exonFrames.append(thisExonFrames)
         
         # Align edited exon region
         mafftAligner.run_nucleotide_as_protein(exon_FASTA_obj, strand=1, frame=frames) # always search on strand=1 for an ORF
+        
+        # Perform extra polishing after alignment
+        """
+        Once we've performed alignment, we can use the information from the MSA to identify
+        cases where the alignment is of poor quality. In these cases, it's likely that we have
+        cryptic indels that evaded previous detection due to the lack of a stop codon. This
+        extra step will hopefully address most of these situations.
+        """
+        polishedSequences = _outlier_fix_up(exon_FASTA_obj, solutionDict)
+        if polishedSequences == True:
+            solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
+            frames, thisExonFrames = _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict)
+            mafftAligner.run_nucleotide_as_protein(exon_FASTA_obj, strand=1, frame=frames) # re-align again
     
     # Merge the edited exon regions back into the overall sequence
     for x in range(len(exonCoords)-1, -1, -1): # iterate backwards through coords since we know they're ordered ascendingly
@@ -235,7 +229,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         os.unlink(exonTmpFileName)
         os.unlink(rightTmpFileName)
         
-    return FASTA_obj, exonFrames # this has the same variable name, but its value is DIFFERENT than the input
+    return FASTA_obj, exonFrames, exonSolutions # this has the same variable name, but its value is DIFFERENT than the input
 
 def _get_exon_coords(FASTA_obj):
     '''
@@ -414,8 +408,125 @@ def _enact_fix_to_seq(fix, seq):
             the first position AFTER the gap region. Hence, we use [end-1:] since end is range()
             indexed, so we can include it properly.
             """
-            seq = seq[0:start] + "n"*nLength + seq[end-1:] # -1 since end is range() i.e., non-inclusive
+            seq = seq[0:start] + "n"*nLength + seq[end:] # -1 since end is range() i.e., non-inclusive
     return seq
+
+def _obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, problemNuclSeq, solutionDict):
+    '''
+    Hidden helper function to take a sequence that we've identified to be problematic somehow
+    and, looking through the solutionDict, find the best SSW alignment for the problem sequence
+    to all the solved sequences in solutionDict.
+    
+    Returns:
+        matches -- a list with structure like:
+                        [
+                            [aligned_problem_seq, aligned_target_seq, start_index, score],
+                            ...
+                        ]
+    '''
+    matches = []
+    for targetSeqID, value in solutionDict.items():
+        if targetSeqID == problemSeqID:
+            continue
+        _, _, targetHasStopCodon = value
+        if targetHasStopCodon:
+            continue
+        else:
+            targetNuclSeq = exon_FASTA_obj[targetSeqID].seq
+            targetAlign, problemAlign, startIndex, score = ssw_parasail(problemNuclSeq, targetNuclSeq) # this function has poorly ordered outputs
+            matches.append([problemAlign, targetAlign, startIndex, score])
+    matches.sort(key = lambda x: -x[3]) # order by score
+    return matches
+
+def _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict):
+    '''
+    Hidden helper function to look through sequences in our exon FASTA object
+    and identify the translation frame for these sequences from the solutionDict.
+    
+    Returns:
+        frames -- a list containing frames (as 0-based integers) for sequences
+                  ordered as in exon_FASTA_obj.
+        thisExonFrames -- a dict containing the same information as in the frames
+                          list but instead it's indexed by the sequence ID.
+    '''
+    frames = []
+    thisExonFrames = {}
+    for FastASeq_obj in exon_FASTA_obj:
+        seqID = FastASeq_obj.id
+        if seqID not in solutionDict:
+            frames.append(None)
+        else:
+            frames.append(solutionDict[seqID][1])
+            thisExonFrames[seqID] = solutionDict[seqID][1]
+    return frames, thisExonFrames
+
+def _outlier_fix_up(exon_FASTA_obj, solutionDict):
+    '''
+    Function is under development and testing and uncertain to be part of the final module.
+    '''
+    # Get the position frequencies for all MSA columns
+    frequencies = {}
+    for x in range(len(exon_FASTA_obj[0].gap_seq)): # doesn't matter which one we use
+        letters = [FastASeq_obj.gap_seq[x] for FastASeq_obj in exon_FASTA_obj.seqs]
+        counts = Counter(letters)
+        _frequency = {}
+        for _letter, _count in counts.items():
+            _frequency[_letter] = _count / len(letters)
+        frequencies[x] = _frequency
+    
+    # Loop through sequences and score them
+    scores = {}
+    for FastASeq_obj in exon_FASTA_obj:
+        if FastASeq_obj.id == "Codons":
+            continue
+        
+        exonSeq = FastASeq_obj.gap_seq
+        if len(exonSeq.upper().replace("-", "").replace("N","")) < 3: # no point doing anything to short sequences
+            continue
+        
+        # Find the sequence's details for the region it's present in
+        startPosition = exonSeq.find(FastASeq_obj.seq[0])
+        endPosition = [j for j in range(len(exonSeq)) if exonSeq[j] != "-"][-1]
+        
+        # Score the region & store it
+        thisScore = []
+        for x in range(startPosition, endPosition+1): # only score the region of sequence that's present
+            letter = exonSeq[x]
+            if letter == "N": # don't penalise N's, we want to find non-matching nucleotides
+                continue
+            thisScore.append(frequencies[x][letter])
+        scores[FastASeq_obj.id] = sum(thisScore) / len(thisScore)
+    
+    # Find outliers from score distribution
+    medianScore = statistics.median(scores.values())
+    maxScore = max(scores.values())
+    maxMedianDiff = maxScore - medianScore
+    lowerCutoff = medianScore - maxMedianDiff
+    possibleOutliers = [seqID for seqID, score in scores.items() if score < lowerCutoff]
+    
+    # Try to find indel errors in the outliers
+    polishedSequences = False
+    for problemSeqID in possibleOutliers:
+        if problemSeqID not in solutionDict: # can't help this
+            continue
+        nuclSeq = exon_FASTA_obj[problemSeqID].seq
+        
+        # Loop through solutionDict values and find the best matches to this problem one
+        matches = _obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, nuclSeq, solutionDict)
+        
+        # Check all matches to see what fix they suggest
+        fix = _get_suggested_fix_from_ssw_matches(matches, nuclSeq)
+        if fix == []:
+            continue
+        
+        # If we found a fix to make, get the edited sequence
+        polishedSequences = True # if we get to here, we'll want to recompute the solutionDict again
+        editedSeq = _enact_fix_to_seq(fix, exon_FASTA_obj[problemSeqID].seq)
+        
+        # Then, update the sequence in our exon_FASTA_obj
+        exon_FASTA_obj[problemSeqID].seq = editedSeq
+        exon_FASTA_obj[problemSeqID].gap_seq = None
+    return polishedSequences
 
 def _tmp_file_name_gen(prefix, suffix):
         '''
@@ -569,7 +680,7 @@ if __name__ == "__main__":
             continue
         
         # Perform polishing procedure
-        FASTA_obj, exonFrames = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir, args.threads)
+        FASTA_obj, exonFrames, exonSolutions = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir, args.threads)
         
         # Number codons
         add_codon_numbers(FASTA_obj, exonFrames)
