@@ -264,8 +264,13 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, GOOD_ALIGN_PCT=0.60, G
         GOOD_ALIGN_PCT -- arbitary, hard-coded magic number. I don't think we should change this.
         GOOD_GAPS_NUM -- arbitary, hard-coded magic number. 2 sounds right to me, yknow?
     Returns:
-        fixes -- a list with format of: [[start, end, nLength], ...]. It should
-                 used to make changes to the sequence, eventually.
+        fixes -- a list with format of: [[gapStart, resume, nLength], ...]. It should
+                 used to make changes to the sequence, eventually. Note that the gapStart and
+                 resume variables are intentionally named to help conceptualisation.
+                 The gapStart value is where the gap region BEGINS and hence should be
+                 EXCLUDED.
+                 The resume value is where we should RESUME the sequence from after 
+                 any deletions or insertions i.e., it should be INCLUDED.
     '''
     # Find a good cut-off to use
     if len(matches) <= 20:
@@ -319,10 +324,9 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, GOOD_ALIGN_PCT=0.60, G
             gapFrame = gapLen % 3 # this will give 0, 1, or 2
             # If gapFrame isn't 0 (gapLen not divisible by 3), add N's to address the situation
             if gapFrame != 0:
-                start = gap.span()[0] + startIndex # + startIndex to give a consistent position in the sequence
-                "Upon reflection, I don't know WHY I add gapFrame instead of using .span()[1], but... yolo?"
-                end = gap.span()[0] + gapFrame + startIndex # we're replacing only the length of "-"s that we want to be "n"s
-                fix.append([start, end, gapFrame])
+                gapStart = gap.span()[0] + startIndex # + startIndex to give a consistent position in the sequence
+                resume = gap.span()[0] + startIndex
+                fix.append([gapStart, resume, gapFrame])
         for gap in targetGaps:
             '''
             Here, the rationale is that gaps in the target sequence mean the problem sequence
@@ -335,9 +339,9 @@ def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, GOOD_ALIGN_PCT=0.60, G
             gapFrame = gapLen % 3 # this will give 0, 1, or 2
             # If gapFrame isn't 0 (gapLen not divisible by 3), use N's to address the situation
             if gapFrame != 0:
-                start = gap.span()[0] + startIndex # we're just going to replace the entire gap region
-                end = gap.span()[1] + startIndex
-                fix.append([start, end, gapLen-gapFrame])
+                gapStart = gap.span()[0] + startIndex # we're just going to replace the entire gap region
+                resume = gap.span()[1] + startIndex
+                fix.append([gapStart, resume, gapLen-gapFrame])
         fixes.append(fix)
     
     # Abort operation if we've found no valid fixes
@@ -390,25 +394,12 @@ def _enact_fix_to_seq(fix, seq):
     
     # Iterate through fixes and make all suggested changes
     for start, end, nLength in fix:
-        if nLength == 0:
-            """
-            In this case, we want to EXCLUDE stuff. Start IS an index that we want to exclude
-            since that's where the gap region begins. End is range() indexed, but it maps to
-            the last position OF THE gap region. Hence, if we did [end-1:], we'd include stuff
-            that we want to kill.
-            """
-            seq = seq[0:start] + seq[end:] # this will cut out all the inbetween bit
-        else:
-            """In this case, we want to INSERT stuff. In this instance, start is NOT an index
-            we want to exclude. However, because of how fix calculates indices, start actually
-            maps to the first position of the GAP region. Hence, we can use [0:start] to include
-            all the sequence we want.
-            
-            Next, we know that we're not actually deleting anything. The end index will map to
-            the first position AFTER the gap region. Hence, we use [end-1:] since end is range()
-            indexed, so we can include it properly.
-            """
-            seq = seq[0:start] + "n"*nLength + seq[end:] # -1 since end is range() i.e., non-inclusive
+        '''
+        Start will be the first index where the gap (-) occurs, so running up to but 
+        NOT INCLUDING start gives us the desirable behaviour. End is range() index
+        i.e., non inclusive, so we want to INCLUDE it here.
+        '''
+        seq = seq[0:start] + "n"*nLength + seq[end:]
     return seq
 
 def _obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, problemNuclSeq, solutionDict):
