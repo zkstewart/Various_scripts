@@ -603,6 +603,17 @@ def add_codon_numbers(FASTA_obj, exonFrames):
                 else:
                     frame -= 1
             
+            # Conceptually map the "frame" to how we want it displayed
+            '''
+            This is where I've struggled with bugs at various places in this project.
+            When we say a translation starts at frame 2 (1-based), it's not correct
+            to number the first location of the sequence as position 2 of the codon!
+            In actual fact, the codon position would be the third in a codon. Why?
+            Because if the translation STARTS at frame 2 of the sequence, we essentially
+            need to TRIM ONE position from the start to get there. The amount that we trim
+            ends up being the codon position.
+            '''
+            frame = 0 if frame == 0 else 1 if frame == 2 else 2
             startingFrames.append(frame)
         
         # Figure out which frame is most supported by consensus
