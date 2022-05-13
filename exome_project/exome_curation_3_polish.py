@@ -229,7 +229,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         os.unlink(exonTmpFileName)
         os.unlink(rightTmpFileName)
         
-    return FASTA_obj, exonFrames, exonSolutions # this has the same variable name, but its value is DIFFERENT than the input
+    return FASTA_obj, exonFrames # this has the same variable name, but its value is DIFFERENT than the input
 
 def _get_exon_coords(FASTA_obj):
     '''
@@ -671,7 +671,7 @@ if __name__ == "__main__":
             continue
         
         # Perform polishing procedure
-        FASTA_obj, exonFrames, exonSolutions = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir, args.threads)
+        FASTA_obj, exonFrames = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir, args.threads)
         
         # Number codons
         add_codon_numbers(FASTA_obj, exonFrames)
