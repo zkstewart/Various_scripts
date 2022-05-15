@@ -839,8 +839,16 @@ def check_if_genome_annotation_is_good(dummyString, FASTA_obj, INTRON_CHAR="4"):
         else:
             exonGappiness.append(gappinessPct)
     
+    if intronGappiness == []:
+        return True # if no intron is predicted, then there should be no problems
+    
     intronGappinessPct = sum(intronGappiness) / len(intronGappiness)
-    exonGappinessPct = sum(exonGappiness) / len(exonGappiness)
+    
+    try:
+        exonGappinessPct = sum(exonGappiness) / len(exonGappiness)
+    except:
+        print("check_if_genome_annotation_is_good had an issue with {0}".format(FASTA_obj.fileOrder[0][0]))
+        return False # if this fails, then exonGappiness == [] which should never happen...?
     
     if (intronGappinessPct - exonGappinessPct) > exonGappinessPct:
         '''
