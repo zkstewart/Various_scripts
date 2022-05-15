@@ -109,7 +109,7 @@ def _tmp_file_name_gen(prefix, suffix):
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 ## Intron locating based on genomic evidence
-def get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR="4"):
+def get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, INTRON_CHAR="4"):
     '''
     Receives a ZS_SeqIO.FASTA object representing a MSA. Using genomic annotation(s) for one or 
     more of the sequences present in the MSA, this function will attempt to locate MSA columnar
@@ -133,8 +133,6 @@ def get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, lifto
         liftoverFilesList -- a list containing one or more lists which provide the locations of
                              liftover-ed exon sequences from genomes. This should be paired with
                              the GFF3s that made the cdsCoordsList values.
-        genomesList -- a list containing ZS_SeqIO.FASTA instances of the genome sequences paired
-                       to the GFF3s that created the cdsCoordsList values.
         INTRON_CHAR -- a string containing a single character for how the intron position will
                        be represented within the dummy sequence output.
     Returns:
@@ -164,34 +162,19 @@ def get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, lifto
     
     # Parse liftover files
     seqs = [None if file == None else ZS_SeqIO.FASTA(file)[0] for file in foundFiles] # Keep seqs ordered same as cdsCoordsList
-
+    
     # Get liftover sequence IDs and start:end coordinates
     '''
-    I don't think my coordinates are reliable, I've probably made a mistake. I'm going
-    to directly retrieve them from the genome to prevent any mishaps.
+    The coordinates system of 1_prep work properly through mass testing. We can trust
+    these and hence don't need to reobtain them from the genome (saves time and memory)
     '''
     liftoverCoords = [None for _ in cdsCoordsList] # Keep coords ordered same as cdsCoordsList
     for i in range(len(seqs)):
         if seqs[i] == None:
             continue
         chrom = seqs[i].description.split("chr=")[1].split(" start=")[0]
-        
-        # Find the start and end coordinates from the genome sequence
-        start, end = None, None
-        search = re.search(seqs[i].seq, genomesList[i][chrom].seq, re.IGNORECASE)
-        if search == None:
-            search = re.search(seqs[i].get_reverse_complement(), genomesList[i][chrom].seq, re.IGNORECASE)
-        assert search != None, "Exon sequence doesn't match; Zac has messed something up"
-        start, end = search.span()
-        start += 1 # we want to keep things 0-based
-        
-        liftoverCoords[i] = [chrom, start, end]
-        
-        # Testing section
-        'This is to see if my coordinate prediction IS actually faulty'
-        seqStart, seqEnd = seqs[i].description.split("start=")[1].split(" end=")
-        if int(seqStart) != start or end != int(seqEnd):
-            print("These coords don't match; file={0}, start={1} vs {2}, end={3} vs {4}".format(alignFastaFile, start, seqStart, end, seqEnd))
+        start, end = seqs[i].description.split("start=")[1].split(" end=")
+        liftoverCoords[i] = [chrom, int(start), int(end)]
     
     # See if any liftover coords match to GFF3 CDS coords
     gff3Coords = [None for _ in liftoverCoords] # Keep coords ordered same as cdsCoordsList
@@ -527,6 +510,8 @@ def _advanced_scenario_handler(FASTA_obj, resultsDict, transcriptomeFile, DESIRA
         DESIRABLE_NUMBER -- an integer value indicating the number of solutions we want to exert
                             BLAST effots to find a solution for.
     '''
+    SHORT_SEQ_LEN = 10 # short lengths aren't going to resolve well in BLAST
+    
     # Loop back through and find easy-to-solve and hard-to-solve scenarios
     solutionDict = {}
     problemDict = {} # same structure as solutionDict, but +2 more frames
@@ -549,6 +534,10 @@ def _advanced_scenario_handler(FASTA_obj, resultsDict, transcriptomeFile, DESIRA
         if len(solutionDict) < DESIRABLE_NUMBER:
             blastResults = [] # holds the best E-value, or +inf if no result found
             for seq, _, _ in results:
+                # Skip blank sequences and _almost blank_ sequences
+                if len(seq) < SHORT_SEQ_LEN:
+                    blastResults.append(math.inf)
+                    continue
                 # Set up our BLAST handler
                 blaster = ZS_BlastIO.BLAST(ZS_SeqIO.FastASeq("eg", seq=seq), transcriptomeFile, "blastp")
                 blaster.set_threads(4)
@@ -560,7 +549,7 @@ def _advanced_scenario_handler(FASTA_obj, resultsDict, transcriptomeFile, DESIRA
                 solutionDict[FastASeq_obj.id] = results[bestFrame]
                 continue
 
-        # Note unsolveable/not solved (if DESIRABLE_NUMBER is met) scenarios
+        # Note unsolveable (/not solved if DESIRABLE_NUMBER is met) scenarios
         problemDict[FastASeq_obj.id] = resultsDict[FastASeq_obj.id]
     
     return solutionDict, problemDict
@@ -816,6 +805,54 @@ def _get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.25):
 
     return boundaries
 
+def check_if_genome_annotation_is_good(dummyString, FASTA_obj, INTRON_CHAR="4"):
+    '''
+    Extra validation function to check to see if get_intron_locations_genomic()
+    is being overzealous with the intron prediction. If it's cutting out _too much_
+    sequence, we'll assume that the genome annotation isn't giving us good information
+    and we'll disregard it.
+    
+    The logic goes like this: we want to see how much sequence is gappy in the
+    predicted intron region versus the predicted exon region. If our exon region
+    is much gappier than our intron region, then we're gonna think something has
+    gone wrong and maybe we should fall back to a denovo method which focuses on
+    trying to capture the maximum amount of useful information, rather than trusting
+    an annotation that isn't guaranteed to be correct.
+    
+    Params:
+        dummyString -- a string representation of where the intron is predicted
+                       to be as derived from get_intron_locations_genomic()
+        FASTA_obj -- a ZS_SeqIO.FASTA object.
+    Returns:
+        isGood -- a boolean indicating whether the results from get_intron_locations_genomic()
+                  are good (True) or if we should disregard them (False).
+    '''
+    intronGappiness = []
+    exonGappiness = []
+    
+    for i in range(len(dummyString)):
+        intronLetter = dummyString[i]
+        gappiness = [1 if FastASeq_obj.gap_seq[i] != "-" else 0 for FastASeq_obj in FASTA_obj]
+        gappinessPct = sum(gappiness) / len(gappiness)
+        if intronLetter == INTRON_CHAR:
+            intronGappiness.append(gappinessPct)
+        else:
+            exonGappiness.append(gappinessPct)
+    
+    intronGappinessPct = sum(intronGappiness) / len(intronGappiness)
+    exonGappinessPct = sum(exonGappiness) / len(exonGappiness)
+    
+    if (intronGappinessPct - exonGappinessPct) > exonGappinessPct:
+        '''
+        This is a simple heuristic. Basically, if the pct's end up being approximately equal,
+        then this should never prove true. But if there's a large difference between them,
+        then we don't want to rely on the genome's intron prediction for fear of it
+        ruining things downstream.
+        '''
+        return False # not isGood
+    else:
+        return True # isGood
+
 if __name__ == "__main__":
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is to annotate where probable intronic sequences
@@ -833,8 +870,6 @@ if __name__ == "__main__":
                 help="Specify one or more GFF3s to provide CDS boundary information")
     p.add_argument("-lo", dest="liftovers", required=True, nargs="+",
                 help="Specify one or more liftover exon FASTAs dirs paired to the gff3s")
-    p.add_argument("-ge", dest="genomes", required=True, nargs="+",
-                help="Specify one or more genomes to provide paired to the gff3s")
     p.add_argument("-t", dest="transcriptomeFile", required=True,
                 help="Specify the location of a single representative (protein) transcriptome file")
     p.add_argument("-o", dest="outputDir", required=True,
@@ -861,12 +896,6 @@ if __name__ == "__main__":
     for file in args.gff3s:
         cdsCoordsList.append(get_cds_coords(file))
     
-    # Parse genomes
-    genomesList = []
-    for file in args.genomes:
-        g = ZS_SeqIO.FASTA(file)
-        genomesList.append(g)
-    
     # Locate liftover FASTA files
     liftoverFilesList = []
     for dir in args.liftovers:
@@ -891,9 +920,15 @@ if __name__ == "__main__":
             initialLength = len(FASTA_obj[0].gap_seq) # hold onto for later statistics
             
             # Perform intron prediction
-            result = get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, genomesList, INTRON_CHAR=args.INTRON_CHAR)
-            if result == False:
+            result = get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, INTRON_CHAR=args.INTRON_CHAR)
+            if result != False:
+                isGood = check_if_genome_annotation_is_good(result[0], FASTA_obj, INTRON_CHAR=args.INTRON_CHAR)
+            else:
+                isGood = False # prevent poential undefined variable error for first loop
+            
+            if result == False or not isGood:
                 result = trim_intron_locations_denovo(FASTA_obj, args.transcriptomeFile)
+            
             dummyString, pctIntron, mode = result
             
             # Insert dummy sequence into FASTA_obj
