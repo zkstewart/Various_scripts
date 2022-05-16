@@ -683,6 +683,19 @@ def trim_intron_locations_denovo(FASTA_obj, transcriptomeFile, EXCLUSION_PCT=0.9
     trueStartIndex = np.percentile([x[0] for x in boundaries], EXCLUSION_PCT)
     trueEndIndex = np.percentile([x[1] for x in boundaries], 100-EXCLUSION_PCT) # Need to get percentile in reverse, kinda
     
+    # Correct mismatched circumstances
+    '''
+    A mismatched circumstance is when the startIndex is greater than the endIndex. This
+    can occur when a MSA primarily consists of fragments on either side of the MSA
+    (start frags and end frags) without any consistent "middle" to the MSA. To correct
+    this, we basically invert how we use EXCLUSION_PCT to be much, much more lenient
+    than we'd otherwise be.
+    '''
+    if trueStartIndex >= trueEndIndex:
+        trueStartIndex = np.percentile([x[0] for x in boundaries], 100-EXCLUSION_PCT)
+        trueEndIndex = np.percentile([x[1] for x in boundaries], EXCLUSION_PCT)
+        assert trueStartIndex < trueEndIndex, "Mismatched circumstances still isn't handled, Zac, fix this pls"
+    
     # Find out how much to trim from the left and right
     startTrim = int(trueStartIndex) # No need to change
     endTrim = len(FASTA_obj[0].gap_seq) - int(trueEndIndex) # any FastASeq will do, they should all be the same length

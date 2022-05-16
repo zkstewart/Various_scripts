@@ -121,6 +121,13 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         trueStartIndex = np.percentile([x[0] for x in boundaries], EXCLUSION_PCT)
         trueEndIndex = np.percentile([x[1] for x in boundaries], 100-EXCLUSION_PCT)
         
+        # Correct mismatched circumstances
+        "Refer to commenting in exome_curation_2_introns.py; this code is copied from there"
+        if trueStartIndex >= trueEndIndex:
+            trueStartIndex = np.percentile([x[0] for x in boundaries], 100-EXCLUSION_PCT)
+            trueEndIndex = np.percentile([x[1] for x in boundaries], EXCLUSION_PCT)
+            assert trueStartIndex < trueEndIndex, "Mismatched circumstances still isn't handled, Zac, fix this pls"
+            
         # Trim "problem areas" to focus only on the best CDS region
         '''
         "Problem areas" are those that persist beyond 2_introns operations, which is expected
