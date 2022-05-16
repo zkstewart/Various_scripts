@@ -463,14 +463,15 @@ def solve_translation_frames(FASTA_obj, transcriptomeFile):
     
     # Find the best solution to problem sequences
     memoryDict = {} # reset memory dict since solution->solution comparisons don't happen below
-    for seqID in problemDict.keys():
-        scores = _calculate_solution_scores(resultsDict, solutionDict, memoryDict, seqID) # will store scores for frame 0, 1, and 2
-        
-        # Calculate metrics to find the best frame
-        bestFrame = _use_scores_metrics_to_get_best_frame(scores, resultsDict[seqID])
-        
-        # Add the problem sequence into our solutionDict
-        solutionDict[seqID] = resultsDict[seqID][bestFrame]
+    if solutionDict != {}: # prevent error when using an empty solutionDict
+        for seqID in problemDict.keys():
+            scores = _calculate_solution_scores(resultsDict, solutionDict, memoryDict, seqID) # will store scores for frame 0, 1, and 2
+            
+            # Calculate metrics to find the best frame
+            bestFrame = _use_scores_metrics_to_get_best_frame(scores, resultsDict[seqID])
+            
+            # Add the problem sequence into our solutionDict
+            solutionDict[seqID] = resultsDict[seqID][bestFrame]
     
     return solutionDict
 

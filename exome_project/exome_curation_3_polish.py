@@ -111,6 +111,22 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         # Get sequence translations
         solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
         
+        # If solutionDict is empty, abort any handling of this exon
+        '''
+        If we find an exon where we simply can't get a good CDS, we can't work with it in
+        any way. So, we need to bypass a few steps in the process without upsetting anything
+        along the way.
+        '''
+        if solutionDict == {}:
+            exonLength = len(exon_FASTA_obj[0].gap_seq)
+            startTrim = int(exonLength/2)
+            endTrim = exonLength - startTrim
+            exon_FASTA_obj.trim_left(startTrim, asAligned=True)
+            exon_FASTA_obj.trim_right(endTrim, asAligned=True)
+            codonsProblemLeft.append(startTrim)
+            codonsProblemRight.append(endTrim)
+            continue
+        
         # Get the boundaries for this exon region that excludes stop codons
         "We do this here since it wasn't applied to genomic evidenced intron predictions"
         boundaries = _get_segment_boundaries(exon_FASTA_obj, solutionDict)
