@@ -5,171 +5,168 @@
 # for the family as an output ID
 
 import os, argparse
-from Bio import SeqIO
 
 # Define functions
 def validate_args(args):
-    # Validate that all arguments have been provided
-    for key, value in vars(args).items():
-        if value == None:
-            print(key + ' argument was not specified. Fix this and try again.')
-            quit()
     # Validate input file locations
     if not os.path.isfile(args.tabFileName):
-        print('I am unable to locate the Base_change.tab file (' + args.tabFileName + ')')
+        print('I am unable to locate the Base_count.tab file (' + args.tabFileName + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isdir(args.sequencesDir):
-        print('The specified directory does not exist (' + args.sequencesDir + ')')
-        print('Make sure you\'ve typed the location correctly and try again.')
+    if not os.path.isfile(args.famResultsFileName):
+        print('I am unable to locate the Base_family_results.tab file (' + args.famResultsFileName + ')')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Validate output file location
-    if os.path.isfile("{0}.expanded.txt".format(args.outputPrefix)):
-        print('File already exists at output location (' + "{0}.expanded.txt".format(args.outputPrefix) + ')')
-        print('Make sure you specify a unique file name and try again.')
-        quit()
-    if os.path.isfile("{0}.contracted.txt".format(args.outputPrefix)):
-        print('File already exists at output location (' + "{0}.contracted.txt".format(args.outputPrefix) + ')')
+    if os.path.isfile(args.outputFileName):
+        print('File already exists at output location ("{0}")'.format(args.outputFileName))
         print('Make sure you specify a unique file name and try again.')
         quit()
 
-def parse_basechange_tab_for_change(tabFileName, columnID):
-    families = []
-    found = False
+def parse_basecount_tab(tabFileName):
+    '''
+    Simple function to parse a Base_count.tab file from CAFE into four
+    outputs. Most of the outputs probably aren't relevant to what you need,
+    but I don't abide by YAGNI so here, have all the possible ways you might
+    want to parse this file.
+    
+    The nodeNames list comes with format:
+        [node_1_name, node_2_name, ...]
+    
+    The familyNames list comes with format:
+        [family_1_name, family_2_name, ...]
+    
+    The baseCountList list comes with format:
+        [[node_1_count, node_2_count, ...], [...], ...]
+    
+    The baseCountDict dictionary comes with format:
+        {node_name: [node_int_count, ...]}
+    
+    Returns:
+        nodeNames -- a list containing each node name as in the header of the file.
+        familyNames -- a list containing each family name as encountered
+                       in file order.
+        baseCountList -- a list containing each row's count values, with equivalent
+                         order to familyNames list.
+        baseCountDict -- a dict containing each node name as key, with the value
+                         being a list of its counts ordered as in familyNames list.
+    '''
+    # nodeNames = [] # defined below
+    familyNames = []
+    baseCountList = []
+    baseCountDict = {}
     with open(tabFileName, "r") as fileIn:
         for line in fileIn:
             sl = line.rstrip("\r\n").split("\t")
             # Handle header line
             if sl[0] == "FamilyID":
-                for colIndex in range(1, len(sl)):
-                    if sl[colIndex] == columnID: 
-                        found = True # Marker for a good columnID
-                        break # Break here so colIndex will be stored for later use
-                if found == False:
-                    print("Failed to find ID {0} in Base_change.tab file".format(columnID))
-                    print("Make sure you specify the right input; program cannot continue; exiting now.")
-                    quit()
-                continue
+                nodeNames = sl[1:]
+                for name in nodeNames:
+                    baseCountDict[name] = []
             # Handle other lines
-            num = int(sl[colIndex])
-            direction = "expanded" if num > 0 else "contracted"
-            if num != 0:
-                groupID = sl[0]
-                # Update ID to be OrthoGroup ID if necessary
-                if not groupID.startswith("OG"):
-                    groupID = "OG{0}{1}".format("0"*(7-len(groupID)), groupID) # OrthoGroup IDs are formatted like "OG0000000"
-                # Store OrthoGroup ID in list
-                families.append([groupID, direction])
-    return families
+            else:
+                familyName, counts = sl[0], list(map(int, sl[1:]))
+                familyNames.append(familyName)
+                baseCountList.append(counts)
+                for i in range(len(nodeNames)):
+                    baseCountDict[nodeNames[i]].append(counts[i])
+    return nodeNames, familyNames, baseCountList, baseCountDict
 
-def get_representative_from_orthogroups(sequencesDir, families, change_id):
-    RIVAL_PERCENT = 0.6 # If the rival seq is at least 60% of the length of best, it's good
-    repID_and_direction = []
-    for family_and_direction in families:
-        family = family_and_direction[0]
-        direction = family_and_direction[1]
-        # If we only want the family ID, immediately handle this now to save time
-        if change_id:
-            repID_and_direction.append([family, direction])
-            continue
-        # Handle other scenario where the specific gene ID matters
-        # Derive the file name
-        fileName = os.path.join(sequencesDir, "{0}.fa".format(family))
-        assert os.path.isfile(fileName)
-        # Read file as record dict
-        records = custom_to_dict(fileName) # This indexes by description which is more stable
-        # Find best representative with two metrics: M start, longest length
-        bestID = None
-        for key, value in records.items():
-            # Initialise best finder
-            if bestID == None:
-                bestID = key
+def parse_significant_familys(famResultsFileName):
+    '''
+    Function to parse the Base_family_results.txt file to generate a list of family
+    names that were detected as being expanded in one or more lineages.
+        
+    Returns:
+        significantFamilyNames -- a list containing strings of the family names that met
+                                  CAFE's 0.05 significance threshold.
+    '''    
+    significantFamilyNames = []
+    with open(famResultsFileName, "r") as fileIn:
+        for line in fileIn:
+            if line.startswith("#"):
                 continue
-            # Check this against the best sequence
-            bestSeq = str(records[bestID].seq)
-            bestLen = len(bestSeq)
-            rivalSeq = str(records[key].seq)
-            rivalLen = len(rivalSeq)
-            ## > Scenario 1: Both start with M
-            if bestSeq.startswith("M") and rivalSeq.startswith("M"):
-                ## > Scenario 1.1: ... and rival is longer
-                if rivalLen > bestLen:
-                    bestID = key
-                    continue
-            ## > Scenario 2: Neither start with M
-            elif not bestSeq.startswith("M") and not rivalSeq.startswith("M"):
-                ## > Scenario 2.1: ... and rival is longer
-                if rivalLen > bestLen:
-                    bestID = key
-                    continue
-            ## > Scenario 3: Only rival starts with M
-            elif not bestSeq.startswith("M") and rivalSeq.startswith("M"):
-                ## > Scenario 3.1: ... and current best is only a little longer
-                if rivalLen >= bestLen * RIVAL_PERCENT: # Handicap the best seq
-                    bestID = key
-                    continue
-            ## > Scenario 4: Only best starts with M
-            elif bestSeq.startswith("M") and not rivalSeq.startswith("M"):
-                ## > Scenario 4.1: ... and rival is only a little longer
-                if bestLen <= rivalLen * RIVAL_PERCENT: # Handicap the rival seq
-                    bestID = key
-                    continue
-        # Store the ID in our list
-        repID_and_direction.append([bestID, direction])
-    return repID_and_direction
+            
+            name, p, isSignificant = line.rstrip("\r\n").split("\t")
+            if isSignificant == "y":
+                significantFamilyNames.append(name)
+    return significantFamilyNames
 
-def custom_to_dict(fastaFileName):
-    outDict = {}
-    with open(fastaFileName, "r") as fileIn:
-        for record in SeqIO.parse(fileIn, "fasta"):
-            outDict[record.description] = record
-    return outDict
+
+def get_expanded_family_ids(speciesNames, familyNames, significantFamilyNames, baseCountList):
+    '''
+    Performs some mathematical calculations to determine whether a family
+    is expanded for each species.
+    
+    Parameters:
+        familyNames -- a list containing ordered string values indicating the family
+                       names.
+        significantFamilyNames -- a list containing string values indicating the family
+                                  names that were detected as being expanded in one or
+                                  more lineages.
+        baseCountList -- a list containing the integers from each row of the Base_count.tab
+                         file as derived from parse_basecount_tab().
+    Returns:
+        familyIDsDict -- a dictionary with structure:
+                            {
+                                species_name: [
+                                    [species_1_familyID_a, species_1_familyID_b],
+                                    [species_2_familyID_c, ...],
+                                    ...]
+                                ]
+                            }
+    '''
+    familyIDsDict = {sp: [] for sp in speciesNames if not sp.startswith("<")} # starting with < means it's an internal node, not tip
+    for x in range(len(baseCountList)):
+        # Check if this is significant or not
+        familyName = familyNames[x]
+        if familyName not in significantFamilyNames:
+            continue
+        # Get row values
+        row = baseCountList[x][:-1] # drop the ancestral value
+        # Index expanded IDs in their relevant list
+        for i in range(len(speciesNames)):
+            sp = speciesNames[i]
+            if sp.startswith("<"): # skip internal nodes
+                continue
+            spValue = row[i]
+            if spValue == max(row): # this allows tied values to be accepted as expanded in both lineages
+                familyIDsDict[sp].append(familyName)
+    return familyIDsDict
 
 def main():
     # User input
-    usage = """%(prog)s reads in the Base_change.tab file produced by CAFE
-    and, provided the directory where OrthoFinder produced the individual orthogroup
-    .fa FASTA files, will generate a FASTA output with a single sequence representing
-    each orthogroup which experienced an expansion or contraction within the specified
-    branch or node (-i). This branch or node should be represented by its ID as seen in
-    the column header for the Base_change.tab file.
+    usage = """%(prog)s reads in the Base_change.tab file and Base_family_results.txt
+    files produced by CAFE and produces an output file indicating which families have expanded
+    and the lineage/species in which they expanded.
     """
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-t", dest="tabFileName",
-        help="Input Base_change.tab file name")
-    p.add_argument("-d", dest="sequencesDir",
-        help="Specify Orthogroup_Sequences directory produced by OrthoFinder")
-    p.add_argument("-i", dest="id",
-        help="Specify the branch/node ID to check for expansions/contractions")
-    p.add_argument("-o", dest="outputPrefix",
-        help="Output file prefix for the IDs")
-    p.add_argument("--change_id", dest="change_id", action="store_true", default=False,
-        help="Optionally produce a FASTA file where the representative ID is changed to be the Orthogroup ID")
+    p.add_argument("-i1", dest="tabFileName", required=True,
+        help="Input Base_count.tab file name")
+    p.add_argument("-i2", dest="famResultsFileName", required=True,
+        help="Input Base_family_results.txt file name")
+    p.add_argument("-o", dest="outputFileName",
+        help="Output file name where tabular output will be written")
     args = p.parse_args()
     validate_args(args)
-
-    # Parse tab file
-    families = parse_basechange_tab_for_change(args.tabFileName, args.id)
-
-    # Extract representatives from family FASTA files
-    repID_and_direction = get_representative_from_orthogroups(args.sequencesDir, families, args.change_id)
-
-    # Produce output IDs for expanded families
-    ## > Expanded
-    with open("{0}.expanded.txt".format(args.outputPrefix), "w") as fileOut:
-        for pair in repID_and_direction:
-            family = pair[0]
-            direction = pair[1]
-            if direction == "expanded":
-                fileOut.write("{0}\n".format(family))
     
-    ## > Contracted
-    with open("{0}.contracted.txt".format(args.outputPrefix), "w") as fileOut:
-        for pair in repID_and_direction:
-            family = pair[0]
-            direction = pair[1]
-            if direction == "contracted":
-                fileOut.write("{0}\n".format(family))
+    # Parse Base_count.tab file
+    nodeNames, familyNames, baseCountList, baseCountDict = parse_basecount_tab(args.tabFileName)
+    
+    # Parse Base_family_results.txt file
+    significantFamilyNames = parse_significant_familys(args.famResultsFileName)
+    
+    # Get list of families that expanded for each species/tip node
+    familyIDsDict = get_expanded_family_ids(nodeNames, familyNames, significantFamilyNames, baseCountList)
+    
+    # Produce output file for expanded families
+    with open(args.outputFileName, "w") as fileOut:
+        for speciesID, familyNames in familyIDsDict.items():
+            speciesID = speciesID.split("<")[0] # remove the node identifier
+            for family in familyNames:
+                fileOut.write("{0}\t{1}\n".format(speciesID, family))
+    
+    print("Program completed successfully!")
 
 if __name__ == "__main__":
     main()
