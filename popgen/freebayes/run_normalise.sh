@@ -45,18 +45,35 @@ BAMFILE=${BAMFILES[${index}]}
 PREFIX=${BAMFILE%%.sorted.bam}
 
 # > STEP 5: Split multiallelic records to biallelic
-bgzip ${PREFIX}.vcf
-bcftools index ${PREFIX}.vcf.gz
-bcftools norm -m- -Oz -o ${PREFIX}.split.vcf.gz -N ${PREFIX}.vcf.gz # with or without -N?
+if [[ ! -f ${PREFIX}.vcf.gz  ]]; then
+    bgzip ${PREFIX}.vcf
+fi
+if [[ ! -f ${PREFIX}.vcf.gz.csi  ]]; then
+    bcftools index ${PREFIX}.vcf.gz
+fi
+if [[ ! -f ${PREFIX}.split.vcf.gz  ]]; then
+    bcftools norm -m- -Oz -o ${PREFIX}.split.vcf.gz -N ${PREFIX}.vcf.gz # with or without -N?
+fi
 
 # > STEP 6: Rejoin biallic sites into multiallelic sites
-bcftools norm -m+ -Oz -o ${PREFIX}.rejoin.vcf.gz -N ${PREFIX}.split.vcf.gz # with or without -N
+if [[ ! -f ${PREFIX}.rejoin.vcf.gz  ]]; then
+    bcftools norm -m+ -Oz -o ${PREFIX}.rejoin.vcf.gz -N ${PREFIX}.split.vcf.gz # with or without -N
+fi
 
 # > STEP 7: Left-align and normalise everything
-bcftools norm -f ${GENOMEDIR}/${GENOME} -Ov -o ${PREFIX}.normalised.vcf ${PREFIX}.rejoin.vcf.gz
+if [[ ! -f ${PREFIX}.normalised.vcf  ]]; then
+    bcftools norm -f ${GENOMEDIR}/${GENOME} -Ov -o ${PREFIX}.normalised.vcf ${PREFIX}.rejoin.vcf.gz
+fi
 
 # > STEP 8: vt decompose SNPs
-vt decompose_blocksub ${PREFIX}.normalised.vcf > ${PREFIX}.decomposed.vcf
+if [[ ! -f ${PREFIX}.decomposed.vcf  ]]; then
+    vt decompose_blocksub ${PREFIX}.normalised.vcf > ${PREFIX}.decomposed.vcf
+fi
+mkdir -p uncompressed
 cp ${PREFIX}.decomposed.vcf uncompressed/${PREFIX}.decomposed.vcf
-bgzip ${PREFIX}.decomposed.vcf
-bcftools index ${PREFIX}.decomposed.vcf.gz
+if [[ ! -f ${PREFIX}.decomposed.vcf.gz  ]]; then
+    bgzip ${PREFIX}.decomposed.vcf
+fi
+if [[ ! -f ${PREFIX}.decomposed.vcf.gz.csi  ]]; then
+    bcftools index ${PREFIX}.decomposed.vcf.gz
+fi
