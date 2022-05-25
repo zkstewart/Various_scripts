@@ -103,13 +103,20 @@ return(list("outliers"=outliers,"nb_outliers"=length(outliers)))
 }
 
 ## Run function now [EDITS BY ZAC]
-inputFile = 'F:/flies/chapa_2022/bayescan/btrys06.final.g_fst.txt'
-plot_bayescan(inputFile,FDR=0.05)
+FST_FILE = 'F:/flies/genome_based_2022/original/Parental_Selected/bayescan/btrys06_parental.final.g_fst.txt'
+result = plot_bayescan(FST_FILE,FDR=0.05)
+
+## Get the outlier SNPs as output
+OUTPUT_FILE = 'F:/flies/genome_based_2022/original/Parental_Selected/bayescan/btrys06_parental.final.outliers.txt'
+outliers = result$outliers
+fst.table = read.table(file=FST_FILE, header = TRUE, stringsAsFactors = FALSE)
+outliers.table = fst.table[rownames(fst.table) %in% outliers,]
+write.table(outliers.table, file=OUTPUT_FILE, sep="\t", quote=FALSE, col.names=NA)
 
 ## Evaluate convergence [http://evomics.org/learning/population-and-speciation-genomics/2016-population-and-speciation-genomics/bayescan-exercise/]
 library(coda)
-inputFile = 'F:/flies/chapa_2022/bayescan/btrys06.final.g.sel'
-chain <- read.table(inputFile,header=TRUE)
+G.SEL_FILE = 'F:/flies/genome_based_2022/original/Parental_Selected/bayescan/btrys06_parental.final.g.sel'
+chain <- read.table(G.SEL_FILE,header=TRUE)
 chain <- mcmc(chain,thin=10)
 
 plot(chain)
