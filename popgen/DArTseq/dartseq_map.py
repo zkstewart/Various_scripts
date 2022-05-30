@@ -53,8 +53,10 @@ def parse_metadata_csv(metadataCsv, speciesIdCol, genotypeCols):
                 genotype = []
                 for gIndex in genotypeIndices:
                     genotype.append(sl[gIndex])
-                    
-                genotypes.append("_".join(genotype))
+                genotype = "_".join(genotype)
+                
+                assert genotype not in genotypes, "Genotype '{0}' isn't unique!".format(genotype)
+                genotypes.append(genotype)
                 speciesIds.append(sl[speciesIdIndex])
                 
     return speciesIds, genotypes
@@ -115,12 +117,13 @@ eval $(cat {4} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
 def main():
     # User input
     usage = """%(prog)s enables easier running of BWA-MEM with readgroup
-    tags for downstream GATK analysis. It will output a shell script amenable
+    tags for downstream popgen analysis. It will output a shell script amenable
     to batched job submission via PBS.
     
-    It allows for fastq.gz file format as input.
-    It assumes the bwa executable can be found in environment variables; otherwise
-    the shell script will need to be modified.
+    FASTQ files must have .fq.gz file format as input. This is non-negiotable unfortunately.
+    
+    You must provide the BWA executable location as an input. If it's in your system's
+    PATH, then providing "-b bwa" will suffice.
     
     The species ID column should contain unique values for each sample. It should
     also be the prefix to each .fq.gz file!
@@ -131,7 +134,7 @@ def main():
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-d", dest="demultiplexedDirectory",
                    required=True,
-                   help="Input multiplexed fastq file")
+                   help="Input directory where demultiplexed (one per sample) fastq files reside")
     p.add_argument("-f", dest="fastaFile",
                    required=True,
                    help="Input genome fasta file")
