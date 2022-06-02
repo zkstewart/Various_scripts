@@ -1,20 +1,18 @@
 #!/bin/bash -l
 #PBS -N sam2bam
-#PBS -l walltime=04:00:00
+#PBS -l walltime=08:00:00
 #PBS -l mem=20G
 #PBS -l ncpus=1
 
 cd $PBS_O_WORKDIR
 
 ## SETUP: Specify computational resources for qsub script
-CPUS=4
 MEM=20
 
 ## AUTO SETUP: Derive the per-thread memory for samtools
-SAMTOOLSTHREADMEM=$(echo "$(printf "%.0f\n" $(echo "(${MEM}*0.50)/${CPUS}"|bc -l))")
 BAMTOOLSMEM=$(echo "$(printf "%.0f\n" $(echo "(${MEM}*1000)"|bc -l))")
 
-# STEP 1: Run samtools sort | bamtools index | samtools flagstat pipeline
+# STEP 1: Run samtools view | bamtools sort | bamtools index | samtools flagstat pipeline
 for file in *.sam; do
     BASENAME=$(basename ${file});
     PREFIX=${BASENAME%%.sam};
