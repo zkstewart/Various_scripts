@@ -74,6 +74,7 @@ def parse_pgd_vcf_for_loci(pgdVcfFile):
     return vcfLoci
 
 def write_outlier_vcf(outliers, pgdLoci, vcfFile, outputFileName):
+    wroteIndices=[]
     with open(vcfFile, "r") as fileIn, open(outputFileName, "w") as fileOut:
         ongoingCount = 1 # this will relate to the index of a BayeScan SNP
         for line in fileIn:
@@ -87,15 +88,27 @@ def write_outlier_vcf(outliers, pgdLoci, vcfFile, outputFileName):
                 chrom, pos, ref, alt = sl[0], sl[1], sl[3], sl[4]
                 
                 # Skip lines that aren't used by BayeScan
-                if [chrom, pos, ref, alt] not in pgdLoci:
+                found = any(
+                    [True
+                        for _chrom, _pos, _ref, _alt in pgdLoci
+                        if [_chrom, _pos] == [chrom, pos]
+                        and sorted(_ref.split(",")) == sorted(ref.split(","))
+                        and sorted(_alt.split(",")) == sorted(alt.split(",")) # sometimes PGDSpider sorts it differently...
+                    ]
+                )
+                
+                # Skip lines that aren't used by BayeScan
+                if not found:
                     continue
                 
                 # If this line is valid and detected as an outlier, write to file
                 if ongoingCount in outliers:
                     fileOut.write(line)
+                    wroteIndices.append(ongoingCount)
                 
                 # Iterate our loci counter
                 ongoingCount += 1
+    assert wroteIndices == outliers, "Writing the VCF failed! The output file can't be used, sorry!"
 
 def main():
     # User input
