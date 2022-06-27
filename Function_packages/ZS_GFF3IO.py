@@ -4,7 +4,10 @@
 # Class. Can be used for (memory-heavy) GFF3 file parsing
 
 import re
+import pandas as pd
 from collections import OrderedDict
+from ncls import NCLS
+from copy import deepcopy
 
 class Feature:
     '''
@@ -110,6 +113,11 @@ class GFF3:
         self.features = OrderedDict()
         self.types = {}
         self.contigs = set()
+        
+        self.ncls = None
+        self._nclsType = None
+        self._nclsIndex = None
+        
         self.parse_gff3()
     
     def _make_feature_case_appropriate(self, featureType):
@@ -217,6 +225,104 @@ class GFF3:
             except:
                 self.contigs.sort()
     
+    def create_ncls_index(self, typeToIndex="mRNA"):
+        '''
+        Creates an indexed NCLS structure that can be used to find range overlaps
+        for the feature types of interest.
+        
+        Associates the created index to the .ncls field of this object instance.
+        A hidden ._nclsIndex dictionary links the ncls indices to feature objects.
+        
+        Parameters:
+            typeToIndex -- a string (case-sensitive) indicating the entry type
+                           to index.
+        '''
+        assert typeToIndex in self.types, \
+            "'{0}' not found as a feature type within the parsed GFF3 ('{1}')".format(typeToIndex, self.fileLocation)
+        
+        nclsIndex = {}
+        starts, ends, ids = [], [], []
+        
+        # Add features of the specified type to our NCLS structure
+        ongoingCount = 0
+        for feature in self.types[typeToIndex]:
+            starts.append(feature.start)
+            ends.append(feature.end + 1) # NCLS indexes 0-based like a range so +1 to make this more logically compliant with gff3 1-based system
+            ids.append(ongoingCount)
+            nclsIndex[ongoingCount] = feature
+            ongoingCount += 1
+        
+        # Build the NCLS object
+        starts = pd.Series(starts)
+        ends = pd.Series(ends)
+        ids = pd.Series(ids)
+        ncls = NCLS(starts.values, ends.values, ids.values)
+        
+        # Associate it to this instance
+        self.ncls = ncls
+        self._nclsType = typeToIndex
+        self._nclsIndex = nclsIndex
+    
+    def ncls_finder(self, start, stop, field, value):
+        '''
+        Queries the NCLS structure to find Features that exist within the given
+        start->stop range. Specifying the field and value will narrow results
+        to only those that have a Feature .field with an equal (==) value.
+        
+        Parameters:
+            start -- an integer indicating the start position of the feature to check
+                     for overlaps
+            end -- an integer indicating the end positon of the feature to check for
+                   overlaps; this should be 1-based in GFF3 style e.g., a first
+                   position of a feature would be start=1, end=1.
+            field -- a string (case-sensitive) indicating the field of the Feature
+                     object that we want to check. For example, if you want to find
+                     features that overlap the given start->stop range on the contig
+                     "X", you'd provide "contig" as the field so this function knows
+                     to check the Feature.contig field for the value of "X".
+            value -- a string (case-sensitive) indicating the value of the Feature
+                     field we want to find. As in the above example, if you want to
+                     find the value "X" within the .contig field, you'd provide "X" as
+                     the value here.
+        Returns:
+            features -- a list containing Features that overlap the specified range.
+                        These Features are deepcopied, so you can do whatever you want
+                        to them without altering the GFF3 object.
+        '''
+        assert self.ncls != None and self._nclsIndex != None, \
+            "Run create_ncls_index before you call this method!"
+        
+        overlaps = self.ncls.find_overlap(start, stop+1) # Although our ncls is already 1-based, find_overlap acts as a range. We need to +1 to keep everything logically 1-based.
+        
+        features = []
+        for result in overlaps: # result == [start, end, index]
+            features.append(self._nclsIndex[result[2]]) # this gets the Feature object from the ._nclsIndex dictionary
+        features = deepcopy(features) # deepcopy so we don't alter the underlying NCLS structure
+        
+        # Narrow down our features to hits with a .field == value match
+        features = self._ncls_feature_narrowing(features, field, value)
+        
+        # Return list
+        return features
+    
+    def _ncls_feature_narrowing(self, nclsEntries, field, value):
+        '''
+        Hidden method for narrowing retrieved NCLS hits to the specified
+        field==value match. Usually used to narrow down to contig hits,
+        so field="contig" and value equal to whatever contig you want to find
+        hits on.
+        '''
+        raiseWarning = False
+        for k in range(len(nclsEntries)-1, -1, -1):
+            try:
+                if nclsEntries[k].__dict__[field] != value:
+                    del nclsEntries[k]
+            except:
+                raiseWarning = True
+        if raiseWarning:
+            print("Warning: '{0}' wasn't found as a field in at least one of the found Features; your results might be incomplete!".format(field))
+        return nclsEntries
+    
     def __getitem__(self, key):
         return self.features[key]
     
@@ -252,7 +358,6 @@ class GFF3:
             self.fileLocation,
             len(self.contigs),
             ";".join(["num_{0}={1}".format(key, len(self.types[key])) for key in self.types.keys()])
-            #list(self.types.keys())
         )
 
 if __name__ == "__main__":
