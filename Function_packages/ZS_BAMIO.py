@@ -69,7 +69,7 @@ class BAM(bs.AlignmentFile):
         if raiseWarning:
             print("Warning: One or more header SQ values lacked a SN and/or LN value") 
     
-    def compute_coverage(self):
+    def compute_coverage(self, gff3Obj=None):
         '''
         Computes coverage for contigs at each position. It will populate the
         .coverage field with a dictionary with structure like:
@@ -83,6 +83,15 @@ class BAM(bs.AlignmentFile):
         file with name ${self.fileLocation}.cov.pkl. If a file exists with this name,
         it will load it in assuming it is an already pickled result, since this function
         otherwise takes a very long time.
+        
+        If you provide a ZS_GFF3IO.GFF3 object, this function will operate in a behaviour
+        assuming the BAM file has been mapped to chromosomal contigs, but we actually
+        want coverage values for genic regions. It will use the GFF3 object to do this,
+        obtaining counts that cover CDS regions specifically.
+        
+        Parameters:
+            gff3Obj -- a ZS_GFF3IO object containing an indexed GFF3 which corresponds
+                       to the BAM file either directly or through a mappingDict intermediary.
         '''
         FLAGS_TO_SKIP = [
             (2048, "supplementary alignment"), (1024, "read is PCR or optical duplicate"),
@@ -109,8 +118,59 @@ class BAM(bs.AlignmentFile):
                 start = read.reference_start # 0-based
                 end = read.reference_end # 0-based
                 
+                # Interpret the CIGAR string
+                ## TBD!
+                
                 # Modify coverages value
                 self.coverage[contig][start:end + 1] += 1 # offset range not considering the last position
+            
+            # If a GFF3 was provided, get counts to gene features
+            if gff3Obj != None:
+                geneCoverage = {}
+                for geneFeature in gff3Obj.types["gene"]:
+                    # Get details for this gene feature
+                    name = geneFeature.ID
+                    contig = geneFeature.contig
+                    cdsFeatures = [feature for feature in geneFeature.retrieve_all_children() if feature.type == "CDS"]
+                    
+                    # Figure out the exon coordinates for this gene
+                    "This will work on an open-shut algorithm, where when all opens are shut, the exon has ended"
+                    coords = [["{0}-start".format(feature.start), "{0}-end".format(feature.end)] for feature in cdsFeatures]
+                    coords = [value for coord in coords for value in coord] # flatten list
+                    coords.sort(key = lambda x: int(x.split("-")[0]))
+                    
+                    mergedCoords = []
+                    opens = 0
+                    for coord in coords:
+                        if "start" in coord:
+                            if opens == 0:
+                                mergedCoords.append([int(coord.split("-")[0]), None])
+                            opens += 1
+                        if "end" in coord:
+                            opens -= 1
+                            if opens == 0:
+                                mergedCoords[-1][1] = int(coord.split("-")[0])
+                    
+                    # Extract counts for the exon regions
+                    geneCovArray = np.concatenate(
+                        [bam.coverage[contig][coord[0]-1:coord[1]] for coord in mergedCoords]
+                    )
+                    bam.coverage[contig]
+                    
+                    # Get the strand for this gene
+                    try:
+                        strand = gff3Obj[featureID].strand
+                    except:
+                        print("'{0}' cannot be found within the GFF3; qc_genebody_coverage failed".format(featureID))
+                        return
+                
+                # Flip if needed
+                if strand == "-":
+                    reversedRow = list(row.array[::-1])
+                    for i in range(len(row)):
+                        df.at[index,i] = reversedRow[i]
+                self.coverage = geneCoverage
+                        
             # Store as pickle
             pickle.dump(self.coverage, open(pickleFileName, "wb"))
         # If it does exist, load it and store it in this object
@@ -152,7 +212,7 @@ class BAM(bs.AlignmentFile):
                 boundaryEnd = binBoundaries[i]
                 self.coverage_histogram[contig][i] = np.sum(self.coverage[contig][boundaryStart:boundaryEnd + 1]) # +1 to make range inclusive
     
-    def qc_genebody_coverage(self, gff3Obj=None, mappingDict=None):
+    def qc_genebody_coverage(self, mappingDict=None):
         '''
         QC FUNCTION: This method will compute the genebody coverage statistic.
         By default, contigs are treated as if they are gene model CDS, and the
@@ -165,8 +225,6 @@ class BAM(bs.AlignmentFile):
         as if they are +ve stranded going from 5' to 3'.
         
         Parameters:
-            gff3Obj -- a ZS_GFF3IO object containing an indexed GFF3 which corresponds
-                       to the BAM file either directly or through a mappingDict intermediary.
             mappingDict -- a dictionary containing mappings between keys in the BAM file
                            to keys in the GFF3 object e.g.,
                            {
@@ -189,7 +247,7 @@ class BAM(bs.AlignmentFile):
         df = df.T # transpose so contigs are rows and columns are bins
         
         # If a mappingDict was provided, see if we should drop any rows
-        "Mappings that don't exist are interpreted to be mappings that SHOULDN'T exist"
+        "Mappings that don't exist are interpreted as mappings that SHOULDN'T exist"
         rowsToDrop = []
         if mappingDict != None:
             for index in df.index:
@@ -198,30 +256,6 @@ class BAM(bs.AlignmentFile):
                     rowsToDrop.append(index)
         if rowsToDrop != []:
             df = df.drop(rowsToDrop)
-        
-        # If a GFF3 was provided, get counts to gene features
-        ### TBD!!
-        rowsToDrop = []
-        if gff3Obj != None:
-            for index, row in df.iterrows():
-                # If mappingDict is provided, map the BAM ID to the GFF3 ID
-                if mappingDict != None:
-                    featureID = mappingDict[index] # this is guaranteed to exist because of the above rowsToDrop
-                else:
-                    featureID = index
-                
-                # Get the strand for this gene
-                try:
-                    strand = gff3Obj[featureID].strand
-                except:
-                    print("'{0}' cannot be found within the GFF3; qc_genebody_coverage failed".format(featureID))
-                    return
-                
-                # Flip if needed
-                if strand == "-":
-                    reversedRow = list(row.array[::-1])
-                    for i in range(len(row)):
-                        df.at[index,i] = reversedRow[i]
         
         # Drop rows where all values are 0
         df = df.loc[(df != 0).any(axis=1)]
