@@ -113,25 +113,43 @@ class BAM(bs.AlignmentFile):
                 if shouldSkip:
                     continue
                 
-                # Extract relevant alignment details
-                contig = read.reference_name
-                start = read.reference_start # 0-based
-                end = read.reference_end # 0-based
+                # Get the aligned base coordinates from interpretation of the CIGAR
+                prevPos = None
+                coords = []
+                for base, refPos in bs.utils.cigar_alignment(read.seq, read.cigarstring):
+                    # Handle first iteration
+                    if prevPos == None and base != ".":
+                        coords.append([refPos, None])
+                        prevPos = refPos
+                    else:
+                        # Handle read deletions
+                        if coords[-1][1] == None and base == ".":
+                            coords[-1][1] = prevPos # go back to last found position
+                        # Handle reference deletions
+                        elif coords[-1][1] == None and refPos != prevPos + 1:
+                            coords[-1][1] = prevPos # go back to last found position
+                        # Start a new coord range if we filled in the last one
+                        if coords[-1][1] != None and base != ".":
+                            coords.append([refPos, None])
+                        prevPos = refPos
+                if coords[-1][1] == None:
+                    coords[-1][1] = prevPos
                 
-                # Interpret the CIGAR string
-                ## TBD!
+                # Convert alignment coordinates to reference coordinates
+                coords = [[coord[0] + read.reference_start, coord[1] + read.reference_start] for coord in coords]
                 
                 # Modify coverages value
-                self.coverage[contig][start:end + 1] += 1 # offset range not considering the last position
+                for start, end in coords:
+                    self.coverage[read.reference_name][start:end + 1] += 1 # offset range not considering the last position
             
             # If a GFF3 was provided, get counts to gene features
             if gff3Obj != None:
                 geneCoverage = {}
                 for geneFeature in gff3Obj.types["gene"]:
-                    # Get details for this gene feature
-                    name = geneFeature.ID
                     contig = geneFeature.contig
                     cdsFeatures = [feature for feature in geneFeature.retrieve_all_children() if feature.type == "CDS"]
+                    assert contig in self.coverage, \
+                        "'{0}' contig is missing from original BAM alignment; GFF3 doesn't match?".format(contig)
                     
                     # Figure out the exon coordinates for this gene
                     "This will work on an open-shut algorithm, where when all opens are shut, the exon has ended"
@@ -153,24 +171,19 @@ class BAM(bs.AlignmentFile):
                     
                     # Extract counts for the exon regions
                     geneCovArray = np.concatenate(
-                        [bam.coverage[contig][coord[0]-1:coord[1]] for coord in mergedCoords]
+                        [self.coverage[contig][coord[0]-1:coord[1]] for coord in mergedCoords] # convert 1-based GFF3 coords to 0-based
                     )
-                    bam.coverage[contig]
+                                        
+                    # Get the strand for this gene & flip if needed
+                    if geneFeature.strand == "-":
+                        geneCovArray = geneCovArray[::-1]
                     
-                    # Get the strand for this gene
-                    try:
-                        strand = gff3Obj[featureID].strand
-                    except:
-                        print("'{0}' cannot be found within the GFF3; qc_genebody_coverage failed".format(featureID))
-                        return
+                    # Store it in the dictionary
+                    geneCoverage[geneFeature.ID] = geneCovArray
                 
-                # Flip if needed
-                if strand == "-":
-                    reversedRow = list(row.array[::-1])
-                    for i in range(len(row)):
-                        df.at[index,i] = reversedRow[i]
+                # Overwrite chromosome coverage with gene coverage
                 self.coverage = geneCoverage
-                        
+            
             # Store as pickle
             pickle.dump(self.coverage, open(pickleFileName, "wb"))
         # If it does exist, load it and store it in this object
