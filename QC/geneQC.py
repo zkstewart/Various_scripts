@@ -104,10 +104,9 @@ def main():
         mappingDict = parse_mapping_file(args.mappingFile)
     
     # Obtain genebody coverage statistics
-    bamObj.compute_coverage()
+    bamObj.compute_coverage(gff3Obj = None if args.gff3File == None else gff3Obj)
     bamObj.summarise_coverage_into_histogram()
     bamObj.qc_genebody_coverage(
-        gff3Obj = None if args.gff3File == None else gff3Obj,
         mappingDict = None if args.mappingFile == None else mappingDict
     ) # bamObj.gbc is now set with a Pandas DataFrame
     
