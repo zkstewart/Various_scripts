@@ -31,7 +31,10 @@ def get_stats_from_files(statsFiles):
                 
                 # First line of a new file
                 if lineCount == 0:
-                    species = file.split("_vs_")[1].split(".")[0] # assumes relevant file name precedes all "." characters
+                    if "_vs_" in file:
+                        species = file.split("_vs_")[1].split(".")[0] # relevant file name exists between "_vs_" and "."
+                    else:
+                        species = file.split(".")[0] # assumes relevant file name precedes all "." characters
                     statsTable[0] += "\t{0}".format(species)
                 
                 # First file being checked
