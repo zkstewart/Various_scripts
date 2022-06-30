@@ -108,7 +108,7 @@ class Feature:
         return "<{0}>".format(";".join(reprPairs))
 
 class GFF3:
-    def __init__(self, file_location):
+    def __init__(self, file_location, strict_parse=True):
         self.fileLocation = file_location
         self.features = OrderedDict()
         self.types = {}
@@ -118,7 +118,7 @@ class GFF3:
         self._nclsType = None
         self._nclsIndex = None
         
-        self.parse_gff3()
+        self.parse_gff3(strictParse=strict_parse)
     
     def _make_feature_case_appropriate(self, featureType):
         if featureType.lower() == "gene":
@@ -132,7 +132,7 @@ class GFF3:
         else:
             return featureType
     
-    def parse_gff3(self):
+    def parse_gff3(self, strictParse=True):
         # Gene object loop
         with open(self.fileLocation, 'r') as fileIn:
             for line in fileIn:
@@ -153,17 +153,26 @@ class GFF3:
                 featureType = self._make_feature_case_appropriate(featureType)
                 
                 # Skip un-indexable features
-                if 'ID' not in attributesDict: # see the human genome GFF3 biological_region values for why this is necessary
+                if 'ID' not in attributesDict and featureType.lower() != "cds": # see the human genome GFF3 biological_region values for why this is necessary
                     continue
                 
                 # Handle parent-level features
                 if 'Parent' not in attributesDict: # If no Parent field this should BE the parent
                     featureID = attributesDict["ID"]
                     
-                    # End parsing if duplicate ID is found
-                    assert featureID not in self.features, \
-                        "'{0}' feature occurs twice indicating poorly formatted file; \
-                        for debugging, line == {1}; parsing will stop now".format(featureID, line)
+                    # End parsing if duplicate ID is found (strictParse is True)
+                    if strictParse == True:
+                        assert featureID not in self.features, \
+                            "'{0}' feature occurs twice indicating poorly formatted file; \
+                            for debugging, line == {1}; parsing will stop now".format(featureID, line)
+                    # Skip parsing if duplicate ID is found (strictParse if False)
+                    else:
+                        if featureID in self.features:
+                            print(
+                                "'{0}' feature occurs more than once indicating poorly formatted file; \
+                                strict parsing is disabled, so we will just continue and hope for the best".format(featureID)
+                            )
+                            continue
                     
                     # Create feature and index it
                     feature = Feature()
@@ -181,9 +190,22 @@ class GFF3:
                 
                 # Handle subfeatures
                 else:
-                    featureID = attributesDict["ID"]
                     parents = attributesDict["Parent"].split(',')
+                    
+                    # Loop through parents and associate feature to them
                     for parentID in parents:
+                        # Flexibly obtain a feature ID for normal features and for CDS that may lack IDs
+                        try:
+                            featureID = attributesDict["ID"]
+                        except:
+                            if featureType.lower() != "cds":
+                                raise AttributeError(
+                                    "'{0}' feature lacks an ID attribute and hence cannot be indexed; \
+                                    for debugging, line == {2}; parsing will stop now".format(featureType, line)
+                                )
+                            else:
+                                featureID = "{0}.cds".format(parentID)
+                        
                         # End parsing if parent doesn't exist
                         assert parentID in self.features, \
                             "'{0}' feature points to a non-existing parent '{1}' at the time of parsing; \
@@ -197,7 +219,7 @@ class GFF3:
                         
                         # Create feature and index it
                         feature = Feature()
-                        if featureType.lower() != "cds": # since CDS features don't have unique IDs, there's no point indexing them
+                        if featureType.lower() != "cds": # since CDS features aren't guaranteed to have unique IDs, there's no point indexing them
                             self.features[featureID] = feature
                         self.types.setdefault(featureType, [])
                         self.types[featureType].append(feature)
@@ -224,6 +246,14 @@ class GFF3:
                 self.contigs.sort(key = lambda x: list(map(int, re.findall(r'\d+', x)))) # This should let us sort things like "contig1a2" and "contig1a1" and have the latter come first
             except:
                 self.contigs.sort()
+    
+    def infer_UTRs(self):
+        '''
+        This method will associate UTR Features to the GFF3 object when they can be
+        inferred to exist. Specifically, where there's exons uncovered by CDS annotations,
+        we can surmise that a UTR exists in that region.
+        '''
+        raise NotImplementedError()
     
     def create_ncls_index(self, typeToIndex="mRNA"):
         '''
