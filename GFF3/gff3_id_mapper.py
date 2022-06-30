@@ -281,8 +281,8 @@ class GFF3:
 # Define functions
 def validate_args(args):
     # Validate input file locations
-    if not os.path.isdir(args.gff3File):
-        print('I am unable to locate the directory containing .stats files (' + args.statsDir + ')')
+    if not os.path.isfile(args.gff3File):
+        print('I am unable to locate the GFF3 file (' + args.gff3File + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Validate output file location
@@ -321,7 +321,7 @@ def gff3_id_mapper(forEach, map, to, gff3Obj):
         assert map in feature.__dict__, \
             "'{0}' map key does not exist within one or more features; \
             valid keys include '{1}'; check that letters have correct \
-            upper/lower casing".format(map, list(feature.__dict__.keys()))
+            upper/lower casing for {2}".format(map, list(feature.__dict__.keys()), feature)
         mappingDetail = feature.__dict__[map]
         
         toDetails = []
@@ -329,7 +329,7 @@ def gff3_id_mapper(forEach, map, to, gff3Obj):
             assert toKey in feature.__dict__, \
                 "'{0}' to key does not exist within one or more features; \
                 valid keys include '{1}'; check that letters have correct \
-                upper/lower casing".format(map, list(feature.__dict__.keys()))
+                upper/lower casing for {2}".format(toKey, list(feature.__dict__.keys()), feature)
             toDetails.append(feature.__dict__[toKey])
         
         mapping.append([mappingDetail] + toDetails)
@@ -385,3 +385,5 @@ if __name__ == "__main__":
         fileOut.write("#{0}\t{1}\n".format(args.map, "\t".join(args.to))) # header
         for row in mapping:
             fileOut.write("{0}\n".format("\t".join(row)))
+    
+    print("Program completed successfully!")
