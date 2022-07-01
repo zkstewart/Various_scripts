@@ -106,9 +106,12 @@ def main():
                 help="Output directory where QC files will be written")
     # Opts
     p.add_argument("-g", dest="gff3File", required=False,
-                help="Specify the location of the GFF3 with gene annotations")
+                help="Optionally, specify the location of the GFF3 with gene annotations")
     p.add_argument("-m", dest="mappingFile", required=False,
                 help="Optionally, specify a TSV file mapping BAM IDs (left) to GFF3 IDs (right)")
+    p.add_argument("--isChromosomes", dest="isChromosomes", action="store_true",
+                help="""If your reads were aligned to the genome, specify this flag to
+                extract reads that overlap predicted gene regions in the GFF3""")
     args = p.parse_args()
     validate_args(args)
     
@@ -125,7 +128,7 @@ def main():
     
     # Obtain genebody coverage statistics
     bamObj.compute_coverage(
-        gff3Obj = None if args.gff3File == None else gff3Obj
+        gff3Obj = None if args.gff3File == None else gff3Obj if args.isChromosomes else None
     )
     bamObj.summarise_coverage_into_histogram(
         mappingDict = None if args.mappingFile == None else mappingDict,
