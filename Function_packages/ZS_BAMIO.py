@@ -174,10 +174,6 @@ class BAM(bs.AlignmentFile):
                         [self.coverage[contig][coord[0]-1:coord[1]] for coord in mergedCoords] # convert 1-based GFF3 coords to 0-based
                     )
                     
-                    # Get the strand for this gene & flip if needed
-                    if geneFeature.strand == "-":
-                        geneCovArray = geneCovArray[::-1]
-                    
                     # Store it in the dictionary
                     geneCoverage[geneFeature.ID] = geneCovArray
                 
