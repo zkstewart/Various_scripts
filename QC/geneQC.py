@@ -73,6 +73,26 @@ def plot_genebody_coverage(bamObj, outputFileName):
     ax.plot(summarisedBinValues)
     plt.savefig(outputFileName)
 
+def write_genebody_coverage(bamObj, perGeneFileName, summarisedFileName):
+    '''
+    Parameters:
+        bamObj -- a ZS_BAMIO.BAM object which has the .gbc field set
+                  with a Pandas DataFrame that has had all that good
+                  min-max normalisation done on it.
+        perGeneFileName -- where to write the statistics per-gene table.
+        summarisedFileName -- where to write the summarised statistics table.
+    '''
+    # Summarise genebody coverage statistics into per-bin values
+    summarisedBinValues = []
+    for columnNumber in bamObj.gbc.columns:
+        summarisedBinValues.append(np.median(bamObj.gbc[columnNumber]))
+    
+    # Write as tables
+    bamObj.gbc.to_csv(perGeneFileName, sep="\t")
+    with open(summarisedFileName, "w") as fileOut:
+        fileOut.write("\t{0}\n".format("\t".join([str(num) for num in bamObj.gbc.columns]))) # header
+        fileOut.write("median_cov_pct\t{0}\n".format("\t".join([str(num) for num in summarisedBinValues]))) # result
+
 def main():
     usage = """%(prog)s receives a BAM file in addition to possibly two more files,
     and performs some post-alignment QC checks of the BAM file. These include 1)
@@ -113,15 +133,27 @@ def main():
     )
     bamObj.qc_genebody_coverage() # bamObj.gbc is now set with a Pandas DataFrame
     
-    # Plot it!
     os.makedirs(args.outputDirectory, exist_ok=True)
+    # Plot the genebody coverage
     plotFileName = os.path.join(
         args.outputDirectory,
         "{0}.png".format(os.path.basename(bamObj.fileLocation))
     )
-    plot_genebody_coverage(bamObj, plotFileName)
+    if not os.path.isfile(plotFileName):
+        plot_genebody_coverage(bamObj, plotFileName)
     
-    print("Program completed successfully!")
+    # Write an output table file
+    perGeneFileName = os.path.join(
+        args.outputDirectory,
+        "{0}.genebody.perGene.tsv".format(os.path.basename(bamObj.fileLocation))
+    )
+    summaryFileName = os.path.join(
+        args.outputDirectory,
+        "{0}.genebody.summary.tsv".format(os.path.basename(bamObj.fileLocation))
+    )
+    if not os.path.isfile(perGeneFileName) and not os.path.isfile(summaryFileName):
+        write_genebody_coverage(bamObj, perGeneFileName, summaryFileName)
+        print("Program completed successfully!")
 
 if __name__ == "__main__":
     main()
