@@ -104,11 +104,14 @@ def main():
         mappingDict = parse_mapping_file(args.mappingFile)
     
     # Obtain genebody coverage statistics
-    bamObj.compute_coverage(gff3Obj = None if args.gff3File == None else gff3Obj)
-    bamObj.summarise_coverage_into_histogram()
-    bamObj.qc_genebody_coverage(
-        mappingDict = None if args.mappingFile == None else mappingDict
-    ) # bamObj.gbc is now set with a Pandas DataFrame
+    bamObj.compute_coverage(
+        gff3Obj = None if args.gff3File == None else gff3Obj
+    )
+    bamObj.summarise_coverage_into_histogram(
+        mappingDict = None if args.mappingFile == None else mappingDict,
+        gff3Obj = None if args.gff3File == None else gff3Obj
+    )
+    bamObj.qc_genebody_coverage() # bamObj.gbc is now set with a Pandas DataFrame
     
     # Plot it!
     os.makedirs(args.outputDirectory, exist_ok=True)
@@ -117,6 +120,8 @@ def main():
         "{0}.png".format(os.path.basename(bamObj.fileLocation))
     )
     plot_genebody_coverage(bamObj, plotFileName)
+    
+    print("Program completed successfully!")
 
 if __name__ == "__main__":
     main()
