@@ -91,7 +91,7 @@ class BAM(bs.AlignmentFile):
         
         Parameters:
             gff3Obj -- a ZS_GFF3IO object containing an indexed GFF3 which corresponds
-                       to the BAM file either directly or through a mappingDict intermediary.
+                       to the BAM file.
         '''
         FLAGS_TO_SKIP = [
             (2048, "supplementary alignment"), (1024, "read is PCR or optical duplicate"),
@@ -173,7 +173,7 @@ class BAM(bs.AlignmentFile):
                     geneCovArray = np.concatenate(
                         [self.coverage[contig][coord[0]-1:coord[1]] for coord in mergedCoords] # convert 1-based GFF3 coords to 0-based
                     )
-                                        
+                    
                     # Get the strand for this gene & flip if needed
                     if geneFeature.strand == "-":
                         geneCovArray = geneCovArray[::-1]
@@ -190,11 +190,32 @@ class BAM(bs.AlignmentFile):
         else:
             self.coverage = pickle.load(open(pickleFileName, "rb"))
     
-    def summarise_coverage_into_histogram(self, binPctSize=10):
+    def summarise_coverage_into_histogram(self, binPctSize=10, gff3Obj=None, mappingDict=None):
         '''
         After running the compute_coverage() method, this function will
         summarise coverage values into per-contig histograms. Each bin
         will be composed of a set percentage of the contig's length.
+        
+        Providing the GFF3 object during compute_coverage() handles cases
+        where you have mapped to chromosomes and you want to extract gene
+        counts. Providing it HERE instead handles cases where you've mapped
+        to mRNA transcripts where the CDS may be in the +ve or -ve strand.
+        As such, providng it here will flip the counts where appropriate.
+        
+        If the IDs between your GFF don't match the BAM, you will need to
+        provide the mappingDict as well. This should relate the keys in
+        self.coverage_histogram to the gene/mRNA IDs in the GFF3 object.
+        When multiple mappings exist e.g., multiple mRNAs point to the same
+        locus ID, we will combine the counts in this function.
+        
+        There's a lot going on here admittedly, so think before you act.
+        
+        Parameters:
+            binPctSize -- an integer or float value that dictates the size of histogram
+                          bins as a percentage from 1 -> 50. This value must provide a 
+                          whole number when 
+            gff3Obj -- a ZS_GFF3IO object containing an indexed GFF3 which corresponds
+                       to the BAM file.
         
         Sets:
             .coverage_histogram -- a dictionary with structure like:
@@ -224,29 +245,39 @@ class BAM(bs.AlignmentFile):
                 boundaryStart = 0 if i == 0 else binBoundaries[i-1] + 1
                 boundaryEnd = binBoundaries[i]
                 self.coverage_histogram[contig][i] = np.sum(self.coverage[contig][boundaryStart:boundaryEnd + 1]) # +1 to make range inclusive
+        
+        # If a mappingDict is provided, modify keys and merge counts where needed
+        if mappingDict != None:
+            new_coverage_histogram = {}
+            for contig, coverage in self.coverage_histogram.items():
+                if contig not in mappingDict:
+                    print("'{0}' contig from BAM is not in the mapping file; summarise_coverage_into_histogram() is dropping this".format(contig))
+                    continue
+                
+                new_coverage_histogram.setdefault(mappingDict[contig], np.zeros(coverage.size))
+                new_coverage_histogram[mappingDict[contig]] += coverage
+            self.coverage_histogram = new_coverage_histogram
+        
+        # If GFF3 object is provided, flip any counts where needed
+        if gff3Obj != None:
+            for contig, coverage in self.coverage_histogram.items():
+                assert contig in gff3Obj, \
+                    "'{0}' contig not found in GFF3; summarise_coverage_into_histogram() failed!".format(contig)
+                
+                try:
+                    strand = gff3Obj[contig].strand
+                except:
+                    "'{0}' contig in GFF3 does not have a strand field; summarise_coverage_into_histogram() failed!".format(contig)
+                
+                if strand == "-":
+                    self.coverage_histogram[contig] = coverage[::-1]
     
-    def qc_genebody_coverage(self, mappingDict=None):
+    def qc_genebody_coverage(self):
         '''
         QC FUNCTION: This method will compute the genebody coverage statistic.
         By default, contigs are treated as if they are gene model CDS, and the
         coverage histogram will be compared as-is.
         
-        If the BAM file contains alignments to genomic contigs, providing a ZS_GFF3IO
-        object will compute coverage statistics over the genic regions (exons) found
-        within the chromosomal contigs. It will also ensure that coverage statistics
-        are computed considering the gene's strand i.e., all genes will be considered
-        as if they are +ve stranded going from 5' to 3'.
-        
-        Parameters:
-            mappingDict -- a dictionary containing mappings between keys in the BAM file
-                           to keys in the GFF3 object e.g.,
-                           {
-                               bam_ID1: GFF3_ID1,
-                               ...
-                           }
-            outputPlotName -- a string indicating the location to write the plot to. If
-                              this file exists or the parameter is not specified, it will
-                              be automatically created with the format ""
         Sets:
             .gbc -- the GeneBody Coverage for this instance as a Pandas DataFrame where
                     row indices == gene names, and column values = min-max normalised (by
@@ -258,17 +289,6 @@ class BAM(bs.AlignmentFile):
         # Establish pandas dataframe
         df = pd.DataFrame(self.coverage_histogram)
         df = df.T # transpose so contigs are rows and columns are bins
-        
-        # If a mappingDict was provided, see if we should drop any rows
-        "Mappings that don't exist are interpreted as mappings that SHOULDN'T exist"
-        rowsToDrop = []
-        if mappingDict != None:
-            for index in df.index:
-                if index not in mappingDict:
-                    print("'{0}' cannot be found within the mappingDict; this row will be dropped".format(index))
-                    rowsToDrop.append(index)
-        if rowsToDrop != []:
-            df = df.drop(rowsToDrop)
         
         # Drop rows where all values are 0
         df = df.loc[(df != 0).any(axis=1)]
