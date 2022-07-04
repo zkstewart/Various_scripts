@@ -117,6 +117,18 @@ def lengths(fastaFile, outputFileName):
                 for record in records:
                         listOut.write(str(len(record)) + '\n')
 
+def gc(fastaFile, outputFileName):
+        # Check for file type
+        seqType = fasta_or_fastq(fastaFile)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        with open(outputFileName, 'w') as listOut:
+                for record in records:
+                        gcCount = [1 if base in ["C", "G"] else 0 for base in str(record.seq).upper()]
+                        gcPct = sum(gcCount) / len(gcCount)
+                        listOut.write(str(gcPct) + '\n')
+
 def count(fastaFile, outputFileName):
         # Check for file type
         seqType = fasta_or_fastq(fastaFile)
@@ -757,6 +769,10 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 The _striphyphens_ function requires no special input. This function
                 will produce an output fasta file sans any sequence hyphen characters.
                 '''
+                gc = '''
+                The _gc_ function requires no special input. This function will produce
+                and output text file listing the GC percentage of each sequence.
+                '''
                 ## Number input
                 multi2single = '''
                 The _multi2single_ function requires no special input. The output is 
@@ -938,7 +954,7 @@ def main():
         # Function list - update as new ones are added
         stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
         numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi']
-        basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens']
+        basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc']
         functionList = stringFunctions + numberFunctions + basicFunctions
         
         ##### USER INPUT SECTION
@@ -1021,6 +1037,8 @@ def main():
                 reversecomplement(args.fastaFileName, args.outputFileName)
         if args.function == 'striphyphens':
                 striphyphens(args.fastaFileName, args.outputFileName)
+        if args.function == 'gc':
+                gc(args.fastaFileName, args.outputFileName)
         print('Program completed successfully!')
 
 if __name__ == '__main__':
