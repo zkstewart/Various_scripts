@@ -1055,7 +1055,13 @@ class FASTA:
             for FastASeq_obj in self.seqs:
                 s = FastASeq_obj.get_str(withAlt=withAlt, withGap=asAligned, withDescription=withDescription)
                 fileOut.write("{0}\n".format(s))
-        
+    
+    def __iter__(self):
+        return iter(self.seqs)
+    
+    def __len__(self):
+        return len(self.seqs)
+    
     def __getitem__(self, key):
         if isinstance(key, int):
             return self.seqs[key]
@@ -1072,9 +1078,6 @@ class FASTA:
             len(self.seqs), addCount, concatCount, "s" if addCount > 1 else "",
             "s" if concatCount > 1 else ""
         )
-    
-    def __len__(self):
-        return len(self.seqs)
 
 if __name__ == "__main__":
     pass
