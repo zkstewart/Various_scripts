@@ -112,6 +112,10 @@ def main():
     p.add_argument("--isChromosomes", dest="isChromosomes", action="store_true",
                 help="""If your reads were aligned to the genome, specify this flag to
                 extract reads that overlap predicted gene regions in the GFF3""")
+    p.add_argument("--needsFlip", dest="needsFlip", action="store_true",
+                help="""If your reads were aligned to RNA models which are not
+                necessarily all in the 5'->3' orientation, specify this flag so we
+                can check the GFF3 and perform flipping of the counts""")
     args = p.parse_args()
     validate_args(args)
     
@@ -132,7 +136,7 @@ def main():
     )
     bamObj.summarise_coverage_into_histogram(
         mappingDict = None if args.mappingFile == None else mappingDict,
-        gff3Obj = None if args.gff3File == None else gff3Obj
+        gff3Obj = None if args.gff3File == None else gff3Obj if args.needsFlip else None
     )
     bamObj.qc_genebody_coverage() # bamObj.gbc is now set with a Pandas DataFrame
     
