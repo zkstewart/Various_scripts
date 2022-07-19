@@ -59,23 +59,27 @@ def create_edaseq_gene_details(GFF3_obj, FASTA_obj, mappingDict=None):
         assert seqID in GFF3_obj, \
             "'{0}' sequence not found in GFF3; files aren't matched, can't proceed".format(seqID)
         GFF3_feature = GFF3_obj[seqID]
-        assert GFF3_feature.type in ["gene", "mRNA"], \
-            "'{0}' sequence is not a gene or mRNA, can't proceed".format(seqID)
+        assert GFF3_feature.type in ["gene", "mRNA", "lnc_RNA"], \
+            "'{0}' sequence is not a gene/mRNA/lnc_RNA, can't proceed".format(seqID)
         
         # Figure out if our sequence is exon or CDS
-        exonLengths = []
-        cdsLengths = []
-        mRNA_features = [GFF3_feature] if GFF3_feature.type == "mrna" else GFF3_feature.types["mRNA"]
-        for mRNA_feature in mRNA_features:
-            assert "CDS" in mRNA_feature.types and "exon" in mRNA_feature.types, \
-                "'{0}' mRNA feature does not contain CDS and exon types, can't proceed".format(mRNA_feature.ID)
-            exonLengths.append(0)
-            cdsLengths.append(0)
+        # exonLengths = []
+        # cdsLengths = []
+        # RNA_features = [GFF3_feature] if GFF3_feature.type == "mrna" else GFF3_feature.types["mRNA"]
+        
+        # for RNA_feature in RNA_features:
+        #     assert "CDS" in RNA_feature.types and "exon" in RNA_feature.types, \
+        #         "'{0}' mRNA feature does not contain CDS and exon types, can't proceed".format(RNA_feature.ID)
+        #     exonLengths.append(0)
+        #     cdsLengths.append(0)
             
-            for cds_feature in mRNA_feature.types["CDS"]:
-                cdsLengths[-1] += cds_feature.end - cds_feature.start + 1
-            for exon_feature in mRNA_feature.types["exon"]:
-                exonLengths[-1] += exon_feature.end - exon_feature.start + 1
+        #     try: # this try-except clause will catch lnc_RNA features
+        #         for cds_feature in RNA_feature.types["CDS"]:
+        #             cdsLengths[-1] += cds_feature.end - cds_feature.start + 1
+        #     except:
+        #         pass
+        #     for exon_feature in RNA_feature.types["exon"]:
+        #         exonLengths[-1] += exon_feature.end - exon_feature.start + 1
         
         # exonDistances = [max(len(FastASeq_obj.seq), l) - min(len(FastASeq_obj.seq), l) for l in exonLengths]
         # cdsDistances = [max(len(FastASeq_obj.seq), l) - min(len(FastASeq_obj.seq), l) for l in cdsLengths]
@@ -127,7 +131,7 @@ def main():
     validate_args(args)
     
     # Parse GFF3
-    GFF3_obj = ZS_GFF3IO.GFF3(args.gff3File)
+    GFF3_obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse = False)
     
     # Parse FASTA
     FASTA_obj = ZS_SeqIO.FASTA(args.fastaFile)
