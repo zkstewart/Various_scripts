@@ -3,36 +3,31 @@
 #PBS -l walltime=00:10:00
 #PBS -l mem=10G
 #PBS -l ncpus=1
-#PBS -J 1-186
+#PBS -J 1-159
 
 cd $PBS_O_WORKDIR
 
-# Module loads for vt
-module unload gcc/4.9.3-2.25
-module unload gcccore/4.9.3
-module unload binutils/2.25-gcccore-4.9.3
-module unload zlib/1.2.8-foss-2016a
-module load gcc/10.3.0
+#################################
 
-module unload libxml2/2.9.3-foss-2016a
-module load libxml2/2.9.10-gcccore-10.3.0
+# Specify the location of the genome FASTA
+GENOMEDIR=/home/stewarz2/daniel/genome
+GENOME=btrys06_chr1.fasta
 
-# Specify things needed to run this
-GENOMEDIR=/home/stewarz2/flies/chapa_2021/genome
-GENOME=btrys06_freeze2.rename.fasta
+# Specify the location of the mapped BAM files
+MAPDIR=/home/stewarz2/daniel/rnaseq/chr1_map
 
-MAPDIR=/home/stewarz2/flies/chapa_2022/map
+# Specify the suffix that identifies mapped BAM files
+SUFFIX=.sorted.md.bam
 
+#################################
 
-# > STEP 1: Get our file list ## prefixes
-cd ${MAPDIR}
+# > STEP 1: Get our file list
 declare -a BAMFILES
 i=0
-for f in *.sorted.bam; do
+for f in ${MAPDIR}/*${SUFFIX}; do
     BAMFILES[${i}]=$(echo "${f}");
     i=$((i+1));
 done
-cd $PBS_O_WORKDIR
 
 # > STEP 2: Get our array index
 declare -i index
@@ -42,7 +37,7 @@ index=${PBS_ARRAY_INDEX}-1
 BAMFILE=${BAMFILES[${index}]}
 
 # > STEP 4: Get our file prefix
-PREFIX=${BAMFILE%%.sorted.bam}
+PREFIX=$(basename ${BAMFILE} ${SUFFIX})
 
 # > STEP 5: Split multiallelic records to biallelic
 if [[ ! -f ${PREFIX}.vcf.gz  ]]; then
@@ -69,11 +64,14 @@ fi
 if [[ ! -f ${PREFIX}.decomposed.vcf  ]]; then
     vt decompose_blocksub ${PREFIX}.normalised.vcf > ${PREFIX}.decomposed.vcf
 fi
+
 mkdir -p uncompressed
 cp ${PREFIX}.decomposed.vcf uncompressed/${PREFIX}.decomposed.vcf
+
 if [[ ! -f ${PREFIX}.decomposed.vcf.gz  ]]; then
     bgzip ${PREFIX}.decomposed.vcf
 fi
 if [[ ! -f ${PREFIX}.decomposed.vcf.gz.csi  ]]; then
     bcftools index ${PREFIX}.decomposed.vcf.gz
 fi
+

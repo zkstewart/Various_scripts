@@ -1,32 +1,36 @@
 #!/bin/bash -l
 #PBS -N vcffilter
-#PBS -l walltime=08:00:00
-#PBS -l mem=90G
+#PBS -l walltime=01:00:00
+#PBS -l mem=40G
 #PBS -l ncpus=1
 
 cd $PBS_O_WORKDIR
 
-# Specify things needed to run this
+#################################
+
+# Specify the location of the Various_scripts directory
 VARSCRIPTDIR=/home/stewarz2/scripts/Various_scripts
 
-GENOMEDIR=/home/stewarz2/flies/chapa_2021/genome
-GENOME=btrys06_freeze2.rename.fasta
+# Specify the location of the genome FASTA
+GENOMEDIR=/home/stewarz2/daniel/genome
+GENOME=btrys06_chr1.fasta
 
-MAPDIR=/home/stewarz2/flies/chapa_2022/map
-
+# Specify the location of the pop map file
 POPSFILE=/home/stewarz2/flies/chapa_2022/pops.txt
 
+# Specify a prefix for output files
 PREFIX=btrys06
 
+#################################
+
+
 # > STEP 1: Get our file list
-cd ${MAPDIR}
 declare -a VCFFILES
 i=0
 for f in *.decomposed.vcf.gz; do
     VCFFILES[${i}]=$(echo "${f}");
     i=$((i+1));
 done
-cd $PBS_O_WORKDIR
 
 # > STEP 2: Get our input files argument
 SEPARATOR=" "

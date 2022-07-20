@@ -1,40 +1,36 @@
 #!/bin/bash -l
-#PBS -N fbayes_p
-#PBS -l walltime=04:00:00
+#PBS -N fbayes
+#PBS -l walltime=00:10:00
 #PBS -l mem=5G
 #PBS -l ncpus=1
-#PBS -J 1-128
+#PBS -J 1-159
 
 cd $PBS_O_WORKDIR
 
 #################################
 
-# Load the GCC that Freebayes was installed with (10.3.0)
-module unload gcc/4.9.3-2.25
-module unload gcccore/4.9.3
-module unload binutils/2.25-gcccore-4.9.3
-module unload zlib/1.2.8-foss-2016a
-module load gcc/10.3.0
-module unload libxml2/2.9.3-foss-2016a
-module load libxml2/2.9.10-gcccore-10.3.0
+# Specify the location of the freebayes executable
+FBEXE=/home/stewarz2/various_programs/freebayes/freebayes-1.3.6-linux-amd64-static
 
-# Specify things needed to run this
-GENOMEDIR=/home/stewarz2/flies/chapa_2021/genome
-GENOME=btrys06_freeze2.rename.fasta
+# Specify the location of the genome FASTA
+GENOMEDIR=/home/stewarz2/daniel/genome
+GENOME=btrys06_chr1.fasta
 
-MAPDIR=/home/stewarz2/flies/genome_based_2022/original/map/Parental_Selected
+# Specify the location of the mapped BAM files
+MAPDIR=/home/stewarz2/daniel/rnaseq/chr1_map
+
+# Specify the suffix that identifies mapped BAM files
+SUFFIX=.sorted.md.bam
 
 #################################
 
 # > STEP 1: Get our file list
-cd ${MAPDIR}
 declare -a BAMFILES
 i=0
-for f in *.sorted.bam; do
+for f in ${MAPDIR}/*${SUFFIX}; do
     BAMFILES[${i}]=$(echo "${f}");
     i=$((i+1));
 done
-cd $PBS_O_WORKDIR
 
 # > STEP 2: Get our array index
 declare -i index
@@ -44,7 +40,8 @@ index=${PBS_ARRAY_INDEX}-1
 INPUTFILE=${BAMFILES[${index}]}
 
 # > STEP 4: Get our output file prefix
-PREFIX=${INPUTFILE%%.sorted.bam}
+PREFIX=$(basename ${INPUTFILE} ${SUFFIX})
 
 # > STEP 5: Run freebayes
-freebayes -f ${GENOMEDIR}/${GENOME} ${MAPDIR}/${INPUTFILE} > ${PREFIX}.vcf
+${FBEXE} -f ${GENOMEDIR}/${GENOME} ${INPUTFILE} > ${PREFIX}.vcf
+
