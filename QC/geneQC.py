@@ -124,7 +124,7 @@ def main():
     
     # Parse GFF3 (if needed)
     if args.gff3File != None:
-        gff3Obj = ZS_GFF3IO.GFF3(args.gff3File)
+        gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False)
     
     # Parse mapping dict (if needed)
     if args.mappingFile != None:
