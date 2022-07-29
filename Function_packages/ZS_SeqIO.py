@@ -726,6 +726,59 @@ class FASTA:
             FastASeq_obj.trim_right(endTrim, asAligned=True)
         return result_FASTA_obj
     
+    def cut_cols(self, start, end):
+        '''
+        This method returns the FASTA object minus the columns within the specified
+        range (end non-inclusive same as range() function). It returns this as a NEW object
+        rather than modifying the existing object.
+        
+        Note that this method is only relevant for aligned FASTA objects. It will return
+        an error if .isAligned is not True.
+        
+        Params:
+            start -- an integer indicating which column to start from (inclusive, 0-based)
+            end -- an integer indicating which column to stop at (non-inclusive, 0-based)
+        Returns:
+            FASTA_obj -- a new FASTA object.
+        '''
+        # Validate that this object is aligned
+        if not self.isAligned:
+            raise Exception("FASTA object isn't flagged as being aligned; cant slice columns")
+        for FastASeq_obj in self.seqs:
+            if FastASeq_obj.gap_seq == None:
+                raise Exception(inspect.cleandoc("""
+                                Sequence with ID {0} lacks a gap seq value; 
+                                can't slice columns""".format(FastASeq_obj.id)))
+        
+        # Validate value types and sensibility
+        assert isinstance(start, int)
+        assert isinstance(end, int)
+        assert start >= 0, "start doesn't make sense as a negative integer!"
+        assert end <= len(self.seqs[0].gap_seq), "end doesn't make sense if it's longer than the aligned length ({0})!".format(len(self.seqs[0].gap_seq))
+        
+        # Perform cut operation
+        '''
+        We can consider this cut operation as two separate operations. First, we
+        trim from the right of our left-most fragment, and we also trim from the
+        left of our right-most fragment. Second, we concatenate the fragments
+        together.
+        '''
+        left_FASTA_obj = deepcopy(self)
+        right_FASTA_obj = deepcopy(self)
+        
+        leftTrim = len(self.seqs[0].gap_seq) - start
+        for left_FastASeq_obj in left_FASTA_obj:
+            left_FastASeq_obj.trim_right(leftTrim, asAligned=True)
+        
+        rightTrim = end
+        for right_FastASeq_obj in right_FASTA_obj:
+            right_FastASeq_obj.trim_left(rightTrim, asAligned=True)
+        
+        # Merge the left and right segments back together & return
+        left_FASTA_obj.concat(right_FASTA_obj)
+        
+        return left_FASTA_obj
+    
     def set_alt_ids_via_list(self, altList):
         '''
         The number of values in the list must match that of the FASTA or an
