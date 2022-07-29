@@ -755,8 +755,8 @@ class FASTA:
         assert isinstance(idsList, list)
         if len(idsList) != len(self.seqs):
             raise Exception(inspect.cleandoc(f"""
-                Alt ID setting not possible as sequence count differs.
-                Num alt IDs={len(idsList)}, Num FASTA seqs={len(self.seqs)}
+                ID setting not possible as sequence count differs.
+                Num IDs={len(idsList)}, Num FASTA seqs={len(self.seqs)}
             """))
         
         # Update FastASeq objects with IDs list
@@ -792,7 +792,7 @@ class FASTA:
         numFound = sum([1 for FastASeq_obj in self.seqs if FastASeq_obj.id in idsDict])            
         if numFound != len(self.seqs):
             raise Exception(inspect.cleandoc(f"""
-                Alt ID setting not possible as not all sequences were discovered
+                ID setting not possible as not all sequences were discovered
                 Num found IDs={numFound}, Num FASTA seqs={len(self.seqs)}
             """))
         
@@ -851,7 +851,7 @@ class FASTA:
         # Validate value type and file existence
         assert isinstance(idsFile, str)
         if not os.path.isfile(idsFile):
-            raise Exception("{0} does not exist; can't update alt IDs".format(idsFile))
+            raise Exception("{0} does not exist; can't update IDs".format(idsFile))
         
         # Check what format the alt file is in
         isDict = False # isList is an implied value opposite to isDict
@@ -1056,6 +1056,32 @@ class FASTA:
                 s = FastASeq_obj.get_str(withAlt=withAlt, withGap=asAligned, withDescription=withDescription)
                 fileOut.write("{0}\n".format(s))
     
+    @property
+    def ids(self):
+        return [seq.id for seq in self.seqs]
+    
+    @ids.setter
+    def ids(self, value):
+        if isinstance(value, str):
+            self.set_ids_via_file(value)
+        elif isinstance(value, dict):
+            self.set_ids_via_dict(value)
+        elif isinstance(value, list):
+            self.set_ids_via_list(value)
+    
+    @property
+    def alts(self):
+        return [seq.alt for seq in self.seqs]
+    
+    @alts.setter
+    def alts(self, value):
+        if isinstance(value, str):
+            self.set_alt_ids_via_file(value)
+        elif isinstance(value, dict):
+            self.set_alt_ids_via_dict(value)
+        elif isinstance(value, list):
+            self.set_alt_ids_via_list(value)
+    
     def __iter__(self):
         return iter(self.seqs)
     
@@ -1077,6 +1103,12 @@ class FASTA:
         return "FASTA; contains {0} seqs; added {1} file{3}; concat {2} file{4}".format(
             len(self.seqs), addCount, concatCount, "s" if addCount > 1 else "",
             "s" if concatCount > 1 else ""
+        )
+    
+    def __repr__(self):
+        return "FASTA(seqs={0} <FastASeq> objs, consensus={1}, isAligned={2}, fileOrder={3})".format(
+            len(self.seqs), self.consensus, self.isAligned,
+            str(self.fileOrder) if len(str(self.fileOrder)) < 200 else "{0}...{1}".format(str(self.fileOrder)[0:100], str(self.fileOrder)[-100:])
         )
 
 if __name__ == "__main__":
