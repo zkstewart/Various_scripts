@@ -209,7 +209,8 @@ class BAM(bs.AlignmentFile):
         Parameters:
             binPctSize -- an integer or float value that dictates the size of histogram
                           bins as a percentage from 1 -> 50. This value must provide a 
-                          whole number when 
+                          whole number when dividing 100 i.e., 100/50 = 2 which is good,
+                          100/30 = 3.33 which is bad.
             gff3Obj -- a ZS_GFF3IO object containing an indexed GFF3 which corresponds
                        to the BAM file.
         
