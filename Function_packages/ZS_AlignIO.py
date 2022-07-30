@@ -17,6 +17,10 @@ from Bio.Align.Applications import MafftCommandline
 sys.path.append(os.path.dirname(__file__))
 from ZS_SeqIO import FASTA
 
+import parasail
+if platform.system() != 'Windows':
+    from skbio.alignment import StripedSmithWaterman
+
 class MAFFT:
     '''
     The MAFFT Class is intended to be used alongside the ZS_SeqIO.FASTA Class to
@@ -366,6 +370,42 @@ class MAFFT:
                 ongoingCount += 1
             else:
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
+
+class SSW:
+    '''
+    Class to encapsulate static methods used for performing alignments using SSW implementations.
+    '''
+    @staticmethod
+    def ssw_parasail(targetString, queryString):
+        '''
+        Special implementation of striped Smith Waterman alignment for exon liftover
+        project.
+        '''
+        # Perform SSW with parasail implementation
+        profile = parasail.profile_create_sat(targetString, parasail.blosum62)
+        alignment = parasail.sw_trace_striped_profile_sat(profile, queryString, 10, 1)
+        targetAlign = alignment.traceback.query
+        queryAlign = alignment.traceback.ref
+        # Figure out where we're starting in the target with this alignment
+        startIndex = targetString.find(targetAlign.replace('-', ''))
+        
+        return [queryAlign, targetAlign, startIndex, alignment.score]
+
+    @staticmethod
+    def ssw_skbio(targetString, queryString):
+        if platform.system() == 'Windows':
+            print("skbio is not supported on Windows yet (as of last time this code was touched); won't proceed")
+            return
+        
+        # Perform SSW with scikit.bio implementation
+        query = StripedSmithWaterman(targetString)
+        alignment = query(queryString)
+        targetAlign = alignment.aligned_query_sequence
+        queryAlign = alignment.aligned_target_sequence
+        # Figure out where we're starting in the target with this alignment
+        startIndex = targetString.find(targetAlign.replace('-', ''))
+        
+        return [queryAlign, targetAlign, startIndex, alignment.optimal_alignment_score]
 
 if __name__ == "__main__":
     pass
