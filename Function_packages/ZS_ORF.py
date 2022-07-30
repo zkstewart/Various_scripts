@@ -186,7 +186,7 @@ class MSA_ORF:
         self.peaksCoordinates = None
         self.minimalStopsCoordinates = None
     
-    def _plateau_extens(array, plateaus, coverages, allowedDecrease=0.001):
+    def _plateau_extens(self, plateaus, coverages, allowedDecrease=0.001):
         '''
         Function to help mitigate the effect of internal stop codons messing with an
         ORF region because one or two sequences had one which affected the ORF
@@ -201,10 +201,10 @@ class MSA_ORF:
             cutoff = coverages[i] - allowedDecrease
             
             # Look back
-            prevCov = array[plateaus[i][0]]
+            prevCov = self.lineChart[plateaus[i][0]]
             newStart = plateaus[i][0]
             for x in range(plateaus[i][0]-1, -1, -1):
-                indexCov = array[x]
+                indexCov = self.lineChart[x]
                 # Increasing check
                 if indexCov > prevCov:  # This means we're leading up to another peak, and should stop extending this plateau
                     break
@@ -218,10 +218,10 @@ class MSA_ORF:
             plateaus[i][0] = newStart
             
             # Look forward
-            prevCov = array[plateaus[i][1]]
+            prevCov = self.lineChart[plateaus[i][1]]
             newEnd = plateaus[i][1]
-            for x in range(plateaus[i][1]+1, len(array)):
-                indexCov = array[x]
+            for x in range(plateaus[i][1]+1, len(self.lineChart)):
+                indexCov = self.lineChart[x]
                 # Increasing check
                 if indexCov > prevCov:  # This means we're leading up to another peak, and should stop extending this plateau
                     break
@@ -293,7 +293,7 @@ class MSA_ORF:
         
         # Extend plateaus to deal with rare stop codons
         "Think of a stop codon in just one or two sequences as a small barrier to our finding an ideal ORF region"
-        plateaus = self._plateau_extens(self.lineChart, plateaus, coverages, allowedDecrease=0.001)
+        plateaus = self._plateau_extens(plateaus, coverages, allowedDecrease=0.001)
         
         # Drop any short plateaus
         SHORT_CUTOFF = 30
