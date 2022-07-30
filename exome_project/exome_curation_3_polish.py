@@ -8,10 +8,9 @@ import sys, argparse, os, re, platform, statistics
 import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from collections import Counter
-from Function_packages import ZS_SeqIO, ZS_AlignIO
+from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_ORF
 from exome_liftover import ssw_parasail
 from copy import deepcopy
-from exome_curation_2_introns import solve_translation_frames, _get_segment_boundaries
 
 def validate_args(args):
     # Validate input data location
@@ -109,7 +108,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         exon_FASTA_obj.seqs = exon_FASTA_obj.seqs[1:]
         
         # Get sequence translations
-        solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
+        solutionDict = ZS_ORF.ORF.solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
         
         # If solutionDict is empty, abort any handling of this exon
         '''
@@ -129,7 +128,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         
         # Get the boundaries for this exon region that excludes stop codons
         "We do this here since it wasn't applied to genomic evidenced intron predictions"
-        boundaries = _get_segment_boundaries(exon_FASTA_obj, solutionDict)
+        boundaries = ZS_ORF.MSA_ORF.get_segment_boundaries(exon_FASTA_obj, solutionDict)
         
         # Find true boundaries which maximise sequence length according to EXCLUSION_PCT threshold
         "Refer to exome_curation_2_introns for detailed comment if interested"
@@ -163,7 +162,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         # Predict our solutionDict again if needed
         "If we've changed our sequence region, we might need to update our translations"
         if startTrim != 0 or endTrim != 0:
-            solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
+            solutionDict = ZS_ORF.ORF.solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
         
         # Abort if we found no solutions after trimming
         if solutionDict == None:
@@ -195,7 +194,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         
         # Recompute solutionDict if necessary
         if polishedSequences == True:
-            solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
+            solutionDict = ZS_ORF.ORF.solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
         
         # Get the frames to translation the sequences into from solutionDict
         frames, thisExonFrames = _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict)
@@ -213,7 +212,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         """
         polishedSequences = _outlier_fix_up(exon_FASTA_obj, solutionDict)
         if polishedSequences == True:
-            solutionDict = solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
+            solutionDict = ZS_ORF.ORF.solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
             frames, thisExonFrames = _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict)
             mafftAligner.run_nucleotide_as_protein(exon_FASTA_obj, strand=1, frame=frames) # re-align again
     
