@@ -343,7 +343,7 @@ class MSA_ORF:
         solutionDict = ORF.solve_translation_frames(self.FASTA, transcriptomeFile)
         
         # Locate longest segment boundaries for each sequence that excludes stop codons
-        boundaries = self._get_segment_boundaries(solutionDict)
+        boundaries = MSA_ORF.get_segment_boundaries(solutionDict)
         
         # Find true boundaries which maximise sequence length according to EXCLUSION_PCT threshold
         '''
@@ -374,15 +374,12 @@ class MSA_ORF:
         self.minimalStopsCoordinates = orfCoordinates
         return orfCoordinates
 
-    def _get_segment_boundaries(self, solutionDict, NATURAL_PCT=0.25):
+    @staticmethod
+    def get_segment_boundaries(FASTA_obj, solutionDict, NATURAL_PCT=0.25):
         '''
-        Hidden method of trim_intron_locations_denovo() for getting the bounded region
-        in which no stop codons exist for each sequence in the FASTA_obj, depending
-        on the results of solve_translation_frames() [i.e., solutionDict].
-        
-        This is pulled out into a separate function to 1) reduce the mental burden
-        of interpretting trim_intron_locations_denovo(), but moreso so 2) I can reuse
-        the function in 3_polish.
+        Method for getting the bounded region in which no stop codons exist
+        for each sequence in the FASTA_obj, depending on the results of 
+        solve_translation_frames() [i.e., solutionDict].
         
         Params:
             NATURAL_PCT -- a float ratio between 0 and 1 (inclusive) indicating the
@@ -413,7 +410,7 @@ class MSA_ORF:
         '''
         truncated_start = []
         truncated_end = []
-        for FastASeq_obj in self.FASTA:
+        for FastASeq_obj in FASTA_obj:
             if FastASeq_obj.id not in solutionDict:
                 continue
             translationSeq, frame, hasStopCodon = solutionDict[FastASeq_obj.id]
