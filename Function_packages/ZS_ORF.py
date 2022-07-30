@@ -343,7 +343,7 @@ class MSA_ORF:
         solutionDict = ORF.solve_translation_frames(self.FASTA, transcriptomeFile)
         
         # Locate longest segment boundaries for each sequence that excludes stop codons
-        boundaries = MSA_ORF.get_segment_boundaries(solutionDict)
+        boundaries = MSA_ORF.get_segment_boundaries(self.FASTA, solutionDict)
         
         # Find true boundaries which maximise sequence length according to EXCLUSION_PCT threshold
         '''
@@ -370,7 +370,7 @@ class MSA_ORF:
             assert trueStartIndex < trueEndIndex, "Mismatched circumstances still isn't handled, Zac, fix this pls"
         
         # Return
-        orfCoordinates = [trueStartIndex, trueEndIndex] # just for conceptual purposes and matching our method string
+        orfCoordinates = [[trueStartIndex, trueEndIndex]] # just for conceptual purposes and matching our method string
         self.minimalStopsCoordinates = orfCoordinates
         return orfCoordinates
 
@@ -699,12 +699,12 @@ class ORF:
             resultsDict[FastASeq_obj.id] = results
         
         # Loop back through our resultsDict to find easy-to-solve and hard-to-solve scenarios
-        solutionDict, problemDict = ORF._simple_scenario_handler(resultsDict)
+        solutionDict, problemDict = ORF._simple_scenario_handler(FASTA_obj, resultsDict)
         
         # If we didn't find many easy-to-solve scenarios with simple handling, get more advanced
         DESIRABLE_NUMBER=5 # arbitrary, should work for the oz mammals exomes project
         if len(solutionDict) <= DESIRABLE_NUMBER:
-            solutionDict, problemDict = ORF._advanced_scenario_handler(resultsDict, transcriptomeFile)
+            solutionDict, problemDict = ORF._advanced_scenario_handler(FASTA_obj, resultsDict, transcriptomeFile)
         
         # Enforce consistency in solutionDict values
         '''
