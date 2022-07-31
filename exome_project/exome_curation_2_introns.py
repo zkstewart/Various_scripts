@@ -116,8 +116,6 @@ def get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, lifto
     instead launch into an evidence-less approach to derive probable intron regions based on
     sequence conservation patterns.
     
-    ## TBD-rethought params and returns
-    
     Params:
         alignFastaFile -- a string indicating the FASTA file that generated FASTA_obj.
                           We need this because the file name prefix should match a file
@@ -217,10 +215,10 @@ def get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, lifto
     '''This pattern lets me plug and play different versions for testing, and
     reduces mental burden by keeping this method to just the locating of relevant
     evidence. The downstream function does the heavy lifting and logical work.'''
-    evidencedString, evidencedPctIntron = evidencedString, evidencedPctIntron = _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR) # always returns a result
-    return evidencedString, evidencedPctIntron, "evidenced"
+    evidencedString, startTrim, endTrim = _evidenced_intron_locations(FASTA_obj, liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR) # always returns a result
+    return evidencedString, startTrim, endTrim
 
-def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR):
+def _evidenced_intron_locations(FASTA_obj, liftoverCoords, gff3Coords, fastaSeqs, INTRON_CHAR):
     '''
     Hidden function for use by get_intron_locations_genomic(). This will enact intron prediction behaviour
     based on the genome annotations.
@@ -336,19 +334,8 @@ def _evidenced_intron_locations(liftoverCoords, gff3Coords, fastaSeqs, INTRON_CH
         else:
             break
     
-    # Trim the MSA, and the dummy string
-    FASTA_obj.trim_left(startTrim, asAligned=True)
-    FASTA_obj.trim_right(endTrim, asAligned=True)
-    if endTrim == 0:
-        dummyString = dummyString[startTrim:]
-    else:
-        dummyString = dummyString[startTrim:-endTrim]
-    
-    # Calculate how much would be marked as intron
-    pctIntron = dummyString.count(INTRON_CHAR) / len(dummyString)
-    
     # Return result string pct for logging purposes
-    return dummyString, pctIntron
+    return dummyString, startTrim, endTrim
 
 def _merge_coords_list(coords):
     '''
@@ -426,7 +413,43 @@ def trim_intron_locations_denovo(FASTA_obj, transcriptomeFile, EXCLUSION_PCT=0.9
     dummyString = "-"*len(FASTA_obj[0].gap_seq)
         
     # Return result string pct for logging purposes, as well as method of operation
-    return dummyString, pctIntron, "denovo"
+    return dummyString, pctIntron, "denovo-minimalStops"
+
+def get_orf_locations_denovo(FASTA_obj, PROBLEM_CHAR="5"):
+    '''
+    Locates one or more ORFs within a ZS_SeqIO.FASTA object to the best guess boundaries
+    of any CDS region(s). It does this without genomic evidence (hence "de novo") by
+    assessment of the ORF lengths, "plotting" a line chart of these, and cutting the peaks.
+    
+    Note that this method does not guarantee that we're going to accurately predict introns.
+    Instead, it only wants to narrow down the regions that are likely to contain a CDS
+    that we can use for phylogenetics.
+    
+    Params:
+        FASTA_obj -- a ZS_SeqIO.FASTA instance
+    Returns:
+        dummyString -- a string value with "-" for every character position; intended to
+                       mimic get_intron_locations_genomic()'s return.
+        pctProblem -- a float value indicating what proportion of the alignment was predicted
+                      to be too problematic to solve
+        mode -- a string indicating that denovo prediction occurred
+    '''
+    # Predict the best ORF regions within this MSA
+    orfPredictor = ZS_ORF.MSA_ORF(FASTA_obj)
+    orfPredictor.denovo_prediction_peaks()
+    msaCoords = orfPredictor.peaksCoordinates
+    
+    # Create a string with ${PROBLEM_CHAR}'s for problem regions, and gaps for CDS positions
+    dummyString = ""
+    for i in range(len(FASTA_obj[0].gap_seq)): # doesn't matter which seq we use
+        isCds = any([True for matchStart,matchEnd in msaCoords if i<=matchEnd and i>=matchStart])
+        if isCds:
+            dummyString += "-"
+        else:
+            dummyString += PROBLEM_CHAR
+    
+    # Return result string pct for logging purposes
+    return dummyString
 
 def check_if_genome_annotation_is_good(dummyString, FASTA_obj, INTRON_CHAR="4"):
     '''
@@ -484,7 +507,17 @@ def check_if_genome_annotation_is_good(dummyString, FASTA_obj, INTRON_CHAR="4"):
     else:
         return True # isGood
 
-if __name__ == "__main__":
+def _trim_fasta_and_dummy(FASTA_obj, dummyString, startTrim, endTrim):
+    FASTA_obj.trim_left(startTrim, asAligned=True)
+    FASTA_obj.trim_right(endTrim, asAligned=True)
+    if endTrim == 0:
+        dummyString = dummyString[startTrim:]
+    else:
+        dummyString = dummyString[startTrim:-endTrim]
+    
+    return FASTA_obj, dummyString
+
+def main():
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is to annotate where probable intronic sequences
     are in the alignment. When a lack of genomic evidence is available, it will instead
@@ -510,6 +543,9 @@ if __name__ == "__main__":
     p.add_argument("--INTRON_CHAR", dest="INTRON_CHAR", required=False,
                 help="Optionally, specify what character should be used to denote intron positions (default==\"4\")",
                 default="4")
+    p.add_argument("--PROBLEM_CHAR", dest="PROBLEM_CHAR", required=False,
+                help="Optionally, specify what character should be used to denote positions that are problematic to solve (default==\"5\")",
+                default="5")
     args = p.parse_args()
     validate_args(args)
     
@@ -539,28 +575,44 @@ if __name__ == "__main__":
         # Begin writing output logging file
         logFileOut.write("{0}\n".format(
             "\t".join([
-                    "fileName", "predictionMode", "pctIntron", "initialLength", "trimmedLength", "pctTrimmed"
+                    "fileName", "initialLength", "trimmedLength", "pctIntron", "pctTrimmed"
                 ])
             )
         )
-        # Intron prediction
+        # Intron/CDS region prediction
         for i in range(len(files)):
             # Get details for this MSA
-            alignFastaFile = files[i] # i=5 for testing intron trim
+            alignFastaFile = files[i]
             FASTA_obj = fastaObjs[i]
             initialLength = len(FASTA_obj[0].gap_seq) # hold onto for later statistics
             
-            # Perform intron prediction
+            # Perform intron prediction from genomic evidence
             result = get_intron_locations_genomic(alignFastaFile, FASTA_obj, cdsCoordsList, liftoverFilesList, INTRON_CHAR=args.INTRON_CHAR)
+            isGood = False
             if result != False:
                 isGood = check_if_genome_annotation_is_good(result[0], FASTA_obj, INTRON_CHAR=args.INTRON_CHAR)
+            
+            # Perform CDS prediction with de novo evidence
+            cdsDummyString = get_orf_locations_denovo(FASTA_obj, PROBLEM_CHAR=args.PROBLEM_CHAR)
+            
+            # Merge genomic and de novo predictions if appropriate
+            if isGood:
+                dummyString, startTrim, endTrim = result
+
+                assert len(dummyString) == len(cdsDummyString), \
+                    "Dummy string lengths are incompatible; there's a bug at i=={0}".format(i)
+                
+                dummyString = "".join([
+                    dummyString[i] if dummyString[i] == "4" else cdsDummyString[i]
+                    for i in range(len(dummyString))
+                ])
+                
+                FASTA_obj, dummyString = _trim_fasta_and_dummy(FASTA_obj, dummyString, startTrim, endTrim)
             else:
-                isGood = False # prevent poential undefined variable error for first loop
+                dummyString = cdsDummyString
             
-            if result == False or not isGood:
-                result = trim_intron_locations_denovo(FASTA_obj, args.transcriptomeFile)
-            
-            dummyString, pctIntron, mode = result
+            # Calculate how much would be marked as intron/problematic
+            pctIntron = (dummyString.count(args.INTRON_CHAR) / initialLength) + (dummyString.count(args.PROBLEM_CHAR) / initialLength)
             
             # Insert dummy sequence into FASTA_obj
             dummyFastASeq_obj = ZS_SeqIO.FastASeq("Codons", gapSeq=dummyString)
@@ -576,13 +628,15 @@ if __name__ == "__main__":
             logFileOut.write("{0}\n".format(
                 "\t".join([
                         os.path.basename(alignFastaFile),
-                        mode if result != False else ".",
-                        str(round(pctIntron*100, 2)) if result != False else ".",
                         str(initialLength),
                         str(trimmedLength),
+                        str(round(pctIntron*100, 2)) if result != False else ".",
                         str(round(pctTrimmed*100, 2))
                     ])
                 )
             )
     
     print("Program completed successfully!")
+
+if __name__ == "__main__":
+    main()
