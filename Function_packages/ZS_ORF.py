@@ -84,6 +84,46 @@ def peakdet(v, delta, x = None):
     
     return array(maxtab), array(mintab)
 
+def maxdet(v):
+    """
+    Complement to peakdet which will address problems where no peak was found due to
+    how delta affects peakdet. Will just return the first position in any maximums.
+    """
+    maxindices = np.where(v == np.max(v))[0]
+    outindices = [(maxindices[0], 1.0)] # make sure we always at least return the first maximum
+    return np.array(
+        outindices + [(maxindices[i], 1.0) for i in range(1, len(maxindices)) if (maxindices[i] > maxindices[i-1]+1)]
+    )
+
+def outliers_z_score(ys, threshold=3):
+    """
+    Credit to http://colingorrie.github.io/outlier-detection.html
+    """
+    mean_y = np.mean(ys)
+    stdev_y = np.std(ys)
+    z_scores = [(y - mean_y) / stdev_y for y in ys]
+    return np.where(np.abs(z_scores) > threshold)
+
+def plummetdet(v):
+    """
+    Designed to behave kinda similarly to peakdet but instead, we want to find unusually large
+    declines in min-max normalised values.
+    
+    Parameters:
+        v -- a list or np.array() containing float values in the range of 0.0->1.0
+    Returns:
+        plummets -- a list of integers indicating the index of any positions that plummet
+    """
+    declines = []
+    for i in range(1, len(v)):
+        this = v[i]
+        prev = v[i-1]
+        declines.append(prev - this)
+    
+    declines = np.array(declines)
+    plummets = outliers_z_score(declines)
+    return list(plummets[0])
+
 class FastASeqFrames:
     '''
     This Class represents the three-frame translation of a nucleotide FastASeq object.
@@ -121,18 +161,35 @@ class FastASeqFrames:
             frame = [self.frame_1, self.frame_2, self.frame_3][x] # as above for frame_# values
             
             ongoingCount = 0
-            for frameSeq in frame.split("*"):
+            cdsHasStarted = False
+            splitFrame = frame.split("*")
+            for y in range(len(splitFrame)):
+                frameSeq = splitFrame[y]
                 orfLength = len(frameSeq)*3 # *3 for nucleotide length
                 orfRemaining = orfLength
                 
+                # Iterate through letters in the ORF
+                "Without counting anything earlier than the first position in the ORF"
                 while orfRemaining > 0:
+                    if self.FastASeq.gap_seq[ongoingCount] != "-":
+                        cdsHasStarted = True
+                        orfRemaining -= 1
+                    
+                    if cdsHasStarted:
+                        numbers[ongoingCount] = orfLength
+                    
+                    ongoingCount += 1 
+                
+                # Iterate over any stop codons
+                "Without going past the final position in the ORF"
+                codonRemaining = 3
+                while codonRemaining > 0 and ongoingCount < len(numbers) and y+1 < len(splitFrame):
                     numbers[ongoingCount] = orfLength
                     
                     if self.FastASeq.gap_seq[ongoingCount] != "-": 
-                        orfRemaining -= 1
+                        codonRemaining -= 1
                     
-                    ongoingCount += 1 # iterate through letters in the ORF
-                ongoingCount += 3 # iterate over any stop codons
+                    ongoingCount += 1 
     
     def max(self, position):
         '''
@@ -145,6 +202,30 @@ class FastASeqFrames:
             value -- an integer value for the best ORF length represented by this position.
         '''
         return max(self.numbers_1[position], self.numbers_2[position], self.numbers_3[position])
+
+def _merge_coords_list(coords):
+    '''
+    Helper function for merging overlapping coords lists
+    '''
+    mergeIndex = 0
+    while mergeIndex < len(coords):
+        iterate = True
+        
+        for i in range(mergeIndex + 1, len(coords)):
+            match1Start, match1End = coords[mergeIndex]
+            match2Start, match2End = coords[i]
+            if match1Start <= match2End and match2Start <= match1End: # i.e., if they overlap
+                newMatchStart = min(match1Start, match2Start)
+                newMatchEnd = max(match1End, match2End)
+                coords[mergeIndex] = [newMatchStart, newMatchEnd]
+                del coords[i]
+                iterate = False
+                break
+        
+        if iterate:
+            mergeIndex += 1
+    
+    return coords
 
 class MSA_ORF:
     '''
@@ -186,16 +267,20 @@ class MSA_ORF:
         self.peaksCoordinates = None
         self.minimalStopsCoordinates = None
     
-    def _plateau_extens(self, plateaus, coverages, allowedDecrease=0.001):
+    def _plateau_extens(self, plateaus, coverages, plummets, delta, allowedDecrease=0.3):
         '''
         Function to help mitigate the effect of internal stop codons messing with an
         ORF region because one or two sequences had one which affected the ORF
         length calculation.
         
         Parameters:
+            delta -- the float value used for peakdet.
+            plummets -- a list of indices corresponding to positions that should mark the
+                        boundaries of any plateau extension
             allowedDecrease -- a float value indicating how much a min-max normalised
                                value can decrease before we no longer want to extend
-                               the plateau.
+                               the plateau. Works in tandem with plummet to limit plateau
+                               extension to only sensible boundaries.
         '''
         for i in range(len(plateaus)):
             cutoff = coverages[i] - allowedDecrease
@@ -205,8 +290,11 @@ class MSA_ORF:
             newStart = plateaus[i][0]
             for x in range(plateaus[i][0]-1, -1, -1):
                 indexCov = self.lineChart[x]
+                # Plummet check
+                if indexCov in plummets:
+                    break
                 # Increasing check
-                if indexCov > prevCov:  # This means we're leading up to another peak, and should stop extending this plateau
+                if indexCov > prevCov + delta:  # This means we're leading up to another peak, and should stop extending this plateau
                     break
                 # Decreasing cut-off
                 if indexCov >= cutoff:
@@ -222,8 +310,11 @@ class MSA_ORF:
             newEnd = plateaus[i][1]
             for x in range(plateaus[i][1]+1, len(self.lineChart)):
                 indexCov = self.lineChart[x]
+                # Plummet check
+                if indexCov in plummets:
+                    break
                 # Increasing check
-                if indexCov > prevCov:  # This means we're leading up to another peak, and should stop extending this plateau
+                if indexCov > prevCov + delta:  # This means we're leading up to another peak, and should stop extending this plateau
                     break
                 # Decreasing cut-off
                 if indexCov >= cutoff:
@@ -235,7 +326,7 @@ class MSA_ORF:
             plateaus[i][1] = newEnd
         return plateaus
     
-    def denovo_prediction_peaks(self, delta=0.005):
+    def denovo_prediction_peaks(self, delta=0.005, allowedDecrease=0.2, PEAK_MINIMUM=0.90):
         '''
         This method attempts to predict multiple ORFs from within the MSA using a peak 
         detection algorithm.
@@ -245,8 +336,14 @@ class MSA_ORF:
         and that gives us a kind of line chart we can perform peak detection from.
         
         Parameters:
-            delta -- a float value indicating what change in the min-max normalised values are
-                     allowed before 
+            delta -- a float value indicating what change in the min-max normalised values must
+                     occur before a new peak is detected
+            allowedDecrease -- a float value indicating what change in the min-max normalised
+                               values is permitted for extending a plateau. If this value is
+                               less than delta, plateaus will be allowed to merge.
+            PEAK_MINIMUM -- a float value in the range of 0->1 which will limit what regions
+                            of the min-max array can be detected as a peak. This will prevent
+                            low-quality peaks from being found.
         Returns:
             orfCoordinates -- a list containing lists with structure like:
                               [
@@ -264,10 +361,14 @@ class MSA_ORF:
         
         # Min-max normalise line chart values
         self.lineChart = [(value - np.min(self.lineChart)) / (np.max(self.lineChart) - np.min(self.lineChart)) for value in self.lineChart]
-                
-        # Perform peak detection
-        delta = 0.005 # np.max(self.lineChart) / 1000 # np.max(self.lineChart) - np.median(self.lineChart)
+        
+        # Perform peak detection & plummet detection
+        plummets = plummetdet(self.lineChart)
         maxindices, minindices = peakdet(self.lineChart, delta)
+        if len(maxindices) == 0:
+            maxindices = maxdet(self.lineChart)
+        else:
+            maxindices = maxindices[np.where(np.abs(maxindices[:,1]) > PEAK_MINIMUM)] # remove crappy peaks
         
         # Get plateau regions
         plateaus = []
@@ -293,7 +394,7 @@ class MSA_ORF:
         
         # Extend plateaus to deal with rare stop codons
         "Think of a stop codon in just one or two sequences as a small barrier to our finding an ideal ORF region"
-        plateaus = self._plateau_extens(plateaus, coverages, allowedDecrease=0.001)
+        plateaus = self._plateau_extens(plateaus, coverages, plummets, delta, allowedDecrease)
         
         # Drop any short plateaus
         SHORT_CUTOFF = 30
@@ -304,6 +405,9 @@ class MSA_ORF:
                 dropIndices.append(i)
         for index in dropIndices[::-1]:
             del plateaus[index]
+        
+        # Merge overlapping plateaus
+        plateaus = _merge_coords_list(plateaus)
         
         # Return
         orfCoordinates = plateaus # just for conceptual purposes and matching our method string
