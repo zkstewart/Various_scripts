@@ -77,7 +77,7 @@ def calculate_sequence_similarity(FastASeq_obj1, FastASeq_obj2):
         
         return [gaps, identical, substitutions, percentageIdentical, percentageNongappy]
         
-if __name__ == "__main__":
+def main():
     usage = """%(prog)s receives two directories of FASTA files with the same names. The
     "expectation" directory contains our gold-standard sequences we want to match. The
     "test" directory contains our new sequences we want to check. The output is a tabular
@@ -164,4 +164,5 @@ if __name__ == "__main__":
     
     print("Program completed successfully!")
 
-
+if __name__ == "__main__":
+    main()

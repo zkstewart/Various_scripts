@@ -653,7 +653,7 @@ def add_codon_numbers(FASTA_obj, exonFrames):
             FASTA_obj[0].gap_seq = FASTA_obj[0].gap_seq[:x] + str(ongoingFrameCount) + FASTA_obj[0].gap_seq[x+1:]
             ongoingFrameCount = 1 if ongoingFrameCount == 3 else ongoingFrameCount + 1
 
-if __name__ == "__main__":
+def main():
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is to remove indel errors from a MSA that has
     been previously subjected to exome_curation_2_introns.py. Specifically, it uses the
@@ -714,3 +714,6 @@ if __name__ == "__main__":
         FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
     
     print("Program completed successfully!")
+
+if __name__ == "__main__":
+    main()

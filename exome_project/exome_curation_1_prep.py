@@ -79,7 +79,7 @@ def add_missing_seqs(FASTA_obj, sequenceIDs):
         dummyFastASeq_obj = ZS_SeqIO.FastASeq(mID, alt=mID, gapSeq = mockSequence)
         FASTA_obj.insert(0, dummyFastASeq_obj) # Just insert at index = 0, we'll sort things later
 
-if __name__ == "__main__":
+def main():
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is process these files to have more informative IDs,
     to ensure every file contains all species (even if they're just blank lines), and to keep
@@ -181,3 +181,6 @@ if __name__ == "__main__":
         FASTA_obj.write(outputFileName, withAlt=True, asAligned=True, withConsensus=False)
     
     print("Program completed successfully!")
+
+if __name__ == "__main__":
+    main()

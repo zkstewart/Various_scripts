@@ -70,7 +70,7 @@ def get_mock_genename_sequence(FASTA_obj):
     geneName = os.path.basename(FASTA_obj.fileOrder[0][0]).split("-mx.fa")[0]
     return geneName.ljust(len(FASTA_obj[0].gap_seq), '-')
 
-if __name__ == "__main__":
+def main():
     usage = """%(prog)s receives a directory full of aligned and processed FASTA files as part of the
     Oz Mammals genome project. Its goal is to concatenate these alignments into chunks of ~50 (by default)
     exons for manual curation purposes.
@@ -143,3 +143,6 @@ if __name__ == "__main__":
         outputFileName = os.path.join(args.outputDir, "exons_chunk_{0}.fa".format(i+1))
         FASTA_obj = concatFastaObjs[i]
         FASTA_obj.write(outputFileName, withDescription=True, asAligned=True, withConsensus=False)
+
+if __name__ == "__main__":
+    main()

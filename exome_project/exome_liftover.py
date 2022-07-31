@@ -396,7 +396,7 @@ def write_prediction_to_fasta(prediction, genome_FASTA_obj, identifier, outputFi
     with open(outputFileName, "w") as fileOut:
         fileOut.write(FastASeq_obj.get_str(withAlt=True))
 
-if __name__ == "__main__":
+def main():
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is to transform these alignments into HMMs that can
     then be queried against a genome of interest to locate the relevant exon sequence from
@@ -500,3 +500,6 @@ if __name__ == "__main__":
         write_prediction_to_fasta(bestPrediction, genome_FASTA_obj, args.identifier, exonFastaFile)
 
     print("Program completed successfully!")
+
+if __name__ == "__main__":
+    main()
