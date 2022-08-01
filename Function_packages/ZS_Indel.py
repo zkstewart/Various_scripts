@@ -243,6 +243,7 @@ class IndelPredictor:
         for i in range(1, len(plateaus)):
             start = plateaus[i-1][1]+1
             end = plateaus[i][0]-1
+            start, end = min(start, end), max(start, end) # accommodates single base positions
             indelRegions.append([start, end])
         
         # Return
@@ -324,7 +325,7 @@ class IndelPredictor:
                     any deletions or insertions i.e., it should be INCLUDED.
         '''
         fixes = []
-        for problemAlign, targetAlign, startIndex, _, _ in matches:
+        for problemAlign, targetAlign, _, queryStartIndex, _, _ in matches:
             # Limit ourselves to only good matches for indel fixing
             
             ## 1) Check if the alignment is good based on % overlap
@@ -359,8 +360,8 @@ class IndelPredictor:
                 gapFrame = gapLen % 3 # this will give 0, 1, or 2
                 # If gapFrame isn't 0 (gapLen not divisible by 3), add N's to address the situation
                 if gapFrame != 0:
-                    gapStart = gap.span()[0] + startIndex # + startIndex to give a consistent position in the sequence
-                    resume = gap.span()[0] + startIndex
+                    gapStart = gap.span()[0] + queryStartIndex # + startIndex to give a consistent position in the sequence
+                    resume = gap.span()[0] + queryStartIndex
                     fix.append([gapStart, resume, gapFrame])
             for gap in targetGaps:
                 '''
@@ -374,8 +375,8 @@ class IndelPredictor:
                 gapFrame = gapLen % 3 # this will give 0, 1, or 2
                 # If gapFrame isn't 0 (gapLen not divisible by 3), use N's to address the situation
                 if gapFrame != 0:
-                    gapStart = gap.span()[0] + startIndex # we're just going to replace the entire gap region
-                    resume = gap.span()[1] + startIndex
+                    gapStart = gap.span()[0] + queryStartIndex # we're just going to replace the entire gap region
+                    resume = gap.span()[1] + queryStartIndex
                     fix.append([gapStart, resume, gapLen-gapFrame])
             fixes.append(fix)
         
