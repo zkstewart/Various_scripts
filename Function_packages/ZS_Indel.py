@@ -142,18 +142,30 @@ def _plateau_extens(lineChart, plateaus, coverages, plummets, delta, allowedDecr
 def _filter_matches(matches):
     # Find a good cut-off to use
     if len(matches) <= 20:
-         SCORE_CUTOFF = np.percentile([x[3] for x in matches], 10) # drop the worst 10% only
+         SCORE_CUTOFF = np.percentile([m.score for m in matches], 10) # drop the worst 10% only
     else:
         # Find a cut-off that ensures at least ~20 matches [this is an arbitrary cut-off]
         DESIRABLE_NUMBER = 20
         for x in [90, 70, 50, 30, 20, 15]: # 15 will always be out fallback condition
-            SCORE_CUTOFF = np.percentile([x[3] for x in matches], x)
-            numMatchesWithCutoff = sum([1 for m in matches if m[3] >= SCORE_CUTOFF])
+            SCORE_CUTOFF = np.percentile([m.score for m in matches], x)
+            numMatchesWithCutoff = sum([1 for m in matches if m.score >= SCORE_CUTOFF])
             if numMatchesWithCutoff >= DESIRABLE_NUMBER:
                 break
     
     # Filter matches & return
-    return [match for match in matches if match[3] >= SCORE_CUTOFF]
+    return [match for match in matches if match.score >= SCORE_CUTOFF]
+
+class Match:
+    '''
+    Simple object to act as a container for match results
+    '''
+    def __init__(self, queryAlign, targetAlign, score, queryStartIndex, targetStartIndex, targetSeqID):
+        self.queryAlign = queryAlign
+        self.targetAlign = targetAlign
+        self.score = score
+        self.queryStartIndex = queryStartIndex
+        self.targetStartIndex = targetStartIndex
+        self.targetSeqID = targetSeqID
 
 class IndelPredictor:
     '''
@@ -287,14 +299,14 @@ class IndelPredictor:
                 targetNuclSeq = FASTA_obj[targetSeqID].seq
                 sswResult = SSW.ssw_parasail(queryNuclSeq, targetNuclSeq) # this function has poorly ordered outputs
                 matches.append(
-                    [
+                    Match(
                         sswResult.queryAlign, sswResult.targetAlign,
                         sswResult.score, sswResult.queryStartIndex,
                         sswResult.targetStartIndex, targetSeqID
-                    ]
+                    )
                 )
         
-        matches.sort(key = lambda x: -x[3]) # order by score
+        matches.sort(key = lambda x: -x.score) # order by score
         return matches if FILTER is False else _filter_matches(matches)
     
     @staticmethod
@@ -325,21 +337,21 @@ class IndelPredictor:
                     any deletions or insertions i.e., it should be INCLUDED.
         '''
         fixes = []
-        for problemAlign, targetAlign, _, queryStartIndex, _, _ in matches: # trust me, we ONLY USE queryStartIndex
+        for match in matches:
             # Limit ourselves to only good matches for indel fixing
             
             ## 1) Check if the alignment is good based on % overlap
-            pctOverlap = len(problemAlign.replace("-","")) / len(querySeq)
+            pctOverlap = len(match.queryAlign.replace("-","")) / len(querySeq)
             if pctOverlap < GOOD_ALIGN_PCT:
                 continue
             
             ## 2) Check if it's only 1 or 2 (max?) gap opens in either sequence
-            problemGapsHits = list(re.finditer(r"-+", problemAlign))
+            problemGapsHits = list(re.finditer(r"-+", match.queryAlign))
             problemGaps = [] # we're going to drop any gaps divisible by 3 because they shouldn't matter
             for gap in problemGapsHits:
                 if len(gap.group()) % 3 != 0:
                     problemGaps.append(gap)
-            targetGapsHits = list(re.finditer(r"-+", targetAlign))
+            targetGapsHits = list(re.finditer(r"-+", match.targetAlign))
             targetGaps = []
             for gap in targetGapsHits:
                 if len(gap.group()) % 3 != 0:
@@ -360,8 +372,8 @@ class IndelPredictor:
                 gapFrame = gapLen % 3 # this will give 0, 1, or 2
                 # If gapFrame isn't 0 (gapLen not divisible by 3), add N's to address the situation
                 if gapFrame != 0:
-                    gapStart = gap.span()[0] + queryStartIndex # + startIndex to give a consistent position in the sequence
-                    resume = gap.span()[0] + queryStartIndex
+                    gapStart = gap.span()[0] + match.queryStartIndex # + startIndex to give a consistent position in the sequence
+                    resume = gap.span()[0] + match.queryStartIndex
                     fix.append([gapStart, resume, gapFrame])
             for gap in targetGaps:
                 '''
@@ -375,8 +387,8 @@ class IndelPredictor:
                 gapFrame = gapLen % 3 # this will give 0, 1, or 2
                 # If gapFrame isn't 0 (gapLen not divisible by 3), use N's to address the situation
                 if gapFrame != 0:
-                    gapStart = gap.span()[0] + queryStartIndex # we're just going to replace the entire gap region
-                    resume = gap.span()[1] + queryStartIndex
+                    gapStart = gap.span()[0] + match.queryStartIndex # we're just going to replace the entire gap region
+                    resume = gap.span()[1] + match.queryStartIndex # trust me, we ONLY USE queryStartIndex
                     fix.append([gapStart, resume, gapLen-gapFrame])
             fixes.append(fix)
         
