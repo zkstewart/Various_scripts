@@ -715,7 +715,8 @@ class ORF:
                 # Otherwise, do it anew
                 except:
                     solutionSeq, solutionFrame, _ = solution
-                    _, _, _, score = SSW.ssw_parasail(solutionSeq, targetSeq)
+                    sswResult = SSW.ssw_parasail(solutionSeq, targetSeq)
+                    score = sswResult.score
                     # Store it into memoryDict
                     memoryDict.setdefault(thisSeqID, {})
                     memoryDict[thisSeqID].setdefault(j, {})

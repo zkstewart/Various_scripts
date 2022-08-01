@@ -371,6 +371,17 @@ class MAFFT:
             else:
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
+class SSW_Result:
+    '''
+    Simple object to act as a container for the results from SSW alignment.
+    '''
+    def __init__(self, queryAlign, targetAlign, score, queryStartIndex, targetStartIndex):
+        self.queryAlign = queryAlign
+        self.targetAlign = targetAlign
+        self.score = score
+        self.queryStartIndex = queryStartIndex
+        self.targetStartIndex = targetStartIndex
+
 class SSW:
     '''
     Class to encapsulate static methods used for performing alignments using SSW implementations.
@@ -384,12 +395,16 @@ class SSW:
         # Perform SSW with parasail implementation
         profile = parasail.profile_create_sat(targetString, parasail.blosum62)
         alignment = parasail.sw_trace_striped_profile_sat(profile, queryString, 10, 1)
+        queryAlign = alignment.traceback.ref # this ssw implementation sees things differently than I
         targetAlign = alignment.traceback.query
-        queryAlign = alignment.traceback.ref
-        # Figure out where we're starting in the target with this alignment
-        startIndex = targetString.find(targetAlign.replace('-', ''))
         
-        return [queryAlign, targetAlign, startIndex, alignment.score]
+        # Figure out where we're starting for the alignments
+        queryStartIndex = queryString.find(queryAlign.replace('-', ''))
+        targetStartIndex = targetString.find(targetAlign.replace('-', ''))
+        
+        # Make and return an object containing all our results
+        result = SSW_Result(queryAlign, targetAlign, alignment.score, queryStartIndex, targetStartIndex)
+        return result
 
     @staticmethod
     def ssw_skbio(queryString, targetString):
@@ -402,10 +417,14 @@ class SSW:
         alignment = query(queryString)
         targetAlign = alignment.aligned_query_sequence
         queryAlign = alignment.aligned_target_sequence
-        # Figure out where we're starting in the target with this alignment
-        startIndex = targetString.find(targetAlign.replace('-', ''))
         
-        return [queryAlign, targetAlign, startIndex, alignment.optimal_alignment_score]
+        # Figure out where we're starting for the alignments
+        queryStartIndex = queryString.find(queryAlign.replace('-', ''))
+        targetStartIndex = targetString.find(targetAlign.replace('-', ''))
+        
+        # Make and return an object containing all our results
+        result = SSW_Result(queryAlign, targetAlign, alignment.optimal_alignment_score, queryStartIndex, targetStartIndex)
+        return result
 
 if __name__ == "__main__":
     pass
