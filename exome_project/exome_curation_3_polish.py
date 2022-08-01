@@ -6,11 +6,11 @@
 
 import sys, argparse, os, re, platform, statistics
 import numpy as np
-sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from collections import Counter
-from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_ORF
-from exome_liftover import ssw_parasail
 from copy import deepcopy
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
+from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_ORF, ZS_Indel
 
 def validate_args(args):
     # Validate input data location
@@ -73,7 +73,6 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
                       for codon numbering. Key = seqID, value = frame (int). List indexes
                       correspond to exon regions ordered as per _get_exon_coords().
     '''
-    
     assert FASTA_obj[0].id == "Codons", "FASTA lacks a Codons line at its start!"
     mafftAligner = ZS_AlignIO.MAFFT(mafftDir) # set up here for use later
     mafftAligner.set_threads(threads)
@@ -142,7 +141,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
             trueStartIndex = np.percentile([x[0] for x in boundaries], 100-EXCLUSION_PCT)
             trueEndIndex = np.percentile([x[1] for x in boundaries], EXCLUSION_PCT)
             assert trueStartIndex < trueEndIndex, "Mismatched circumstances still isn't handled, Zac, fix this pls"
-            
+        
         # Trim "problem areas" to focus only on the best CDS region
         '''
         "Problem areas" are those that persist beyond 2_introns operations, which is expected
@@ -173,20 +172,29 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         for problemSeqID, value in solutionDict.items():
             protSeq, frame, hasStopCodon = value
             nuclSeq = exon_FASTA_obj[problemSeqID].seq
-            if not hasStopCodon: # no changes needed here
-                continue
             
             # Loop through all solutionDict values and find the best match to this problem one
-            matches = _obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, nuclSeq, solutionDict)
+            matches = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, solutionDict)
+            
+            # Decide if we can skip polishing this sequence
+            '''
+            This is a "newer" addition to the code. The goal is to detect cryptic indels
+            that would normally coast through here otherwise.
+            '''
+            if not hasStopCodon:
+                problemFrames = ZS_Indel.FastASeqAlignmentFrames(exon_FASTA_obj[problemSeqID], solutionDict)
+                indelRegions = ZS_Indel.IndelPredictor.predict_indel_regions(problemFrames)
+                if indelRegions == []:
+                    continue
             
             # Check all matches to see what fix they suggest
-            fix = _get_suggested_fix_from_ssw_matches(matches, nuclSeq)
+            fix = ZS_Indel.IndelPredictor.get_fix_from_ssw_matches(matches, nuclSeq)
             if fix == []:
                 continue
             
             # If we found a fix to make, get the edited sequence
             polishedSequences = True # if we get to here, we'll want to recompute the solutionDict again
-            editedSeq = _enact_fix_to_seq(fix, exon_FASTA_obj[problemSeqID].seq)
+            editedSeq = ZS_Indel.IndelPredictor.use_fix_on_sequence(fix, exon_FASTA_obj[problemSeqID].seq)
             
             # Then, update the sequence in our exon_FASTA_obj
             exon_FASTA_obj[problemSeqID].seq = editedSeq
@@ -196,7 +204,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
         if polishedSequences == True:
             solutionDict = ZS_ORF.ORF.solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
         
-        # Get the frames to translation the sequences into from solutionDict
+        # Get the frames to translate the sequences into from solutionDict
         frames, thisExonFrames = _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict)
         exonFrames.append(thisExonFrames)
         
@@ -275,182 +283,6 @@ def _get_exon_coords(FASTA_obj):
         exonCoords.append([start, i+1]) # +1 to make end non-inclusive
     return exonCoords
 
-def _get_suggested_fix_from_ssw_matches(matches, nuclSeq, GOOD_ALIGN_PCT=0.60, GOOD_GAPS_NUM=2):
-    '''
-    Hidden function for use by polish_MSA_denovo(). It's been pulled aside here since it's quite
-    complex and I don't want it being a mental burden when interpretting the parent function.
-    
-    Importantly, the fixes will never overlap.
-    
-    Parameters:
-        GOOD_ALIGN_PCT -- arbitary, hard-coded magic number. I don't think we should change this.
-        GOOD_GAPS_NUM -- arbitary, hard-coded magic number. 2 sounds right to me, yknow?
-    Returns:
-        fixes -- a list with format of: [[gapStart, resume, nLength], ...]. It should
-                 used to make changes to the sequence, eventually. Note that the gapStart and
-                 resume variables are intentionally named to help conceptualisation.
-                 The gapStart value is where the gap region BEGINS and hence should be
-                 EXCLUDED.
-                 The resume value is where we should RESUME the sequence from after 
-                 any deletions or insertions i.e., it should be INCLUDED.
-    '''
-    # Find a good cut-off to use
-    if len(matches) <= 20:
-         SCORE_CUTOFF = np.percentile([x[3] for x in matches], 10) # drop the worst 10% only
-    else:
-        # Find a cut-off that ensures at least ~20 matches [this is an arbitrary cut-off]
-        DESIRABLE_NUMBER = 20
-        for x in [90, 70, 50, 30, 20, 15]: # 15 will always be out fallback condition
-            SCORE_CUTOFF = np.percentile([x[3] for x in matches], x)
-            numMatchesWithCutoff = sum([1 for m in matches if m[3] >= SCORE_CUTOFF])
-            if numMatchesWithCutoff >= DESIRABLE_NUMBER:
-                break
-    
-    # Find our fixes
-    fixes = []
-    for problemAlign, targetAlign, startIndex, score in matches:
-        # Limit ourselves to only good matches for indel fixing
-        ## 1) Skip anything with a score that doesn't meet cut-off
-        if score < SCORE_CUTOFF:
-            continue
-        
-        ## 2) Check if the alignment is good based on % overlap
-        pctOverlap = len(problemAlign.replace("-","")) / len(nuclSeq)
-        if pctOverlap < GOOD_ALIGN_PCT:
-            continue
-        
-        ## 3) Check if it's only 1 or 2 (max?) gap opens in either sequence
-        problemGapsHits = list(re.finditer(r"-+", problemAlign))
-        problemGaps = [] # we're going to drop any gaps divisible by 3 because they shouldn't matter
-        for gap in problemGapsHits:
-            if len(gap.group()) % 3 != 0:
-                problemGaps.append(gap)
-        targetGapsHits = list(re.finditer(r"-+", targetAlign))
-        targetGaps = []
-        for gap in targetGapsHits:
-            if len(gap.group()) % 3 != 0:
-                targetGaps.append(gap)
-        numGaps = len(problemGaps) + len(targetGaps)
-        if numGaps > GOOD_GAPS_NUM or numGaps == 0: # if we have no gaps, the stop codon has to be substitution related
-            continue # we're not going to fix substitution errors, only indels
-        
-        # If we found a good match (i.e., we get here), see if there's anything to fix
-        fix = []
-        for gap in problemGaps:
-            '''
-            Here, the rationale is that gaps in the problem sequence mean it's MISSING
-            something. Under that assumption, it's easy for us to just add N's into this
-            gap region that maintain the reading frame, and everything should just work.
-            '''
-            gapLen = len(gap.group())
-            gapFrame = gapLen % 3 # this will give 0, 1, or 2
-            # If gapFrame isn't 0 (gapLen not divisible by 3), add N's to address the situation
-            if gapFrame != 0:
-                gapStart = gap.span()[0] + startIndex # + startIndex to give a consistent position in the sequence
-                resume = gap.span()[0] + startIndex
-                fix.append([gapStart, resume, gapFrame])
-        for gap in targetGaps:
-            '''
-            Here, the rationale is that gaps in the target sequence mean the problem sequence
-            has ADDED something incorrectly. Under that assumption, it's non-trivial finding
-            which position(s) have the problem especially if the gap region is longer than 3 base
-            pairs. The safe solution is to REPLACE this entire region in the problem sequence
-            with N's that fix the reading frame, and everything should still work.
-            '''
-            gapLen = len(gap.group())
-            gapFrame = gapLen % 3 # this will give 0, 1, or 2
-            # If gapFrame isn't 0 (gapLen not divisible by 3), use N's to address the situation
-            if gapFrame != 0:
-                gapStart = gap.span()[0] + startIndex # we're just going to replace the entire gap region
-                resume = gap.span()[1] + startIndex
-                fix.append([gapStart, resume, gapLen-gapFrame])
-        fixes.append(fix)
-    
-    # Abort operation if we've found no valid fixes
-    if fixes == []:
-        return fixes
-    
-    # Find the most consistently supported fix
-    fixesCounts = {}
-    ongoingCount = 0
-    for fix in fixes:
-        if ongoingCount == 0:
-            fixesCounts[ongoingCount] = [fix, 1]
-            ongoingCount += 1
-        else:
-            found = False
-            for i in range(0, ongoingCount):
-                if fixesCounts[i][0] == fix:
-                    fixesCounts[i][1] += 1
-                    found = True
-                    break
-            if found == False:
-                fixesCounts[ongoingCount] = [fix, 1]
-                ongoingCount += 1
-    
-    bestFix = [None, 0]
-    for value in fixesCounts.values():
-        if value[1] > bestFix[1]:
-            bestFix = value
-    
-    # Return the most supported fix
-    return bestFix[0]
-
-def _enact_fix_to_seq(fix, seq):
-    '''
-    Hidden function for use by polish_MSA_denovo(). Its goal is to take a fix identified by
-    _get_suggested_fix_from_ssw_matches() and make the changes to the given sequence.
-    
-    Changes are made using ambiguous characters i.e., "n"s. Note that these will be
-    lowercase. It's probably a good idea to make the rest of the sequence uppercase, so
-    it's obvious where these fixes have occurred.
-    
-    NOTE: This is NOT the .gap_seq value, it is the .seq value!
-    
-    Return:
-        editedGapSeq -- the fixed gapSeq.
-    '''
-    
-    # Sort fixes in descending order
-    fix.sort(key = lambda x: -x[1]) # doesn't matter if we sort by start or end since it's non-overlapping
-    
-    # Iterate through fixes and make all suggested changes
-    for start, end, nLength in fix:
-        '''
-        Start will be the first index where the gap (-) occurs, so running up to but 
-        NOT INCLUDING start gives us the desirable behaviour. End is range() index
-        i.e., non inclusive, so we want to INCLUDE it here.
-        '''
-        seq = seq[0:start] + "n"*nLength + seq[end:]
-    return seq
-
-def _obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, problemNuclSeq, solutionDict):
-    '''
-    Hidden helper function to take a sequence that we've identified to be problematic somehow
-    and, looking through the solutionDict, find the best SSW alignment for the problem sequence
-    to all the solved sequences in solutionDict.
-    
-    Returns:
-        matches -- a list with structure like:
-                        [
-                            [aligned_problem_seq, aligned_target_seq, start_index, score],
-                            ...
-                        ]
-    '''
-    matches = []
-    for targetSeqID, value in solutionDict.items():
-        if targetSeqID == problemSeqID:
-            continue
-        _, _, targetHasStopCodon = value
-        if targetHasStopCodon:
-            continue
-        else:
-            targetNuclSeq = exon_FASTA_obj[targetSeqID].seq
-            targetAlign, problemAlign, startIndex, score = ssw_parasail(problemNuclSeq, targetNuclSeq) # this function has poorly ordered outputs
-            matches.append([problemAlign, targetAlign, startIndex, score])
-    matches.sort(key = lambda x: -x[3]) # order by score
-    return matches
-
 def _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict):
     '''
     Hidden helper function to look through sequences in our exon FASTA object
@@ -525,16 +357,16 @@ def _outlier_fix_up(exon_FASTA_obj, solutionDict):
         nuclSeq = exon_FASTA_obj[problemSeqID].seq
         
         # Loop through solutionDict values and find the best matches to this problem one
-        matches = _obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, nuclSeq, solutionDict)
+        matches = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, solutionDict)
         
         # Check all matches to see what fix they suggest
-        fix = _get_suggested_fix_from_ssw_matches(matches, nuclSeq)
+        fix = ZS_Indel.IndelPredictor.get_fix_from_ssw_matches(matches, nuclSeq)
         if fix == []:
             continue
         
         # If we found a fix to make, get the edited sequence
         polishedSequences = True # if we get to here, we'll want to recompute the solutionDict again
-        editedSeq = _enact_fix_to_seq(fix, exon_FASTA_obj[problemSeqID].seq)
+        editedSeq = ZS_Indel.IndelPredictor.use_fix_on_sequence(fix, exon_FASTA_obj[problemSeqID].seq)
         
         # Then, update the sequence in our exon_FASTA_obj
         exon_FASTA_obj[problemSeqID].seq = editedSeq
