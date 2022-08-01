@@ -325,7 +325,7 @@ class IndelPredictor:
                     any deletions or insertions i.e., it should be INCLUDED.
         '''
         fixes = []
-        for problemAlign, targetAlign, _, queryStartIndex, _, _ in matches:
+        for problemAlign, targetAlign, _, queryStartIndex, _, _ in matches: # trust me, we ONLY USE queryStartIndex
             # Limit ourselves to only good matches for indel fixing
             
             ## 1) Check if the alignment is good based on % overlap
