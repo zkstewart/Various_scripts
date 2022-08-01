@@ -4,10 +4,12 @@
 # and attempts to fix indel errors present in a subset of the alignments.
 # If they all have indels, god help you since I can't.
 
-import sys, argparse, os, re, platform, statistics
+import sys, argparse, os, platform, statistics
+import concurrent.futures
 import numpy as np
 from collections import Counter
 from copy import deepcopy
+from itertools import repeat
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_ORF, ZS_Indel
@@ -48,7 +50,7 @@ def validate_args(args):
         except:
             print("Wasn't able to create '{0}' directory; does '{1}' actually exist?".format(args.outputDir, os.path.dirname(args.outputDir)))
 
-def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
+def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
     '''
     Polishes a ZS_SeqIO.FASTA object to remove probable indel errors from sequences.
     It does this without genomic evidence (hence "de novo") by assessment of how
@@ -64,7 +66,6 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
                              file which we can BLAST against when solving hard
                              scenarios.
         mafftDir -- a string indicating the location of the MAFFT executable files.
-        threads -- an integer indicating how many threads to run MAFFT alignment with.
     Returns:
         result_FASTA_obj -- a new ZS_SeqIO.FASTA instance with indels polished and
                             the MSA realigned by codons.
@@ -75,8 +76,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir, threads):
     '''
     assert FASTA_obj[0].id == "Codons", "FASTA lacks a Codons line at its start!"
     mafftAligner = ZS_AlignIO.MAFFT(mafftDir) # set up here for use later
-    mafftAligner.set_threads(threads)
-    
+        
     # Get the coordinate spans of exons
     exonCoords = _get_exon_coords(FASTA_obj)
     
@@ -485,6 +485,23 @@ def add_codon_numbers(FASTA_obj, exonFrames):
             FASTA_obj[0].gap_seq = FASTA_obj[0].gap_seq[:x] + str(ongoingFrameCount) + FASTA_obj[0].gap_seq[x+1:]
             ongoingFrameCount = 1 if ongoingFrameCount == 3 else ongoingFrameCount + 1
 
+def polishing_handler(args, alignFastaFile, FASTA_obj):
+    # Get details for this MSA
+    outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
+    
+    # Skip if we've already processed this file
+    if os.path.isfile(outputFileName):
+        return
+    
+    # Perform polishing procedure
+    FASTA_obj, exonFrames = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir)
+    
+    # Number codons
+    add_codon_numbers(FASTA_obj, exonFrames)
+    
+    # Write output FASTA file
+    FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
+
 def main():
     usage = """%(prog)s receives a directory full of aligned FASTA files as part of the
     Oz Mammals genome project. Its goal is to remove indel errors from a MSA that has
@@ -511,7 +528,7 @@ def main():
                 default="3_polish")
     # Opts
     p.add_argument("--threads", dest="threads", required=False, type=int, default=1,
-                help="Optionally specify how many threads to perform MAFFT alignment with")
+                help="Optionally specify how many threads to run with")
     args = p.parse_args()
     validate_args(args)
     
@@ -526,24 +543,8 @@ def main():
         fastaObjs.append(f)
     
     # Polishing
-    for i in range(len(files)):
-        # Get details for this MSA
-        alignFastaFile = files[i]
-        FASTA_obj = fastaObjs[i]
-        outputFileName = os.path.join(args.outputDir, os.path.basename(alignFastaFile))
-        
-        # Skip if we've already processed this file
-        if os.path.isfile(outputFileName):
-            continue
-        
-        # Perform polishing procedure
-        FASTA_obj, exonFrames = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir, args.threads)
-        
-        # Number codons
-        add_codon_numbers(FASTA_obj, exonFrames)
-        
-        # Write output FASTA file
-        FASTA_obj.write(outputFileName, withDescription=True, asAligned=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
+        executor.map(polishing_handler, repeat(args, len(files)), files, fastaObjs)
     
     print("Program completed successfully!")
 
