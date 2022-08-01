@@ -9,7 +9,8 @@ from copy import deepcopy
 import numpy as np
 
 sys.path.append(os.path.dirname(__file__))
-import ZS_BlastIO, ZS_SeqIO, ZS_AlignIO
+import ZS_BlastIO, ZS_SeqIO
+from ZS_AlignIO import SSW
 
 def peakdet(v, delta, x = None):
     import sys
@@ -711,10 +712,10 @@ class ORF:
                         score = memoryDict[thisSeqID][j][otherSeqID][solutionFrame]
                     except:
                         score = memoryDict[otherSeqID][solutionFrame][thisSeqID][j]
-                except:
                 # Otherwise, do it anew
+                except:
                     solutionSeq, solutionFrame, _ = solution
-                    _, _, _, score = ZS_AlignIO.SSW.ssw_parasail(targetSeq, solutionSeq)
+                    _, _, _, score = SSW.ssw_parasail(solutionSeq, targetSeq)
                     # Store it into memoryDict
                     memoryDict.setdefault(thisSeqID, {})
                     memoryDict[thisSeqID].setdefault(j, {})
@@ -785,7 +786,7 @@ class ORF:
         Returns:
             solutionDict -- a dictionary with structure like:
                 {
-                    sequence_id: [seq, frame, hasStopCodon (bool)]
+                    sequence_id: [seq, frame, hasStopCodon (bool), target_sequence_id]
                 }
         '''
         # Obtain translations in the three strand=1 frames

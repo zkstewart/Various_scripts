@@ -376,7 +376,7 @@ class SSW:
     Class to encapsulate static methods used for performing alignments using SSW implementations.
     '''
     @staticmethod
-    def ssw_parasail(targetString, queryString):
+    def ssw_parasail(queryString, targetString):
         '''
         Special implementation of striped Smith Waterman alignment for exon liftover
         project.
@@ -392,7 +392,7 @@ class SSW:
         return [queryAlign, targetAlign, startIndex, alignment.score]
 
     @staticmethod
-    def ssw_skbio(targetString, queryString):
+    def ssw_skbio(queryString, targetString):
         if platform.system() == 'Windows':
             print("skbio is not supported on Windows yet (as of last time this code was touched); won't proceed")
             return
