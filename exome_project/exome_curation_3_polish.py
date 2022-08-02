@@ -171,11 +171,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
         polishedSequences = False
         for problemSeqID, value in solutionDict.items():
             protSeq, frame, hasStopCodon = value
-            nuclSeq = exon_FASTA_obj[problemSeqID].seq
-            
-            # Loop through all solutionDict values and find the best match to this problem one
-            matches = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, solutionDict)
-            
+                        
             # Decide if we can skip polishing this sequence
             '''
             This is a "newer" addition to the code. The goal is to detect cryptic indels
@@ -187,8 +183,8 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
                 if indelRegions == []:
                     continue
             
-            # Check all matches to see what fix they suggest
-            fix = ZS_Indel.IndelPredictor.get_fix_from_ssw_matches(matches, nuclSeq)
+            # Find any fixes suggested by matching against solutionDict values
+            fix = _get_fixes(exon_FASTA_obj, problemSeqID, solutionDict)
             if fix == []:
                 continue
             
@@ -305,6 +301,39 @@ def _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict):
             thisExonFrames[seqID] = solutionDict[seqID][1]
     return frames, thisExonFrames
 
+def _get_fixes(FASTA_obj, problemSeqID, solutionDict):
+    # Check matches to see what fix they suggest
+    nuclSeq = FASTA_obj[problemSeqID].seq
+    
+    matchesFiltered = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(FASTA_obj, FASTA_obj[problemSeqID], solutionDict, FILTER=True)
+    matchesAll = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(FASTA_obj, FASTA_obj[problemSeqID], solutionDict, FILTER=False)
+    
+    fixFiltered = ZS_Indel.IndelPredictor.get_fix_from_ssw_matches(matchesFiltered, nuclSeq)
+    fixAll = ZS_Indel.IndelPredictor.get_fix_from_ssw_matches(matchesAll, nuclSeq)
+    
+    # If no fixes are suggested, return a blank list
+    if fixFiltered == []:
+        "Only check filtered fixes since we want to know the high-quality matches suggest a fix"
+        return []
+    
+    # Edit sequences using the fixes
+    fixFilteredSeq = ZS_Indel.IndelPredictor.use_fix_on_sequence(fixFiltered, nuclSeq)
+    fixFilteredFastASeq_obj = ZS_SeqIO.FastASeq(id=problemSeqID, seq=fixFilteredSeq)
+    
+    fixAllSeq = ZS_Indel.IndelPredictor.use_fix_on_sequence(fixAll, nuclSeq)
+    fixAllFastASeq_obj = ZS_SeqIO.FastASeq(id=problemSeqID, seq=fixAllSeq)
+    
+    # Check to see which fix makes things best
+    fixFilteredMatches = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(FASTA_obj, fixFilteredFastASeq_obj, solutionDict, FILTER=True)
+    fixFilteredMatchesMedian = statistics.median([m.score for m in fixFilteredMatches])
+    
+    "We want to filter the matches to make the comparison as fair as possible"
+    fixAllMatches = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(FASTA_obj, fixAllFastASeq_obj, solutionDict, FILTER=True)
+    fixAllMatchesMedian = statistics.median([m.score for m in fixAllMatches])
+    
+    # Return the fix best supported by score
+    return fixFiltered if fixFilteredMatchesMedian >= fixAllMatchesMedian else fixAll
+
 def _outlier_fix_up(exon_FASTA_obj, solutionDict):
     '''
     Function is under development and testing and uncertain to be part of the final module.
@@ -354,13 +383,9 @@ def _outlier_fix_up(exon_FASTA_obj, solutionDict):
     for problemSeqID in possibleOutliers:
         if problemSeqID not in solutionDict: # can't help this
             continue
-        nuclSeq = exon_FASTA_obj[problemSeqID].seq
         
-        # Loop through solutionDict values and find the best matches to this problem one
-        matches = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(exon_FASTA_obj, problemSeqID, solutionDict)
-        
-        # Check all matches to see what fix they suggest
-        fix = ZS_Indel.IndelPredictor.get_fix_from_ssw_matches(matches, nuclSeq)
+        # Find any fixes suggested by matching against solutionDict values
+        fix = _get_fixes(exon_FASTA_obj, problemSeqID, solutionDict)
         if fix == []:
             continue
         
