@@ -171,7 +171,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
         polishedSequences = False
         for problemSeqID, value in solutionDict.items():
             protSeq, frame, hasStopCodon = value
-                        
+            
             # Decide if we can skip polishing this sequence
             '''
             This is a "newer" addition to the code. The goal is to detect cryptic indels
@@ -191,7 +191,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
             # If we found a fix to make, get the edited sequence
             polishedSequences = True # if we get to here, we'll want to recompute the solutionDict again
             editedSeq = ZS_Indel.IndelPredictor.use_fix_on_sequence(fix, exon_FASTA_obj[problemSeqID].seq)
-            
+                        
             # Then, update the sequence in our exon_FASTA_obj
             exon_FASTA_obj[problemSeqID].seq = editedSeq
             exon_FASTA_obj[problemSeqID].gap_seq = None # make sure we know that our gap_seq is no longer valid
@@ -302,6 +302,8 @@ def _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict):
     return frames, thisExonFrames
 
 def _get_fixes(FASTA_obj, problemSeqID, solutionDict):
+    #FIX_TOO_LONG = 20
+    
     # Check matches to see what fix they suggest
     nuclSeq = FASTA_obj[problemSeqID].seq
     
@@ -323,16 +325,25 @@ def _get_fixes(FASTA_obj, problemSeqID, solutionDict):
     fixAllSeq = ZS_Indel.IndelPredictor.use_fix_on_sequence(fixAll, nuclSeq)
     fixAllFastASeq_obj = ZS_SeqIO.FastASeq(id=problemSeqID, seq=fixAllSeq)
     
-    # Check to see which fix makes things best
-    fixFilteredMatches = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(FASTA_obj, fixFilteredFastASeq_obj, solutionDict, FILTER=True)
-    fixFilteredMatchesMedian = statistics.median([m.score for m in fixFilteredMatches])
+    # Ensure that fixing with all doesn't ruin things
+    fixFilteredTranslation = fixFilteredFastASeq_obj.get_translation(findBestFrame=True)[0]
+    fixAllTranslation = fixAllFastASeq_obj.get_translation(findBestFrame=True)[0]
     
-    "We want to filter the matches to make the comparison as fair as possible"
-    fixAllMatches = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(FASTA_obj, fixAllFastASeq_obj, solutionDict, FILTER=True)
-    fixAllMatchesMedian = statistics.median([m.score for m in fixAllMatches])
+    allIsBad = True if "*" in fixAllTranslation and not "*" in fixFilteredTranslation else False
     
-    # Return the fix best supported by score
-    return fixFiltered if fixFilteredMatchesMedian >= fixAllMatchesMedian else fixAll
+    # Ensure that fix is sensible
+    filteredIsBad = False
+    # if allIsBad is False:
+    #     for fixPart in fixAll:
+    #         if fixPart[2] > FIX_TOO_LONG:
+    #             allIsBad = True
+    # for fixPart in fixFiltered:
+    #         if fixPart[2] > FIX_TOO_LONG:
+    #             filteredIsBad = True
+    
+    # Return the all fix if it worked out, otherwise return the filtered fix
+    #return fixFiltered if fixFilteredMatchesMedian >= fixAllMatchesMedian else fixAll
+    return fixFiltered if allIsBad else fixAll if not filteredIsBad else []
 
 def _outlier_fix_up(exon_FASTA_obj, solutionDict):
     '''
