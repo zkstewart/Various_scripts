@@ -5,10 +5,61 @@
 
 import os, sys, re
 import numpy as np
+from copy import deepcopy
 
 sys.path.append(os.path.dirname(__file__))
 from ZS_AlignIO import SSW
 from ZS_ORF import peakdet, _merge_coords_list, plummetdet
+
+def plateaudet(lineChart, plummets):
+    '''
+    Another function to do things with a line chart (1D array) and try to find
+    plateaus. Specifically, this works differently by taking the results of
+    plummetdet() and using these as boundaries for potential plateau regions.
+    This function then just finds the maximum within any potential region and
+    returns the index of those positions for later plateau extension.
+    
+    Parameters:
+        lineChart -- a list or 1D np.array() containing numeric values to search for
+                     plateau regions in.
+        plummets -- a list containing the indices where plummetdet() found plummets
+                    within the lineChart value.
+    Returns:
+        maxindices -- a np.array() containing the indices for potential plateau maximums.
+    '''
+    lineChart = np.array(lineChart) # make sure it's always the same format
+    
+    # Get potential plateau regions
+    potentialRegions = []
+    for i in range(len(plummets)):
+        thisValue = plummets[i]
+        
+        # Handle first
+        if i == 0:
+            potentialRegions.append([0, max(1, thisValue-1)])
+        
+        # Handle intermediate points
+        else:
+            start = min(plummets[i-1]+1, thisValue-1) # do this to handle adjacent plummets
+            end = max(plummets[i-1]+1, thisValue-1)
+            potentialRegions.append([start, end])
+    
+    # Handle last
+    if plummets != []:
+        potentialRegions.append([thisValue+1, len(lineChart)])
+    
+    # Get the maximum index for any potential regions
+    maxindices = []
+    for start, end in potentialRegions:
+        maxindices.append(
+            [
+                np.where(np.array(lineChart[start:end]) == \
+                    np.max(lineChart[start:end]))[0][0] + start,
+                np.max(lineChart[start:end])
+            ]
+        )
+    
+    return np.array(maxindices)
 
 class FastASeqAlignmentFrames:
     '''
@@ -27,7 +78,8 @@ class FastASeqAlignmentFrames:
     '''
     def __init__(self, FastASeq_obj, solutionDict):
         assert type(FastASeq_obj).__name__ == "FastASeq" or type(FastASeq_obj).__name__ == "ZS_SeqIO.FastASeq"
-        self.FastASeq = FastASeq_obj
+        self.FastASeq = deepcopy(FastASeq_obj)
+        self.FastASeq.seq = self.FastASeq.seq.strip("nN") # remove leading/trailing ambiguous characters
         self.solutionDict = solutionDict
         
         self.framing()
@@ -139,7 +191,7 @@ def _plateau_extens(lineChart, plateaus, coverages, plummets, delta, allowedDecr
         plateaus[i][1] = newEnd
     return plateaus
 
-def _filter_matches(matches, DESIRABLE_NUMBER=50):
+def _filter_matches(matches, DESIRABLE_NUMBER=20):
     '''
     This function attempts to reduce the noise associated with fix finding from matches.
     It's important to configure DESIRABLE_NUMBER to be something that makes sense. It used
@@ -207,6 +259,14 @@ class IndelPredictor:
                                   ...
                               ]
         '''
+        # Magic number declaration
+        MIN_LENGTH_FOR_TRIM = 90 # this should do it...?
+        TRIM_LENGTH = 20
+        MIN_PLATEAU_LENGTH = 10
+        BIAS_CUTOFF = 0.05 # ehhhh, it should work
+        LOTS_OF_NS_PCT = 0.33 # ehh, idk?
+        
+        # Get our line chart
         seqLength = len(FastASeqAlignmentFrames_obj.FastASeq.seq)
         
         lineChart = np.zeros(seqLength)
@@ -216,9 +276,40 @@ class IndelPredictor:
         # Min-max normalise line chart values
         lineChart = [(value - np.min(lineChart)) / (np.max(lineChart) - np.min(lineChart)) for value in lineChart]
         
-        # Perform peak detection & plummet detection
+        # De-noise data
+        SMOOTH_RANGE = 10
+        lineChart = [min(lineChart[max(0, i-SMOOTH_RANGE):min(i+SMOOTH_RANGE, len(lineChart))]) for i in range(len(lineChart))]
+        
+        # Trim any potentially biased data
+        '''
+        The goal here is to identify when our head/tail regions of a line chart have
+        low values because there's N's in the nucleotide sequence resulting in poor
+        alignment. These can be flagged as plateaus unfairly and result in problems
+        where other behaviours are contingent on some level of confidence that an indel
+        truly exists.
+        '''
+        ## Trim tail
+        if len(lineChart) >= MIN_LENGTH_FOR_TRIM:
+            tailNsCount = FastASeqAlignmentFrames_obj.FastASeq.seq[-TRIM_LENGTH:].lower().count("n")
+            tailNsPct = tailNsCount / TRIM_LENGTH
+            tailMedianValue = np.median(lineChart[-TRIM_LENGTH:])
+            
+            if tailNsPct > LOTS_OF_NS_PCT and tailMedianValue < BIAS_CUTOFF:
+                trimAmount = sum([1 for value in lineChart[-TRIM_LENGTH:] if value < BIAS_CUTOFF])
+                lineChart = lineChart[:-trimAmount]
+        ## Trim head
+        if len(lineChart) >= MIN_LENGTH_FOR_TRIM:
+            headNsCount = FastASeqAlignmentFrames_obj.FastASeq.seq[:TRIM_LENGTH].lower().count("n")
+            headNsPct = headNsCount / TRIM_LENGTH
+            headMedianValue = np.median(lineChart[:TRIM_LENGTH])
+            
+            if headNsPct > LOTS_OF_NS_PCT and headMedianValue < BIAS_CUTOFF:
+                trimAmount = sum([1 for value in lineChart[:TRIM_LENGTH] if value < BIAS_CUTOFF])
+                lineChart = lineChart[:-trimAmount]
+        
+        # Perform plateau detection
         plummets = plummetdet(lineChart)
-        maxindices, minindices = peakdet(lineChart, delta)
+        maxindices = plateaudet(lineChart, plummets)
         
         # Get plateau regions
         plateaus = []
@@ -250,16 +341,15 @@ class IndelPredictor:
         
         # Drop any short plateaus
         "The ordering here is intentional; drop comes AFTER merging"
-        SHORT_CUTOFF = 30
         dropIndices = []
         for i in range(len(plateaus)):
             start, end = plateaus[i]
-            if end - start < SHORT_CUTOFF:
+            if end - start < MIN_PLATEAU_LENGTH:
                 dropIndices.append(i)
         for index in dropIndices[::-1]:
             del plateaus[index]
         
-        # Find sections inbetween plateaus
+        # Find indel regions inbetween plateaus
         plateaus.sort()
         indelRegions = []
         for i in range(1, len(plateaus)):
@@ -324,7 +414,7 @@ class IndelPredictor:
         return matches if FILTER is False else _filter_matches(matches)
     
     @staticmethod
-    def get_fix_from_ssw_matches(matches, querySeq, GOOD_ALIGN_PCT=0.60, GOOD_GAPS_NUM=2):
+    def get_fix_from_ssw_matches(matches, querySeq, GOOD_ALIGN_PCT=0.60, GOOD_GAPS_NUM=3, FIX_PCT=0.05):
         '''
         Following on from obtain_matches_via_ssw() for example, this function will interpret
         matches into a list of fixes that can occur to rectify probable indel errors.
@@ -338,7 +428,12 @@ class IndelPredictor:
             querySeq -- a string of the sequence used as query to obtain matches to using e.g.,
                         obtain_matches_via_ssw().
             GOOD_ALIGN_PCT -- arbitary, hard-coded magic number. I don't think we should change this.
-            GOOD_GAPS_NUM -- arbitary, hard-coded magic number. 2 sounds right to me.
+            GOOD_GAPS_NUM -- arbitary, hard-coded magic number. 2 USED TO sounds right to me, but
+                             now I'm ride or die with 3.
+            FIX_PCT -- arbitrary, hard-coded magic number. It lets us control weird scenarios
+                       where, out of 50 matches, only 1 suggests a fix. If set to 0.1, 10%
+                       of the matches would need to propose some kind of fix for us to continue
+                       to find a fix.
         Returns:
             fixes -- a list with format of: [[gapStart, resume, nLength], ...]. It should be
                     used to make changes to the sequence, eventually. Note that the gapStart
@@ -409,6 +504,10 @@ class IndelPredictor:
         # Abort operation if we've found no valid fixes
         if fixes == []:
             return fixes
+        
+        # Also abort operation if most matches don't propose any fixes
+        if (len(fixes) / len(matches)) < FIX_PCT:
+            return []
         
         # Find the most consistently supported fix
         fixesCounts = {}
