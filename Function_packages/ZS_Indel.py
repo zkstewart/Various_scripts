@@ -139,14 +139,19 @@ def _plateau_extens(lineChart, plateaus, coverages, plummets, delta, allowedDecr
         plateaus[i][1] = newEnd
     return plateaus
 
-def _filter_matches(matches):
+def _filter_matches(matches, DESIRABLE_NUMBER=50):
+    '''
+    This function attempts to reduce the noise associated with fix finding from matches.
+    It's important to configure DESIRABLE_NUMBER to be something that makes sense. It used
+    to be 20 by default, but it seemed like this could introduce problems. I've upped the
+    default, and also made it so filtering is an optional component of obtain_matches_via_ssw().
+    '''
     # Find a good cut-off to use
-    if len(matches) <= 20:
+    if len(matches) <= DESIRABLE_NUMBER:
          SCORE_CUTOFF = np.percentile([m.score for m in matches], 10) # drop the worst 10% only
     else:
-        # Find a cut-off that ensures at least ~20 matches [this is an arbitrary cut-off]
-        DESIRABLE_NUMBER = 20
-        for x in [90, 70, 50, 30, 20, 15]: # 15 will always be out fallback condition
+        # Find a cut-off that ensures at least ~{DESIRABLE_NUMBER} matches
+        for x in [90, 70, 50, 30, 20, 15]: # 15 will always be our fallback condition
             SCORE_CUTOFF = np.percentile([m.score for m in matches], x)
             numMatchesWithCutoff = sum([1 for m in matches if m.score >= SCORE_CUTOFF])
             if numMatchesWithCutoff >= DESIRABLE_NUMBER:
@@ -166,6 +171,11 @@ class Match:
         self.queryStartIndex = queryStartIndex
         self.targetStartIndex = targetStartIndex
         self.targetSeqID = targetSeqID
+    
+    def __repr__(self):
+        return "<Match object; queryAlign={0}, targetAlign={1}, score={2}".format(
+            self.queryAlign, self.targetAlign, self.score
+        )
 
 class IndelPredictor:
     '''
@@ -262,16 +272,19 @@ class IndelPredictor:
         return indelRegions
     
     @staticmethod
-    def obtain_matches_via_ssw(FASTA_obj, querySeqID, solutionDict, FILTER=True):
+    def obtain_matches_via_ssw(FASTA_obj, query_FastASeq_obj, solutionDict, FILTER=True):
         '''
         Function to take a sequence and, looking through the solutionDict,
         find the best SSW alignment for the sequence to all the solved
         sequences in solutionDict.
         
+        The query_FastASeq_obj does NOT have to be part of FASTA_obj, but if it is, we'll
+        skip self-comparison via comparing the .id attribute of the query_FastASeq_obj
+        to whatever is in the solutionDict.
+        
         Parameters:
             FASTA_obj -- a ZS_SeqIO.FASTA object
-            querySeqID -- a string identifying a sequence within FASTA_obj to have
-                          matches found for
+            query_FastASeq_obj -- a FastASeq object to use as a query and find matches for
             solutionDict -- a dictionary with structure like:
                 {
                     sequence_id: [seq, frame, hasStopCodon (bool), target_sequence_id]
@@ -284,18 +297,19 @@ class IndelPredictor:
                     ...
                 ]
         '''
-        assert querySeqID in FASTA_obj.ids, \
-            "{0} doesn't exist in the provided FASTA object".format(querySeqID)
+        # assert query_FastASeq_obj.id in FASTA_obj.ids, \
+        #     "{0} doesn't exist in the provided FASTA object".format(query_FastASeq_obj.id)
+        
+        queryNuclSeq = query_FastASeq_obj.seq
         
         matches = []
         for targetSeqID, value in solutionDict.items():
-            if targetSeqID == querySeqID:
+            if targetSeqID == query_FastASeq_obj.id: # skip potential self comparison
                 continue
             _, _, targetHasStopCodon = value
             if targetHasStopCodon:
                 continue
             else:
-                queryNuclSeq = FASTA_obj[querySeqID].seq
                 targetNuclSeq = FASTA_obj[targetSeqID].seq
                 sswResult = SSW.ssw_parasail(queryNuclSeq, targetNuclSeq) # this function has poorly ordered outputs
                 matches.append(
