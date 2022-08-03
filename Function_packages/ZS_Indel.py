@@ -102,6 +102,12 @@ class FastASeqAlignmentFrames:
         self.numbers_3 = np.zeros(len(self.FastASeq.seq))
         sequence = self.FastASeq.seq
         
+        # Prevent bugs with empty frames
+        if self.frame_1.upper().replace("X", "") == "" or \
+            self.frame_2.upper().replace("X", "") == "" or \
+            self.frame_3.upper().replace("X", "") == "":
+                return
+        
         # Run SSW against all solution sequences and tally numbers
         for x in range(0, 3):
             numbers = [self.numbers_1, self.numbers_2, self.numbers_3][x] # reuse code by selecting our numbers_# values here
@@ -109,6 +115,11 @@ class FastASeqAlignmentFrames:
             
             for value in self.solutionDict.values():
                 solutionSeq, _, _ = value # drop translationFrame and hasStopCodon from value
+                
+                # Prevent bugs from empty solution sequences
+                if solutionSeq.upper().replace("X", "") == "":
+                    continue
+                
                 sswResult = SSW.ssw_parasail(frame, solutionSeq) # query, target
                 
                 # Find our nucleotide positions for the alignment
@@ -273,6 +284,10 @@ class IndelPredictor:
         for position in range(seqLength):
             lineChart[position] = FastASeqAlignmentFrames_obj.max(position)
         
+        # Early exit for empty line charts
+        if np.sum(lineChart) == 0.0:
+            return []
+        
         # Min-max normalise line chart values
         lineChart = [(value - np.min(lineChart)) / (np.max(lineChart) - np.min(lineChart)) for value in lineChart]
         
@@ -401,7 +416,7 @@ class IndelPredictor:
                 continue
             else:
                 targetNuclSeq = FASTA_obj[targetSeqID].seq
-                sswResult = SSW.ssw_parasail(queryNuclSeq, targetNuclSeq) # this function has poorly ordered outputs
+                sswResult = SSW.ssw_parasail(queryNuclSeq, targetNuclSeq)
                 matches.append(
                     Match(
                         sswResult.queryAlign, sswResult.targetAlign,

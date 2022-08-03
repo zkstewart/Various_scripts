@@ -171,7 +171,6 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
         polishedSequences = False
         for problemSeqID, value in solutionDict.items():
             protSeq, frame, hasStopCodon = value
-            
             # Decide if we can skip polishing this sequence
             '''
             This is a "newer" addition to the code. The goal is to detect cryptic indels
@@ -191,11 +190,11 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
             # If we found a fix to make, get the edited sequence
             polishedSequences = True # if we get to here, we'll want to recompute the solutionDict again
             editedSeq = ZS_Indel.IndelPredictor.use_fix_on_sequence(fix, exon_FASTA_obj[problemSeqID].seq)
-                        
+            
             # Then, update the sequence in our exon_FASTA_obj
             exon_FASTA_obj[problemSeqID].seq = editedSeq
             exon_FASTA_obj[problemSeqID].gap_seq = None # make sure we know that our gap_seq is no longer valid
-        
+
         # Recompute solutionDict if necessary
         if polishedSequences == True:
             solutionDict = ZS_ORF.ORF.solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
@@ -302,11 +301,8 @@ def _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict):
     return frames, thisExonFrames
 
 def _get_fixes(FASTA_obj, problemSeqID, solutionDict):
-    #FIX_TOO_LONG = 20
-    
     # Check matches to see what fix they suggest
     nuclSeq = FASTA_obj[problemSeqID].seq
-    
     matchesFiltered = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(FASTA_obj, FASTA_obj[problemSeqID], solutionDict, FILTER=True)
     matchesAll = ZS_Indel.IndelPredictor.obtain_matches_via_ssw(FASTA_obj, FASTA_obj[problemSeqID], solutionDict, FILTER=False)
     
@@ -317,7 +313,6 @@ def _get_fixes(FASTA_obj, problemSeqID, solutionDict):
     if fixFiltered == []:
         "Only check filtered fixes since we want to know the high-quality matches suggest a fix"
         return []
-    
     # Edit sequences using the fixes
     fixFilteredSeq = ZS_Indel.IndelPredictor.use_fix_on_sequence(fixFiltered, nuclSeq)
     fixFilteredFastASeq_obj = ZS_SeqIO.FastASeq(id=problemSeqID, seq=fixFilteredSeq)
@@ -330,19 +325,12 @@ def _get_fixes(FASTA_obj, problemSeqID, solutionDict):
     fixAllTranslation = fixAllFastASeq_obj.get_translation(findBestFrame=True)[0]
     
     allIsBad = True if "*" in fixAllTranslation and not "*" in fixFilteredTranslation else False
-    
+
     # Ensure that fix is sensible
+    "Code originally here was cut"
     filteredIsBad = False
-    # if allIsBad is False:
-    #     for fixPart in fixAll:
-    #         if fixPart[2] > FIX_TOO_LONG:
-    #             allIsBad = True
-    # for fixPart in fixFiltered:
-    #         if fixPart[2] > FIX_TOO_LONG:
-    #             filteredIsBad = True
     
     # Return the all fix if it worked out, otherwise return the filtered fix
-    #return fixFiltered if fixFilteredMatchesMedian >= fixAllMatchesMedian else fixAll
     return fixFiltered if allIsBad else fixAll if not filteredIsBad else []
 
 def _outlier_fix_up(exon_FASTA_obj, solutionDict):
