@@ -414,7 +414,7 @@ class IndelPredictor:
         return matches if FILTER is False else _filter_matches(matches)
     
     @staticmethod
-    def get_fix_from_ssw_matches(matches, querySeq, GOOD_ALIGN_PCT=0.60, GOOD_GAPS_NUM=3, FIX_PCT=0.05):
+    def get_fix_from_ssw_matches(matches, querySeq, GOOD_ALIGN_PCT=0.60, PERFECT_VOTE_PCT=0.95, GOOD_GAPS_NUM=3, FIX_PCT=0.05):
         '''
         Following on from obtain_matches_via_ssw() for example, this function will interpret
         matches into a list of fixes that can occur to rectify probable indel errors.
@@ -427,13 +427,17 @@ class IndelPredictor:
                 ]
             querySeq -- a string of the sequence used as query to obtain matches to using e.g.,
                         obtain_matches_via_ssw().
-            GOOD_ALIGN_PCT -- arbitary, hard-coded magic number. I don't think we should change this.
-            GOOD_GAPS_NUM -- arbitary, hard-coded magic number. 2 USED TO sounds right to me, but
-                             now I'm ride or die with 3.
-            FIX_PCT -- arbitrary, hard-coded magic number. It lets us control weird scenarios
-                       where, out of 50 matches, only 1 suggests a fix. If set to 0.1, 10%
+            GOOD_ALIGN_PCT -- magic number. Used to determine whether a match is good enough
+                              to look at for any fixes.
+            PERFECT_VOTE_PCT -- magic number. Used to weigh against finding fixes if a sequence
+                                is an almost "perfect" match and no fixes are suggested.
+            GOOD_GAPS_NUM -- magic number. 2 USED TO sound right to me, but now I'm ride
+                             or die with 3. Basically, a fix needs to have this many or fewer
+                             suggested changes to be considered.
+            FIX_PCT -- magic number. It lets us control weird scenarios where, out
+                       of 50 matches, only 1 suggests a fix. If set to 0.05, 5%
                        of the matches would need to propose some kind of fix for us to continue
-                       to find a fix.
+                       to find a fix. PERFECT_VOTE_PCT acts in opposition to this.
         Returns:
             fixes -- a list with format of: [[gapStart, resume, nLength], ...]. It should be
                     used to make changes to the sequence, eventually. Note that the gapStart
@@ -446,6 +450,7 @@ class IndelPredictor:
                     any deletions or insertions i.e., it should be INCLUDED.
         '''
         fixes = []
+        perfectVotes = 0
         for match in matches:
             # Limit ourselves to only good matches for indel fixing
             
@@ -467,6 +472,8 @@ class IndelPredictor:
                     targetGaps.append(gap)
             numGaps = len(problemGaps) + len(targetGaps)
             if numGaps > GOOD_GAPS_NUM or numGaps == 0: # if we have no gaps, the stop codon has to be substitution related
+                if pctOverlap >= PERFECT_VOTE_PCT and numGaps == 0:
+                    perfectVotes += 1
                 continue # we're not going to fix substitution errors, only indels
             
             # If we found a good match (i.e., we get here), see if there's anything to fix
@@ -507,6 +514,10 @@ class IndelPredictor:
         
         # Also abort operation if most matches don't propose any fixes
         if (len(fixes) / len(matches)) < FIX_PCT:
+            return []
+        
+        # Also abort operation if we've got lots of perfect matches
+        if perfectVotes > len(fixes):
             return []
         
         # Find the most consistently supported fix
