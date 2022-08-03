@@ -579,7 +579,7 @@ def main():
         fastaObjs.append(f)
     
     # Polishing
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=args.threads) as executor:
         executor.map(polishing_handler, repeat(args, len(files)), files, fastaObjs)
     
     print("Program completed successfully!")
