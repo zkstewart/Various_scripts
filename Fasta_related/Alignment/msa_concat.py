@@ -127,7 +127,73 @@ def replace_nonstandard_aminoacids(FASTA_obj):
         else:
             FastASeq_obj.seq = seq
 
-if __name__ == "__main__":
+def drop_FASTA_rows_by_id(FASTA_obj, rowsToDrop):
+    '''
+    Function to take a ZS_SeqIO.FASTA object and, based on the IDs in the list
+    rowsToDrop, remove any rows that match those IDs. This will modify
+    the FASTA object in place.
+    
+    Parameters:
+        FASTA_obj -- a ZS_SeqIO.FASTA object.
+        rowsToDrop -- a list containing strings corresponding to the .id values
+                      within FASTA_obj.
+    '''
+    rowIndices = [i for i in range(len(FASTA_obj)) if FASTA_obj[i].id in rowsToDrop]
+    assert len(rowIndices) == len(rowsToDrop), \
+        "Not all values in rowsToDrop were discovered in the FASTA object!"
+    
+    for index in rowIndices[::-1]:
+        del FASTA_obj.seqs[index]
+
+def drop_aligned_FASTA_columns_by_value(FASTA_obj, filterRowID, filterValues):
+    '''
+    Receives an aligned ZS_SeqIO.FASTA object and eliminates any columns containing
+    any values in the filterValues list that are found within the sequence identified
+    by filterRowID.
+    
+    A practical example of its use is when a sequence is in the MSA called "Codons", and
+    this line contains values like 4 or 5 to indicate poor quality sequence, and 1/2/3 for
+    the codon numbers. In this case, filterRowID == "Codons" and filterValues == ["4", "5"].
+    
+    Parameters:
+        FASTA_obj -- a ZS_SeqIO.FASTA object.
+        filterRowID -- a string corresponding to a sequence in FASTA_obj by its
+                       .id attribute.
+        filterValues -- a list containing strings corresponding to values within the
+                        sequence (identified by filterRowID)'s .gap_seq attribute.
+    Returns:
+        FASTA_obj -- a modified deepcopy of the original input FASTA_obj.
+    '''
+    assert filterRowID in FASTA_obj.ids, \
+        "{0} could not be found within the provided FASTA object!".format(filterRowID)
+    assert FASTA_obj.isAligned is True, \
+        "FASTA_obj must be aligned to be used by this function!"
+    filterFastASeq_obj = FASTA_obj[filterRowID]
+    
+    # Figure out the coordinate ranges to drop using an open:shut algorithm
+    open = False
+    coords = []
+    for i in range(len(filterFastASeq_obj.gap_seq)):
+        character = filterFastASeq_obj.gap_seq[i]
+        
+        if character in filterValues:
+            if not open:
+                coords.append([i, None])
+                open = True
+        else:
+            if open:
+                coords[-1][1] = i
+                open = False
+    if len(coords) != 0 and coords[-1][1] == None:
+        coords[-1][1] = i
+    
+    # Drop columns in reverse
+    for start, end in coords[::-1]:
+        FASTA_obj = FASTA_obj.cut_cols(start, end)
+    
+    return FASTA_obj
+
+def main():
     #### USER INPUT SECTION
     usage = """%(prog)s will take all the files inside a specified directory and concatenate them
     into a single MSA suitable for subsequent analyses e.g., phylogenetics. If there's only one file,
@@ -136,7 +202,8 @@ if __name__ == "__main__":
     It offers two other capabilities. Firstly, it can drop rows based on their ID. It requires an
     exact match, and multiple rows can be specified (or none). Secondly, it can drop columns based
     on their value. Specifically, it requires a single row's ID to be specified, and one or more
-    values contained in that row which will cause the corresponding column to be removed.
+    values contained in that row which will cause the corresponding column to be removed. Row IDs
+    and filter values provided are CASE-SENSITIVE!
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
@@ -210,43 +277,15 @@ if __name__ == "__main__":
     # Filter columns if relevant
     if args.filterID != None:
         for x in range(len(fastaObjs)):
-            FASTA_obj = fastaObjs[x]
-            filterFastASeq_obj = FASTA_obj[args.filterID]
-            
-            # Figure out the coordinate ranges to slice using an open:shut algorithm
-            open = False
-            coords = []
-            for i in range(len(filterFastASeq_obj.gap_seq)):
-                character = filterFastASeq_obj.gap_seq[i]
-                
-                if character in args.filterValues:
-                    if not open:
-                        coords.append([i, None])
-                        open = True
-                else:
-                    if open:
-                        coords[-1][1] = i
-                        open = False
-            if len(coords) != 0 and coords[-1][1] == None:
-                coords[-1][1] = i
-            
-            # Slice columns in reverse
-            for start, end in coords[::-1]:
-                FASTA_obj = FASTA_obj.cut_cols(start, end)
+            FASTA_obj = drop_aligned_FASTA_columns_by_value(fastaObjs[x], args.filterID, args.filterValues)
             
             # Store the updated FASTA objects back in their list
             fastaObjs[x] = FASTA_obj
     
     # Drop any rows if relevant
     if len(args.rowsToDrop) != 0:
-        # Find the indices to drop
-        FASTA_obj = fastaObjs[0] # we can use just the first file since internal order is equivalent
-        rowIndices = [i for i in range(len(FASTA_obj)) if FASTA_obj[i].id in args.rowsToDrop]
-        
-        # Drop rows based on their index
         for FASTA_obj in fastaObjs:
-            for index in rowIndices[::-1]:
-                del FASTA_obj.seqs[index]
+            drop_FASTA_rows_by_id(FASTA_obj, args.rowsToDrop)
     
     # Perform quality trimming of MSAs
     for FASTA_obj in fastaObjs:
@@ -266,3 +305,6 @@ if __name__ == "__main__":
     
     # Done!
     print('Program completed successfully!')
+
+if __name__ == "__main__":
+    main()

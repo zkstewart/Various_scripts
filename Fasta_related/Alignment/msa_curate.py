@@ -1152,7 +1152,7 @@ def tmp_file_name_gen(prefix, suffix, hashString):
                 else:
                         return prefix + tmpHash + suffix
 
-if __name__ == "__main__":
+def main():
     # Customise help messages based on current user input
     modeHandling = None
     if '-m outliers' in ' '.join(sys.argv) or '-mode outliers' in ' '.join(sys.argv):
@@ -1335,3 +1335,6 @@ if __name__ == "__main__":
 
     # All done!
     print('Program completed successfully!')
+
+if __name__ == "__main__":
+    main()
