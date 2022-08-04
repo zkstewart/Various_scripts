@@ -19,6 +19,22 @@ def validate_args(args):
         print(args.outputFileName + ' already exists. Specify a new file name or move/rename the existing file.')
         quit()
 
+def drop_FASTA_rows_if_empty(FASTA_obj):
+    '''
+    Function to take a ZS_SeqIO.FASTA object and drop any rows (sequences)
+    if they're entirely empty or ambiguous characters.
+    
+    Parameters:
+        FASTA_obj -- a ZS_SeqIO.FASTA object.
+    '''
+    EMPTY_DNA = {"-", "N"}
+    EMPTY_PROTEIN = {"-", "X"}
+    
+    rowIndices = [i for i in range(len(FASTA_obj)) if set(FASTA_obj[i].gap_seq.upper()) == EMPTY_DNA or set(FASTA_obj[i].gap_seq.upper()) == EMPTY_PROTEIN]
+    
+    for index in rowIndices[::-1]:
+        del FASTA_obj.seqs[index]
+
 def main():
     #### USER INPUT SECTION
     usage = """%(prog)s will take all the files inside a specified directory and concatenate them
@@ -30,6 +46,10 @@ def main():
                 help="Specify the location of the directory containing one or more MSA FASTA files")
     p.add_argument("-o", dest="outputFileName", required=True,
                 help="Specify the file name for the output MSA FASTA")
+    # Optional
+    p.add_argument("--drop_empty", dest="drop_empty", action="store_true", default=False,
+                help="""Optionally provide this argument if you want to exclude any sequences
+                that are entirely empty/ambiguous sequence""")
     args = p.parse_args()
     validate_args(args)
     
@@ -73,9 +93,14 @@ def main():
     # Concatenate FASTA objects
     for x in range(1, len(fastaObjs)):
         fastaObjs[0].concat(fastaObjs[x]) # it all gets concatenated into the first FASTA object
+    FASTA_obj = fastaObjs[0]
+    
+    # Perform filtering (if applicable)
+    if args.drop_empty is True:
+        drop_FASTA_rows_if_empty(FASTA_obj)
     
     # Write output
-    fastaObjs[0].write(args.outputFileName, asAligned=True)
+    FASTA_obj.write(args.outputFileName, asAligned=True)
     
     # Done!
     print('Program completed successfully!')
