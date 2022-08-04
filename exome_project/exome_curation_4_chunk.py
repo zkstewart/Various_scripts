@@ -75,7 +75,7 @@ def main():
     Oz Mammals genome project. Its goal is to concatenate these alignments into chunks of ~50 (by default)
     exons for manual curation purposes.
     
-    Note: This should be step 3 in the Oz Mammals project!
+    Note: This should be step 4 in the Oz Mammals project!
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
