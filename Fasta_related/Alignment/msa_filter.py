@@ -238,11 +238,11 @@ def main():
     # Optional
     p.add_argument("--threads", dest="threads", required=False, type=int, default=1,
                 help="Optionally specify how many threads to run with")
-    p.add_argument("--rows_to_drop", dest="rowsToDrop", nargs="+", default=None,
+    p.add_argument("--rows_to_drop", dest="rowsToDrop", nargs="+",
                 help="Optionally, specify one or more space-separated IDs to drop these sequences from the MSA")
     p.add_argument("--filter_id", dest="filterID", default=None,
                 help="""Optionally specify a single row ID which contains values that will mark columns to be dropped""")
-    p.add_argument("--filter_values", dest="filterValues", nargs="+", default=None,
+    p.add_argument("--filter_values", dest="filterValues", nargs="+",
                 help="Optionally, specify one or more space-separated values that mark columns to be dropped")
     p.add_argument("--noninfo_pct", dest="noninfo_pct", type=float, default=0.25,
                 help="""Optionally specify where trimming should occur on the basis of the
