@@ -29,8 +29,13 @@ def drop_FASTA_rows_if_empty(FASTA_obj):
     '''
     EMPTY_DNA = {"-", "N"}
     EMPTY_PROTEIN = {"-", "X"}
+    EMPTY = {"-"}
     
-    rowIndices = [i for i in range(len(FASTA_obj)) if set(FASTA_obj[i].gap_seq.upper()) == EMPTY_DNA or set(FASTA_obj[i].gap_seq.upper()) == EMPTY_PROTEIN]
+    rowIndices = []
+    for i in range(len(FASTA_obj)):
+        gapSeqSet = set(FASTA_obj[i].gap_seq.upper())
+        if gapSeqSet == EMPTY_DNA or gapSeqSet == EMPTY_PROTEIN or gapSeqSet == EMPTY:
+            rowIndices.append(i)
     
     for index in rowIndices[::-1]:
         del FASTA_obj.seqs[index]
