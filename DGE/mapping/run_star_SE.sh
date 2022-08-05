@@ -57,4 +57,4 @@ ${STARDIR}/STAR --runThreadN ${CPUS} \
 	--readFilesIn ${FILE} \
 	--outSAMtype BAM SortedByCoordinate \
 	--outSAMunmapped Within \
-	--quantMode GeneCounts
+	--quantMode TranscriptomeSAM GeneCounts
