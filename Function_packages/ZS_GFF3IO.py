@@ -150,7 +150,15 @@ class GFF3:
                 contig, source, featureType, start, end, \
                     score, strand, frame, attributes \
                     = line.rstrip('\n').split('\t')
-                attributesDict = {a.split("=")[0]: a.split("=")[1] for a in attributes.split(";")}
+                
+                splitAttributes = []
+                for a in attributes.split("="):
+                    if ";" in a:
+                        splitAttributes += a.rsplit(";", maxsplit=1)
+                    else:
+                        splitAttributes.append(a)
+                attributesDict = {splitAttributes[i]: splitAttributes[i+1] for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2)}
+                
                 self.contigs.add(contig)
                 
                 # Ensure case conformity
