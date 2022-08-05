@@ -3,11 +3,14 @@
 # Contains the GFF3 class and its associated Feature
 # Class. Can be used for (memory-heavy) GFF3 file parsing
 
-import re
+import re, sys, os
 import pandas as pd
 from collections import OrderedDict
 from ncls import NCLS
 from copy import deepcopy
+
+sys.path.append(os.path.dirname(__file__))
+from ZS_SeqIO import FastASeq
 
 class Feature:
     '''
@@ -120,7 +123,8 @@ class GFF3:
         
         self.parse_gff3(strictParse=strict_parse)
     
-    def _make_feature_case_appropriate(self, featureType):
+    @staticmethod
+    def make_feature_case_appropriate(featureType):
         if featureType.lower() == "gene":
             return "gene"
         elif featureType.lower() == "mrna":
@@ -150,7 +154,7 @@ class GFF3:
                 self.contigs.add(contig)
                 
                 # Ensure case conformity
-                featureType = self._make_feature_case_appropriate(featureType)
+                featureType = GFF3.make_feature_case_appropriate(featureType)
                 
                 # Skip un-indexable features
                 if 'ID' not in attributesDict and featureType.lower() != "cds": # see the human genome GFF3 biological_region values for why this is necessary
@@ -353,6 +357,269 @@ class GFF3:
             print("Warning: '{0}' wasn't found as a field in at least one of the found Features; your results might be incomplete!".format(field))
         return nclsEntries
     
+    @staticmethod
+    def _get_contig_as_FastASeq(contigSequences, contigID):
+        '''
+        Hidden helper method of retrieve_sequence_from_FASTA(). Intended to work with
+        many different object types i.e., a FASTA, FastASeq, or Biopython sequence.
+        '''
+        # Handle Biopython dict type
+        if type(contigSequences).__name__ == "dict":
+            assert contigID in contigSequences, \
+                "'{0}' does not exist within the dictionary contig sequences object".format(contigID)
+            assert type(contigSequences[contigID]).__name__ == "SeqRecord", \
+                "contigSequences is a dictionary, but values aren't Biopython SeqRecords? Can't handle."
+            
+            sequence = str(contigSequences[contigID].seq)
+        
+        # Handle ZS_SeqIO.FASTA type
+        elif hasattr(contigSequences, "isFASTA") and contigSequences.isFASTA is True:
+            try:
+                sequence = contigSequences[contigID].seq
+            except:
+                raise TypeError("'{0}' does not exist within the FASTA object".format(contigID))
+        
+        # Handle ZS_SeqIO.FastASeq type
+        elif hasattr(contigSequences, "isFastASeq") and contigSequences.isFastASeq is True:
+            assert contigID == contigSequences.id or contigID == contigSequences.alt, \
+                "'{0}' contig does not match the provided FastASeq object".format(contigID)
+            sequence = contigSequences.seq
+        
+        # Throw error for unhandled types
+        else:
+            raise TypeError("Unrecognised data type '{0}' for contig string retrieval".format(type(contigSequences).__name__))
+        
+        # Create a FastASeq object to return
+        outputSeq = FastASeq(id=contigID, seq=sequence)
+        return outputSeq
+    
+    @staticmethod
+    def _get_feature_coords(feature, exonOrCDS):
+        '''
+        Hidden function of retrieve_sequence_from_FASTA() to retrieve sorted
+        coordinates lists for the exon or CDS features associated with what
+        should be an mRNA feature. If it's not it'll probably crash, hence why
+        this is a private method since I know exactly how it'll be used.
+        '''
+        coords = [f.coords for f in feature.__dict__[exonOrCDS]]
+        frames = [f.frame for f in feature.__dict__[exonOrCDS]]
+        forSorting = list(zip(coords, frames))
+        
+        if feature.strand == '+':
+            forSorting.sort(key = lambda x: (int(x[0][0]), int(x[0][1])))
+        else:
+            forSorting.sort(key = lambda x: (-int(x[0][0]), -int(x[0][1])))
+        
+        coords = [c for c, f in forSorting]
+        frames = [f for c, f in forSorting]
+        
+        return coords, frames
+    
+    def _get_artifacts_as_vcfDict(self):
+        '''
+        Hidden function which enables quick retrieval of recognised insertion, deletions,
+        and substitution artifact entries from this GFF3. It will return an object
+        VCF-like dictionary format which can be used for editing a sequence object.
+        
+        Returns:
+            vcfDict -- a dictionary with structure like:
+                       {
+                           contigID1: [
+                               [[start1, end1], artifact_type, residue],
+                               ...
+                           ],
+                           ...
+                       }
+        '''
+        ACCEPTED_INDEL_SUB_TYPES = ["deletion_artifact", "substitution_artifact", "insertion_artifact"]
+        
+        vcfDict = {}
+        for artifactType in ACCEPTED_INDEL_SUB_TYPES:
+            if artifactType in self.types:
+                for artifactFeature in self.types[artifactType]:
+                    vcfDict.setdefault(artifactFeature.contig, [])
+                    residue = "." if not hasattr(artifactFeature, "residues") else artifactFeature.residues
+                    vcfDict[artifactFeature.contig].append([
+                        artifactFeature.coords, artifactFeature.type, residue
+                    ])
+        
+        for value in vcfDict.values():
+            value.sort(key = lambda x: ([-x[0][0], -x[0][1]]))
+        
+        return vcfDict
+    
+    def retrieve_coords(self, sequenceID, sequenceType):
+        '''
+        Using this GFF3 instance, retrieve the exon or CDS coordinates for the corresponding
+        sequenceID.
+        
+        Parameters:
+            sequenceID -- a string corresponding to a feature within this GFF3 object.
+            sequenceType -- a string corresponding to the type of sequence to retrieve
+                            i.e., in the list ["CDS", "exon"]
+        Returns:
+            featureCoords -- a list of lists with format like:
+                             [
+                                 [start_1, end_1],
+                                 [start_2, end_2],
+                                 ...
+                             ]
+            startingFrames -- a list of integers indicating what the starting frame should
+                              be in any translations (if applicable)
+            featureTypes -- a list of strings indicating what type of feature's details
+                            have been returned e.g., "mRNA" or "lnc_RNA".
+            featureIDs -- a list of strings indicating the feature name/ID for returned features
+        '''
+        VALID_TYPES = ["cds", "exon"]
+        assert sequenceID in self.features, \
+            "'{0}' is not recognised as a feature within this GFF3".format(sequenceID)
+        assert sequenceType.lower() in VALID_TYPES, \
+            "'{0}' is not recognised as a valid sequenceType; should be in list {1}".format(sequenceType.lower(), VALID_TYPES)
+        
+        # Retrieve the feature and validate it
+        feature = self.features[sequenceID]
+        if feature.type != "gene":
+            if sequenceType.lower() == "cds":
+                assert hasattr(feature, "CDS"), \
+                    "CDS feature type is requested of feature '{0}' which lacks CDS".format(sequenceID)
+            elif sequenceType.lower() == "exon":
+                assert hasattr(feature, "exon"), \
+                    "exon feature type is requested of feature '{0}' which lacks exon".format(sequenceID)
+        else:
+            for subFeatureType, subFeatureList in feature.types.items():
+                for subFeature in subFeatureList:
+                    if sequenceType.lower() == "cds":
+                        assert hasattr(subFeature, "CDS"), \
+                            "CDS feature type is requested of subfeature from '{0}' which lacks CDS".format(sequenceID)
+                    elif sequenceType.lower() == "exon":
+                        assert hasattr(subFeature, "exon"), \
+                            "exon feature type is requested of subfeature from '{0}' which lacks exon".format(sequenceID)
+            
+        # Get the coordinates required for sequenceType retrieval
+        featureCoords = []
+        featureFrames = []
+        featureTypes = []
+        featureIDs = []
+        if sequenceType.lower() == "exon":
+            if feature.type == "gene":
+                for subFeatureType, subFeatureList in feature.types.items():
+                    for subFeature in subFeatureList:
+                        coords, frames = GFF3._get_feature_coords(subFeature, "exon")
+                        featureCoords.append(coords)
+                        featureFrames.append(frames)
+                        featureTypes.append(subFeatureType)
+                        featureIDs.append(subFeature.ID)
+            else:
+                coords, frames = GFF3._get_feature_coords(feature, "exon")
+                featureCoords.append(coords)
+                featureFrames.append(frames)
+                featureTypes.append(feature.type)
+                featureIDs.append(feature.ID)
+        
+        elif sequenceType.lower() == "cds":
+            if feature.type == "gene":
+                for subFeatureType, subFeatureList in feature.types.items():
+                    for subFeature in subFeatureList:
+                        coords, frames = GFF3._get_feature_coords(subFeature, "CDS")
+                        featureCoords.append(coords)
+                        featureFrames.append(frames)
+                        featureTypes.append(subFeatureType)
+                        featureIDs.append(subFeature.ID)
+            else:
+                coords, frames = GFF3._get_feature_coords(feature, "CDS")
+                featureCoords.append(coords)
+                featureFrames.append(frames)
+                featureTypes.append(feature.type)
+                featureIDs.append(feature.ID)
+        
+        # Reverse the coord lists if we're looking at a '-' model so we start at the 3' end of the gene model
+        '''
+        I truly have no idea why I do this. It was in my legacy code I wrote years back,
+        and I have to assume I did it for a reason. I THINK it's because some GFF3s have
+        truncated sequences, and when it's truncated at the 3' end of a -ve stranded gene,
+        it won't accommodate that. So when we flip it, we need to take the final frame as
+        our starting frame unlike the usual, non-truncated case where it'll always start
+        in the 0-frame. Sorting beforehand is hence just a way of sorting the frames, not
+        the coords.
+        '''
+        if feature.strand == '-':
+            for coords in featureCoords:
+                coords.reverse()
+        
+        # Get the starting frames for each sequence
+        startingFrames = [frame[0] for frame in featureFrames]
+        
+        return featureCoords, startingFrames, featureTypes, featureIDs
+    
+    def retrieve_sequence_from_FASTA(self, contigSequences, sequenceID, sequenceType):
+        '''
+        Using this GFF3 instance, retrieve the exon or CDS sequence for the corresponding
+        sequenceID.
+        
+        Parameters:
+            contigSequences -- a ZS_SeqIO.FASTA, a ZS_SeqIO.FastASeq, or a Biopython
+                               SeqIO.to_dict() object that contains the contig sequence
+                               that sequenceID is located on/within.
+            sequenceID -- a string corresponding to a feature within this GFF3 object.
+            sequenceType -- a string corresponding to the type of sequence to retrieve
+                            i.e., in the list ["CDS", "exon"]
+        Returns:
+            FastASeq_objs -- a list containing ZS_SeqIO.FastASeq objects. Why? Because if
+                             you provide a gene ID here, there may be multiple mRNAs that
+                             are its children.
+            featureTypes -- a list containing strings indicating the feature types that
+                            have been returned e.g., mRNAs or lnc_RNAs.
+            startingFrames -- a list containing the starting frame for any potential
+                              translations to occur (if applicable) as a string.
+        '''
+        # Get the coordinates required for sequenceType retrieval
+        "Relevant validations are performed by retrieve_coords()"
+        featureCoords, startingFrames, featureTypes, featureIDs = self.retrieve_coords(sequenceID, sequenceType)
+        
+        # Get the contig sequence as a FastASeq object, regardless of input type
+        feature = self.features[sequenceID]
+        FastASeq_obj = GFF3._get_contig_as_FastASeq(contigSequences, feature.contig)
+        
+        # Get VCF-dict object
+        vcfDict = self._get_artifacts_as_vcfDict()
+        
+        # Join sequence segments
+        FastASeq_objs = []
+        for i in range(len(featureCoords)):
+            # Get this exon feature's details
+            coords = featureCoords[i]
+            ID = featureIDs[i]
+            
+            # Create sequence by piecing together exon / CDS bits
+            sequence = ""
+            for start, end in coords:
+                sequenceBit = FastASeq_obj.seq[start-1:end] # 1-based correction to start to make it 0-based
+                
+                # Edit the sequence bit with any suggestions from vcfDict
+                if feature.contig in vcfDict:
+                    for editCoords, editType, editResidues in vcfDict[feature.contig]: # gives us a list of lists
+                        editStart, editEnd = editCoords # deconstruct the [start, end] coordinate value
+                        bitStart = editStart - start # gives 0-based position
+                        bitEnd = editEnd - start # also 0-based
+                        if start <= editEnd and editStart <= end: # if it overlaps
+                            if editType == 'deletion_artifact':
+                                sequenceBit = sequenceBit[:bitStart] + sequenceBit[bitEnd+1:]
+                            elif editType == 'substitution_artifact':
+                                sequenceBit = sequenceBit[:bitStart] + editResidues + sequenceBit[bitEnd+1:]
+                            elif editType == 'insertion_artifact':
+                                sequenceBit = sequenceBit[:bitStart] + editResidues + sequenceBit[bitEnd:]
+                
+                # Store it
+                sequence += sequenceBit
+            
+            # Reverse complement if necessary
+            if feature.strand == "-":
+                sequence = FastASeq.get_reverse_complement(self=None, staticSeq=sequence)
+            
+            # Create FastASeq object to represent this sequence
+            FastASeq_objs.append(FastASeq(id=ID, seq=sequence))
+        return FastASeq_objs, featureTypes, startingFrames
+    
     def __getitem__(self, key):
         return self.features[key]
     
@@ -389,6 +656,96 @@ class GFF3:
             len(self.contigs),
             ";".join(["num_{0}={1}".format(key, len(self.types[key])) for key in self.types.keys()])
         )
+
+class LinesGFF3(GFF3):
+    '''
+    This subclass of GFF3 is intended to add various features that I don't want
+    to clutter the base class with. Specifically, it allows for behaviours seen
+    in my older GFF3 parsing class that is (as of writing this comment) still
+    strewn throughout my Genome_analysis_scripts git repo.
+    '''
+    def __init__(self, file_location, strict_parse=True):
+        super().__init__(file_location, strict_parse)
+    
+    def add_comments(self): # This function is just add_lines but with the gene lines section gutted
+        '''
+        This function provides special functionalities when handling GFF3s of a format I (zkstewart)
+        have created. Specifically, it allows us to hold onto any comments which can contain information
+        as to the sequence. This proved important in the past (not sure as of now) when handling files
+        output by PASA since it would sometimes annotate an incorrect frame which would give a different
+        translation. We needed to get the specific translation that PASA output in its own comment.
+        
+        As said, it's unsure how useful this is today, but it's just legacy code so eh.
+        '''
+        KNOWN_HEAD_COMMENTS = ('# ORIGINAL', '# PASA_UPDATE', '# GMAP_GENE_FIND', '# EXONERATE_GENE_FIND', '# GEMOMA ANNOTATION', '# APOLLO ANNOTATION')
+        KNOWN_FOOT_COMMENTS = ('#PROT')
+        assert self.fileLocation != None
+        
+        with open(self.fileLocation, 'r') as file_in:
+            for line in file_in:
+                line = line.replace('\r', '') # Get rid of return carriages immediately so we can handle lines like they are Linux-formatted
+                
+                # Skip filler lines
+                if line == '\n' or set(line.rstrip('\n')) == {'#'} or set(line.rstrip('\n')) == {'#', '\t'}: # If this is true, it's a blank line or a comment line with no information in it
+                    continue
+                
+                # Handle known header comment lines
+                if line.startswith(KNOWN_HEAD_COMMENTS):
+                    # Extract gene ID
+                    mrna_ID = line.split(': ')[1].split(' ')[0].rstrip(',') # According to known header comments, the mRNA ID will be found inbetween ': ' and ' ' with a possible comma at the end which we can strip off
+                    try:
+                        gene_ID = self[mrna_ID].Parent
+                    except:
+                        gene_ID = self[mrna_ID].parent
+                    # Add attribute to Feature object if relevant
+                    if not hasattr(self[gene_ID], "lines"):
+                        self[gene_ID].add_attributes({'lines': {0: [line], 1: [], 2: []}})
+                    
+                    # Add to lines
+                    self[gene_ID].lines[0].append(line)
+                # Handle known footer comment lines
+                elif line.startswith(KNOWN_FOOT_COMMENTS):
+                    # Extract gene ID
+                    gene_ID = line.split()[2] # According to known footer comments, the gene ID will be the third 1-based value (e.g., ['#PROT', 'evm.model.utg0.34', 'evm.TU.utg0.34', 'MATEDAP....'])
+                    
+                    # Add attribute to Feature object if relevant
+                    if not hasattr(self[gene_ID], "lines"):
+                        self[gene_ID].add_attributes({'lines': {0: [line], 1: [], 2: []}})
+                    
+                    # Add to lines
+                    self[gene_ID].lines[2].append(line)
+                # Handle all other lines
+                else:
+                    pass
+    
+    def pasaprots_extract(self):
+        '''
+        Using the comments obtained from add_comments() or [TBD()], extracts any protein sequences
+        from the foot comments. Could be useful if the GFF3's frame values are incorrect with respect
+        to the actual translation desired, which was a problem in the past with PASA/Augustus/some program
+        in my method of gene annotation. Unsure as to its relevance today. 
+        '''
+        self.pasa_prots = {}
+        
+        for geneFeature in self.gene_values:
+            # Skip any genes not indexed with lines
+            if not hasattr(geneFeature, "lines"):
+                continue
+            
+            # Parse each foot comment to extract the protein sequence
+            foot_comments = geneFeature.lines[2]
+            for comment in foot_comments:
+                split_comment = comment.rstrip('\r\n').split('\t')
+                
+                # Extract the mRNA ID
+                mrnaID = split_comment[0].split(' ')[1] # Format for PASA comments after ' ' split should be ['#PROT', mrnaID, geneID]
+                
+                # Extract the sequence
+                sequence = split_comment[1]
+                
+                # Add into output dict
+                assert mrnaID not in self.pasa_prots # If this assertion fails, GFF3 comment format is flawed - there is a duplicate mRNA ID
+                self.pasa_prots[mrnaID] = sequence
 
 if __name__ == "__main__":
     pass

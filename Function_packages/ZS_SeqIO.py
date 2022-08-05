@@ -86,6 +86,9 @@ class FastASeq:
         self.gap_seq = gapSeq
         if gapSeq != None:
             self.gap_seq = gapSeq.replace("\r", "").replace("\n", "").replace(" ", "")
+        
+        # Helpful flag for checking data type
+        self.isFastASeq = True
     
     def get_str(self, withAlt=False, withDescription=False, withGap=False):
         '''
@@ -470,6 +473,9 @@ class FASTA:
         self.consensus = None
         self.isAligned = isAligned
         self.add(fastaFile, isAligned)
+        
+        # Helpful flag for checking data type
+        self.isFASTA = True
     
     def add(self, fasta, isAligned=False):
         '''
