@@ -19,33 +19,49 @@ def validate_args(args):
         quit()
 
 def get_stats_from_files(statsFiles):
-    fileCount = 0
-    statsTable=["gene_id"]
+    # Parse files into dictionary of counts
+    statsDict = {}
+    uniqueGeneIDs = set()
+    uniqueSpecies = []
     
     for file in statsFiles:
-        lineCount = 0
-        
         with open(file, "r") as fileIn:
+            firstLine = True
             for line in fileIn:
                 sl = line.rstrip("\r\n").split("\t")
+                modelID, _, count, _ = sl
+                if modelID == "*":
+                    continue
+                uniqueGeneIDs.add(modelID)
                 
                 # First line of a new file
-                if lineCount == 0:
+                if firstLine is True:
                     if "_vs_" in file:
                         species = file.split("_vs_")[1].split(".")[0] # relevant file name exists between "_vs_" and "."
                     else:
                         species = file.split(".")[0] # assumes relevant file name precedes all "." characters
-                    statsTable[0] += "\t{0}".format(species)
+                    uniqueSpecies.append(species)
+                    statsDict[species] = {}
+                    firstLine = False
                 
-                # First file being checked
-                if fileCount == 0:
-                    statsTable.append("\t".join([sl[0], sl[2]])) # get rid of the second (gene length) and last (?? unsure) columns
-                # All other files
-                else:
-                    statsTable[lineCount + 1] += "\t{0}".format(sl[2])
-                
-                lineCount += 1
-        fileCount += 1
+                # All other lines
+                statsDict[species][modelID] = count
+    uniqueGeneIDs = list(uniqueGeneIDs)
+    
+    # Untangle dictionary into a list with proper formatting
+    statsTable=["gene_id\t{0}".format("\t".join(uniqueSpecies))]
+    for geneID in uniqueGeneIDs:
+        statsTable.append(geneID)
+    for species in uniqueSpecies:
+        for i in range(1, len(statsTable)):
+            geneID = uniqueGeneIDs[i-1] # our two lists are out of sync by 1
+            try:
+                statsTable[i] += "\t{0}".format(statsDict[species][geneID])
+            except:
+                print("DEW encountered a known bug")
+                print("If you check the .stats files, they don't all have the same length")
+                print("Realistically, this means the DEW counts cannot be trusted. Sorry.")
+                quit()
     
     return statsTable
 
