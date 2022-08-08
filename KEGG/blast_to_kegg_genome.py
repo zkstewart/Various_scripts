@@ -237,6 +237,7 @@ if __name__ == "__main__":
     # Set up our BLAST handler
     blaster = ZS_BlastIO.BLAST(args.inputFastaFile, args.targetFastaFile, "blastp")
     blaster.set_threads(args.threads)
+    blaster.set_clean(False) # keep the BLAST file for now, might as well?
     
     # Run BLAST
     if args.blastFile == None:
