@@ -42,7 +42,7 @@ def gff3_id_mapper(forEach, map, to, gff3Obj):
         mapping -- a list containing sublists of mappings.
     '''
     # Conform and validate inputs
-    forEach = ZS_GFF3IO.make_feature_case_appropriate(forEach)
+    forEach = ZS_GFF3IO.GFF3.make_feature_case_appropriate(forEach)
     assert forEach in gff3Obj.types, \
         "'{0}' forEach value does not exist within the GFF3; \
         valid options include '{1}'".format(forEach, list(gff3Obj.types.keys()))
