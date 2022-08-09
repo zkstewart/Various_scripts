@@ -23,7 +23,7 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
-def gff3_id_mapper(forEach, map, to, gff3Obj):
+def gff3_id_mapper(forEach, map, to, gff3Obj, TOLERANT=False, UNIQUE=False):
     '''
     Provides a way to form a structured query of the GFF3 object to
     retrieve details in a list.
@@ -38,33 +38,71 @@ def gff3_id_mapper(forEach, map, to, gff3Obj):
               obtained from the GFF3 feature that is being iterated over
               with the forEach parameter.
         gff3Obj -- a ZS_GFF3IO.GFF3 instance.
+        TOLERANT -- a boolean indicating whether missing mappings should error
+                    or just be skipped
+        UNIQUE -- a boolean indicating whether we should eliminate redundancy
+                  in mappings; conflicting redundancy will still error out though
     Returns:
         mapping -- a list containing sublists of mappings.
     '''
     # Conform and validate inputs
     forEach = ZS_GFF3IO.GFF3.make_feature_case_appropriate(forEach)
     assert forEach in gff3Obj.types, \
-        "'{0}' forEach value does not exist within the GFF3; \
+        "'{0}' -forEach value does not exist within the GFF3; \
         valid options include '{1}'".format(forEach, list(gff3Obj.types.keys()))
     
     # Perform the query operation
-    mapping = []
+    if UNIQUE is True:
+        mapping = {}
+    else:
+        mapping = []
     for feature in gff3Obj.types[forEach]:
+        # Skip this feature if details are missing and it's tolerated
+        if (TOLERANT is True) and (map not in feature.__dict__):
+            continue
+        
+        # Get detail for -map key
         assert map in feature.__dict__, \
-            "'{0}' map key does not exist within one or more features; \
-            valid keys include '{1}'; check that letters have correct \
-            upper/lower casing for {2}".format(map, list(feature.__dict__.keys()), feature)
+            (f"'{map}' -map key does not exist within one or more features; "
+            f"valid keys include '{list(feature.__dict__.keys())}'; check that "
+            f"letters have correct upper/lower casing for {feature}")
         mappingDetail = feature.__dict__[map]
         
+        # Get detail(s) for -to key(s)
         toDetails = []
+        skip = False
         for toKey in to:
+            # Skip this feature if -to key is missing and it's tolerated
+            if (TOLERANT is True) and (toKey not in feature.__dict__):
+                skip = True
+                break
+            
             assert toKey in feature.__dict__, \
-                "'{0}' to key does not exist within one or more features; \
-                valid keys include '{1}'; check that letters have correct \
-                upper/lower casing for {2}".format(toKey, list(feature.__dict__.keys()), feature)
+                (f"'{toKey}' -to key does not exist within one or more features; "
+                f"valid keys include '{list(feature.__dict__.keys())}'; check that "
+                f"letters have correct upper/lower casing for {feature}")
             toDetails.append(feature.__dict__[toKey])
         
-        mapping.append([mappingDetail] + toDetails)
+        if skip is True:
+            continue
+        
+        # Store data depending on UNIQUE behaviour modifier
+        mappingData = [mappingDetail] + toDetails
+        if UNIQUE is True:
+            if mappingDetail in mapping:
+                assert mapping[mappingDetail] == mappingData, \
+                    (f"'{mappingDetail}' has redundant mappings which conflict with each other; "
+                    f"previous mapping data '{mapping[mappingDetail]}' differs to '{mappingData}'; "
+                    "this is a problem which we can't tolerate, sorry")
+            else:
+                mapping[mappingDetail] = mappingData
+        else:
+            mapping.append(mappingData)
+    
+    # Render a mapping list if UNIQUE is True (and hence it's a dict right now)
+    if UNIQUE is True:
+        mapping = [value for value in mapping.values()]
+    
     return mapping
 
 if __name__ == "__main__":
@@ -98,10 +136,20 @@ if __name__ == "__main__":
     p.add_argument("-to", dest="to", required=True, nargs="+",
         help="One or more valid keys separated with a space.")
     ## File I/O parameters
-    p.add_argument("-g", dest="gff3File", required=False,
+    p.add_argument("-g", dest="gff3File", required=True,
                 help="Specify the location of the GFF3 file")
-    p.add_argument("-o", dest="outputFileName", required=False,
+    p.add_argument("-o", dest="outputFileName", required=True,
                 help="Specify the name and location for the output file")
+    # Opts
+    p.add_argument("--tolerant", dest="tolerant", action="store_true",
+                help="""Optionally specify if tolerant parsing should be
+                employed i.e., if features which lack the provided -to key
+                should be entirely skipped over.""", default=False)
+    p.add_argument("--unique", dest="unique", action="store_true",
+                help="""Optionally specify if redundancy should be eliminated
+                when multiple identical mappings occur. If an identical -map key
+                has different -to keys, however, an error will still occur""",
+                default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -110,7 +158,7 @@ if __name__ == "__main__":
     gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, False) # non-strict parsing
     
     # Obtain data linkings
-    mapping = gff3_id_mapper(args.forEach, args.map, args.to, gff3Obj)
+    mapping = gff3_id_mapper(args.forEach, args.map, args.to, gff3Obj, args.tolerant, args.unique)
     
     # Write output file
     with open(args.outputFileName, "w") as fileOut:
