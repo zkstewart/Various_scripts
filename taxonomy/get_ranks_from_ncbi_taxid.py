@@ -109,6 +109,8 @@ def main():
     
     # Validate that the input file is a TSV
     isTsv = is_a_tsv(args.tsvFile)
+    assert isTsv, \
+        "TSV file format doesn't check out; some rows have fewer columns than others"
     
     # Parse input TSV to retrieve NCBI tax IDs
     taxIDs = parse_taxids_from_tsv_by_colIndex(args.tsvFile, args.columnIndex)
