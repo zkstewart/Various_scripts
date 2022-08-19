@@ -30,7 +30,7 @@ MODELDIR=/home/stewarz2/plant_group/mango_cultivars/annotation
 MODELFILE=manindi_flc.nucl
 
 # >> SETUP: Trimmomatic RNAseq reads dir
-READSDIR=/home/stewarz2/plant_group/mango_cultivars/test
+READSDIR=/home/stewarz2/plant_group/mango_cultivars/prepared_reads
 SUFFIX=.fq.gz
 BITTOTRIM=_
 
@@ -85,5 +85,5 @@ cd ..
 perl ${DEWDIR}/dew.pl -infile ${MODELDIR}/${MODELFILE} -format FASTQ -readset1 ${READ1} -readset2 ${READ2} -output ${SPECIES}_dew -threads ${CPUS} -kanga -remove_redund -no_pairwise -nographs -genomewide -readset_separation ${INSERT_SIZE} -only_alignments -sample_names ${SAMPLE_NAMES} -resume -over #-no_check
 
 # >> STEP 5: Tabulate and summarise output read counts
-python ${VARSCRIPTDIR}/DGE/DEW/merge_dew_stats.py -i ${SPECIES}_dew_results -o ${SPECIES}_dew_counts.tsv
+python ${VARSCRIPTDIR}/DGE/mapping/merge_dew_stats.py -i ${SPECIES}_dew_results -o ${SPECIES}_dew_counts.tsv
 
