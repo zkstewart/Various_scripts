@@ -37,7 +37,7 @@ COMMAND="ILLUMINACLIP:/home/stewarz2/various_programs/Trimmomatic-0.36/adapters/
 ## STEP 1: Find RNAseq file prefixes
 declare -a RNAFILES
 i=0
-for f in ${READSDIR}/*/*1${SUFFIX}; do
+for f in ${READSDIR}/*1${SUFFIX}; do
     RNAFILES[${i}]=$(echo "${f%%_R1${SUFFIX}}");
     i=$((i+1));
 done
