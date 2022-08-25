@@ -9,7 +9,7 @@
 import os, time, ctypes
 import ctypes.wintypes
 
-import os, pyautogui, screeninfo, time, cv2, argparse, pytesseract
+import os, pyautogui, screeninfo, time, cv2, pytesseract
 from PIL import Image
 import numpy as np
 from mss import mss
@@ -292,10 +292,8 @@ def outliers_z_score(ys, threshold=3):
     return np.where(np.abs(z_scores) > threshold)
 
 def main():
-    ## TBD: Args and stuff
-    
-    homeDir = r"E:\Alexie_data\Alexie"
-    sendDir = r"Y:\horti_tree_genomics\Zac_uploads\data_sent_to_alexie"
+    homeDir = r"E:\NGS421_PeteAlmondDNA"
+    sendDir = r"Y:\horti_tree_genomics\Zac_uploads\NGS421_PeteAlmondDNA"
     
     # Setup property inspector and OCR values
     launcher = PropertiesLauncher()
@@ -312,8 +310,14 @@ def main():
     # Check file properties from home dir
     for dir in os.listdir(homeDir):
         dir = os.path.join(homeDir, dir)
+        if not os.path.isdir(dir):
+            continue
+        
         for file in os.listdir(dir):
             file = os.path.join(dir, file)
+            if not os.path.isfile(file):
+                continue
+            
             if os.path.basename(file) in homeSizes:
                 continue
             
@@ -336,15 +340,21 @@ def main():
     # Check file properties from send dir
     for dir in os.listdir(sendDir):
         dir = os.path.join(sendDir, dir)
+        if not os.path.isdir(dir):
+            continue
+        
         for file in os.listdir(dir):
             file = os.path.join(dir, file)
+            if not os.path.isfile(file):
+                continue
+            
             if os.path.basename(file) in sendSizes:
                 continue
             
             # Get file size in bytes via OCR pipeline
             while True:
                 try:
-                    diskSizeBytes, sizeBytes = get_file_sizes(monitor, templateFile, launcher, file)
+                    diskSizeBytes, sizeBytes = get_file_sizes(monitor, templateFile, launcher, file, PROPERTY_SLEEP_TIME=3.5)
                     break
                 except:
                     # Close the properties box if relevant
