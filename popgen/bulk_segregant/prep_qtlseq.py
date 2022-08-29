@@ -199,7 +199,7 @@ def get_comparisonDict_filenames(comparisonDict, bamDirectory, bamSuffix):
                         f"'{fileName}' does not exist or cannot be found at the path provided"
                     groupsDict[key][i] = fileName
 
-def create_qtlseq_shell_script(comparisonDict, referenceFastaFile, outputFileName, threads=1, mem=5):
+def create_qtlseq_shell_script(comparisonDict, referenceFastaFile, outputFileName, threads=1, condaEnv="bulkseg", mem=5):
     '''
     Receives a comparisonDict as modified by get_comparisonDict_filenames()
     and formats a shell script that can be qsub-ed to run QTL-seq on the
@@ -261,6 +261,7 @@ def create_qtlseq_shell_script(comparisonDict, referenceFastaFile, outputFileNam
 #PBS -l mem={MEM}
 #PBS -l ncpus={threads}\n
 cd ${{PBS_O_WORKDIR}}\n
+conda activate {condaEnv}\n
 {cmds}"""
 
     # Write to file
@@ -310,6 +311,10 @@ def main():
                    required=False,
                    help="Optionally, specify how many threads QTL-seq should run with",
                    default=1)
+    p.add_argument("--condaEnv", dest="condaEnv",
+                   required=False,
+                   help="Optionally, specify the conda env where QTL-seq is installed to",
+                   default="bulkseg")
     args = p.parse_args()
     validate_args(args)
     
@@ -323,7 +328,7 @@ def main():
     get_comparisonDict_filenames(comparisonDict, args.bamDirectory, args.bamSuffix)
     
     # Format and write QTL-seq script
-    create_qtlseq_shell_script(comparisonDict, args.referenceFastaFile, args.outputFileName, args.threads)
+    create_qtlseq_shell_script(comparisonDict, args.referenceFastaFile, args.outputFileName, args.threads, args.condaEnv)
     
     print("Program completed successfully!")
 
