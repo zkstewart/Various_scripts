@@ -20,6 +20,10 @@ def validate_args(args):
         print('I am unable to locate the reference FASTA file (' + args.referenceFastaFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    # Validate numeric inputs
+    if 0 >= args.threads:
+        print("threads argument only makes sense to be 1 or greater")
+        quit()
     # Handle file overwrites
     if os.path.isfile(args.outputFileName):
         print(args.outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
@@ -195,7 +199,7 @@ def get_comparisonDict_filenames(comparisonDict, bamDirectory, bamSuffix):
                         f"'{fileName}' does not exist or cannot be found at the path provided"
                     groupsDict[key][i] = fileName
 
-def create_qtlseq_shell_script(comparisonDict, referenceFastaFile, outputFileName):
+def create_qtlseq_shell_script(comparisonDict, referenceFastaFile, outputFileName, threads=1, mem=5):
     '''
     Receives a comparisonDict as modified by get_comparisonDict_filenames()
     and formats a shell script that can be qsub-ed to run QTL-seq on the
@@ -215,11 +219,15 @@ def create_qtlseq_shell_script(comparisonDict, referenceFastaFile, outputFileNam
         referenceFastaFile -- a string indicating the location of the reference FASTA
                               file that mapping was performed against.
         outputFileName -- a string indicating the location to write the shell script to.
+        threads -- an integer 
     '''
+    assert isinstance(threads, int)
+    assert isinstance(mem, int)
+    
     # Specify hard-coded script features
     JOBNAME = "qtlseq"
     WALLTIME = "120:00:00"
-    MEM = "30G"
+    MEM = "{0}G".format(20 + (threads * mem))
     
     # Get qtlseq commands
     cmds = []
@@ -229,18 +237,19 @@ def create_qtlseq_shell_script(comparisonDict, referenceFastaFile, outputFileNam
         n2 = len(groupsDict["bulk2"])
         
         # Format and store command
-        cmd = """qtlseq -r {0} \\
-    -p {1} \\
+        cmd = """qtlseq -r {0} -p {1} \\
 {2}
 {3}
     -n1 {4} \\
     -n2 {5} \\
-    -o qtlseq_output_comparison{6}
+    -t {6} \\
+    --mem {7}G \\
+    -o qtlseq_output_comparison{8}
 """.format(
     referenceFastaFile, groupsDict["parent"],
     "\n".join(["    -b1 {0} \\".format(b) for b in groupsDict["bulk1"]]),
     "\n".join(["    -b2 {0} \\".format(b) for b in groupsDict["bulk2"]]),
-    n1, n2, comparisonNum
+    n1, n2, threads, mem, comparisonNum
     )
         cmds.append(cmd)
     cmds = "".join(cmds)
@@ -250,7 +259,7 @@ def create_qtlseq_shell_script(comparisonDict, referenceFastaFile, outputFileNam
 #PBS -N {JOBNAME}
 #PBS -l walltime={WALLTIME}
 #PBS -l mem={MEM}
-#PBS -l ncpus=1\n
+#PBS -l ncpus={threads}\n
 cd ${{PBS_O_WORKDIR}}\n
 {cmds}"""
 
@@ -276,26 +285,31 @@ def main():
     p.add_argument("-m", dest="metadataFile",
                    required=True,
                    help="Input Metadata TSV (or CSV) file")
-    p.add_argument("-o", dest="outputFileName",
-                   required=True,
-                   help="Specify the file name to write qsub script to")
     p.add_argument("-r", dest="referenceFastaFile",
                    required=True,
                    help="Specify the file name of the reference FASTA that mapping was done with")
     # Opts
+    p.add_argument("-o", dest="outputFileName",
+                   required=False,
+                   help="Specify the file name for the output qsub script default==('run_qtlseq.sh')",
+                   default="run_qtlseq.sh")
     p.add_argument("--sampleid", dest="sampleIdCol",
                    required=False,
                    help="""Column name where sample ID is located; this should provide the
-                   prefix to the BAM files""",
+                   prefix to the BAM files (default=='sampleid')""",
                    default="sampleid")
     p.add_argument("--qtlseq", dest="qtlseqCol",
                    required=False,
-                   help="Column name where QTL-seq comparison details can be found",
+                   help="Column name where QTL-seq comparison details can be found (default=='qtlseq')",
                    default="qtlseq")
     p.add_argument("--bamSuffix", dest="bamSuffix",
                    required=False,
-                   help="Suffix which follows every sampleid value to indicate a BAM file",
+                   help="Suffix which follows every sampleid value to indicate a BAM file (default=='.sorted.bam')",
                    default=".sorted.bam")
+    p.add_argument("--threads", dest="threads", type=int,
+                   required=False,
+                   help="Optionally, specify how many threads QTL-seq should run with",
+                   default=1)
     args = p.parse_args()
     validate_args(args)
     
@@ -309,7 +323,7 @@ def main():
     get_comparisonDict_filenames(comparisonDict, args.bamDirectory, args.bamSuffix)
     
     # Format and write QTL-seq script
-    create_qtlseq_shell_script(comparisonDict, args.referenceFastaFile, args.outputFileName)
+    create_qtlseq_shell_script(comparisonDict, args.referenceFastaFile, args.outputFileName, args.threads)
     
     print("Program completed successfully!")
 
