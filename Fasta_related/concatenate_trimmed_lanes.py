@@ -66,8 +66,8 @@ def main():
     # Format cat commands to join lane files
     catCmds = []
     for prefix in uniquePrefixes:
-        cmd1 = "cat " + " ".join([f"${{TRIMMEDDIR}}/{prefix}_L00{s}.trimmed_1P.fq.gz" for s in orderedSuffixes])
-        cmd2 = "cat " + " ".join([f"${{TRIMMEDDIR}}/{prefix}_L00{s}.trimmed_2P.fq.gz" for s in orderedSuffixes])
+        cmd1 = "cat " + " ".join([f"${{TRIMMEDDIR}}/{prefix}_L00{s}.trimmed_1P.fq.gz" for s in orderedSuffixes]) + f" > {prefix}_1.fq.gz"
+        cmd2 = "cat " + " ".join([f"${{TRIMMEDDIR}}/{prefix}_L00{s}.trimmed_2P.fq.gz" for s in orderedSuffixes]) + f" > {prefix}_2.fq.gz"
         catCmds.append(cmd1)
         catCmds.append(cmd2)
     
