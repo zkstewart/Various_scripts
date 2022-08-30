@@ -229,7 +229,7 @@ def create_mutmap_shell_script(comparisonDict, referenceFastaFile, outputFileNam
         n = len(groupsDict["bulk"])
         
         # Format and store command
-        cmd = """mutmap -r {0} -p {1} \\
+        cmd = """mutmap -r {0} -c {1} \\
 {2}
     -n {3} \\
     -t {4} \\
