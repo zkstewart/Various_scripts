@@ -53,12 +53,6 @@ def main():
         suffix = fileName.split("_L00")[1].split(".")[0] 
         uniqueSuffixes.add(suffix)
     
-    # Ensure that suffixes match for everything
-    for prefix in uniquePrefixes:
-        for suffix in uniqueSuffixes:
-            laneSuffix = f"_L00{suffix}"
-            assert any([fileName.startswith(prefix + laneSuffix) for fileName in fileNames])
-    
     # Get ordered suffixes
     orderedSuffixes = list(uniqueSuffixes)
     orderedSuffixes.sort(key = lambda x: int(x))
@@ -66,10 +60,30 @@ def main():
     # Format cat commands to join lane files
     catCmds = []
     for prefix in uniquePrefixes:
-        cmd1 = "cat " + " ".join([f"${{TRIMMEDDIR}}/{prefix}_L00{s}.trimmed_1P.fq.gz" for s in orderedSuffixes]) + f" > {prefix}_1.fq.gz"
-        cmd2 = "cat " + " ".join([f"${{TRIMMEDDIR}}/{prefix}_L00{s}.trimmed_2P.fq.gz" for s in orderedSuffixes]) + f" > {prefix}_2.fq.gz"
-        catCmds.append(cmd1)
-        catCmds.append(cmd2)
+        # Format command one with suffixes that exist
+        cmd1Files = []
+        for suffix in uniqueSuffixes:
+            if os.path.isfile(os.path.join(args.fastqsDir, f"{prefix}_L00{suffix}.trimmed_1P.fq.gz")):
+                cmd1Files.append(f"${{TRIMMEDDIR}}/{prefix}_L00{suffix}.trimmed_1P.fq.gz")
+        
+        # Format command two with suffixes that exist
+        cmd2Files = []
+        for suffix in uniqueSuffixes:
+            if os.path.isfile(os.path.join(args.fastqsDir, f"{prefix}_L00{suffix}.trimmed_2P.fq.gz")):
+                cmd2Files.append(f"${{TRIMMEDDIR}}/{prefix}_L00{suffix}.trimmed_2P.fq.gz")
+        
+        # Store commands if relevant files were found
+        if len(cmd1Files) > 0:
+            cmd1 = "cat " + " ".join(cmd1Files) + f" > {prefix}_1.fq.gz"
+            catCmds.append(cmd1)
+        else:
+            print(f"Warning: no forward files (_1) found for {prefix}")
+        
+        if len(cmd2Files) > 0:
+            cmd2 = "cat " + " ".join(cmd2Files) + f" > {prefix}_2.fq.gz"
+            catCmds.append(cmd2)
+        else:
+            print(f"Warning: no reverse files (_2) found for {prefix}")
     
     # Write the script file
     script = f'''#!/bin/bash -l
