@@ -62,13 +62,13 @@ def main():
     for prefix in uniquePrefixes:
         # Format command one with suffixes that exist
         cmd1Files = []
-        for suffix in uniqueSuffixes:
+        for suffix in orderedSuffixes:
             if os.path.isfile(os.path.join(args.fastqsDir, f"{prefix}_L00{suffix}.trimmed_1P.fq.gz")):
                 cmd1Files.append(f"${{TRIMMEDDIR}}/{prefix}_L00{suffix}.trimmed_1P.fq.gz")
         
         # Format command two with suffixes that exist
         cmd2Files = []
-        for suffix in uniqueSuffixes:
+        for suffix in orderedSuffixes:
             if os.path.isfile(os.path.join(args.fastqsDir, f"{prefix}_L00{suffix}.trimmed_2P.fq.gz")):
                 cmd2Files.append(f"${{TRIMMEDDIR}}/{prefix}_L00{suffix}.trimmed_2P.fq.gz")
         
