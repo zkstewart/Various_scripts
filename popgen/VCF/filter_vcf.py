@@ -41,31 +41,7 @@ def parse_pops_file(popsFile):
             pops[population].append(sample)
     return pops
 
-def contig_count_filter(vcfFile, minimumSnps):
-    contingCountDict = {}
-    with open(vcfFile, "r") as fileIn:
-        for line in fileIn:
-            l = line.rstrip("\r\n").split("\t")
-            
-            # Handle header lines
-            if line.startswith("#CHROM"):
-                samples = l[9:] # This gives us the ordered sample IDs
-            if line.startswith("#"):
-                continue
-            
-            # Count this contig
-            contingCountDict.setdefault(l[0], 0)
-            contingCountDict[l[0]] += 1
-    
-    # See which contigs meet or exceed our minimum cutoff
-    contigsToDrop = []
-    for contigID, count in contingCountDict.items():
-        if count < minimumSnps:
-            contigsToDrop.append(contigID)
-    
-    return contigsToDrop
-
-def filter_vcf(vcfFile, pops, missingPerPopulation=0.5, contigsToDrop=None):
+def filter_vcf_by_population(vcfFile, pops, missingPerPopulation=0.5):
     outputLines = []
     with open(vcfFile, "r") as fileIn:
         for line in fileIn:
@@ -78,11 +54,6 @@ def filter_vcf(vcfFile, pops, missingPerPopulation=0.5, contigsToDrop=None):
                 outputLines.append("\t".join(l)) # Store all header lines for output
                 continue
             
-            # Filter 1: Is this a contig we want to drop?
-            contigID = l[0]
-            if contigsToDrop != None and contigID in contigsToDrop:
-                continue
-            
             # Determine which field position we're extracting for each filtration
             fieldsDescription = l[8]
             if ":" not in fieldsDescription:
@@ -90,7 +61,7 @@ def filter_vcf(vcfFile, pops, missingPerPopulation=0.5, contigsToDrop=None):
             else:
                 gtIndex = fieldsDescription.split(":").index("GT")
             
-            # Filter 2: Per-population missing samples
+            # Filter: Per-population missing samples
             popsCount = {}
             ongoingCount = 0 # This gives us the index for our samples header list 
             for sampleResult in l[9:]: # This gives us the results for each sample as per fieldsDescription
@@ -114,7 +85,8 @@ def filter_vcf(vcfFile, pops, missingPerPopulation=0.5, contigsToDrop=None):
                 popsCount[samplePopulation][1] += absent
                 
                 ongoingCount += 1
-            # Check if filter 2 passes
+            
+            # Check if filter passes
             skip = False
             for key, value in popsCount.items():
                 total = sum(value)
@@ -127,6 +99,41 @@ def filter_vcf(vcfFile, pops, missingPerPopulation=0.5, contigsToDrop=None):
             # Store results if all filter(s) pass
             outputLines.append("\t".join(l))
             
+    return outputLines
+
+def filter_lines_by_contig(vcfLines, minimumSnps):
+    contingCountDict = {}
+    for line in vcfLines:
+        l = line.rstrip("\r\n").split("\t")
+        
+        # Handle header lines
+        if line.startswith("#"):
+            continue
+        
+        # Count this contig
+        contingCountDict.setdefault(l[0], 0)
+        contingCountDict[l[0]] += 1
+    
+    # See which contigs meet or exceed our minimum cutoff
+    contigsToDrop = []
+    for contigID, count in contingCountDict.items():
+        if count < minimumSnps:
+            contigsToDrop.append(contigID)
+    
+    # Filter lines
+    outputLines = []
+    for line in vcfLines:
+        l = line.rstrip("\r\n").split("\t")
+        
+        # Handle header lines
+        if line.startswith("#"):
+            pass
+        # Handle other lines
+        elif l[0] in contigsToDrop:
+            continue
+        
+        outputLines.append(line)
+    
     return outputLines
 
 ## File out
@@ -221,14 +228,14 @@ def main():
     # Parse populations into bidirectional dictionary structure
     pops = parse_pops_file(args.popsFile)
     
+    # Get VCF lines filtered by population presence
+    vcfLines = filter_vcf_by_population(args.vcfFile, pops, args.missingPerPopulation)
+    
     # Check to see if any contigs should be filtered due to --min
     if args.minimumSnps > 1:
-        contigsToDrop = contig_count_filter(args.vcfFile, args.minimumSnps)
+        vcfLines = filter_lines_by_contig(vcfLines, args.minimumSnps)
     else:
-        contigsToDrop = [] # no point running contig_count_filter() if everything will pass!
-    
-    # Get filtered VCF lines
-    vcfLines = filter_vcf(args.vcfFile, pops, args.missingPerPopulation, contigsToDrop)
+        pass # no point running filter_lines_by_contig() if everything will pass!
     
     # Write output write_vcf_file file
     if not args.genoOutput:
