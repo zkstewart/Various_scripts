@@ -405,6 +405,41 @@ class GFF3:
         return outputSeq
     
     @staticmethod
+    def _get_contig_as_string(contigSequences, contigID):
+        '''
+        Hidden helper method of retrieve_sequence_from_FASTA(). Intended to work with
+        many different object types i.e., a FASTA, FastASeq, or Biopython sequence.
+        '''
+        # Handle Biopython dict type
+        if type(contigSequences).__name__ == "dict":
+            assert contigID in contigSequences, \
+                "'{0}' does not exist within the dictionary contig sequences object".format(contigID)
+            assert type(contigSequences[contigID]).__name__ == "SeqRecord", \
+                "contigSequences is a dictionary, but values aren't Biopython SeqRecords? Can't handle."
+            
+            sequence = str(contigSequences[contigID].seq)
+        
+        # Handle ZS_SeqIO.FASTA type
+        elif hasattr(contigSequences, "isFASTA") and contigSequences.isFASTA is True:
+            try:
+                sequence = contigSequences[contigID].seq
+            except:
+                raise TypeError("'{0}' does not exist within the FASTA object".format(contigID))
+        
+        # Handle ZS_SeqIO.FastASeq type
+        elif hasattr(contigSequences, "isFastASeq") and contigSequences.isFastASeq is True:
+            assert contigID == contigSequences.id or contigID == contigSequences.alt, \
+                "'{0}' contig does not match the provided FastASeq object".format(contigID)
+            sequence = contigSequences.seq
+        
+        # Throw error for unhandled types
+        else:
+            raise TypeError("Unrecognised data type '{0}' for contig string retrieval".format(type(contigSequences).__name__))
+        
+        # Return the sequence as a string
+        return sequence
+    
+    @staticmethod
     def _get_feature_coords(feature, exonOrCDS):
         '''
         Hidden function of retrieve_sequence_from_FASTA() to retrieve sorted
@@ -503,7 +538,6 @@ class GFF3:
             featureCoord, featureFrame = GFF3._get_feature_coords(feature, "exon")
             featureType = feature.type
             featureID = feature.ID
-        
         elif sequenceType.lower() == "cds":
             featureCoord, featureFrame = GFF3._get_feature_coords(feature, "CDS")
             featureType = feature.type
@@ -524,7 +558,6 @@ class GFF3:
         
         # Get the starting frame for the sequence
         startingFrame = featureFrame[0]
-        
         return featureCoord, startingFrame, featureType, featureID
     
     def retrieve_sequence_from_FASTA(self, contigSequences, sequenceID, sequenceType):
@@ -552,9 +585,9 @@ class GFF3:
         "Relevant validations are performed by retrieve_coords()"
         featureCoord, startingFrame, featureType, featureID = self.retrieve_coords(sequenceID, sequenceType)
         
-        # Get the contig sequence as a FastASeq object, regardless of input type
+        # Get the contig sequence as a string, regardless of input type
         feature = self.features[sequenceID]
-        FastASeq_obj = GFF3._get_contig_as_FastASeq(contigSequences, feature.contig)
+        contigString = GFF3._get_contig_as_string(contigSequences, feature.contig)
         
         # Get VCF-dict object
         vcfDict = self._get_artifacts_as_vcfDict()
@@ -562,7 +595,7 @@ class GFF3:
         # Create sequence by piecing together exon / CDS bits
         sequence = ""
         for start, end in featureCoord:
-            sequenceBit = FastASeq_obj.seq[start-1:end] # 1-based correction to start to make it 0-based
+            sequenceBit = contigString[start-1:end] # 1-based correction to start to make it 0-based
             
             # Edit the sequence bit with any suggestions from vcfDict
             if feature.contig in vcfDict:
