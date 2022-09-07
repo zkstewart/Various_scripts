@@ -250,7 +250,10 @@ class GFF3:
             
             # Generate shortcut fields
             self.gene_values = self.types["gene"]
-            self.mrna_values = self.types["mRNA"]
+            try:
+                self.mrna_values = self.types["mRNA"]
+            except:
+                self.mrna_values = None
             
             # Sort contigs
             self.contigs = list(self.contigs)
@@ -459,7 +462,9 @@ class GFF3:
     def retrieve_coords(self, sequenceID, sequenceType):
         '''
         Using this GFF3 instance, retrieve the exon or CDS coordinates for the corresponding
-        sequenceID.
+        sequenceID. Note that this function expects the provided sequenceID to directly
+        point to a feature that contains CDS and/or exon values. It used to be able to accept
+        gene features and return all the subfeature values, but this proved to be unwieldy.
         
         Parameters:
             sequenceID -- a string corresponding to a feature within this GFF3 object.
@@ -484,61 +489,25 @@ class GFF3:
         assert sequenceType.lower() in VALID_TYPES, \
             "'{0}' is not recognised as a valid sequenceType; should be in list {1}".format(sequenceType.lower(), VALID_TYPES)
         
-        # Retrieve the feature and validate it
+        # Retrieve the feature and validate that it contains the relevant fields
         feature = self.features[sequenceID]
-        if feature.type != "gene":
-            if sequenceType.lower() == "cds":
-                assert hasattr(feature, "CDS"), \
-                    "CDS feature type is requested of feature '{0}' which lacks CDS".format(sequenceID)
-            elif sequenceType.lower() == "exon":
-                assert hasattr(feature, "exon"), \
-                    "exon feature type is requested of feature '{0}' which lacks exon".format(sequenceID)
-        else:
-            for subFeatureType, subFeatureList in feature.types.items():
-                for subFeature in subFeatureList:
-                    if sequenceType.lower() == "cds":
-                        assert hasattr(subFeature, "CDS"), \
-                            "CDS feature type is requested of subfeature from '{0}' which lacks CDS".format(sequenceID)
-                    elif sequenceType.lower() == "exon":
-                        assert hasattr(subFeature, "exon"), \
-                            "exon feature type is requested of subfeature from '{0}' which lacks exon".format(sequenceID)
-            
+        if sequenceType.lower() == "cds":
+            assert hasattr(feature, "CDS"), \
+                "CDS feature type is requested of feature '{0}' which lacks CDS".format(sequenceID)
+        elif sequenceType.lower() == "exon":
+            assert hasattr(feature, "exon"), \
+                "exon feature type is requested of feature '{0}' which lacks exon".format(sequenceID)
+        
         # Get the coordinates required for sequenceType retrieval
-        featureCoords = []
-        featureFrames = []
-        featureTypes = []
-        featureIDs = []
         if sequenceType.lower() == "exon":
-            if feature.type == "gene":
-                for subFeatureType, subFeatureList in feature.types.items():
-                    for subFeature in subFeatureList:
-                        coords, frames = GFF3._get_feature_coords(subFeature, "exon")
-                        featureCoords.append(coords)
-                        featureFrames.append(frames)
-                        featureTypes.append(subFeatureType)
-                        featureIDs.append(subFeature.ID)
-            else:
-                coords, frames = GFF3._get_feature_coords(feature, "exon")
-                featureCoords.append(coords)
-                featureFrames.append(frames)
-                featureTypes.append(feature.type)
-                featureIDs.append(feature.ID)
+            featureCoord, featureFrame = GFF3._get_feature_coords(feature, "exon")
+            featureType = feature.type
+            featureID = feature.ID
         
         elif sequenceType.lower() == "cds":
-            if feature.type == "gene":
-                for subFeatureType, subFeatureList in feature.types.items():
-                    for subFeature in subFeatureList:
-                        coords, frames = GFF3._get_feature_coords(subFeature, "CDS")
-                        featureCoords.append(coords)
-                        featureFrames.append(frames)
-                        featureTypes.append(subFeatureType)
-                        featureIDs.append(subFeature.ID)
-            else:
-                coords, frames = GFF3._get_feature_coords(feature, "CDS")
-                featureCoords.append(coords)
-                featureFrames.append(frames)
-                featureTypes.append(feature.type)
-                featureIDs.append(feature.ID)
+            featureCoord, featureFrame = GFF3._get_feature_coords(feature, "CDS")
+            featureType = feature.type
+            featureID = feature.ID
         
         # Reverse the coord lists if we're looking at a '-' model so we start at the 3' end of the gene model
         '''
@@ -551,13 +520,12 @@ class GFF3:
         the coords.
         '''
         if feature.strand == '-':
-            for coords in featureCoords:
-                coords.reverse()
+            featureCoord.reverse()
         
-        # Get the starting frames for each sequence
-        startingFrames = [frame[0] for frame in featureFrames]
+        # Get the starting frame for the sequence
+        startingFrame = featureFrame[0]
         
-        return featureCoords, startingFrames, featureTypes, featureIDs
+        return featureCoord, startingFrame, featureType, featureID
     
     def retrieve_sequence_from_FASTA(self, contigSequences, sequenceID, sequenceType):
         '''
@@ -582,7 +550,7 @@ class GFF3:
         '''
         # Get the coordinates required for sequenceType retrieval
         "Relevant validations are performed by retrieve_coords()"
-        featureCoords, startingFrames, featureTypes, featureIDs = self.retrieve_coords(sequenceID, sequenceType)
+        featureCoord, startingFrame, featureType, featureID = self.retrieve_coords(sequenceID, sequenceType)
         
         # Get the contig sequence as a FastASeq object, regardless of input type
         feature = self.features[sequenceID]
@@ -591,42 +559,35 @@ class GFF3:
         # Get VCF-dict object
         vcfDict = self._get_artifacts_as_vcfDict()
         
-        # Join sequence segments
-        FastASeq_objs = []
-        for i in range(len(featureCoords)):
-            # Get this exon feature's details
-            coords = featureCoords[i]
-            ID = featureIDs[i]
+        # Create sequence by piecing together exon / CDS bits
+        sequence = ""
+        for start, end in featureCoord:
+            sequenceBit = FastASeq_obj.seq[start-1:end] # 1-based correction to start to make it 0-based
             
-            # Create sequence by piecing together exon / CDS bits
-            sequence = ""
-            for start, end in coords:
-                sequenceBit = FastASeq_obj.seq[start-1:end] # 1-based correction to start to make it 0-based
-                
-                # Edit the sequence bit with any suggestions from vcfDict
-                if feature.contig in vcfDict:
-                    for editCoords, editType, editResidues in vcfDict[feature.contig]: # gives us a list of lists
-                        editStart, editEnd = editCoords # deconstruct the [start, end] coordinate value
-                        bitStart = editStart - start # gives 0-based position
-                        bitEnd = editEnd - start # also 0-based
-                        if start <= editEnd and editStart <= end: # if it overlaps
-                            if editType == 'deletion_artifact':
-                                sequenceBit = sequenceBit[:bitStart] + sequenceBit[bitEnd+1:]
-                            elif editType == 'substitution_artifact':
-                                sequenceBit = sequenceBit[:bitStart] + editResidues + sequenceBit[bitEnd+1:]
-                            elif editType == 'insertion_artifact':
-                                sequenceBit = sequenceBit[:bitStart] + editResidues + sequenceBit[bitEnd:]
-                
-                # Store it
-                sequence += sequenceBit
+            # Edit the sequence bit with any suggestions from vcfDict
+            if feature.contig in vcfDict:
+                for editCoords, editType, editResidues in vcfDict[feature.contig]: # gives us a list of lists
+                    editStart, editEnd = editCoords # deconstruct the [start, end] coordinate value
+                    bitStart = editStart - start # gives 0-based position
+                    bitEnd = editEnd - start # also 0-based
+                    if start <= editEnd and editStart <= end: # if it overlaps
+                        if editType == 'deletion_artifact':
+                            sequenceBit = sequenceBit[:bitStart] + sequenceBit[bitEnd+1:]
+                        elif editType == 'substitution_artifact':
+                            sequenceBit = sequenceBit[:bitStart] + editResidues + sequenceBit[bitEnd+1:]
+                        elif editType == 'insertion_artifact':
+                            sequenceBit = sequenceBit[:bitStart] + editResidues + sequenceBit[bitEnd:]
             
-            # Reverse complement if necessary
-            if feature.strand == "-":
-                sequence = FastASeq.get_reverse_complement(self=None, staticSeq=sequence)
-            
-            # Create FastASeq object to represent this sequence
-            FastASeq_objs.append(FastASeq(id=ID, seq=sequence))
-        return FastASeq_objs, featureTypes, startingFrames
+            # Store it
+            sequence += sequenceBit
+        
+        # Reverse complement if necessary
+        if feature.strand == "-":
+            sequence = FastASeq.get_reverse_complement(self=None, staticSeq=sequence)
+        
+        # Create FastASeq object to represent this sequence
+        FastASeq_obj = FastASeq(id=featureID, seq=sequence)
+        return FastASeq_obj, featureType, startingFrame
     
     def __getitem__(self, key):
         return self.features[key]
