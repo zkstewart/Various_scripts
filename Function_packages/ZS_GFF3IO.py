@@ -149,7 +149,7 @@ class GFF3:
                 # Extract information from this line
                 contig, source, featureType, start, end, \
                     score, strand, frame, attributes \
-                    = line.rstrip('\n').split('\t')
+                    = line.rstrip('\t\n').split('\t')
                 
                 splitAttributes = []
                 for a in attributes.split("="):
