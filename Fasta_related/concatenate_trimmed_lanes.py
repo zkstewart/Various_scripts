@@ -73,14 +73,20 @@ def main():
                 cmd2Files.append(f"${{TRIMMEDDIR}}/{prefix}_L00{suffix}.trimmed_2P.fq.gz")
         
         # Store commands if relevant files were found
-        if len(cmd1Files) > 0:
+        if len(cmd1Files) > 1:
             cmd1 = "cat " + " ".join(cmd1Files) + f" > {prefix}_1.fq.gz"
+            catCmds.append(cmd1)
+        elif len(cmd1Files) == 1:
+            cmd1 = f"ln -s {cmd1Files[0]} > {prefix}_1.fq.gz"
             catCmds.append(cmd1)
         else:
             print(f"Warning: no forward files (_1) found for {prefix}")
         
         if len(cmd2Files) > 0:
             cmd2 = "cat " + " ".join(cmd2Files) + f" > {prefix}_2.fq.gz"
+            catCmds.append(cmd2)
+        elif len(cmd2Files) == 1:
+            cmd2 = f"ln -s {cmd2Files[0]} > {prefix}_2.fq.gz"
             catCmds.append(cmd2)
         else:
             print(f"Warning: no reverse files (_2) found for {prefix}")
