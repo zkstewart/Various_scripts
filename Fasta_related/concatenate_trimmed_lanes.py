@@ -82,7 +82,7 @@ def main():
         else:
             print(f"Warning: no forward files (_1) found for {prefix}")
         
-        if len(cmd2Files) > 0:
+        if len(cmd2Files) > 1:
             cmd2 = "cat " + " ".join(cmd2Files) + f" > {prefix}_2.fq.gz"
             catCmds.append(cmd2)
         elif len(cmd2Files) == 1:
