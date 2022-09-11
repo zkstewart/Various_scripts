@@ -117,6 +117,16 @@ def lengths(fastaFile, outputFileName):
                 for record in records:
                         listOut.write(str(len(record)) + '\n')
 
+def lengths_tsv(fastaFile, outputFileName):
+        # Check for file type
+        seqType = fasta_or_fastq(fastaFile)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        with open(outputFileName, 'w') as listOut:
+                for record in records:
+                        listOut.write(record.id + "\t" + str(len(record)) + '\n')
+
 def gc(fastaFile, outputFileName):
         # Check for file type
         seqType = fasta_or_fastq(fastaFile)
@@ -757,6 +767,10 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 The _lengths_ function requires no special input. This function 
                 will produce an output text file listing the lengths of each sequence.
                 '''
+                lengths_tsv = '''
+                The _lengths_tsv_ function requires no special input. This function 
+                will produce an output TSV pairing ID to the length of each sequence.
+                '''
                 count = '''
                 The _count_ function requires no special input. This function 
                 will produce an output text file with a single line depicting the number
@@ -954,7 +968,7 @@ def main():
         # Function list - update as new ones are added
         stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
         numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi']
-        basicFunctions = ['ids', 'descriptions', 'lengths', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc']
+        basicFunctions = ['ids', 'descriptions', 'lengths', 'lengths_tsv', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc']
         functionList = stringFunctions + numberFunctions + basicFunctions
         
         ##### USER INPUT SECTION
@@ -1027,6 +1041,8 @@ def main():
                 descriptions(args.fastaFileName, args.outputFileName)
         if args.function == 'lengths':
                 lengths(args.fastaFileName, args.outputFileName)
+        if args.function == 'lengths_tsv':
+                lengths_tsv(args.fastaFileName, args.outputFileName)
         if args.function == 'count':
                 count(args.fastaFileName, args.outputFileName)
         if args.function == 'multi2single':
