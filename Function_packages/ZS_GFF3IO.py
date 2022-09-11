@@ -116,6 +116,7 @@ class GFF3:
         self.features = OrderedDict()
         self.types = {}
         self.contigs = set()
+        self.parentTypes = set() # tells us which feature types to expect as being parents
         
         self.ncls = None
         self._nclsType = None
@@ -138,8 +139,10 @@ class GFF3:
     
     def parse_gff3(self, strictParse=True):
         # Gene object loop
+        lineCount = 0
         with open(self.fileLocation, 'r') as fileIn:
             for line in fileIn:
+                lineCount += 1
                 line = line.replace('\r', '')
                 
                 # Skip filler and comment lines
@@ -147,9 +150,21 @@ class GFF3:
                     continue
                 
                 # Extract information from this line
-                contig, source, featureType, start, end, \
-                    score, strand, frame, attributes \
-                    = line.rstrip('\t\n').split('\t')
+                try:
+                    contig, source, featureType, start, end, \
+                        score, strand, frame, attributes \
+                        = line.rstrip('\t\n').split('\t')
+                except:
+                    if strictParse == True:
+                        raise ValueError(
+                            f"Line #{lineCount} (\"{line}\") does not meet GFF3 standards; parsing failed"
+                        )
+                    else:
+                        print(
+                            f"Line #{lineCount} (\"{line}\") does not meet GFF3 standards;" +
+                            " strict parsing is disabled, so we'll just continue and hope for the best"
+                        )
+                        continue
                 
                 splitAttributes = []
                 for a in attributes.split("="):
@@ -176,8 +191,8 @@ class GFF3:
                     if strictParse == True:
                         assert featureID not in self.features, \
                             "'{0}' feature occurs twice indicating poorly formatted file; \
-                            for debugging, line == {1}; parsing will stop now".format(featureID, line)
-                    # Skip parsing if duplicate ID is found (strictParse if False)
+                            for debugging, line #{1} == {2}; parsing will stop now".format(featureID, lineCount, line)
+                    # Skip parsing if duplicate ID is found (strictParse is False)
                     else:
                         if featureID in self.features:
                             print(
@@ -191,6 +206,7 @@ class GFF3:
                     self.features[featureID] = feature
                     self.types.setdefault(featureType, [])
                     self.types[featureType].append(feature)
+                    self.parentTypes.add(featureType)
                     
                     # Populate feature with details
                     feature.add_attributes(attributesDict)
@@ -213,21 +229,28 @@ class GFF3:
                             if featureType.lower() != "cds":
                                 raise AttributeError(
                                     "'{0}' feature lacks an ID attribute and hence cannot be indexed; \
-                                    for debugging, line == {2}; parsing will stop now".format(featureType, line)
+                                    for debugging, line #{1} == {2}; parsing will stop now".format(featureType, lineCount, line)
                                 )
                             else:
                                 featureID = "{0}.cds".format(parentID)
                         
-                        # End parsing if parent doesn't exist
-                        assert parentID in self.features, \
-                            "'{0}' feature points to a non-existing parent '{1}' at the time of parsing; \
-                            for debugging, line == {2}; parsing will stop now".format(featureID, parentID, line)
+                        # End parsing if parent doesn't exist (strictParse is True)
+                        if strictParse == True:
+                            assert parentID in self.features, \
+                                "'{0}' feature points to a non-existing parent '{1}' at the time of parsing; \
+                                for debugging, line #{2} == {3}; parsing will stop now".format(featureID, parentID, lineCount, line)
+                        else:
+                            if parentID not in self.features:
+                                print("'{0}' feature points to a non-existing parent '{1}' at the time of parsing; ".format(featureID, parentID) + 
+                                "strict parsing is disabled, so we will just continue and hope for the best")
+                                continue
                         
                         # End parsing if duplicate ID is found
+                        "strictParse won't negate this problem since it's simply unacceptable!"
                         if featureType.lower() != "cds": # CDS features are the ONLY feature allowed to have non-unique IDs
                             assert self.features[parentID].retrieve_child(featureID) == None, \
                                 "'{0}' feature is associated to a parent '{1}' more than once; \
-                                for debugging, line == {1}; parsing will stop now".format(featureID, parentID, line)
+                                for debugging, line #{2} == {3}; parsing will stop now".format(featureID, parentID, lineCount, line)
                         
                         # Create feature and index it
                         feature = Feature()
@@ -699,24 +722,112 @@ class LinesGFF3(GFF3):
                         gene_ID = self[mrna_ID].Parent
                     except:
                         gene_ID = self[mrna_ID].parent
-                    # Add attribute to Feature object if relevant
+                    # Add to Feature object
                     if not hasattr(self[gene_ID], "lines"):
                         self[gene_ID].add_attributes({'lines': {0: [line], 1: [], 2: []}})
-                    
-                    # Add to lines
-                    self[gene_ID].lines[0].append(line)
+                    else:
+                        self[gene_ID].lines[0].append(line)
                 # Handle known footer comment lines
                 elif line.startswith(KNOWN_FOOT_COMMENTS):
                     # Extract gene ID
                     gene_ID = line.split()[2] # According to known footer comments, the gene ID will be the third 1-based value (e.g., ['#PROT', 'evm.model.utg0.34', 'evm.TU.utg0.34', 'MATEDAP....'])
                     
-                    # Add attribute to Feature object if relevant
+                    # Add to Feature object
                     if not hasattr(self[gene_ID], "lines"):
                         self[gene_ID].add_attributes({'lines': {0: [line], 1: [], 2: []}})
-                    
-                    # Add to lines
-                    self[gene_ID].lines[2].append(line)
+                    else:
+                        self[gene_ID].lines[2].append(line)
                 # Handle all other lines
+                else:
+                    pass
+    
+    def add_lines(self):
+        '''
+        This function provides special functionalities when handling GFF3s. Specifically, it
+        allows us to write out new GFF3s using the raw lines obtained from an existing GFF3.
+        This can be useful when trying to subset a GFF3 to only certain features.
+        
+        Honestly, there'd be much better ways to handle this. But, I want to maintain my
+        legacy functions as much as possible without requiring whole-scale rewrites.
+        '''
+        KNOWN_HEAD_COMMENTS = ('# ORIGINAL', '# PASA_UPDATE', '# GMAP_GENE_FIND', '# EXONERATE_GENE_FIND', '# GEMOMA ANNOTATION', '# APOLLO ANNOTATION')
+        KNOWN_FOOT_COMMENTS = ('#PROT')
+        assert self.fileLocation != None
+        
+        with open(self.fileLocation, 'r') as file_in:
+            for line in file_in:
+                line = line.replace('\r', '') # Get rid of return carriages immediately so we can handle lines like they are Linux-formatted
+                
+                # Skip filler lines
+                if line == '\n' or set(line.rstrip('\n')) == {'#'} or set(line.rstrip('\n')) == {'#', '\t'}: # If this is true, it's a blank line or a comment line with no information in it
+                    continue
+                sl = line.rstrip('\n').split('\t')
+                
+                # Handle known header comment lines
+                if line.startswith(KNOWN_HEAD_COMMENTS):
+                    # Extract gene ID
+                    mrna_ID = line.split(': ')[1].split(' ')[0].rstrip(',') # According to known header comments, the mRNA ID will be found inbetween ': ' and ' ' with a possible comma at the end which we can strip off
+                    try:
+                        gene_ID = self[mrna_ID].Parent
+                    except:
+                        gene_ID = self[mrna_ID].parent
+                    # Add to Feature object
+                    if not hasattr(self[gene_ID], "lines"):
+                        self[gene_ID].add_attributes({'lines': {0: [line], 1: [], 2: []}})
+                    else:
+                        self[gene_ID].lines[0].append(line)
+                
+                # Handle known footer comment lines
+                elif line.startswith(KNOWN_FOOT_COMMENTS):
+                    # Extract gene ID
+                    gene_ID = line.split()[2] # According to known footer comments, the gene ID will be the third 1-based value (e.g., ['#PROT', 'evm.model.utg0.34', 'evm.TU.utg0.34', 'MATEDAP....'])
+                    
+                    # Add to Feature object
+                    if not hasattr(self[gene_ID], "lines"):
+                        self[gene_ID].add_attributes({'lines': {0: [line], 1: [], 2: []}})
+                    else:
+                        self[gene_ID].lines[2].append(line)
+                
+                # Handle feature detail lines
+                elif not line.startswith('#'):
+                    # Immediately skip over any malformatted lines
+                    if len(sl) < 9:
+                        continue
+                    
+                    # Extract gene ID whilst accounting for multi-parent features
+                    attributes = sl[8].split(';')
+                    if sl[2] in self.parentTypes:
+                        for attr in attributes:
+                            if attr.startswith('ID='): # For parent-type lines, the ID= is our gene/feature ID
+                                gene_ID = attr[3:].strip('\n') # This trims off the ID= bit and any new lines
+                    else:
+                        parentID = None
+                        for attr in attributes:
+                            if attr.startswith('Parent='): # For every other type of line, the Parent= field should tell us the geneID or mrnaID
+                                parentID = attr[7:].strip('\n') # This trims off the Parent= bit and any new lines
+                        if parentID == None: # This will handle biological_region and other values which lack ID= and Parent= fields; we don't index these since they are (currently) of no interest
+                            continue
+                        if "," in parentID:
+                            gene_ID = parentID.split(",")
+                        else:
+                            gene_ID = self[parentID].ID if not hasattr(self[parentID], "Parent") else self[parentID].Parent
+                    
+                    # Add to lines dict
+                    if type(gene_ID) != list:
+                        if not hasattr(self[gene_ID], "lines"):
+                            self[gene_ID].add_attributes({'lines': {0: [], 1: [line], 2: []}})
+                        else:
+                            self[gene_ID].lines[1].append(line)
+                    else:
+                        for parent in gene_ID:
+                            parent_text = line.split('Parent=')[1].split(';')[0] # This will extract just the bit of the comment from Parent= to any potential ; after
+                            new_line = line.replace(parent_text, parent)
+                            
+                            if not hasattr(self[parent], "lines"):
+                                self[parent].add_attributes({'lines': {0: [], 1: [new_line], 2: []}})
+                            else:
+                                self[parent].lines[1].append(new_line)
+                # All other lines are ignored
                 else:
                     pass
     
