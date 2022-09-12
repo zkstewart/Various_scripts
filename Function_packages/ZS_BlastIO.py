@@ -307,7 +307,8 @@ class BLAST:
         '''
         # Get a hash for temporary file creation
         hashForTmp = qt if isinstance(qt, str) \
-                       else qt.fileOrder[0][0] if type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA" \
+                       else qt.fileOrder[0][0] if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder != [] \
+                       else str(qt) if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder == []  \
                        else qt.id
         tmpHash = hashlib.sha256(bytes(hashForTmp + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         

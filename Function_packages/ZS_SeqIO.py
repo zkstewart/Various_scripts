@@ -456,6 +456,9 @@ class FASTA:
     extending all sequences in order), or 2) addition (i.e., vertically
     expanding the alignment with more sequences).
     
+    Alternatively, if you want a blank FASTA which you progressively add
+    sequences to, specify fastaFile as None.
+    
     Relevant attributes include:
         seqs -- A list containing FastASeq objects
         fileOrder -- A list containing strings indicating the FASTA files 
@@ -465,14 +468,15 @@ class FASTA:
         isAligned -- A Boolean indicating whether the FASTA file has been aligned
     '''
     def __init__(self, fastaFile, isAligned=False):
-        assert isinstance(fastaFile, str)
+        assert isinstance(fastaFile, str) or fastaFile == None
         assert isinstance(isAligned, bool)
         
         self.seqs = []
         self.fileOrder = []
         self.consensus = None
         self.isAligned = isAligned
-        self.add(fastaFile, isAligned)
+        if fastaFile != None:
+            self.add(fastaFile, isAligned)
         
         # Helpful flag for checking data type
         self.isFASTA = True
