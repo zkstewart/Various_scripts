@@ -7,7 +7,6 @@ import re, sys, os
 import pandas as pd
 from collections import OrderedDict
 from ncls import NCLS
-from copy import deepcopy
 
 sys.path.append(os.path.dirname(__file__))
 from ZS_SeqIO import FastASeq
@@ -354,8 +353,7 @@ class GFF3:
                      the value here.
         Returns:
             features -- a list containing Features that overlap the specified range.
-                        These Features are deepcopied, so you can do whatever you want
-                        to them without altering the GFF3 object.
+                        These Features are NOT deepcopied, so handle them carefully.
         '''
         assert self.ncls != None and self._nclsIndex != None, \
             "Run create_ncls_index before you call this method!"
@@ -364,32 +362,12 @@ class GFF3:
         
         features = []
         for result in overlaps: # result == [start, end, index]
-            features.append(self._nclsIndex[result[2]]) # this gets the Feature object from the ._nclsIndex dictionary
-        features = deepcopy(features) # deepcopy so we don't alter the underlying NCLS structure
-        
-        # Narrow down our features to hits with a .field == value match
-        features = self._ncls_feature_narrowing(features, field, value)
+            feature = self._nclsIndex[result[2]]
+            if feature.__dict__[field] == value:
+                features.append(feature)
         
         # Return list
         return features
-    
-    def _ncls_feature_narrowing(self, nclsEntries, field, value):
-        '''
-        Hidden method for narrowing retrieved NCLS hits to the specified
-        field==value match. Usually used to narrow down to contig hits,
-        so field="contig" and value equal to whatever contig you want to find
-        hits on.
-        '''
-        raiseWarning = False
-        for k in range(len(nclsEntries)-1, -1, -1):
-            try:
-                if nclsEntries[k].__dict__[field] != value:
-                    del nclsEntries[k]
-            except:
-                raiseWarning = True
-        if raiseWarning:
-            print("Warning: '{0}' wasn't found as a field in at least one of the found Features; your results might be incomplete!".format(field))
-        return nclsEntries
     
     @staticmethod
     def _get_contig_as_FastASeq(contigSequences, contigID):
