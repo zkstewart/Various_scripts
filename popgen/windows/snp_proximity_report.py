@@ -4,7 +4,6 @@
 # identify genes near to or containing SNPs/variants.
 
 import os, argparse, math, sys
-from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) # 3 dirs up is where we find dependencies
 from Function_packages import ZS_GFF3IO
@@ -89,12 +88,6 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions):
     snpProximityDict = {}
     geneProximityDict = {}
     
-    geneResultDict = {
-        "snpWithin": [],
-        "snpRight": [],
-        "snpLeft": []
-    }
-    
     for contig, positions in snpPositions.items():
         snpProximityDict[contig] = {}
         for pos in positions:
@@ -119,7 +112,12 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions):
                 snpResultDict["insideGeneLocation"] = snpLocation
                 snpResultDict["insideGeneCoords"] = gff3Obj[geneID].coords
                 
-                geneProximityDict.setdefault(geneID, geneResultDict)
+                geneProximityDict.setdefault(geneID, {
+                        "snpWithin": [],
+                        "snpRight": [],
+                        "snpLeft": []
+                    }
+                )
                 geneProximityDict[geneID]["snpWithin"].append(snpLocation)
             
             # Scenario 2: SNP located not inside, but near a gene
@@ -130,7 +128,12 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions):
                     snpResultDict["leftGeneDistance"] = nearestLeft[0]
                     snpResultDict["leftGeneStrand"] = gff3Obj[nearestLeft[1]].strand
                     
-                    geneProximityDict.setdefault(nearestLeft[1], deepcopy(geneResultDict))
+                    geneProximityDict.setdefault(nearestLeft[1], {
+                        "snpWithin": [],
+                        "snpRight": [],
+                        "snpLeft": []
+                        }
+                    )
                     geneProximityDict[nearestLeft[1]]["snpRight"].append(pos) # if gene is left of SNP, SNP is right of gene!
                 
                 if nearestRight[1] != None:
@@ -138,7 +141,12 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions):
                     snpResultDict["rightGeneDistance"] = nearestRight[0]
                     snpResultDict["rightGeneStrand"] = gff3Obj[nearestRight[1]].strand
                     
-                    geneProximityDict.setdefault(nearestRight[1], deepcopy(geneResultDict))
+                    geneProximityDict.setdefault(nearestRight[1], {
+                            "snpWithin": [],
+                            "snpRight": [],
+                            "snpLeft": []
+                        }
+                    )
                     geneProximityDict[nearestRight[1]]["snpLeft"].append(pos)
             
             # Store whatever results we have found if relevant
@@ -187,16 +195,30 @@ def locate_snp_within_gene(matches, snpPos):
             bestID = geneID if (bestLocation != "CDS" and bestLocation != "UTR") else bestID
     return bestLocation, bestID
 
-def locate_genes_near_snp(gff3Obj, contig, snpPos):
+def locate_genes_near_snp(gff3Obj, contig, snpPos, radiusSize=50000):
     '''
     This function assumes SNPs have been filtered so that SNPs overlapping a gene are
     absent. It won't cause any bugs, but the notion of finding a gene to the left
     and right of a SNP that's inside of a gene loses meaning since we'll find the
     same gene in both directions.
+    
+    Parameters:
+        radiusSize -- an integer indicating the distance to check surrounding
+                      either side of a SNP for a gene
     '''
+    # Get genes within radius length of the SNP position
+    start = (snpPos - radiusSize) if (snpPos - radiusSize) >= 0 else 0
+    end = snpPos + radiusSize
+    mrnaMatches = gff3Obj.ncls_finder(start, end, "contig", contig)
+    geneMatches = [gff3Obj[match.Parent] for match in mrnaMatches]
+    
     nearestLeft = [math.inf, None]
     nearestRight = [math.inf, None]
-    for geneFeature in [feature for feature in gff3Obj.types['gene'] if feature.contig == contig]:
+    checkedIDs = set()
+    for geneFeature in geneMatches:
+        if geneFeature.ID in checkedIDs:
+            continue
+        
         isLeft = geneFeature.end < snpPos
         isRight = geneFeature.start > snpPos
         if isLeft:
@@ -207,7 +229,8 @@ def locate_genes_near_snp(gff3Obj, contig, snpPos):
             dist = geneFeature.start - snpPos
             if dist < nearestRight[0]:
                 nearestRight = [dist, geneFeature.ID]
-            
+        checkedIDs.add(geneFeature.ID)
+    
     return nearestLeft, nearestRight
 
 def find_genes_nearest_snp(chromosomeGeneRegions, snpPositions, numNearest):
