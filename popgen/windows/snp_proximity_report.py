@@ -30,15 +30,31 @@ def validate_args(args):
         quit()
 
 def get_snp_positions_from_vcf(vcfFile):
+    '''
+    This function is designed to parse VCFs where comments (#) can be safely ignored.
+    Any other line is expected to have column 1 be the chromosome/contig name, and column
+    2 is an integer of the position of the variant.
+    
+    However, there can be other file formats which fit this description e.g., the output
+    from QTL-seq. Hence, this script can also handle file formats where the first line
+    lacks comment (#) heading but still should be ignored.
+    '''
     snpPositions = {}
     with open(vcfFile, "r") as fileIn:
+        firstLine = True
         for line in fileIn:
+            l = line.rstrip("\r\n").split("\t")
+            
             # Handle header lines
             if line.startswith("#"):
+                firstLine = False
                 continue
+            elif firstLine is True:
+                firstLine = False
+                if not l[1].isdigit():
+                    continue
             
             # Extract relevant details
-            l = line.rstrip("\r\n").split("\t")
             chrom = l[0]
             pos = int(l[1])
             
@@ -161,21 +177,21 @@ def locate_snp_within_gene(matches, snpPos):
     for feature in matches:
         # Look for CDS overlap
         try:
+            cds = False
             for cdsFeature in feature.CDS:
                 if cdsFeature.start <= snpPos and snpPos <= cdsFeature.end: # if it overlaps...
                     cds = True
                     break
-            cds = False
         except:
             cds = False
         # Look for exon overlap (if CDS overlap wasn't found)
         if cds is False:
             try:
+                exon = False
                 for exonFeature in feature.exon:
                     if exonFeature.start <= snpPos and snpPos <= exonFeature.end: # if it overlaps...
                         exon = True
                         break
-                exon = False
             except:
                 exon = False
         # Get the ID to index this under
@@ -187,6 +203,7 @@ def locate_snp_within_gene(matches, snpPos):
         if cds:
             bestLocation = "CDS"
             bestID = geneID
+            return bestLocation, bestID # immediately return since it can't get better
         elif exon:
             bestLocation = "UTR" if bestLocation != "CDS" else bestLocation
             bestID = geneID if bestLocation != "CDS" else bestID
@@ -268,6 +285,10 @@ def main():
     usage = """%(prog)s reads in GFF3 and VCF files to obtain genes that are surrounding
     or contain SNPs in the VCF file. The output file is a TSV indicating genes and
     which SNP they contain/are near to.
+    
+    NOTE: This script can also handle the QTL-seq snp_index.p##.tsv files. In this format
+    column 1 == contig ID and column 2 == contig position as an integer. The first line
+    can be a header which will be ignored.
     """
     p = argparse.ArgumentParser(description=usage)
     ## Required
@@ -293,7 +314,7 @@ def main():
     
     # Produce output file 1: SNP-centric report
     with open(args.outputFilePrefix + ".snp_proximity.tsv", "w") as fileOut:
-        fileOut.write("#contig\tpos\tinside\at location\tleft of\tat distance\tright of\tat distance\n")
+        fileOut.write("#contig\tpos\tinside\tat location\tleft of\tat distance\tright of\tat distance\n")
         for contig in snpProximityDict.keys():
             orderedPositions = list(snpProximityDict[contig].keys())
             orderedPositions.sort()
