@@ -136,6 +136,31 @@ class GFF3:
         else:
             return featureType
     
+    @staticmethod
+    def longest_isoform(geneFeature):
+        '''
+        We pick out the representative gene based on length. If length is identical,
+        we'll end up picking the entry listed first in the gff3 file since our > condition
+        won't be met. I doubt this will happen much or at all though.
+        '''
+        assert hasattr(geneFeature, "mRNA"), \
+            "Longest isoform finding can only occur on features that have .mRNA children"
+        
+        longestMrna = [None, 0]
+        for mrnaFeature in geneFeature.mRNA:
+            if hasattr(mrnaFeature, "CDS"):
+                featType = "CDS"
+            else:
+                featType = "exon"
+            
+            mrnaLen = 0
+            for subFeature in mrnaFeature.__dict__[featType]:
+                mrnaLen += (subFeature.end - subFeature.start + 1)
+                
+            if mrnaLen > longestMrna[1]:
+                longestMrna = [mrnaFeature, mrnaLen]
+        return longestMrna[0]
+    
     def parse_gff3(self, strictParse=True):
         # Gene object loop
         lineCount = 0
