@@ -32,6 +32,9 @@ def validate_args(args):
         print('This script would rather not mess with the possibility of overwriting stuff.')
         print('Make sure you specify a non-existing directory or delete the files in the directory and try again.')
         quit()
+    if not os.path.isdir(args.outputDirectory):
+        os.makedirs(args.outputDirectory)
+        print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
 
 def get_phased_genotypes_from_vcf(vcfFile):
     '''
@@ -207,7 +210,24 @@ def get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, minSnps=0):
                    Genes without this many SNPs will not have any
                    sequences reported.
     Returns:
-        haploSeqDict -- TBD
+        haploSeqDict -- a dictionary with structure like:
+                        {
+                            "geneID1": {
+                                "reference_sequence": 'ATCG...',
+                                "sample_haplotypes": {
+                                    "sampleID1": [[hapCode, hapCode, ...], [hapCode, hapCode, ...]],
+                                    "sampleID2": [[...], [...]],
+                                    ...
+                                },
+                                "haplotype_sequences": {
+                                    (hapCode, hapCode, ...): 'ATCG...',
+                                    (hapCode, hapCode, ...): 'AGCG...',
+                                    ...
+                                }
+                            },
+                            "geneID2": { ... },
+                            ...
+                        }
     '''
     assert isinstance(minSnps, int), \
         "minSnps must be an integer value"
@@ -223,21 +243,7 @@ def get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, minSnps=0):
         cds_FastASeq_obj, cds_featureType, cds_startingFrame = gff3Obj.retrieve_sequence_from_FASTA(genomeFASTA_obj, mrnaFeature.ID, "CDS")
         
         # Update snpDict coordinates to be localised to the extracted CDS (rather than genomic coordinates)
-        newSnpDict = {}
-        ongoingCount = 0
-        for cdsFeature in mrnaFeature.CDS:
-            # Check each position to see if we need to localise it
-            for pos, genotypeDict in snpDict.items():
-                
-                    # If the position overlaps this CDS section
-                    if pos >= cdsFeature.start and pos <= cdsFeature.end:
-                        if mrnaFeature.strand == "+":
-                            newPos = (pos - cdsFeature.start) + ongoingCount
-                            newSnpDict[newPos] = genotypeDict
-                        else:
-                            newPos = cdsFeature.end - pos + ongoingCount
-                            newSnpDict[newPos] = genotypeDict
-            ongoingCount += cdsFeature.end - cdsFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
+        newSnpDict = convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict)
         
         # Get haplotype codes for all samples
         haploCodeDict = {sampleID:[[], []] for genotypeDict in newSnpDict.values() for sampleID in genotypeDict.keys() if sampleID != "ref_alt"}
@@ -258,60 +264,84 @@ def get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, minSnps=0):
         for genotypes in haploCodeDict.values():
             uniqueHaplotypes.add(tuple(genotypes[0]))
             uniqueHaplotypes.add(tuple(genotypes[1]))
+        uniqueHaplotypes = list(uniqueHaplotypes)
         
         # Extract haplotype sequences for all unique haplotypes
         haplotypeSequences = []
         for haplotype in uniqueHaplotypes:
-            haplotypeSequence = cds_FastASeq_obj.seq[:] # just shallow copy is enough for string
-            for i in range(len(haplotype)-1, -1, -1): # iterate backwards through positions and variants
-                pos = orderedPositions[i]
-                variant = haplotype[i]
-                # Get strand-appropriate alleles
-                if mrnaFeature.strand == "+":
-                    refAllele = newSnpDict[pos]["ref_alt"][0] # ref allele might be more than 1 character long
-                    varAllele = newSnpDict[pos]["ref_alt"][variant]
-                else:
-                    refAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, newSnpDict[pos]["ref_alt"][0])
-                    varAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, newSnpDict[pos]["ref_alt"][variant])
-                
-                # Validate that our position is correct and edit the sequence
-                if mrnaFeature.strand == "+":
-                    assert haplotypeSequence[pos:pos+len(refAllele)] == refAllele, \
-                        "Zac, you need to fix your +ve haplotype positioning code!"
-                    haplotypeSequence = haplotypeSequence[:pos] + varAllele + haplotypeSequence[pos+len(refAllele):]
-                else:
-                    assert haplotypeSequence[pos-len(refAllele)+1:pos+1] == refAllele, \
-                        "Zac, you need to fix your -ve haplotype positioning code!"
-                    haplotypeSequence = haplotypeSequence[:pos-len(refAllele)+1] + varAllele + haplotypeSequence[pos+1:]
-                
+            haplotypeSequence = edit_reference_to_haplotype_sequence(cds_FastASeq_obj.seq[:], haplotype, orderedPositions, newSnpDict, mrnaFeature.strand)
             haplotypeSequences.append(haplotypeSequence)
         
-        # 
+        # Store in our overall dictionary
+        haploSeqDict[geneID] = {
+            "reference_sequence": cds_FastASeq_obj.seq[:],
+            "sample_haplotypes": haploCodeDict,
+            "haplotype_sequences": {uniqueHaplotypes[i]:haplotypeSequences[i] for i in range(len(haplotypeSequences))}
+        }
+    return haploSeqDict
 
-def edit_reference_to_haplotype_sequence(referenceSeq, haplotype, orderedPositions, refAltList, strand):
+def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict):
     '''
+    Receives a mRNA feature and a dictionary indicating SNP locations as interpreted
+    from a VCF, and alters the positions to point to locations in the CDS where edits
+    should be made. This function handles +ve and -ve stranded mRNA features differenly
+    to give the appropriate coordinates in a 5' -> 3' reading direction.
+    
+    Parameters:
+        mrnaFeature -- a ZS_GFF3IO.Feature object representing a mRNA
+        snpDict -- a dictionary with structure like:
+                   {
+                       pos1: { ... } # contents of dictionary don't matter
+                   }
+    '''
+    newSnpDict = {}
+    ongoingCount = 0
+    for cdsFeature in mrnaFeature.CDS:
+        # Check each position to see if we need to localise it
+        for pos, genotypeDict in snpDict.items():
+            # If the position overlaps this CDS section
+            if pos >= cdsFeature.start and pos <= cdsFeature.end:
+                if mrnaFeature.strand == "+":
+                    newPos = (pos - cdsFeature.start) + ongoingCount
+                    newSnpDict[newPos] = genotypeDict
+                else:
+                    newPos = cdsFeature.end - pos + ongoingCount
+                    newSnpDict[newPos] = genotypeDict
+        ongoingCount += cdsFeature.end - cdsFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
+    return newSnpDict
+
+def edit_reference_to_haplotype_sequence(referenceSeq, haplotype, orderedPositions, snpDict, strand):
+    '''
+    This function will take in a reference nucleotide sequence, typically representing
+    a CDS for a gene in either +ve or -ve strand, and generates the haplotype version
+    of that sequence.
+    
     Parameters:
         referenceSeq -- the sequence as a string prior to any editing
         haplotype -- a list or tuple containing integers which are ordered with
                      respect to orderedPositions and refAltList
         orderedPositions -- a list or tuple containing integers which point to positions
                             in the referenceSeq that should be edited
-        refAltList -- a list or tuple containing strings which correspond to nucleotide
-                      sequences of variants. The first value ([0]) should be the reference
-                      allele; the indices of these are pointed to by the haplotype list/tuple.
+        snpDict -- a dictionary with (at least) a structure like:
+                   {
+                       pos1: { "ref_alt": ['variantNucleotides1', 'variantNucleotides2', ...]},
+                       pos2: { ... },
+                       ...
+                   }
     Returns:
         editedSeq -- an edited version of the input referenceSeq with all variations made
     '''
     for i in range(len(haplotype)-1, -1, -1): # iterate backwards through positions and variants
         pos = orderedPositions[i]
         variant = haplotype[i]
+        
         # Get strand-appropriate alleles
         if strand == "+":
-            refAllele = refAltList[0] # ref allele might be more than 1 character long
-            varAllele = refAltList[variant]
+            refAllele = snpDict[pos]["ref_alt"][0] # ref allele might be more than 1 character long
+            varAllele = snpDict[pos]["ref_alt"][variant]
         else:
-            refAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, refAltList[0])
-            varAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, refAltList[variant])
+            refAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, snpDict[pos]["ref_alt"][0])
+            varAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, snpDict[pos]["ref_alt"][variant])
         
         # Validate that our position is correct and edit the sequence
         if strand == "+":
@@ -325,6 +355,50 @@ def edit_reference_to_haplotype_sequence(referenceSeq, haplotype, orderedPositio
     
     editedSeq = referenceSeq # just for clarity since this sequence is a new, modified object
     return editedSeq
+
+def sequence_function_alteration_inference(referenceSequence, modifiedSequence):
+    '''
+    The purpose of this function is to make a quick heuristic guess as to whether
+    a sequence modification is likely to result in any significant change at the
+    protein level.
+    
+    We look at a few things:
+        1) Are there amino acid changes?
+        2) Is there an internal stop?
+        3) Did the final stop codon get removed?
+    
+    Parameters:
+        referenceSequence -- a string indicating a nucleotide sequence that corresponds
+                             to the reference genome sequence (for example)
+        modifiedSequence -- a string indicating a modified sequence of the original reference
+    Returns:
+        modIsIdentical -- a boolean indicating whether changes have occurred or not in the
+                          coding portion of the sequence
+        internalStopAddition -- a boolean indicating whether an internal stop codon has been
+                                added in
+        finalStopRemoval -- a boolean indicating whether the final stop codon has been
+                            removed
+    '''
+    ref_FastASeq_obj = ZS_SeqIO.FastASeq("ref", referenceSequence)
+    mod_FastASeq_obj = ZS_SeqIO.FastASeq("mod", modifiedSequence)
+    
+    # Get translations
+    refProteinSeq, _, _ = ref_FastASeq_obj.get_translation(findBestFrame=False, strand=1, frame=0)
+    modProteinSeq, _, _ = mod_FastASeq_obj.get_translation(findBestFrame=False, strand=1, frame=0)
+    
+    # Get heuristic features from the sequence translations
+    refHasNoInternalStops = True if "*" not in refProteinSeq[:-1] else False
+    modHasNoInternalStops = True if "*" not in modProteinSeq[:-1] else False
+    
+    refHasStop = True if refProteinSeq[-1] == "*" else False
+    modHasStop = True if modProteinSeq[-1] == "*" else False
+    
+    # Make conclusions from heuristics
+    modIsIdentical = True if modProteinSeq[:-1] == refProteinSeq[:-1] else False
+    internalStopAddition = True if (refHasNoInternalStops and not modHasNoInternalStops) else False
+    finalStopRemoval = True if (refHasStop and not modHasStop) else False
+    
+    return modIsIdentical, internalStopAddition, finalStopRemoval
 
 ## Main
 def main():
@@ -372,7 +446,83 @@ def main():
     geneSnpDict = get_genotyped_snps_for_genes(gff3Obj, snpGenotypes)
     
     # Get haplotypes for each gene and sample
-    haploSeqDict = get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict)
+    haploSeqDict = get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, args.minSnps)
+    
+    # Create output files
+    with open(os.path.join(args.outputDirectory, "haplotype_predictions.tsv"), "w") as fileOut:
+        fileOut.write("gene_ID\thaplotype_code\tfrequency_in_population\tsamples_with_haplotype\tlikely_change\n")
+        
+        for geneID, haplotypesDict in haploSeqDict.items():
+            ## Output 1: Tabulation file
+            # Calculate haplotype frequencies
+            haplotypeCount = {"".join(map(str, genotype)):0 for genotype in list(map(list, haplotypesDict["haplotype_sequences"].keys()))}
+            for genotypes in haplotypesDict["sample_haplotypes"].values():
+                for gt in genotypes:
+                    haplotypeCount["".join(map(str, gt))] += 1
+            haplotypeFrequency = [[gt, count / sum(haplotypeCount.values())] for gt, count in haplotypeCount.items()]
+            haplotypeFrequency.sort(key = lambda x: -x[1])
+            
+            # Get samples associated to each haplotype
+            haplotypeSampleAssoc = {gtPair[0]: [] for gtPair in haplotypeFrequency}
+            for sampleID, genotypes in haplotypesDict["sample_haplotypes"].items():
+                if genotypes[0] == genotypes[1]:
+                    haplotypeSampleAssoc["".join(map(str, genotypes[0]))].append(f"{sampleID}_(2/2)")
+                else:
+                    for gt in genotypes:
+                        haplotypeSampleAssoc["".join(map(str, gt))].append(f"{sampleID}_(1/2)")
+            
+            # Write gene rows
+            for i in range(len(haplotypeFrequency)):
+                row = []
+                
+                # Handle first row for the gene
+                if i == 0:
+                    row.append(geneID)
+                else:
+                    row.append("")
+                
+                # Add details to row
+                row.append(f"H{haplotypeFrequency[i][0]}")
+                row.append(str(haplotypeFrequency[i][1]))
+                row.append(", ".join(sorted(haplotypeSampleAssoc[haplotypeFrequency[i][0]])))
+                
+                # Figure out if any relevant changes have occurred
+                modIsIdentical, internalStopAddition, finalStopRemoval = \
+                    sequence_function_alteration_inference(haplotypesDict["reference_sequence"],
+                        haplotypesDict["haplotype_sequences"][tuple(map(int,tuple(haplotypeFrequency[i][0])))]) # good god
+                if modIsIdentical:
+                    row.append("no_change")
+                elif internalStopAddition:
+                    row.append("internal_stop")
+                elif finalStopRemoval:
+                    row.append("final_stop_deletion")
+                else:
+                    row.append("amino_acid_change")
+                
+                # Write to file
+                fileOut.write("\t".join(row) + "\n")
+            
+            ## Output 2: FASTA files
+            fastaFilePrefix = os.path.join(args.outputDirectory, f"{geneID}_haplotypes")
+            refSeqID = f"{geneID}_seq{i+1} haplotypeCode={'0'*len(haplotypeFrequency[0][0])} frequency=REFERENCE"
+            with open(fastaFilePrefix + ".nucl.fasta", "w") as nuclFileOut, open(fastaFilePrefix + ".prot.fasta", "w") as protFileOut:
+                # Write reference sequences
+                refNuclSeq = haplotypesDict["reference_sequence"]
+                refProtSeq, _, _ = ZS_SeqIO.FastASeq("id", refNuclSeq).get_translation(findBestFrame=False, strand=1, frame=0)
+                
+                nuclFileOut.write(f">{refSeqID}\n{refNuclSeq}\n")
+                protFileOut.write(f">{refSeqID}\n{refProtSeq}\n")
+                
+                # Write haplotype sequences
+                for i in range(len(haplotypeFrequency)):
+                    code, frequency = haplotypeFrequency[i]
+                    seqID = f"{geneID}_seq{i+1} haplotypeCode={code} frequency={frequency}"
+                    
+                    nuclSeq = haplotypesDict["haplotype_sequences"][tuple(map(int,tuple(code)))]
+                    protSeq, _, _ = ZS_SeqIO.FastASeq("id", nuclSeq).get_translation(findBestFrame=False, strand=1, frame=0)
+                    
+                    nuclFileOut.write(f">{seqID}\n{nuclSeq}\n")
+                    protFileOut.write(f">{seqID}\n{protSeq}\n")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
