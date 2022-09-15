@@ -116,8 +116,8 @@ def get_phased_genotypes_from_vcf(vcfFile):
             # snpPositions[chrom].append(pos)
             
             snpGenotypes.setdefault(chrom, {})
-            snpGenotypes[chrom]["ref_alt"] = [ref, alt]
             snpGenotypes[chrom][pos] = posGenotypeDict
+            snpGenotypes[chrom][pos]["ref_alt"] = [ref, *alt]
     
     #return snpPositions, snpGenotypes
     return snpGenotypes
@@ -162,8 +162,12 @@ def get_genotyped_snps_for_genes(gff3Obj, snpGenotypes):
     
     for contig, positionsDict in snpGenotypes.items():
         for pos, genotypesDict in positionsDict.items():
-            matches = gff3Obj.ncls_finder(pos, pos, "contig", contig)
+            # Skip indexed values that don't point to positions
+            if not isinstance(pos, int):
+                continue
+            
             # If the SNP is located within a gene
+            matches = gff3Obj.ncls_finder(pos, pos, "contig", contig)
             if matches != []:
                 # Get the longest/representative mRNA for each gene
                 mrnaFeatures = [ZS_GFF3IO.GFF3.longest_isoform(m) for m in matches]
@@ -176,7 +180,7 @@ def get_genotyped_snps_for_genes(gff3Obj, snpGenotypes):
                     if snpLocation == "CDS":
                         geneSnpDict.setdefault(geneID, {})
                         geneSnpDict[geneID][pos] = genotypesDict
-    
+        
     return geneSnpDict
 
 def get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, minSnps=0):
@@ -211,14 +215,116 @@ def get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, minSnps=0):
     haploSeqDict = {}
     for geneID, snpDict in geneSnpDict.items():
         # Skip genes which fail minSnps threshold
-        if len(snpDict) < minSnps:
+        if (len(snpDict) - 1) < minSnps: # -1 to offset the "ref_alt" key
             continue
         
         # Get the representative mRNA feature and sequence
         mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(gff3Obj[geneID])
         cds_FastASeq_obj, cds_featureType, cds_startingFrame = gff3Obj.retrieve_sequence_from_FASTA(genomeFASTA_obj, mrnaFeature.ID, "CDS")
         
-        ## TBD: Continue from here
+        # Update snpDict coordinates to be localised to the extracted CDS (rather than genomic coordinates)
+        newSnpDict = {}
+        ongoingCount = 0
+        for cdsFeature in mrnaFeature.CDS:
+            # Check each position to see if we need to localise it
+            for pos, genotypeDict in snpDict.items():
+                
+                    # If the position overlaps this CDS section
+                    if pos >= cdsFeature.start and pos <= cdsFeature.end:
+                        if mrnaFeature.strand == "+":
+                            newPos = (pos - cdsFeature.start) + ongoingCount
+                            newSnpDict[newPos] = genotypeDict
+                        else:
+                            newPos = cdsFeature.end - pos + ongoingCount
+                            newSnpDict[newPos] = genotypeDict
+            ongoingCount += cdsFeature.end - cdsFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
+        
+        # Get haplotype codes for all samples
+        haploCodeDict = {sampleID:[[], []] for genotypeDict in newSnpDict.values() for sampleID in genotypeDict.keys() if sampleID != "ref_alt"}
+        
+        orderedPositions = list(newSnpDict.keys())
+        orderedPositions.sort()
+        for pos in orderedPositions:
+            genotypeDict = newSnpDict[pos]
+            for sampleID, genotype in genotypeDict.items():
+                if sampleID == "ref_alt":
+                    continue
+                
+                haploCodeDict[sampleID][0].append(genotype[0])
+                haploCodeDict[sampleID][1].append(genotype[1])
+        
+        # Get just the unique haplotypes so we can avoid redundant sequence extraction
+        uniqueHaplotypes = set()
+        for genotypes in haploCodeDict.values():
+            uniqueHaplotypes.add(tuple(genotypes[0]))
+            uniqueHaplotypes.add(tuple(genotypes[1]))
+        
+        # Extract haplotype sequences for all unique haplotypes
+        haplotypeSequences = []
+        for haplotype in uniqueHaplotypes:
+            haplotypeSequence = cds_FastASeq_obj.seq[:] # just shallow copy is enough for string
+            for i in range(len(haplotype)-1, -1, -1): # iterate backwards through positions and variants
+                pos = orderedPositions[i]
+                variant = haplotype[i]
+                # Get strand-appropriate alleles
+                if mrnaFeature.strand == "+":
+                    refAllele = newSnpDict[pos]["ref_alt"][0] # ref allele might be more than 1 character long
+                    varAllele = newSnpDict[pos]["ref_alt"][variant]
+                else:
+                    refAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, newSnpDict[pos]["ref_alt"][0])
+                    varAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, newSnpDict[pos]["ref_alt"][variant])
+                
+                # Validate that our position is correct and edit the sequence
+                if mrnaFeature.strand == "+":
+                    assert haplotypeSequence[pos:pos+len(refAllele)] == refAllele, \
+                        "Zac, you need to fix your +ve haplotype positioning code!"
+                    haplotypeSequence = haplotypeSequence[:pos] + varAllele + haplotypeSequence[pos+len(refAllele):]
+                else:
+                    assert haplotypeSequence[pos-len(refAllele)+1:pos+1] == refAllele, \
+                        "Zac, you need to fix your -ve haplotype positioning code!"
+                    haplotypeSequence = haplotypeSequence[:pos-len(refAllele)+1] + varAllele + haplotypeSequence[pos+1:]
+                
+            haplotypeSequences.append(haplotypeSequence)
+        
+        # 
+
+def edit_reference_to_haplotype_sequence(referenceSeq, haplotype, orderedPositions, refAltList, strand):
+    '''
+    Parameters:
+        referenceSeq -- the sequence as a string prior to any editing
+        haplotype -- a list or tuple containing integers which are ordered with
+                     respect to orderedPositions and refAltList
+        orderedPositions -- a list or tuple containing integers which point to positions
+                            in the referenceSeq that should be edited
+        refAltList -- a list or tuple containing strings which correspond to nucleotide
+                      sequences of variants. The first value ([0]) should be the reference
+                      allele; the indices of these are pointed to by the haplotype list/tuple.
+    Returns:
+        editedSeq -- an edited version of the input referenceSeq with all variations made
+    '''
+    for i in range(len(haplotype)-1, -1, -1): # iterate backwards through positions and variants
+        pos = orderedPositions[i]
+        variant = haplotype[i]
+        # Get strand-appropriate alleles
+        if strand == "+":
+            refAllele = refAltList[0] # ref allele might be more than 1 character long
+            varAllele = refAltList[variant]
+        else:
+            refAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, refAltList[0])
+            varAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, refAltList[variant])
+        
+        # Validate that our position is correct and edit the sequence
+        if strand == "+":
+            assert referenceSeq[pos:pos+len(refAllele)] == refAllele, \
+                "Zac, you need to fix your +ve haplotype positioning code!"
+            referenceSeq = referenceSeq[:pos] + varAllele + referenceSeq[pos+len(refAllele):]
+        else:
+            assert referenceSeq[pos-len(refAllele)+1:pos+1] == refAllele, \
+                "Zac, you need to fix your -ve haplotype positioning code!"
+            referenceSeq = referenceSeq[:pos-len(refAllele)+1] + varAllele + referenceSeq[pos+1:]
+    
+    editedSeq = referenceSeq # just for clarity since this sequence is a new, modified object
+    return editedSeq
 
 ## Main
 def main():
