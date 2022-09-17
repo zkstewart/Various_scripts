@@ -434,6 +434,7 @@ def main():
     
     # Parse GFF3 with NCLS indexing
     gff3Obj = ZS_GFF3IO.GFF3(args.gff3, strict_parse=False)
+    gff3Obj.sort_CDS() # makes sure our CDS children lists work properly
     gff3Obj.create_ncls_index(typeToIndex="gene")
     
     # Parse VCF to get SNP genotypes

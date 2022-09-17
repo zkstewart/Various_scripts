@@ -309,6 +309,29 @@ class GFF3:
             except:
                 self.contigs.sort()
     
+    def sort_CDS(self):
+        '''
+        This method will take any parent feature that indexes CDS features, and ensures
+        that the CDS children are sorted in the way we would normally expect them to be.
+        For example, a +ve stranded gene should have CDS sorted so that the first entry
+        in a list is the "leftmost" on the chromosome (lesser coordinate). Alternatively,
+        a -ve stranded gene should have CDS sorted so that the first entry in a list is
+        the "rightmost" on the chromosome (greatest coordinate). The logic behind this
+        is to have CDS features sorted in 5'->3' order, rather than focusing on the
+        absolute chromosomal coordinates.
+        '''
+        assert "CDS" in self.types, \
+            "There are no CDS features in this GFF3; sorting is irrelevant"
+        
+        for parentID in set([x.Parent for x in self.types["CDS"]]):
+            parentFeature = self[parentID]
+            if parentFeature.strand == "+":
+                parentFeature.CDS.sort(key = lambda x: x.start)
+            elif parentFeature.strand == "-":
+                parentFeature.CDS.sort(key = lambda x: -x.end)
+            else:
+                raise ValueError(f"'{parentID} feature has CDS children but strand '{parentFeature.strand}' is unrecognised.")
+    
     def infer_UTRs(self):
         '''
         This method will associate UTR Features to the GFF3 object when they can be
