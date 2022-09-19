@@ -301,36 +301,54 @@ def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict):
         for pos, genotypeDict in snpDict.items():
             # If the position overlaps this CDS section
             if pos >= cdsFeature.start and pos <= cdsFeature.end:
+                # Get the strand-adjusted position
                 if mrnaFeature.strand == "+":
                     newPos = (pos - cdsFeature.start) + ongoingCount
-                    # Handle splice site variants
-                    refAllele = genotypeDict["ref_alt"][0]
-                    if (pos + len(refAllele)) > cdsFeature.end:
-                        # Modify the ref allele to be contained within the exon
-                        allowedAlleleLength = (pos + len(refAllele)) - cdsFeature.end
-                        newRefAllele = refAllele[0:allowedAlleleLength]
-                        # Modify alt allele(s) to run up to the first splice site
-                        newAltAlleles = []
-                        for altAllele in genotypeDict["ref_alt"][1:]:
-                            newAltAllele = altAllele[0:allowedAlleleLength] + altAllele[allowedAlleleLength:].upper().split("GT")[0]
-                            newAltAlleles.append(newAltAllele)
-                        # Update the ref_alt allele in our dictionary
-                        genotypeDict["ref_alt"] = [newRefAllele, *newAltAlleles]
-                    # Handle normal scenarios / index the modified alleles if relevant
-                    newSnpDict[newPos] = genotypeDict
                 else:
                     newPos = cdsFeature.end - pos + ongoingCount
-                    # Handle splice site variants
-                    refAllele = genotypeDict["ref_alt"][0]
-                    if (pos + len(refAllele)) > cdsFeature.end:
-                        '''
-                        For now, I'm not going to handle this since I really need a proper
-                        test case to make sure I implement the code correctly. It's probably
-                        unlikely I trigger this error any time soon, but saying that is probably
-                        jinxing it. Woops.
-                        '''
-                        raise NotImplementedError("-ve stranded splice site variants aren't handled yet")
-                    # Handle normal scenarios / index the modified alleles if relevant
+                # Handle splice site variants
+                '''
+                Originally, I was trying to make this function do fancy things with splice
+                sites like allowing variants to run up to the closest splice site motif.
+                But, it gets complex because then we'd need to re-adjust the whole
+                gene model just in case theres an intron variant that changes the acceptor
+                site. I'd need to dedicate an entire program to just accounting for this
+                kind of scenario. Ultimately, I'm deciding to make a trade off here against
+                complexity in favour of simplicity because, if we find a haplotype that
+                is inducing alterations to splice donor/acceptor sites that has a position
+                in the CDS responsible for this, we should still detect it. Selecting for
+                that SNP will still give us our favourable haplotype, theoretically, so long
+                as the acceptor variant is in linkage disequilibrium which is likely.
+                '''
+                refAllele = genotypeDict["ref_alt"][0]
+                skipThisPos = False
+                if (pos + len(refAllele) - 1) > cdsFeature.end:
+                    # Modify the ref allele to be contained within the exon
+                    allowedAlleleLength = cdsFeature.end - pos + 1
+                    newRefAllele = refAllele[0:allowedAlleleLength]
+                    # Modify alt allele(s)
+                    newAltAlleles = [allele[0:allowedAlleleLength] for allele in genotypeDict["ref_alt"][1:]]
+                    # If an alt allele is identical to our reference, eliminate it now
+                    deleteIndices = []
+                    for x in range(len(newAltAlleles)):
+                        if newAltAlleles[x] == newRefAllele:
+                            deleteIndices.append(x)
+                            for sampleID, genotype in genotypeDict.items():
+                                if sampleID != "ref_alt":
+                                    for z in range(len(genotype)):
+                                        if genotype[z] == x+1: # x+1 gives the index of our alt allele in ["ref_alt"]
+                                            genotype[z] = 0 # set it to the ref allele index
+                                    genotypeDict[sampleID] = genotype
+                    for index in deleteIndices[::-1]:
+                        del newAltAlleles[index] # remove it from our alt alleles values
+                    # If we no longer have any variants contained within the CDS region, eliminate this variant position
+                    if newAltAlleles == []:
+                        skipThisPos = True
+                    # Otherwise, update the ref_alt allele in our dictionary
+                    else:
+                        genotypeDict["ref_alt"] = [newRefAllele, *newAltAlleles]
+                # Handle normal scenarios / index the modified alleles if relevant
+                if skipThisPos is False:
                     newSnpDict[newPos] = genotypeDict
         ongoingCount += cdsFeature.end - cdsFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
     return newSnpDict
