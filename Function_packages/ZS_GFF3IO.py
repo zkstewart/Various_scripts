@@ -332,6 +332,25 @@ class GFF3:
             else:
                 raise ValueError(f"'{parentID} feature has CDS children but strand '{parentFeature.strand}' is unrecognised.")
     
+    def sort_exon(self):
+        '''
+        Akin to sort_CDS(), this function does the same but for exon-indexing features.
+        The differences comes in how we approach features without a proper strand
+        being noted (+ve or -ve). In these cases, we'll just skip over the feature since,
+        without strand info, we can't know how it's "supposed" to be sorted.
+        '''
+        assert "exon" in self.types, \
+            "There are no exon features in this GFF3; sorting is irrelevant"
+        
+        for parentID in set([x.Parent for x in self.types["exon"]]):
+            parentFeature = self[parentID]
+            if parentFeature.strand == "+":
+                parentFeature.exon.sort(key = lambda x: x.start)
+            elif parentFeature.strand == "-":
+                parentFeature.exon.sort(key = lambda x: -x.end)
+            else:
+                continue
+    
     def infer_UTRs(self):
         '''
         This method will associate UTR Features to the GFF3 object when they can be

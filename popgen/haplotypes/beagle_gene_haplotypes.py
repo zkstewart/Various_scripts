@@ -303,9 +303,34 @@ def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict):
             if pos >= cdsFeature.start and pos <= cdsFeature.end:
                 if mrnaFeature.strand == "+":
                     newPos = (pos - cdsFeature.start) + ongoingCount
+                    # Handle splice site variants
+                    refAllele = genotypeDict["ref_alt"][0]
+                    if (pos + len(refAllele)) > cdsFeature.end:
+                        # Modify the ref allele to be contained within the exon
+                        allowedAlleleLength = (pos + len(refAllele)) - cdsFeature.end
+                        newRefAllele = refAllele[0:allowedAlleleLength]
+                        # Modify alt allele(s) to run up to the first splice site
+                        newAltAlleles = []
+                        for altAllele in genotypeDict["ref_alt"][1:]:
+                            newAltAllele = altAllele[0:allowedAlleleLength] + altAllele[allowedAlleleLength:].upper().split("GT")[0]
+                            newAltAlleles.append(newAltAllele)
+                        # Update the ref_alt allele in our dictionary
+                        genotypeDict["ref_alt"] = [newRefAllele, *newAltAlleles]
+                    # Handle normal scenarios / index the modified alleles if relevant
                     newSnpDict[newPos] = genotypeDict
                 else:
                     newPos = cdsFeature.end - pos + ongoingCount
+                    # Handle splice site variants
+                    refAllele = genotypeDict["ref_alt"][0]
+                    if (pos + len(refAllele)) > cdsFeature.end:
+                        '''
+                        For now, I'm not going to handle this since I really need a proper
+                        test case to make sure I implement the code correctly. It's probably
+                        unlikely I trigger this error any time soon, but saying that is probably
+                        jinxing it. Woops.
+                        '''
+                        raise NotImplementedError("-ve stranded splice site variants aren't handled yet")
+                    # Handle normal scenarios / index the modified alleles if relevant
                     newSnpDict[newPos] = genotypeDict
         ongoingCount += cdsFeature.end - cdsFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
     return newSnpDict
