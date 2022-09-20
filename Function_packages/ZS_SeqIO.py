@@ -224,7 +224,16 @@ class FastASeq:
                     length = 3 * ((len(nuc)-frame) // 3)
                     frameNuc = nuc[frame:frame+length]
                     frameProt = self._dna_to_protein(frameNuc)
-                    orfs = frameProt.split("*")
+                    # Add bias to ORF if its translation ends in a stop codon
+                    """If strand==1 has an ORF ending in a stop codon, and strand==-1
+                    has an unbroken ORF not ending in a stop codon, without this
+                    biaser, we'd end up picking the strand==-1 ORF. Ideally, we'd like
+                    to prioritise strand==1, and also not penalise a sequence for
+                    ending in a stop codon. Any other stop codon can go jump, however."""
+                    if frameProt.count("*") == 1 and frameProt[-1] == "*":
+                        orfs = [frameProt] # this prevents us splitting on "*" and counts its length
+                    else:
+                        orfs = frameProt.split("*")
                     for orf in orfs:
                         l = len(orf)
                         if l > longest[0]:
