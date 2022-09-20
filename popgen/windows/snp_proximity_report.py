@@ -326,12 +326,14 @@ def main():
                     pos,
                     snpResultsDict["insideGeneID"],
                     snpResultsDict["insideGeneLocation"],
-                    snpResultsDict["leftGeneID"] + f" ({snpResultsDict['leftGeneStrand']})" \
-                        if snpResultsDict["leftGeneID"] != "." else ".",
-                    snpResultsDict["leftGeneDistance"],
+                    
                     snpResultsDict["rightGeneID"] + f" ({snpResultsDict['rightGeneStrand']})" \
                         if snpResultsDict["rightGeneID"] != "." else ".",
-                    snpResultsDict["rightGeneDistance"] # {7}
+                    snpResultsDict["rightGeneDistance"], 
+                    
+                    snpResultsDict["leftGeneID"] + f" ({snpResultsDict['leftGeneStrand']})" \
+                        if snpResultsDict["leftGeneID"] != "." else ".",
+                    snpResultsDict["leftGeneDistance"] # {7}
                 ))
     
     # Produce output file 2: Gene-centric report
