@@ -388,16 +388,16 @@ def edit_reference_to_haplotype_sequence(referenceSeq, haplotype, orderedPositio
         
         # Validate that our position is correct and edit the sequence
         if strand == "+":
-            assert referenceSeq[pos:pos+len(refAllele)] == refAllele, \
+            assert referenceSeq[pos:pos+len(refAllele)].upper() == refAllele.upper(), \
                 "Zac, you need to fix your +ve haplotype positioning code!"
             referenceSeq = referenceSeq[:pos] + varAllele + referenceSeq[pos+len(refAllele):]
         else:
-            assert referenceSeq[pos-len(refAllele)+1:pos+1] == refAllele, \
+            assert referenceSeq[pos-len(refAllele)+1:pos+1].upper() == refAllele.upper(), \
                 "Zac, you need to fix your -ve haplotype positioning code!"
             referenceSeq = referenceSeq[:pos-len(refAllele)+1] + varAllele + referenceSeq[pos+1:]
     
     editedSeq = referenceSeq # just for clarity since this sequence is a new, modified object
-    return editedSeq
+    return editedSeq.upper() # we'd like all sequences to be upper cased
 
 def sequence_function_alteration_inference(referenceSequence, modifiedSequence):
     '''
