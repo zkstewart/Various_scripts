@@ -619,21 +619,6 @@ class Exonerate:
         
         return qt, isTemporary
     
-    def run_exonerate(self):
-        '''
-        Performs the exonerate operation using the parameters already specified during/after
-        creation of this object. This function pawns off the handling to one of two hidden
-        subfunctions depending on whether we're on Windows or not.
-        
-        Returns:
-            features -- a list containing ZS_GFF3IO.Feature objects corresponding to
-                        all sequence matches reported by exonerate
-        '''
-        if platform.system() == "Windows":
-            return self._run_exonerate_windows()
-        else:
-            return self._run_exonerate_linux()
-    
     def _format_exonerate_cmd(self, queryFile, targetFile):
         '''
         Hidden helper function for getting a list amenable to subprocess.run()
@@ -648,8 +633,11 @@ class Exonerate:
         Returns:
             cmds -- a list amenable to subprocess.run()
         '''
-        cmds = [
-            "wsl", "~", "-e",
+        cmds = []
+        if platform.system() == "Windows":
+            cmds += ["wsl", "~", "-e"]
+        
+        cmds += [
             self.exonerateExe, "--model", self.model,
             "--score", str(self.score)
         ]
@@ -669,9 +657,11 @@ class Exonerate:
         
         return cmds
     
-    def _run_exonerate_windows(self):
+    def run_exonerate(self):
         '''
-        Hidden worker of run_exonerate(). Runs exonerate in a Window-specific manner.
+        Performs the exonerate operation using the parameters already specified during/after
+        creation of this object. This function pawns off the handling to one of two hidden
+        subfunctions depending on whether we're on Windows or not.
         
         Returns:
             features -- a list containing ZS_GFF3IO.Feature objects corresponding to
@@ -704,16 +694,6 @@ class Exonerate:
                 if file.startswith(t):
                     os.unlink(file)
         return features
-    
-    def _run_exonerate_linux(self):
-        '''
-        Hidden worker of run_exonerate(). Runs exonerate in a Window-specific manner.
-        
-        Returns:
-            features -- a list containing ZS_GFF3IO.Feature objects corresponding to
-                        all sequence matches reported by exonerate
-        '''
-        raise NotImplementedError("Zac hasn't tried to run Exonerate on Linux yet; sorry")
     
     @staticmethod
     def parse_exonerate_gff_stdout(exonerateGffStdout):
