@@ -10,16 +10,37 @@
 ## 3) detect outliers in a MSA by sequence conservation [-]
 ## 4) detect outliers in a MSA by phylogeny mismatch [-]
 
-import os, platform, sys, subprocess, hashlib, time, random
+import os, platform, sys, subprocess, hashlib, time, random, re, subprocess
 from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
 sys.path.append(os.path.dirname(__file__))
-from ZS_SeqIO import FASTA
+from ZS_SeqIO import FASTA, FastASeq
+from ZS_GFF3IO import Feature
 
 import parasail
 if platform.system() != 'Windows':
     from skbio.alignment import StripedSmithWaterman
+
+def _tmp_file_name_gen(prefix, suffix):
+    '''
+    Hidden function for use by Class methods.
+    Params:
+        prefix -- a string for a file prefix e.g., "tmp"
+        suffix -- a string for a file suffix e.g., "fasta". Note that we don't
+                    use a "." in this, since it's inserted between prefix and suffix
+                    automatically.
+    Returns:
+        tmpName -- a string for a file name which does not exist in the current dir.
+    '''
+    ongoingCount = 1
+    while True:
+        if not os.path.isfile("{0}.{1}".format(prefix, suffix)):
+            return "{0}.{1}".format(prefix, suffix)
+        elif os.path.isfile("{0}.{1}.{2}".format(prefix, ongoingCount, suffix)):
+            ongoingCount += 1
+        else:
+            return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 class MAFFT:
     '''
@@ -104,7 +125,7 @@ class MAFFT:
                 
         # Create temporary file
         tmpHash = hashlib.sha256(bytes(str(FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-        tmpFileName = self._tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
+        tmpFileName = _tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
         FASTA_obj.write(tmpFileName)
         
         # Run
@@ -320,13 +341,13 @@ class MAFFT:
         # Create temporary files
         tmpHash = hashlib.sha256(bytes(str(aligned_FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         
-        tmpAlignedFileName = self._tmp_file_name_gen("mafft_aligned_tmp" + tmpHash[0:20], "fasta")
+        tmpAlignedFileName = _tmp_file_name_gen("mafft_aligned_tmp" + tmpHash[0:20], "fasta")
         aligned_FASTA_obj.write(tmpAlignedFileName, asAligned=True, withDescription=True)
         
-        tmpAddedFileName = self._tmp_file_name_gen("mafft_added_tmp" + tmpHash[0:20], "fasta")
+        tmpAddedFileName = _tmp_file_name_gen("mafft_added_tmp" + tmpHash[0:20], "fasta")
         add_FASTA_obj.write(tmpAddedFileName, withDescription=True)
         
-        tmpOutputFileName = self._tmp_file_name_gen("mafft_output_tmp" + tmpHash[0:20], "fasta")
+        tmpOutputFileName = _tmp_file_name_gen("mafft_output_tmp" + tmpHash[0:20], "fasta")
         
         # Format command for running
         cmd = "{0} --thread {1} --add \"{2}\" \"{3}\" > \"{4}\"".format(
@@ -350,26 +371,6 @@ class MAFFT:
         
         # Return new result
         return result_FASTA_obj
-    
-    def _tmp_file_name_gen(self, prefix, suffix):
-        '''
-        Hidden function for use by Class methods.
-        Params:
-            prefix -- a string for a file prefix e.g., "tmp"
-            suffix -- a string for a file suffix e.g., "fasta". Note that we don't
-                      use a "." in this, since it's inserted between prefix and suffix
-                      automatically.
-        Returns:
-            tmpName -- a string for a file name which does not exist in the current dir.
-        '''
-        ongoingCount = 1
-        while True:
-            if not os.path.isfile("{0}.{1}".format(prefix, suffix)):
-                return "{0}.{1}".format(prefix, suffix)
-            elif os.path.isfile("{0}.{1}.{2}".format(prefix, ongoingCount, suffix)):
-                ongoingCount += 1
-            else:
-                return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 class SSW_Result:
     '''
@@ -425,6 +426,425 @@ class SSW:
         # Make and return an object containing all our results
         result = SSW_Result(queryAlign, targetAlign, alignment.optimal_alignment_score, queryStartIndex, targetStartIndex)
         return result
+
+class Exonerate:
+    '''
+    The Exonerate Class is intended to be used alongside the ZS_SeqIO.FASTA Class to
+    handle the alignment of FASTA sequences with OOP magics. In short, it provides
+    easy access to exonerate to perform various forms of alignment, returning a 
+    parsed result.
+    
+    As of now, it's fairly limited and has only been tested with protein2genome
+    and "--showtargetgff yes". In fact, the only exonerate output parser I have
+    is limited to handling results where this is true. So, don't mess with showtargetgff.
+    '''
+    def __init__(self, exonerateExe, query, target):
+        self.exonerateExe = exonerateExe
+        self.query = query
+        self.target = target
+        
+        # Set default attributes
+        self.model = "ungapped" # default of exonerate v2.4.0
+        self.exhaustive = False
+        self.score = 100
+        self.showtargetgff = True # exonerate is False by default, but this class only handles GFF
+    
+    @property
+    def exonerateExe(self):
+        return self._exonerateExe
+    
+    @exonerateExe.setter
+    def exonerateExe(self, value):
+        assert isinstance(value, str) and os.path.isfile(value), \
+            f"'{value}' is not a string or does not point to a file"
+        
+        if platform.system() == "Windows":
+            print("Exonerate Class on Windows assumes exonerate was built using WSL; carrying on...")
+            self._exonerateExe = Exonerate.convert_windows_to_wsl_path(value)
+        else:
+            self._exonerateExe = value
+    
+    @property
+    def model(self):
+        return self._model
+    
+    @model.setter
+    def model(self, value):
+        options = [
+            "ungapped", "ungapped:trans",
+            "affine:global", "affine:bestfit", "affine:local", "affine:overlap",
+            "est2genome", "ner",
+            "protein2genome", "protein2genome:bestfit",
+            "protein2dna", "protein2dna:bestfit",
+            "coding2coding", "coding2genome", "cdna2genome", "genome2genome"
+        ]
+        if value not in options:
+            raise ValueError(f"{value} is not recognised as an option within {options}")
+        self._model = value
+    
+    @property
+    def query(self):
+        return self._query
+    
+    @query.setter
+    def query(self, value):
+        recognisedTypes = ["str", "FASTA", "ZS_SeqIO.FASTA", "FastASeq", "ZS_SeqIO.FastASeq"]
+        assert type(value).__name__ in recognisedTypes, \
+            "Query value type not handled by Exonerate class"
+        self._query = value
+    
+    @property
+    def target(self):
+        return self._target
+    
+    @target.setter
+    def target(self, value):
+        recognisedTypes = ["str", "FASTA", "ZS_SeqIO.FASTA", "FastASeq", "ZS_SeqIO.FastASeq"]
+        assert type(value).__name__ in recognisedTypes, \
+            "Target value type not handled by Exonerate class"
+        self._target = value
+    
+    @property
+    def exhaustive(self):
+        return self._exhaustive
+    
+    @exhaustive.setter
+    def exhaustive(self, value):
+        assert isinstance(value, bool), \
+            "Exhaustive property is a boolean switch; must be True or False"
+        self._exhaustive = value
+    
+    @property
+    def score(self):
+        return self._score
+    
+    @score.setter
+    def score(self, value):
+        assert isinstance(value, int), \
+            "Score value must be an integer"
+        assert value >= 0, \
+            "Score value must be >= 0"
+        
+        self._score = value
+    
+    @property
+    def showtargetgff(self):
+        return self._showtargetgff
+    
+    @showtargetgff.setter
+    def showtargetgff(self, value):
+        assert isinstance(value, bool), \
+            "showtargetgff property is a boolean switch; must be True or False"
+        self._showtargetgff = value
+    
+    @staticmethod
+    def convert_windows_to_wsl_path(windowsPath):
+        '''
+        Provides simple functionality to infer the WSL path from
+        a windows path, provided as a string.
+        
+        Parameters:
+            windowsPath -- a string indicating the full path to a file
+                           or directory of interest; this MUST include
+                           the root character e.g., 'D:\\' or 'C:\\'
+        Returns:
+            wslPath -- a string indicating the inferred full path to the
+                       given file or directory using WSL formatting
+        '''
+        # Check that the path is something we can work with
+        driveRegex = re.compile(r"^([A-Za-z]{1}):\\")
+        assert driveRegex.match(windowsPath) != None, \
+            f"'{windowsPath}' is not recognised as a full, root drive inclusive path"
+        assert os.path.exists(windowsPath), \
+            f"'{windowsPath}' is not recognised as an existing path"
+        
+        # If it is, convert it
+        driveLetter = driveRegex.match(windowsPath).group(1)
+        wslPath = "/{0}".format("/".join(
+            [
+                "mnt",
+                driveLetter.lower(),
+                *windowsPath.split("\\")[1:]
+            ]
+        ))
+        
+        return wslPath
+    
+    def _get_filename_for_query_or_target(self, qt):
+        '''
+        Hidden method for use when boiling down one of the three data types (FASTA, FastASeq, and string)
+        into a string representing the query file name.
+        
+        If it's already a string for a file, this does nothing. Otherwise, it will make sure a file exists
+        with the FASTA data contents for use by exonerate.
+        
+        Parameters:
+            qt -- the value of .query or .target, provided to this method. We won't
+                  call this from self since this method (to reduce code repetition)
+                  needs to work for both.
+        Returns:
+            qt -- a string indicating the file name for the input value of qt. If it was
+                  already a string, this will be the same. Otherwise, it will be a file
+                  name containing the contents of the FASTA or FastASeq object.
+            isTemporary -- a Boolean indicating whether the returned qt value has been
+                           created by this method as a temporary file (True) or if it was
+                           already existing (False, i.e., qt was already a string)
+        '''
+        # Get a hash for temporary file creation
+        hashForTmp = qt if isinstance(qt, str) \
+                       else qt.fileOrder[0][0] if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder != [] \
+                       else str(qt) if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder == []  \
+                       else qt.id
+        tmpHash = hashlib.sha256(bytes(hashForTmp + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        
+        # If qt is a string but not a file, make it a FastASeq object
+        if isinstance(qt, str) and not os.path.isfile(qt):
+            qt = FastASeq("tmpID", qt)
+        
+        # If qt is a FastASeq, make it a FASTA object
+        if type(qt).__name__ == "FastASeq" or type(qt).__name__ == "ZS_SeqIO.FastASeq":
+            tmpFastaName = _tmp_file_name_gen("qt_fasta_tmp" + tmpHash[0:20], "fasta")
+            with open(tmpFastaName, "w") as fileOut:
+                fileOut.write(">{0}\n{1}\n".format(qt.id, qt.seq))
+            qt = FASTA(tmpFastaName)
+            os.unlink(tmpFastaName)
+        
+        # If qt is a FASTA, make it into a file
+        isTemporary = False
+        if type(qt).__name__ == "FASTA" or type(qt).__name__ == "ZS_SeqIO.FASTA":
+            tmpQtName = _tmp_file_name_gen("exonerate_tmp" + tmpHash[0:20], "fasta")
+            qt.write(tmpQtName)
+            qt = tmpQtName # after this point, qt will be a string indicating a FASTA file name
+            isTemporary = True # if we set this, qt was not originally a string
+        
+        return qt, isTemporary
+    
+    def run_exonerate(self):
+        '''
+        Performs the exonerate operation using the parameters already specified during/after
+        creation of this object. This function pawns off the handling to one of two hidden
+        subfunctions depending on whether we're on Windows or not.
+        
+        Returns:
+            features -- a list containing ZS_GFF3IO.Feature objects corresponding to
+                        all sequence matches reported by exonerate
+        '''
+        if platform.system() == "Windows":
+            return self._run_exonerate_windows()
+        else:
+            return self._run_exonerate_linux()
+    
+    def _format_exonerate_cmd(self, queryFile, targetFile):
+        '''
+        Hidden helper function for getting a list amenable to subprocess.run()
+        that sets all relevant cmd tags depending on this object's properties.
+        It expects that the query and target files have already been subjected
+        to ._get_filename_for_query_or_target(), and their return values are
+        to be given to this function.
+        
+        Parameters:
+            queryFile -- a string pointing to a FASTA file that exists
+            targetFile -- a string pointing to a FASTA file that exists
+        Returns:
+            cmds -- a list amenable to subprocess.run()
+        '''
+        cmds = [
+            "wsl", "~", "-e",
+            self.exonerateExe, "--model", self.model,
+            "--score", str(self.score)
+        ]
+        
+        if self.showtargetgff is True:
+            cmds += ["--showtargetgff", "yes"]
+        if self.exhaustive is True:
+            cmds += ["--exhaustive", "yes"]
+        
+        if platform.system() == "Windows":
+            cmds += [
+                Exonerate.convert_windows_to_wsl_path(os.path.abspath(queryFile)),
+                Exonerate.convert_windows_to_wsl_path(os.path.abspath(targetFile))
+            ]
+        else:
+            cmds += [queryFile, targetFile]
+        
+        return cmds
+    
+    def _run_exonerate_windows(self):
+        '''
+        Hidden worker of run_exonerate(). Runs exonerate in a Window-specific manner.
+        
+        Returns:
+            features -- a list containing ZS_GFF3IO.Feature objects corresponding to
+                        all sequence matches reported by exonerate
+        '''
+        # Get file names for query and target after data type coercion
+        q, qIsTemporary = self._get_filename_for_query_or_target(self.query)
+        t, tIsTemporary = self._get_filename_for_query_or_target(self.target)
+        
+        # Run exonerate
+        cmds = self._format_exonerate_cmd(q, t)
+        exonerate = subprocess.run(cmds, capture_output=True)
+        
+        # Parse exonerate results into gene features
+        features = Exonerate.parse_exonerate_gff_stdout(exonerate.stdout.decode())
+        
+        # Clean up and return
+        if qIsTemporary:
+            os.unlink(q)
+            qDir = os.path.dirname(q)
+            for file in os.listdir(qDir if qDir != "" else "."): # kill off any temporary database files too
+                file = os.path.join(qDir, file)
+                if file.startswith(q):
+                    os.unlink(file)
+        if tIsTemporary:
+            os.unlink(t)
+            tDir = os.path.dirname(t)
+            for file in os.listdir(tDir if tDir != "" else "."): # kill off any temporary database files too
+                file = os.path.join(tDir, file)
+                if file.startswith(t):
+                    os.unlink(file)
+        return features
+    
+    def _run_exonerate_linux(self):
+        '''
+        Hidden worker of run_exonerate(). Runs exonerate in a Window-specific manner.
+        
+        Returns:
+            features -- a list containing ZS_GFF3IO.Feature objects corresponding to
+                        all sequence matches reported by exonerate
+        '''
+        raise NotImplementedError("Zac hasn't tried to run Exonerate on Linux yet; sorry")
+    
+    @staticmethod
+    def parse_exonerate_gff_stdout(exonerateGffStdout):
+        '''
+        This function is capable of reading the stdout produced by running exonerate
+        with --showtargetgff yes and producing GFF3 Features that encapsulate the
+        details of aligned models reported by exonerate. This stdout can be obtained
+        via subprocess or just by reading the file into a string (hopefully it's not
+        too big!)
+        
+        Parameters:
+            exonerateGffStdout -- a string containing all of the stdout from running
+                                  exonerate with "--showtargetgff yes".
+        Returns
+            features -- a list containing ZS_GFF3IO.Feature objects corresponding to
+                        all sequence matches reported by exonerate
+        '''
+        featureDict = {"gene": {}, "mRNA": {}}
+        geneIDDict = {} # just for naming purposes for this script
+        for line in exonerateGffStdout.split("\n"):
+            # Skip irrelevant lines
+            try:
+                contig, source, featureType, start, end, \
+                        score, strand, frame, attributes \
+                        = line.rstrip('\t\n').split('\t')
+                start = int(start)
+                end = int(end)
+                assert strand in ['+', '-']
+            except:
+                continue  # If any of the above fail we know this isn't a GFF line
+            
+            # Parse attributes
+            splitAttributes = []
+            for a in attributes.split(" ; "):
+                splitAttributes += a.split(" ", maxsplit=1)
+            attributesDict = {splitAttributes[i]: splitAttributes[i+1] for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2)}
+            
+            # Reformat detail lines to be GFF3-style
+            if featureType == 'gene':
+                geneID, geneIDDict = Exonerate._exonerate_geneid_produce(contig, attributesDict['sequence'], geneIDDict)        # This will carry over into CDS/exon lines below this
+                newAttributesDict = {
+                    "ID": geneID,
+                    "Name": f"exonerate_{geneID}",
+                    "Sequence": attributesDict['sequence'],
+                    "identity": attributesDict['identity'],
+                    "similarity": attributesDict['similarity']
+                }
+                exonCount = 1
+                cdsCount = 1
+            elif featureType == 'cds':
+                featureType = 'CDS'
+                newAttributesDict = {
+                    "ID": f"{geneID}.mrna1.cds{cdsCount}", # geneID carries over from the gene line
+                    "Parent": f"{geneID}.mrna1",
+                }
+                cdsCount += 1
+            elif featureType == 'exon':
+                newAttributesDict = {
+                    "ID": f"{geneID}.mrna1.exon{exonCount}",
+                    "Parent": f"{geneID}.mrna1"
+                }
+                exonCount += 1
+            else:
+                continue # Skip any other lines; these include 'similarity', 'intron', and 'splice5'/'splice3'
+            
+            # Create a feature from what we have and associate it appropriately
+            if featureType == 'gene':
+                # Create the gene feature
+                geneFeature = Feature()
+                geneFeature.add_attributes(newAttributesDict)
+                geneFeature.add_attributes({
+                    "contig": contig, "source": source, "type": featureType,
+                    "start": int(start), "end": int(end), "coords": [int(start), int(end)],
+                    "score": score, "strand": strand, "frame": frame
+                })
+                featureDict["gene"][geneID] = geneFeature
+                
+                # Create an mRNA feature and nestle it as a child under its parental gene
+                "So caring... so nurturing..."
+                mrnaFeature = Feature()
+                mrnaFeature.add_attributes({
+                    "ID": f"{geneID}.mrna1",
+                    "Name": f"exonerate_{geneID}",
+                    "Sequence": attributesDict['sequence'],
+                    "identity": attributesDict['identity'],
+                    "similarity": attributesDict['similarity']
+                })
+                mrnaFeature.add_attributes({
+                    "contig": contig, "source": source, "type": "mRNA",
+                    "start": int(start), "end": int(end), "coords": [int(start), int(end)],
+                    "score": score, "strand": strand, "frame": frame
+                })
+                featureDict["mRNA"][f"{geneID}.mrna1"] = mrnaFeature
+                geneFeature.add_child(mrnaFeature)
+            else:
+                # Create the CDS/exon feature
+                subFeature = Feature()
+                subFeature.add_attributes(newAttributesDict)
+                subFeature.add_attributes({
+                    "contig": contig, "source": source, "type": featureType,
+                    "start": int(start), "end": int(end), "coords": [int(start), int(end)],
+                    "score": score, "strand": strand, "frame": frame
+                })
+                featureDict["mRNA"][newAttributesDict["Parent"]].add_child(subFeature)
+        
+        return [feature for feature in featureDict["gene"].values()]
+    
+    @staticmethod
+    def _exonerate_geneid_produce(contigID, sequenceID, idDict):
+        '''
+        This is legacy code from the exonerate_gene_find.py program. I don't want
+        to touch it even if it is ugly.
+        '''
+        # Produce the basic ID prefix
+        sequenceBit = sequenceID.split('|')
+        sequenceBit.sort(key=len, reverse=True) # This should help to handle sequence IDs like eg|asdf|c1; we assume the longest part is the most informative which should be true with Trinity and GenBank/Swiss-Prot IDs
+        # Specifically handle older Trinity-style IDs
+        if len(sequenceBit) > 1:
+            if sequenceBit[1].startswith('TR') and sequenceBit[1][2:].isdigit():
+                sequenceBit[0] = sequenceBit[1] + '_' + sequenceBit[0]
+        # Specifically handle ToxProt-style IDs [Note that, normally, the longest bit in a UniProt ID is what we want, but with toxprot the format differs e.g., with "toxprot_sp|P25660|VKT9_BUNFA" the longest section is ambiguous and might return the toxprot bit]
+        if len(sequenceBit) == 3 and sequenceID.split('|')[0] == 'toxprot_sp':
+            sequenceBit[0] = sequenceID.split('|')[2]
+        # Format gene ID
+        geneID = contigID + '.' + sequenceBit[0]
+        if geneID not in idDict:
+            idDict[geneID] = 1
+        # Produce the final geneID and iterate idDict's contents
+        outGeneID = geneID + '.' + str(idDict[geneID])
+        idDict[geneID] += 1
+        return outGeneID, idDict
 
 if __name__ == "__main__":
     pass
