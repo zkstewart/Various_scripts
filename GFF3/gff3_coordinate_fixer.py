@@ -88,7 +88,7 @@ def find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProte
         )
         gff3ProtSequence, _, _ = gff3_FastASeq_obj.get_translation(
             findBestFrame=False,
-            strand=1 if feature.strand is "+" else -1,
+            strand=1 if feature.strand == "+" else -1,
             frame=int(feature.frame) if feature.frame.isdigit() else 0
         )
         
@@ -107,7 +107,7 @@ def find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProte
                 fixesDict[FastASeq_obj.id] = [alt_strand, alt_frame]
     return nonequalIDs, fixesDict
 
-def fix_nonequivalent_features(nonequalIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProtein=False):
+def fix_nonequivalent_features(nonequalIDs, exonerateResultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProtein=False):
     '''
     Intended to follow on from find_nonequivalent_features(), this function will
     instead aim to correct the coordinates of any GFF3 features that don't match
@@ -141,7 +141,14 @@ def fix_nonequivalent_features(nonequalIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_
         else:
             fastaProtSequence = FastASeq_obj.seq
         
-        # 
+        # Get exonerate results if applicable
+        if problemSeqID in exonerateResultsDict:
+            exonerateResults = exonerateResultsDict[problemSeqID]
+        else:
+            continue # nothing we can do in this scenario
+        
+        # Find the best exonerate result in the closest proximity to the original gene annotation
+        ## TBD...
         stop
 
 
@@ -223,21 +230,29 @@ def main():
         # Perform exonerate search
         exonerateSearcher = ZS_AlignIO.Exonerate(args.exonerateExe, tmpFileName, args.genomeFastaFile)
         exonerateSearcher.model = "protein2genome"
-        features = exonerateSearcher.run_exonerate() # returns a list of GFF3 features
+        resultsDict = exonerateSearcher.run_exonerate() # returns a list of GFF3 features
         
-        # Save result as pickle
+        # Save result as pickle & clean up temp file
         with open(exoneratePickleFile, "wb") as fileOut:
-            pickle.dump([features, fixesDict], fileOut)
+            pickle.dump([resultsDict, nonequalIDs, fixesDict], fileOut)
+        os.unlink(tmpFileName)
     else:
         # Load in the exonerate pickle
         with open(exoneratePickleFile, "rb") as fileIn:
-            features, fixesDict = pickle.load(fileIn)
+            resultsDict, nonequalIDs, fixesDict = pickle.load(fileIn)
     
-    # Attempt to fix difficult scenarios
+    # Filter resultsDict to only have relevant results
+    MIN_IDENTITY, MIN_SIMILARITY = 98.0, 98.0
+    resultsDict = ZS_AlignIO.Exonerate.filter_exonerate_resultsDict(
+        resultsDict, num_hits=5, identity=MIN_IDENTITY, similarity=MIN_SIMILARITY
+    )
+    
+    # Attempt to fix genes
+    fix_nonequivalent_features(nonequalIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
     
     
     # Handle simple fixes
-    # GFF3_obj, FASTA_obj = GFF3_obj, cdsFASTA_obj # just for testing
+    ## TBD
     
     # mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(GFF3_obj[geneID])
     # cds_FastASeq_obj, cds_featureType, cds_startingFrame = GFF3_obj.retrieve_sequence_from_FASTA(genomeFASTA_obj, mrnaFeature.ID, "CDS")
