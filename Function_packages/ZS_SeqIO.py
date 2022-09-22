@@ -446,9 +446,9 @@ class FastASeq:
     
     def __repr__(self):
         return "FastASeq(id='{0}',seq='{1}',alt={4}{2}{4},gap_seq={5}{3}{5})".format(
-            self.id, self.seq if len(self.seq) < 200 else "{0}...{1}".format(self.seq[0:100], self.seq[-100:]),
+            self.id, self.seq if len(self.seq) < 200 else "{0} ... {1}".format(self.seq[0:100], self.seq[-100:]),
             self.alt,
-            "<None>" if self.gap_seq == None else self.gap_seq if len(self.gap_seq) < 200 else "{0}...{1}".format(self.gap_seq[0:100], self.gap_seq[-100:]),
+            "<None>" if self.gap_seq == None else self.gap_seq if len(self.gap_seq) < 200 else "{0} ... {1}".format(self.gap_seq[0:100], self.gap_seq[-100:]),
             "'" if self.alt != None else "", "'" if self.gap_seq != None else ""
         )
 
@@ -507,18 +507,20 @@ class FASTA:
         # Validate parameter type
         assert isinstance(isAligned, bool)
         
-        # Diverge into one of the two overload methods
+        # Diverge into one of the three overload methods
         if isinstance(fasta, str):
             if not os.path.isfile(fasta):
                 raise Exception("{0} does not exist; can't add".format(fasta))
             else:
                 self._add_from_file(fasta, isAligned)
-        elif type(fasta).__name__ == "FASTA" or type(fasta).__name__ == "ZS_SeqIO.FASTA":
-            self._add_from_object(fasta, isAligned) # don't need isAligned for this
+        elif hasattr(fasta, "isFASTA") and fasta.isFASTA is True:
+            self._add_from_FASTA_object(fasta, isAligned)
+        elif hasattr(fasta, "isFastASeq") and fasta.isFastASeq is True:
+            self._add_from_FastASeq_obj(fasta, isAligned)
         else:
             raise Exception("Unknown type '{0}' provided to FASTA.add()".format(type(fasta).__name__))
     
-    def _add_from_object(self, FASTA_obj, isAligned):
+    def _add_from_FASTA_object(self, FASTA_obj, isAligned):
         # Stop potential infinite looping bug
         "If FASTA_obj == self, then it'll loop infinitely. I don't entirely understand why, I only have a hunch."
         FASTA_obj = deepcopy(FASTA_obj)
@@ -531,7 +533,17 @@ class FASTA:
         for FastASeq_obj in FASTA_obj:
             self.seqs.append(FastASeq_obj)
         
-        self.fileOrder.append(["object", "add"])
+        self.fileOrder.append(["FASTA_object", "add"])
+    
+    def _add_from_FastASeq_obj(self, FastASeq_obj, isAligned):
+        # Validate that adding sequences will work
+        "We do this check first so we don't modify the object unless we're sure it will work"
+        if isAligned and FastASeq_obj.gap_seq == None:
+            raise Exception("FastASeq object with id '{0}' should be aligned but has no .gap_seq value; adding sequences failed".format(FastASeq_obj.id))
+        # Add sequences to alignment
+        self.seqs.append(FastASeq_obj)
+        
+        self.fileOrder.append(["FastASeq_object", "add"])
     
     def _add_from_file(self, fastaFile, isAligned):
         # Load in file & add sequences to alignment
@@ -563,18 +575,20 @@ class FASTA:
                      find this file; will be interpreted by os.path... OR, a ZS_SeqIO.FASTA
                      object.
         '''
-        # Diverge into one of the two overload methods
+        # Diverge into one of the three overload methods
         if isinstance(fasta, str):
             if not os.path.isfile(fasta):
                 raise Exception("{0} does not exist; can't concat".format(fasta))
             else:
                 self._concat_from_file(fasta)
-        elif type(fasta).__name__ == "FASTA" or type(fasta).__name__ == "ZS_SeqIO.FASTA":
-            self._concat_from_object(fasta)
+        elif hasattr(fasta, "isFASTA") and fasta.isFASTA is True:
+            self._concat_from_FASTA_obj(fasta)
+        elif hasattr(fasta, "isFastASeq") and fasta.isFastASeq is True:
+            self._concat_from_FastASeq_obj(fasta)
         else:
             raise Exception("Unknown type '{0}' provided to FASTA.concat()".format(type(fasta).__name__))
     
-    def _concat_from_object(self, FASTA_obj):
+    def _concat_from_FASTA_obj(self, FASTA_obj):
         # Validate that concatenating object is compatible
         if len(FASTA_obj) != len(self.seqs):
             raise Exception("Concatenation not possible as sequence count differs")
@@ -587,7 +601,20 @@ class FASTA:
             else:
                 self.seqs[i].extend(FastASeq_obj.seq)
         
-        self.fileOrder.append(["object", "concat"])
+        self.fileOrder.append(["FASTA_object", "concat"])
+    
+    def _concat_from_FastASeq_obj(self, FastASeq_obj):
+        # Validate that concatenating object is compatible
+        if len(self.seqs) != 1:
+            raise Exception("Concatenation not possible as sequence count differs")
+        
+        # Perform concatenation
+        if FastASeq_obj.gap_seq != None:
+            self.seqs[0].extend(FastASeq_obj.gap_seq)
+        else:
+            self.seqs[0].extend(FastASeq_obj.seq)
+        
+        self.fileOrder.append(["FastASeq_object", "concat"])
     
     def _concat_from_file(self, fastaFile):
         # Validate that concatenating file is compatible
@@ -1168,6 +1195,9 @@ class FASTA:
                 if value.id == key or value.alt == key or value.description == key:
                     return value
     
+    def __contains__(self, item):
+        return True if self[item] is not None else False
+    
     def __str__(self):
         addCount = len([f[0] for f in self.fileOrder if f[1] == "add"])
         concatCount = len([f[0] for f in self.fileOrder if f[1] == "concat"])
@@ -1180,7 +1210,7 @@ class FASTA:
     def __repr__(self):
         return "FASTA(seqs={0} <FastASeq> objs, consensus={1}, isAligned={2}, fileOrder={3})".format(
             len(self.seqs), self.consensus, self.isAligned,
-            str(self.fileOrder) if len(str(self.fileOrder)) < 200 else "{0}...{1}".format(str(self.fileOrder)[0:100], str(self.fileOrder)[-100:])
+            str(self.fileOrder) if len(str(self.fileOrder)) < 200 else "{0} ... {1}".format(str(self.fileOrder)[0:100], str(self.fileOrder)[-100:])
         )
 
 if __name__ == "__main__":
