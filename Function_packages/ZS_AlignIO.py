@@ -16,7 +16,7 @@ from Bio.Align.Applications import MafftCommandline
 
 sys.path.append(os.path.dirname(__file__))
 from ZS_SeqIO import FASTA, FastASeq
-from ZS_GFF3IO import Feature
+from ZS_GFF3IO import Feature, GFF3
 
 import parasail
 if platform.system() != 'Windows':
@@ -570,6 +570,75 @@ class Exonerate:
         
         return wslPath
     
+    @staticmethod
+    def filter_exonerate_resultsDict(resultsDict, num_hits=0, identity=0.0, similarity=0.0):
+        '''
+        Utility function to receive a resultsDict as produced by run_exonerate() and
+        filter results to only maintain relevant ones. It will also sort the results
+        in descending order of their 1) similarity, 2) identity, and 3) sequence length.
+        
+        It will set a .coding_length attribute on the gene and mRNA subfeature for each
+        feature, which is used for filtering here and can be useful for external, specialisd
+        filtering.
+        
+        And, it will automatically remove any features which lack CDS prediction, if that's
+        even possible for exonerate to do...?
+        
+        Parameters:
+            resultsDict -- a dictionary associating ZS_GFF3IO.Feature objects to their
+                           query sequence with structure like:
+                           {
+                               'querySeqID1': [feature, feature, ...],
+                               'querySeqID2': [ ... ],
+                               ...
+                           }
+            num_hits -- an integer >= 0 indicating how many of the "top hits" we want to retain;
+                        a value of 0 means there is no maximum
+            identity -- a float or integer in the range 0->100 (inclusive) setting the minimum
+                        identity value we will retain
+            similarity -- a float or integer in the range 0->100 (inclusive) setting the minimum
+                          similarity value we will retain
+        Returns:
+            newResultsDict -- a new dictionary with the same structure as the input parameter,
+                              but with only results which pass filtration remaining.
+        '''
+        # Validate input types
+        assert isinstance(num_hits, int) and num_hits >= 0, \
+            "num_hits must be an integer >= 0"
+        assert (isinstance(identity, int) or isinstance(identity, float)) and 100 >= identity >= 0, \
+            "identity must be a float or integer from 0 to 100"
+        assert (isinstance(similarity, int) or isinstance(similarity, float)) and 100 >= similarity >= 0, \
+            "similarity must be a float or integer from 0 to 100"
+        
+        newResultsDict = {}
+        for queryID, features in resultsDict.items():
+            # Filter
+            for feature in features:
+                if float(feature.identity) >= identity and float(feature.similarity) >= similarity and hasattr(feature.mRNA[0], "CDS"):
+                    # Calculate coding length
+                    cdsCoords = GFF3._get_feature_coords(feature.mRNA[0], "CDS")
+                    cdsLength = 0
+                    for start, end in cdsCoords[0]:
+                        cdsLength += (end - start + 1)
+                    feature.coding_length = cdsLength
+                    feature.mRNA[0].coding_length = cdsLength
+                    
+                    # Store in dictionary
+                    newResultsDict.setdefault(queryID, [])
+                    newResultsDict[queryID].append(feature)
+            
+            # Sort
+            if queryID in newResultsDict:
+                newResultsDict[queryID].sort(key = lambda x: 
+                    (-float(x.identity), -float(x.similarity), -x.coding_length)
+                )
+            
+            # Retain top num_hit results
+            if queryID in newResultsDict:
+                if num_hits > 0:
+                    newResultsDict[queryID] = newResultsDict[queryID][0:num_hits]
+        return newResultsDict
+    
     def _get_filename_for_query_or_target(self, qt):
         '''
         Hidden method for use when boiling down one of the three data types (FASTA, FastASeq, and string)
@@ -708,8 +777,13 @@ class Exonerate:
             exonerateGffStdout -- a string containing all of the stdout from running
                                   exonerate with "--showtargetgff yes".
         Returns
-            features -- a list containing ZS_GFF3IO.Feature objects corresponding to
-                        all sequence matches reported by exonerate
+            resultsDict -- a dictionary associating ZS_GFF3IO.Feature objects to their
+                           query sequence with structure like:
+                           {
+                               'querySeqID1': [feature, feature, ...],
+                               'querySeqID2': [ ... ],
+                               ...
+                           }
         '''
         featureDict = {"gene": {}, "mRNA": {}}
         geneIDDict = {} # just for naming purposes for this script
@@ -718,7 +792,7 @@ class Exonerate:
             try:
                 contig, source, featureType, start, end, \
                         score, strand, frame, attributes \
-                        = line.rstrip('\t\n').split('\t')
+                        = line.rstrip('\n').split('\t')
                 start = int(start)
                 end = int(end)
                 assert strand in ['+', '-']
@@ -799,7 +873,13 @@ class Exonerate:
                 })
                 featureDict["mRNA"][newAttributesDict["Parent"]].add_child(subFeature)
         
-        return [feature for feature in featureDict["gene"].values()]
+        # Disentangle results so that the originating sequence can be easily found for each feature
+        resultsDict = {}
+        for feature in featureDict["gene"].values():
+            resultsDict.setdefault(feature.Sequence, [])
+            resultsDict[feature.Sequence].append(feature)
+        
+        return resultsDict
     
     @staticmethod
     def _exonerate_geneid_produce(contigID, sequenceID, idDict):
