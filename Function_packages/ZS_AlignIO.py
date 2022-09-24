@@ -11,6 +11,7 @@
 ## 4) detect outliers in a MSA by phylogeny mismatch [-]
 
 import os, platform, sys, subprocess, hashlib, time, random, re, subprocess
+from pathlib import Path
 from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
@@ -41,6 +42,127 @@ def _tmp_file_name_gen(prefix, suffix):
             ongoingCount += 1
         else:
             return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
+
+def _get_hash_for_query_or_target(qt, randomHash=True):
+    '''
+    Hidden function for use when boiling down one of the three data types (FASTA, FastASeq,
+    and string) into a string representing the file name [note: without creating the file].
+    
+    The function can be guaranteed to produce a truly random hash, or produce something
+    consistent. Randomness is good for truly temporary files; consistency can be useful
+    for dealing with files that might persist.
+    '''
+    assert isinstance(randomHash, bool), \
+            "randomHash value must be True or False"
+        
+    # Get a hash for temporary file creation
+    strForHash = qt if isinstance(qt, str) \
+                    else qt.fileOrder[0][0] if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder != [] \
+                    else str(qt) if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder == []  \
+                    else qt.id
+    if randomHash is True:
+        tmpHash = hashlib.sha256(bytes(strForHash + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+    else:
+        tmpHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
+    
+    return tmpHash
+
+def _get_filename_for_query_or_target(tmpHash):
+    '''
+    Very simple helper to format the file name the way we expect it to be done.
+    
+    Returns:
+        tmpFileName -- a string with format like:
+                       f"alignIO_tmp_{tmpHash[0:20]}.fasta", 
+                       possibly with a .#. prior to the file extension.
+    '''
+    return _tmp_file_name_gen("alignIO_tmp_" + tmpHash[0:20], "fasta")
+
+def _get_file_for_query_or_target(qt, randomHash=True):
+        '''
+        Hidden function for use when boiling down one of the three data types (FASTA, FastASeq,
+        and string) into a string representing an actually existing file name.
+        
+        If it's already a string for a file, this does nothing. Otherwise, it will make sure
+        a file exists with the FASTA data contents.
+        
+        The function can be guaranteed to produce a truly random hash, or produce something
+        consistent. Randomness is good for truly temporary files; consistency can be useful
+        for dealing with files that might persist.
+        
+        Parameters:
+            qt -- the value of a query or target FASTA, in either 1) string format pointing
+                  a file path, 2) a string representation of a nucleotide or protein, 
+                  3) FastASeq format, or 4) FASTA format.
+            randomHash -- a boolean to indicate whether we want the hash to be random each
+                          time (default; True) or if we want it to be consistent (False)
+        Returns:
+            qt -- a string indicating the file name for the input value of qt. If it was
+                  already a string, this will be the same. Otherwise, it will be a file
+                  name containing the contents of the FASTA or FastASeq object.
+            isTemporary -- a Boolean indicating whether the returned qt value has been
+                           created by this method as a temporary file (True) or if it was
+                           already existing (False) i.e., qt was already a string file path
+        '''
+        assert isinstance(randomHash, bool), \
+            "randomHash value must be True or False"
+        
+        # Get a hash for temporary file creation
+        tmpHash = _get_hash_for_query_or_target(qt, randomHash)
+        
+        # If qt is a string but not a file, make it a FastASeq object
+        if isinstance(qt, str) and not os.path.isfile(qt):
+            qt = FastASeq("tmpID", qt)
+        
+        # If qt is a FastASeq, make it a FASTA object
+        if type(qt).__name__ == "FastASeq" or type(qt).__name__ == "ZS_SeqIO.FastASeq":
+            tmpFASTA = FASTA(None)
+            tmpFASTA.add(qt)
+            qt = tmpFASTA
+        
+        # If qt is a FASTA, make it into a file
+        isTemporary = False
+        if type(qt).__name__ == "FASTA" or type(qt).__name__ == "ZS_SeqIO.FASTA":
+            tmpQtName = _get_filename_for_query_or_target(tmpHash)
+            qt.write(tmpQtName)
+            qt = tmpQtName # after this point, qt will be a string indicating a FASTA file name
+            isTemporary = True # if we set this, qt was not originally a string
+        
+        return qt, isTemporary
+
+def convert_windows_to_wsl_path(windowsPath):
+        '''
+        Utility function of AlignIO.
+        
+        Provides simple functionality to infer the WSL path from
+        a windows path, provided as a string.
+        
+        Parameters:
+            windowsPath -- a string indicating the full path to a file
+                           or directory of interest; this MUST include
+                           the root character e.g., 'D:\\' or 'C:\\'
+        Returns:
+            wslPath -- a string indicating the inferred full path to the
+                       given file or directory using WSL formatting
+        '''
+        # Check that the path is something we can work with
+        driveRegex = re.compile(r"^([A-Za-z]{1}):\\")
+        assert driveRegex.match(windowsPath) != None, \
+            f"'{windowsPath}' is not recognised as a full, root drive inclusive path"
+        assert os.path.exists(windowsPath), \
+            f"'{windowsPath}' is not recognised as an existing path"
+        
+        # If it is, convert it
+        driveLetter = driveRegex.match(windowsPath).group(1)
+        wslPath = "/{0}".format("/".join(
+            [
+                "mnt",
+                driveLetter.lower(),
+                *windowsPath.split("\\")[1:]
+            ]
+        ))
+        
+        return wslPath
 
 class MAFFT:
     '''
@@ -460,7 +582,7 @@ class Exonerate:
         
         if platform.system() == "Windows":
             print("Exonerate Class on Windows assumes exonerate was built using WSL; carrying on...")
-            self._exonerateExe = Exonerate.convert_windows_to_wsl_path(value)
+            self._exonerateExe = convert_windows_to_wsl_path(value)
         else:
             self._exonerateExe = value
     
@@ -538,39 +660,6 @@ class Exonerate:
         self._showtargetgff = value
     
     @staticmethod
-    def convert_windows_to_wsl_path(windowsPath):
-        '''
-        Provides simple functionality to infer the WSL path from
-        a windows path, provided as a string.
-        
-        Parameters:
-            windowsPath -- a string indicating the full path to a file
-                           or directory of interest; this MUST include
-                           the root character e.g., 'D:\\' or 'C:\\'
-        Returns:
-            wslPath -- a string indicating the inferred full path to the
-                       given file or directory using WSL formatting
-        '''
-        # Check that the path is something we can work with
-        driveRegex = re.compile(r"^([A-Za-z]{1}):\\")
-        assert driveRegex.match(windowsPath) != None, \
-            f"'{windowsPath}' is not recognised as a full, root drive inclusive path"
-        assert os.path.exists(windowsPath), \
-            f"'{windowsPath}' is not recognised as an existing path"
-        
-        # If it is, convert it
-        driveLetter = driveRegex.match(windowsPath).group(1)
-        wslPath = "/{0}".format("/".join(
-            [
-                "mnt",
-                driveLetter.lower(),
-                *windowsPath.split("\\")[1:]
-            ]
-        ))
-        
-        return wslPath
-    
-    @staticmethod
     def filter_exonerate_resultsDict(resultsDict, num_hits=0, identity=0.0, similarity=0.0):
         '''
         Utility function to receive a resultsDict as produced by run_exonerate() and
@@ -639,61 +728,12 @@ class Exonerate:
                     newResultsDict[queryID] = newResultsDict[queryID][0:num_hits]
         return newResultsDict
     
-    def _get_filename_for_query_or_target(self, qt):
-        '''
-        Hidden method for use when boiling down one of the three data types (FASTA, FastASeq, and string)
-        into a string representing the query file name.
-        
-        If it's already a string for a file, this does nothing. Otherwise, it will make sure a file exists
-        with the FASTA data contents for use by exonerate.
-        
-        Parameters:
-            qt -- the value of .query or .target, provided to this method. We won't
-                  call this from self since this method (to reduce code repetition)
-                  needs to work for both.
-        Returns:
-            qt -- a string indicating the file name for the input value of qt. If it was
-                  already a string, this will be the same. Otherwise, it will be a file
-                  name containing the contents of the FASTA or FastASeq object.
-            isTemporary -- a Boolean indicating whether the returned qt value has been
-                           created by this method as a temporary file (True) or if it was
-                           already existing (False, i.e., qt was already a string)
-        '''
-        # Get a hash for temporary file creation
-        hashForTmp = qt if isinstance(qt, str) \
-                       else qt.fileOrder[0][0] if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder != [] \
-                       else str(qt) if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder == []  \
-                       else qt.id
-        tmpHash = hashlib.sha256(bytes(hashForTmp + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-        
-        # If qt is a string but not a file, make it a FastASeq object
-        if isinstance(qt, str) and not os.path.isfile(qt):
-            qt = FastASeq("tmpID", qt)
-        
-        # If qt is a FastASeq, make it a FASTA object
-        if type(qt).__name__ == "FastASeq" or type(qt).__name__ == "ZS_SeqIO.FastASeq":
-            tmpFastaName = _tmp_file_name_gen("qt_fasta_tmp" + tmpHash[0:20], "fasta")
-            with open(tmpFastaName, "w") as fileOut:
-                fileOut.write(">{0}\n{1}\n".format(qt.id, qt.seq))
-            qt = FASTA(tmpFastaName)
-            os.unlink(tmpFastaName)
-        
-        # If qt is a FASTA, make it into a file
-        isTemporary = False
-        if type(qt).__name__ == "FASTA" or type(qt).__name__ == "ZS_SeqIO.FASTA":
-            tmpQtName = _tmp_file_name_gen("exonerate_tmp" + tmpHash[0:20], "fasta")
-            qt.write(tmpQtName)
-            qt = tmpQtName # after this point, qt will be a string indicating a FASTA file name
-            isTemporary = True # if we set this, qt was not originally a string
-        
-        return qt, isTemporary
-    
     def _format_exonerate_cmd(self, queryFile, targetFile):
         '''
         Hidden helper function for getting a list amenable to subprocess.run()
         that sets all relevant cmd tags depending on this object's properties.
         It expects that the query and target files have already been subjected
-        to ._get_filename_for_query_or_target(), and their return values are
+        to ._get_file_for_query_or_target(), and their return values are
         to be given to this function.
         
         Parameters:
@@ -718,8 +758,8 @@ class Exonerate:
         
         if platform.system() == "Windows":
             cmds += [
-                Exonerate.convert_windows_to_wsl_path(os.path.abspath(queryFile)),
-                Exonerate.convert_windows_to_wsl_path(os.path.abspath(targetFile))
+                convert_windows_to_wsl_path(os.path.abspath(queryFile)),
+                convert_windows_to_wsl_path(os.path.abspath(targetFile))
             ]
         else:
             cmds += [queryFile, targetFile]
@@ -737,8 +777,8 @@ class Exonerate:
                         all sequence matches reported by exonerate
         '''
         # Get file names for query and target after data type coercion
-        q, qIsTemporary = self._get_filename_for_query_or_target(self.query)
-        t, tIsTemporary = self._get_filename_for_query_or_target(self.target)
+        q, qIsTemporary = _get_file_for_query_or_target(self.query)
+        t, tIsTemporary = _get_file_for_query_or_target(self.target)
         
         # Run exonerate
         cmds = self._format_exonerate_cmd(q, t)
@@ -906,5 +946,263 @@ class Exonerate:
         idDict[geneID] += 1
         return outGeneID, idDict
 
+class GMAP:
+    '''
+    The GMAP Class is intended to be used alongside the ZS_SeqIO.FASTA Class to
+    handle the alignment of FASTA sequences with OOP magics. In short, it provides
+    easy access to GMAP to perform various forms of alignment, returning a 
+    parsed result.
+    
+    The gmapDir parameter expects a directory to be passed that contains the gmap
+    and gmap_build executable files.
+    '''
+    def __init__(self, gmapDir, query, target):
+        self.gmapDir = gmapDir
+        self.query = query
+        self.target = target
+        
+        # Set default attributes
+        self.npaths = 5 # GMAP default
+        self.batch = 5 # GMAP default is 2, but I always use this
+        self.max_intronlength_middle = 500000 # GMAP default
+        self.max_intronlength_ends = 500000 # GMAP default is 10000, but I always use this
+        self.nthreads = 1
+        
+        # Set attributes that change over object lifespan
+        self.targetDB = None
+    
+    @property
+    def gmapDir(self):
+        return self._gmapDir
+    
+    @gmapDir.setter
+    def gmapDir(self, value):
+        assert isinstance(value, str) and os.path.isdir(value), \
+            f"'{value}' is not a string or does not point to a directory"
+        assert os.path.isfile(os.path.join(value, "gmap")), \
+            f"gmap executable not found at location'{value}'"
+        assert os.path.isfile(os.path.join(value, "gmap_build")), \
+            f"gmap_build executable not found at location'{value}'"
+        
+        if platform.system() == "Windows":
+            print("GMAP Class on Windows assumes GMAP was built using WSL; carrying on...")
+            self._gmapDir = convert_windows_to_wsl_path(value)
+        else:
+            self._gmapDir = value
+    
+    @property
+    def query(self):
+        return self._query
+    
+    @query.setter
+    def query(self, value):
+        recognisedTypes = ["str", "FASTA", "ZS_SeqIO.FASTA", "FastASeq", "ZS_SeqIO.FastASeq"]
+        assert type(value).__name__ in recognisedTypes, \
+            "Query value type not handled by Exonerate class"
+        self._query = value
+    
+    @property
+    def target(self):
+        return self._target
+    
+    @target.setter
+    def target(self, value):
+        recognisedTypes = ["str", "FASTA", "ZS_SeqIO.FASTA", "FastASeq", "ZS_SeqIO.FastASeq"]
+        assert type(value).__name__ in recognisedTypes, \
+            "Target value type not handled by Exonerate class"
+        self._target = value
+    
+    @property
+    def npaths(self):
+        return self._npaths
+    
+    @npaths.setter
+    def npaths(self, value):
+        assert isinstance(value, int), \
+            "npaths value must be an integer"
+        assert 0 <= value, \
+            "npaths value must be greater than or equal to zero"
+        
+        self._npaths = value
+    
+    @property
+    def batch(self):
+        return self._batch
+    
+    @batch.setter
+    def batch(self, value):
+        assert isinstance(value, int), \
+            "batch value must be an integer"
+        assert 0 <= value <= 5, \
+            "batch value must be in the range of 0->5"
+        
+        self._batch = value
+    
+    @property
+    def max_intronlength_middle(self):
+        return self._max_intronlength_middle
+    
+    @max_intronlength_middle.setter
+    def max_intronlength_middle(self, value):
+        assert isinstance(value, int), \
+            "max_intronlength_middle value must be an integer"
+        assert 0 <= value, \
+            "max_intronlength_middle value must be greater than or equal to zero"
+        
+        self._max_intronlength_middle = value
+    
+    @property
+    def max_intronlength_ends(self):
+        return self._max_intronlength_ends
+    
+    @max_intronlength_ends.setter
+    def max_intronlength_ends(self, value):
+        assert isinstance(value, int), \
+            "max_intronlength_ends value must be an integer"
+        assert 0 <= value, \
+            "max_intronlength_ends value must be greater than or equal to zero"
+        
+        self._max_intronlength_ends = value
+    
+    @property
+    def nthreads(self):
+        return self._nthreads
+    
+    @nthreads.setter
+    def nthreads(self, value):
+        assert isinstance(value, int), \
+            "nthreads value must be an integer"
+        assert 0 <= value, \
+            "nthreads value must be greater than or equal to zero"
+        
+        self._nthreads = value
+    
+    
+    
+    def _format_build_cmd(self, targetFile):
+        '''
+        Hidden helper function for getting a list amenable to subprocess.run()
+        that sets all relevant cmd tags depending on this object's properties.
+        It expects that the target file has already been subjected to
+        ._get_file_for_query_or_target(), and its return value is being
+        given to this function.
+        
+        Parameters:
+            targetFile -- a string pointing to a FASTA file that exists
+        Returns:
+            cmds -- a list amenable to subprocess.run()
+        '''
+        cmds = []
+        if platform.system() == "Windows":
+            cmds += ["wsl", "~", "-e"]
+        
+        cmds += [
+            Path(self.gmapDir, "gmap_build").as_posix(), "-D",
+            convert_windows_to_wsl_path(os.path.dirname(targetFile)) \
+                if platform.system() == "Windows" else os.path.dirname(targetFile),
+            "-d", f"{os.path.basename(targetFile)}.gmap",
+            convert_windows_to_wsl_path(targetFile) if platform.system() == "Windows" \
+                else targetFile
+        ]
+        
+        return cmds
+    
+    def _target_build_exists(self):
+        '''
+        Hidden helper function for determining whether gmap_build has already been run
+        on the .target value.
+        
+        Returns:
+            buildExists -- a boolean indicating whether a gmap_build result already exists
+                           (True) or not (False)
+        '''
+        # Get file name for target after data type coercion
+        if not isinstance(self.target, str) or not os.path.isfile(self.target):
+            tmpHash = _get_hash_for_query_or_target(self.target, randomHash=False)
+            targetFile = _get_filename_for_query_or_target(tmpHash)
+        else:
+            targetFile = self.target
+        
+        gmapDatabase = f"{targetFile}.gmap"
+        return os.path.isdir(gmapDatabase)
+    
+    def gmap_build(self):
+        '''
+        Makes a GMAP database out of the .target value. Skips doing so if the output
+        folder already exists
+        '''
+        if self._target_build_exists():
+            print("gmap_build results already exist")
+            return
+        
+        # Get file name for target after data type coercion
+        t, tIsTemporary = _get_file_for_query_or_target(self.target, randomHash=False)
+        
+        # Run GMAP build
+        cmds = self._format_build_cmd(t)
+        gmapBuild = subprocess.run(cmds, capture_output=True)
+        
+        # Validate that build was successful
+        stderr = gmapBuild.stderr.decode()
+        assert stderr.rstrip("\n").split("\n")[-1] == "Done", \
+            f"Unexpected error occuring during gmap_build run; stderr == {stderr}"
+        
+        # Clean up
+        if tIsTemporary:
+            os.unlink(t)
+    
+    def gmap(self):
+        '''
+        Runs GMAP using the parameters set in this object.
+        
+        Returns:
+            ## TBD
+            blastDict -- a dict with structure:
+                query_id: [[target_id, identity_pct, query_start, query_end, target_start, target_end, evalue], ...]
+            blastResultFile -- a string indicating the file name of the results file. If self.clean is True,
+                               this will instead return None.
+        '''
+        # Get file names for query and target after data type coercion
+        q, qIsTemporary = _get_file_for_query_or_target(self.query)
+        t, tIsTemporary = _get_file_for_query_or_target(self.target)
+        
+        # Make sure target file is ready for BLAST
+        if not self._target_build_exists():
+            self.gmap_build()
+        
+        # Get hash for temporary file creation
+        tmpHash = hashlib.sha256(bytes(q + t + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        ### TBD...
+        # Run BLAST
+        tmpResultName = _tmp_file_name_gen("{0}.vs.{1}_{2}".format(os.path.basename(q).rsplit(".", maxsplit=1)[0], os.path.basename(t).rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "outfmt6")
+        self.blast(q, t, tmpResultName)
+        
+        # Parse BLAST results
+        blastDict = self.parse_blast_hit_coords(tmpResultName)
+        
+        # Clean up q and t temporary files
+        if qIsTemporary:
+            os.unlink(q)
+            qDir = os.path.dirname(q)
+            for file in os.listdir(qDir if qDir != "" else "."): # kill off any temporary database files too
+                file = os.path.join(qDir, file)
+                if file.startswith(q):
+                    os.unlink(file)
+        if tIsTemporary:
+            os.unlink(t)
+            tDir = os.path.dirname(t)
+            for file in os.listdir(tDir if tDir != "" else "."): # kill off any temporary database files too
+                file = os.path.join(tDir, file)
+                if file.startswith(t):
+                    os.unlink(file)
+        
+        # Clean up results and return (if relevant)
+        if self.clean:
+            os.unlink(tmpResultName)
+            return blastDict, None
+        # Or just return results
+        else:
+            return blastDict, tmpResultName
+    
 if __name__ == "__main__":
     pass
