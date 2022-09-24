@@ -29,6 +29,7 @@ class Feature:
     def __init__(self):
         self.children = []
         self.types = {}
+        self.isFeature = True
     
     def add_attributes(self, dict):
         '''
@@ -121,6 +122,7 @@ class GFF3:
         self._nclsType = None
         self._nclsIndex = None
         
+        self.isGFF3 = True
         self.parse_gff3(strictParse=strict_parse)
     
     @staticmethod
@@ -562,7 +564,7 @@ class GFF3:
         
         return vcfDict
     
-    def retrieve_coords(self, sequenceID, sequenceType):
+    def retrieve_coords(self, feature_or_featureID, sequenceType):
         '''
         Using this GFF3 instance, retrieve the exon or CDS coordinates for the corresponding
         sequenceID. Note that this function expects the provided sequenceID to directly
@@ -570,7 +572,8 @@ class GFF3:
         gene features and return all the subfeature values, but this proved to be unwieldy.
         
         Parameters:
-            sequenceID -- a string corresponding to a feature within this GFF3 object.
+            feature_or_featureID -- a string corresponding to a feature within this GFF3 object.
+                                    or just a feature object in general
             sequenceType -- a string corresponding to the type of sequence to retrieve
                             i.e., in the list ["CDS", "exon"]
         Returns:
@@ -584,22 +587,30 @@ class GFF3:
                               be in any translations (if applicable)
             featureTypes -- a list of strings indicating what type of feature's details
                             have been returned e.g., "mRNA" or "lnc_RNA".
-            featureIDs -- a list of strings indicating the feature name/ID for returned features
         '''
         VALID_TYPES = ["cds", "exon"]
-        assert sequenceID in self.features, \
-            "'{0}' is not recognised as a feature within this GFF3".format(sequenceID)
         assert sequenceType.lower() in VALID_TYPES, \
             "'{0}' is not recognised as a valid sequenceType; should be in list {1}".format(sequenceType.lower(), VALID_TYPES)
         
-        # Retrieve the feature and validate that it contains the relevant fields
-        feature = self.features[sequenceID]
+        # Figure out if we're handling a feature or featureID
+        if isinstance(feature_or_featureID, str):
+            featureID = feature_or_featureID
+            assert featureID in self.features, \
+                "'{0}' is not recognised as a feature within this GFF3".format(featureID)
+            feature = self.features[featureID]
+        elif type(feature_or_featureID).__name__ == "Feature" \
+            or type(feature_or_featureID).__name__ == "ZS_GFF3IO.Feature" \
+            or (hasattr(feature_or_featureID, "isFeature") and feature_or_featureID.isFeature is True):
+                feature = feature_or_featureID
+                featureID = feature.ID
+        
+        # Validate that the feature contains the relevant fields
         if sequenceType.lower() == "cds":
             assert hasattr(feature, "CDS"), \
-                "CDS feature type is requested of feature '{0}' which lacks CDS".format(sequenceID)
+                "CDS feature type is requested of feature '{0}' which lacks CDS".format(featureID)
         elif sequenceType.lower() == "exon":
             assert hasattr(feature, "exon"), \
-                "exon feature type is requested of feature '{0}' which lacks exon".format(sequenceID)
+                "exon feature type is requested of feature '{0}' which lacks exon".format(featureID)
         
         # Get the coordinates required for sequenceType retrieval
         if sequenceType.lower() == "exon":
@@ -626,9 +637,9 @@ class GFF3:
         
         # Get the starting frame for the sequence
         startingFrame = featureFrame[0]
-        return featureCoord, startingFrame, featureType, featureID
+        return featureCoord, startingFrame, featureType
     
-    def retrieve_sequence_from_FASTA(self, contigSequences, sequenceID, sequenceType):
+    def retrieve_sequence_from_FASTA(self, contigSequences, feature_or_featureID, sequenceType):
         '''
         Using this GFF3 instance, retrieve the exon or CDS sequence for the corresponding
         sequenceID.
@@ -637,7 +648,8 @@ class GFF3:
             contigSequences -- a ZS_SeqIO.FASTA, a ZS_SeqIO.FastASeq, or a Biopython
                                SeqIO.to_dict() object that contains the contig sequence
                                that sequenceID is located on/within.
-            sequenceID -- a string corresponding to a feature within this GFF3 object.
+            feature_or_featureID -- a string corresponding to a feature within this GFF3 object.
+                                    or just a feature object in general
             sequenceType -- a string corresponding to the type of sequence to retrieve
                             i.e., in the list ["CDS", "exon"]
         Returns:
@@ -649,12 +661,23 @@ class GFF3:
             startingFrames -- a list containing the starting frame for any potential
                               translations to occur (if applicable) as a string.
         '''
+        # Figure out if we're handling a feature or featureID
+        if isinstance(feature_or_featureID, str):
+            featureID = feature_or_featureID
+            assert featureID in self.features, \
+                "'{0}' is not recognised as a feature within this GFF3".format(featureID)
+            feature = self.features[featureID]
+        elif type(feature_or_featureID).__name__ == "Feature" \
+            or type(feature_or_featureID).__name__ == "ZS_GFF3IO.Feature" \
+            or (hasattr(feature_or_featureID, "isFeature") and feature_or_featureID.isFeature is True):
+                feature = feature_or_featureID
+                featureID = feature.ID
+        
         # Get the coordinates required for sequenceType retrieval
         "Relevant validations are performed by retrieve_coords()"
-        featureCoord, startingFrame, featureType, featureID = self.retrieve_coords(sequenceID, sequenceType)
+        featureCoord, startingFrame, featureType = self.retrieve_coords(feature, sequenceType)
         
         # Get the contig sequence as a string, regardless of input type
-        feature = self.features[sequenceID]
         contigString = GFF3._get_contig_as_string(contigSequences, feature.contig)
         
         # Get VCF-dict object
@@ -736,6 +759,7 @@ class LinesGFF3(GFF3):
     '''
     def __init__(self, file_location, strict_parse=True):
         super().__init__(file_location, strict_parse)
+        self.isLinesGFF3 = True
     
     def add_comments(self): # This function is just add_lines but with the gene lines section gutted
         '''
