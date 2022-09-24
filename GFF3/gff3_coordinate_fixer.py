@@ -4,7 +4,7 @@
 # file and will attempt to correct any GFF3 features where
 # the coordinates don't match the real feature.
 
-import os, argparse, sys, hashlib, pickle
+import os, argparse, sys, hashlib, pickle, math
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from Function_packages import ZS_GFF3IO, ZS_SeqIO, ZS_AlignIO
@@ -148,9 +148,215 @@ def fix_nonequivalent_features(nonequalIDs, exonerateResultsDict, GFF3_obj, cdsF
             continue # nothing we can do in this scenario
         
         # Find the best exonerate result in the closest proximity to the original gene annotation
+        bestResults = [] # [feature, distance, lengthDifference, similarity]
+        for geneFeature in exonerateResults:
+            if geneFeature.contig == feature.contig:
+                mrnaFeature = geneFeature.mRNA[0]
+                
+                # Get the distance between the genes (if any)
+                if mrnaFeature.end >= feature.start and feature.end >= mrnaFeature.start:
+                    distance = 0 # if they overlap, there's essentially no distance between them
+                else:
+                    distance = min(abs(mrnaFeature.end - feature.start), abs(feature.end - mrnaFeature.start))
+                
+                # Get the difference in CDS length between the genes
+                mrnaFeature_FastASeq_obj, _, _ = GFF3_obj.retrieve_sequence_from_FASTA(
+                    genomeFASTA_obj, mrnaFeature, "CDS"
+                )
+                lengthDifference = abs(len(fastaProtSequence) - (len(mrnaFeature_FastASeq_obj.seq) / 3))
+                
+                # Finally, store the above and the similarity score
+                bestResults.append([mrnaFeature, distance, lengthDifference, float(mrnaFeature.similarity)])
+        bestResults.sort(key = lambda x: (-x[3], x[1], x[2]))
+        bestResult = bestResults[0][0]
+        stop
+        # Extend the gene to its start codon, stop codon boundaries
+        
+        # Validate that this result has a comparable protein
+        
         ## TBD...
         stop
 
+def feature_cds_extension_maximal(mrnaFeature, mrnaFeature_FastASeq_obj, genomeFASTA_obj, MAX_EXTENSION=30):
+    '''
+    This function has been heavily modified from the original logic developed as part
+    of the gmap_gene_find.py / exonerate_gene_find.py programs. Its goal is to take a
+    GFF3.Feature object that may not have its CDS boundaries properly predicted if e.g.,
+    the stop codon has not been predicted by exonerate. It will extend the model
+    a length of $MAX_EXTENSION base pairs looking for an appropriate start and/or
+    stop codon. The feature object will be modified if such an instance is found.
+    
+    Parameters:
+        mrnaFeature -- a ZS_GFF3IO.Feature object corresponding to an mRNA feature
+                       or something akin to that whereby CDS subfeatures are indexed.
+        mrnaFeature_FastASeq_obj -- A ZS_SeqIO.FastASeq object corresponding to the
+                                    mRNA feature provided.
+        genomeFASTA_obj -- a ZS_SeqIO.FASTA object containing contig sequences
+                           corresponding to .contig values found within the GFF3_obj
+        MAX_EXTENSION -- an integer setting the maximum amount of base pairs a CDS
+                         will be extended in search of a good start or stop codon.
+    '''
+    START_CODONS_POS = ["ATG"] #, "CTG", "TTG"]
+    START_CODONS_NEG = ["CAT"] #, "CAG", "CAA"]
+    STOP_CODONS_POS = ["TAA", "TAG", "TGA"]
+    STOP_CODONS_NEG = ["TTA", "CTA", "TCA"]
+    
+    # Determine what our start and stop codons are
+    currentStart = mrnaFeature_FastASeq_obj.seq[0:3].upper()
+    currentStop = mrnaFeature_FastASeq_obj.seq[-3:].upper()
+    
+    newCoords = [None, None]
+    
+    # Crawl up the genome sequence looking for a way to extend the ORF to an accepted start as determined above
+    if mrnaFeature.strand == '+' and currentStart not in START_CODONS_POS:
+        # Crawl back looking for the first stop codon
+        genomeSeq = genomeFASTA_obj[mrnaFeature.contig].seq[0:mrnaFeature.start-1] # start is 1-based so we -1 to counter that
+        for i in range(len(genomeSeq)-1, -1, -3):
+            codon = genomeSeq[i-2:i+1]
+            if codon.upper() in STOP_CODONS_POS:
+                break
+        
+        # Make sure we haven't gone past the start of the contig
+        if genomeSeq == "": # Handles scenario where the gene model starts at the first base of the contig
+            i = 0 # i would otherwise be None or the previous iteration's value
+        else:
+            i = i - 2 # This walks our coordinate value back to the start of the codon (Atg) since our index currently corresponds to (atG)
+        
+        # Crawl back up from the stop position looking for the first accepted start codon
+        accepted = None
+        for x in range(i+3, len(genomeSeq), 3): # +3 to look at the next, non-stop codon
+            codon = genomeSeq[x:x+3]
+            if codon.upper() in START_CODONS_POS:
+                accepted = x + 1 # Note that this x represents the distance in from the stop codon boundary; +1 to reconvert this to 1-based
+                break
+        
+        # Update this in our coords value
+        if accepted != None:
+            newCoords = [accepted, newCoords[1]]
+    
+    elif mrnaFeature.strand == '-' and currentStart not in START_CODONS_POS:
+        # Crawl up looking for the first stop codon
+        genomeSeq = genomeFASTA_obj[mrnaFeature.contig].seq[mrnaFeature.end:] # end is 1-based; we want just after it, so accepting it as-is is correct
+        for i in range(0, len(genomeSeq), 3):
+            codon = genomeSeq[i:i+3]
+            if codon.upper() in STOP_CODONS_NEG: # after this, i will equal the distance from the currentStart to the stop codon boundary
+                break # After this, i will equal the distance from the currentStart to the stop codon boundary
+        
+        # Make sure we haven't gone past the end of the contig
+        if genomeSeq == "": # Handles scenario where the gene model starts at the last base of the contig
+            i = 0 # i would otherwise be None or the previous iteration's value
+        
+        # Crawl back down from the stop position looking for the first current start or ATG
+        accepted = None
+        for x in range(i-1, -1, -3): # Here, we go from our stop codon boundary (which we went out/to the right to derive earlier) back in to the sequence/to the left
+            codon = genomeSeq[x-2:x+1]
+            if codon.upper() in START_CODONS_NEG:
+                accepted = x + mrnaFeature.end + 1 # Note that this x represents the distance out to the stop codon boundary; +startCoord to +1 to reconvert this to 1-based
+                break
+        
+        # Update this in our coords value
+        if accepted != None:
+            newCoords = [newCoords[0], accepted]
+    
+    # Crawl down the genome sequence looking for a way to extend the ORF to an accepted stop as determined above
+    if mrnaFeature.strand == '+' and currentStop not in STOP_CODONS_POS:
+        # Trim off excess from the CDS to make sure we're in frame
+        endCoord = mrnaFeature.end - (len(mrnaFeature_FastASeq_obj.seq) % 3)
+        
+        # Perform the coord walk
+        genomeSeq = genomeFASTA_obj[mrnaFeature.contig].seq[endCoord:] # endCoord is 1-based; we want just after it, so accepting it as-is is correct
+        for i in range(0, len(genomeSeq), 3):
+            codon = genomeSeq[i:i+3]
+            if codon.upper() in STOP_CODONS_POS:
+                break
+        
+        if i > MAX_EXTENSION:
+            pass
+        else:
+            i = endCoord + i + 2 + 1 # +2 to go to the end of the stop codon; +1 to make it 1-based
+            newCoords = [newCoords[0], i]
+    elif mrnaFeature.strand == '-' and currentStop not in STOP_CODONS_POS:
+        # Trim off excess from the CDS to make sure we're in frame
+        endCoord = mrnaFeature.start + (len(mrnaFeature_FastASeq_obj.seq) % 3)
+        
+        # Perform the coord walk
+        genomeSeq = genomeFASTA_obj[mrnaFeature.contig].seq[0:endCoord-1] # endCoord is 1-based so we -1 to counter that
+        for i in range(len(genomeSeq)-1, -1, -3):
+            codon = genomeSeq[i-2:i+1]
+            if codon.upper() in STOP_CODONS_NEG:
+                    break
+        
+        if (endCoord - i) > MAX_EXTENSION:
+            pass
+        else:
+            i = i - 2 + 1 # -2 to go to the start of the codon; +1 to make it 1-based
+            newCoords = [i, newCoords[1]]
+    
+    # Update any coordinates as needed
+    stophere
+    ## TBD
+    # coord_cds_region_update(coords, startChange, stopChange, orientation)
+    
+    raise NotImplementedError("AAAA")
+    #return coords, cds, startCodonsPos                              # We want to return the start codons since we'll use them later
+
+def coord_cds_region_update(coords, startChange, stopChange, orientation):
+    # Part 1: Cull exons that aren't coding and figure out how far we are chopping into coding exons
+    origStartChange = startChange
+    origStopChange = stopChange
+    startExonLen = 0
+    stopExonLen = 0
+    microExonSize = -3      # This value is an arbitrary measure where, if a terminal exon is less than this size, we consider it 'fake' and delete it
+    for i in range(2):
+        while True:
+            if i == 0:                      # The GFF3 is expected to be formatted such that + features are listed lowest coord position -> highest, whereas - features are listed from highest -> lowest
+                exon = coords[0]        # This is done by PASA and by the exonerate GFF3 parsing system of this code, and it basically means that our first listed exon is always our starting exon
+            else:
+                exon = coords[-1]
+            # Extract details
+            rightCoord = int(exon[1])
+            leftCoord = int(exon[0])
+            exonLen = rightCoord - leftCoord + 1
+            # Update our change values
+            if i == 0:
+                startChange -= exonLen          # This helps us to keep track of how much we need to reduce startChange
+                if startChange > 0:             # when we begin chopping into the first exon - if the original first exon 
+                    del coords[0]           # is the one we chop, we end up with reduction value == 0
+                    startExonLen += exonLen
+                # Handle microexons at gene terminal
+                elif startChange > microExonSize:
+                    del coords[0]
+                    startExonLen += exonLen
+                else:
+                    break
+            else:
+                stopChange -= exonLen
+                if stopChange > 0:
+                    del coords[-1]
+                    stopExonLen += exonLen  # We hold onto exon lengths so we can calculate how much we chop into the new start exon
+                # Handle microexons at gene terminal
+                elif stopChange > microExonSize:
+                    del coords[-1]
+                    stopExonLen += exonLen
+                else:                           # by calculating stopChange - stopExonLen... if we didn't remove an exon, stopExonLen == 0
+                    break
+    origStartChange -= startExonLen
+    origStopChange -= stopExonLen
+    # Step 2: Using the chopping lengths derived in part 1, update our coordinates
+    for i in range(len(coords)):
+        splitCoord = coords[i]
+        if i == 0:
+            if orientation == '+':
+                splitCoord[0] = int(splitCoord[0]) + origStartChange
+            else:
+                splitCoord[1] = int(splitCoord[1]) - origStartChange
+        if i == len(coords) - 1:
+            if orientation == '+':
+                splitCoord[1] = int(splitCoord[1]) - origStopChange
+            else:
+                splitCoord[0] = int(splitCoord[0]) + origStopChange
+        coords[i] = splitCoord
+    return coords
 
 def get_args_hash(args):
     '''
@@ -248,6 +454,7 @@ def main():
     )
     
     # Attempt to fix genes
+    exonerateResultsDict = resultsDict
     fix_nonequivalent_features(nonequalIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
     
     
