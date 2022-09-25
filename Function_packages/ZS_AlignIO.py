@@ -967,9 +967,6 @@ class GMAP:
         self.max_intronlength_middle = 500000 # GMAP default
         self.max_intronlength_ends = 500000 # GMAP default is 10000, but I always use this
         self.nthreads = 1
-        
-        # Set attributes that change over object lifespan
-        self.targetDB = None
     
     @property
     def gmapDir(self):
@@ -1077,7 +1074,15 @@ class GMAP:
         
         self._nthreads = value
     
-    
+    @property
+    def targetDB(self):
+        if not isinstance(self.target, str) or not os.path.isfile(self.target):
+            tmpHash = _get_hash_for_query_or_target(self.target, randomHash=False)
+            targetFile = _get_filename_for_query_or_target(tmpHash)
+        else:
+            targetFile = self.target
+        
+        return f"{targetFile}.gmap"
     
     def _format_build_cmd(self, targetFile):
         '''
@@ -1116,15 +1121,7 @@ class GMAP:
             buildExists -- a boolean indicating whether a gmap_build result already exists
                            (True) or not (False)
         '''
-        # Get file name for target after data type coercion
-        if not isinstance(self.target, str) or not os.path.isfile(self.target):
-            tmpHash = _get_hash_for_query_or_target(self.target, randomHash=False)
-            targetFile = _get_filename_for_query_or_target(tmpHash)
-        else:
-            targetFile = self.target
-        
-        gmapDatabase = f"{targetFile}.gmap"
-        return os.path.isdir(gmapDatabase)
+        return os.path.isdir(self.targetDB)
     
     def gmap_build(self):
         '''
@@ -1151,6 +1148,37 @@ class GMAP:
         if tIsTemporary:
             os.unlink(t)
     
+    def _format_search_cmd(self, queryFile, targetFile):
+        '''
+        Hidden helper function for getting a list amenable to subprocess.run()
+        that sets all relevant cmd tags depending on this object's properties.
+        It expects that the target file has already been subjected to
+        ._get_file_for_query_or_target(), and its return value is being
+        given to this function.
+        
+        Parameters:
+            targetFile -- a string pointing to a FASTA file that exists
+        Returns:
+            cmds -- a list amenable to subprocess.run()
+        '''
+        cmds = []
+        if platform.system() == "Windows":
+            cmds += ["wsl", "~", "-e"]
+        
+        cmds += [
+            Path(self.gmapDir, "gmap").as_posix(), "-D",
+            convert_windows_to_wsl_path(os.path.dirname(self.targetDB)) \
+                if platform.system() == "Windows" else os.path.dirname(self.targetDB),
+            "-d", f"{os.path.basename(targetFile)}.gmap",
+            "-f", "2", "-n", str(self.npaths), "-t", str(self.nthreads), "-B", str(self.batch),
+            f"--max-intronlength-middle={self.max_intronlength_middle}",
+            f"--max-intronlength-ends={self.max_intronlength_ends}",
+            convert_windows_to_wsl_path(os.path.abspath(queryFile)) if platform.system() == "Windows" \
+                else os.path.abspath(queryFile)
+        ]
+        
+        return cmds
+    
     def gmap(self):
         '''
         Runs GMAP using the parameters set in this object.
@@ -1166,15 +1194,36 @@ class GMAP:
         q, qIsTemporary = _get_file_for_query_or_target(self.query)
         t, tIsTemporary = _get_file_for_query_or_target(self.target)
         
-        # Make sure target file is ready for BLAST
+        # Make sure target file is ready for GMAP
         if not self._target_build_exists():
             self.gmap_build()
         
         # Get hash for temporary file creation
         tmpHash = hashlib.sha256(bytes(q + t + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-        ### TBD...
+        
+        # Get cmds and run
+        cmds = self._format_search_cmd(q, t)
+        gmap = subprocess.run(cmds, capture_output=True)
+        
+        # Validate that search was successful
+        stderr = gmap.stderr.decode()
+        assert re.findall(r"Processed \d{1,10} queries in", stderr) != [], \
+            f"Unexpected error occuring during gmap run; stderr == {stderr}"
+        
+        # Parse result
+        ### TBD
+        
+        # Clean up
+        if tIsTemporary:
+            os.unlink(t)
+        
+    
+    def get_gmap_results(self):
+        '''
+        WIP implementation
+        '''
         # Run BLAST
-        tmpResultName = _tmp_file_name_gen("{0}.vs.{1}_{2}".format(os.path.basename(q).rsplit(".", maxsplit=1)[0], os.path.basename(t).rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "outfmt6")
+        tmpResultName = _tmp_file_name_gen("{0}.vs.{1}_{2}".format(os.path.basename(q).rsplit(".", maxsplit=1)[0], os.path.basename(t).rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "gff3")
         self.blast(q, t, tmpResultName)
         
         # Parse BLAST results
