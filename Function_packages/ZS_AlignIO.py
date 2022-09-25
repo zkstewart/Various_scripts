@@ -67,7 +67,7 @@ def _get_hash_for_query_or_target(qt, randomHash=True):
     
     return tmpHash
 
-def _get_filename_for_query_or_target(tmpHash):
+def _get_filename_for_query_or_target(tmpHash, suffix):
     '''
     Very simple helper to format the file name the way we expect it to be done.
     
@@ -76,7 +76,7 @@ def _get_filename_for_query_or_target(tmpHash):
                        f"alignIO_tmp_{tmpHash[0:20]}.fasta", 
                        possibly with a .#. prior to the file extension.
     '''
-    return _tmp_file_name_gen("alignIO_tmp_" + tmpHash[0:20], "fasta")
+    return _tmp_file_name_gen("alignIO_tmp_" + tmpHash[0:20], suffix)
 
 def _get_file_for_query_or_target(qt, randomHash=True):
         '''
@@ -123,7 +123,7 @@ def _get_file_for_query_or_target(qt, randomHash=True):
         # If qt is a FASTA, make it into a file
         isTemporary = False
         if type(qt).__name__ == "FASTA" or type(qt).__name__ == "ZS_SeqIO.FASTA":
-            tmpQtName = _get_filename_for_query_or_target(tmpHash)
+            tmpQtName = _get_filename_for_query_or_target(tmpHash, "fasta")
             qt.write(tmpQtName)
             qt = tmpQtName # after this point, qt will be a string indicating a FASTA file name
             isTemporary = True # if we set this, qt was not originally a string
@@ -149,8 +149,10 @@ def convert_windows_to_wsl_path(windowsPath):
         driveRegex = re.compile(r"^([A-Za-z]{1}):\\")
         assert driveRegex.match(windowsPath) != None, \
             f"'{windowsPath}' is not recognised as a full, root drive inclusive path"
-        assert os.path.exists(windowsPath), \
-            f"'{windowsPath}' is not recognised as an existing path"
+        
+        # assert os.path.exists(windowsPath), \
+        #     f"'{windowsPath}' is not recognised as an existing path"
+        "We don't actually need this in this function; sometimes the file shouldn't exist yet"
         
         # If it is, convert it
         driveLetter = driveRegex.match(windowsPath).group(1)
@@ -1078,7 +1080,7 @@ class GMAP:
     def targetDB(self):
         if not isinstance(self.target, str) or not os.path.isfile(self.target):
             tmpHash = _get_hash_for_query_or_target(self.target, randomHash=False)
-            targetFile = _get_filename_for_query_or_target(tmpHash)
+            targetFile = _get_filename_for_query_or_target(tmpHash, "fasta")
         else:
             targetFile = self.target
         
@@ -1087,7 +1089,9 @@ class GMAP:
     def _format_build_cmd(self, targetFile):
         '''
         Hidden helper function for getting a list amenable to subprocess.run()
-        that sets all relevant cmd tags depending on this object's properties.
+        that sets all relevant cmd tags depending on this object's properties in
+        order to run gmap_build and index a target FASTA file.
+        
         It expects that the target file has already been subjected to
         ._get_file_for_query_or_target(), and its return value is being
         given to this function.
@@ -1151,15 +1155,20 @@ class GMAP:
     def _format_search_cmd(self, queryFile, targetFile):
         '''
         Hidden helper function for getting a list amenable to subprocess.run()
-        that sets all relevant cmd tags depending on this object's properties.
+        that sets all relevant cmd tags depending on this object's properties in
+        order to run GMAP and get GFF3 formatted results.
+        
         It expects that the target file has already been subjected to
         ._get_file_for_query_or_target(), and its return value is being
         given to this function.
         
         Parameters:
+            queryFile -- a string pointing to a FASTA file that exists
             targetFile -- a string pointing to a FASTA file that exists
+            resultsFileName -- a string pointing to a non-existing file that
+                               will be created by GMAP.
         Returns:
-            cmds -- a list amenable to subprocess.run()
+            cmds -- a list amenable to subprocess.run() that will perform a GMAP search
         '''
         cmds = []
         if platform.system() == "Windows":
@@ -1179,7 +1188,7 @@ class GMAP:
         
         return cmds
     
-    def gmap(self):
+    def run_gmap(self):
         '''
         Runs GMAP using the parameters set in this object.
         
@@ -1198,60 +1207,29 @@ class GMAP:
         if not self._target_build_exists():
             self.gmap_build()
         
-        # Get hash for temporary file creation
-        tmpHash = hashlib.sha256(bytes(q + t + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        # Get temporary results file name
+        tmpHash = _get_hash_for_query_or_target(q + t, randomHash=True)
+        tmpResultsName = _get_filename_for_query_or_target(tmpHash, "gff3")
         
         # Get cmds and run
         cmds = self._format_search_cmd(q, t)
-        gmap = subprocess.run(cmds, capture_output=True)
+        with open(tmpResultsName, "w") as fileOut:
+            gmap = subprocess.run(cmds, stderr=subprocess.PIPE, stdout=fileOut)
         
         # Validate that search was successful
         stderr = gmap.stderr.decode()
         assert re.findall(r"Processed \d{1,10} queries in", stderr) != [], \
             f"Unexpected error occuring during gmap run; stderr == {stderr}"
         
-        # Parse result
-        ### TBD
-        
-        # Clean up
-        if tIsTemporary:
-            os.unlink(t)
-        
-    
-    def get_gmap_results(self):
-        '''
-        WIP implementation
-        '''
-        # Run BLAST
-        tmpResultName = _tmp_file_name_gen("{0}.vs.{1}_{2}".format(os.path.basename(q).rsplit(".", maxsplit=1)[0], os.path.basename(t).rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "gff3")
-        self.blast(q, t, tmpResultName)
-        
-        # Parse BLAST results
-        blastDict = self.parse_blast_hit_coords(tmpResultName)
-        
-        # Clean up q and t temporary files
+        # Parse result & clean up
+        gmapGFF3 = GFF3(tmpResultsName)
         if qIsTemporary:
             os.unlink(q)
-            qDir = os.path.dirname(q)
-            for file in os.listdir(qDir if qDir != "" else "."): # kill off any temporary database files too
-                file = os.path.join(qDir, file)
-                if file.startswith(q):
-                    os.unlink(file)
         if tIsTemporary:
             os.unlink(t)
-            tDir = os.path.dirname(t)
-            for file in os.listdir(tDir if tDir != "" else "."): # kill off any temporary database files too
-                file = os.path.join(tDir, file)
-                if file.startswith(t):
-                    os.unlink(file)
+        os.unlink(tmpResultsName)
         
-        # Clean up results and return (if relevant)
-        if self.clean:
-            os.unlink(tmpResultName)
-            return blastDict, None
-        # Or just return results
-        else:
-            return blastDict, tmpResultName
-    
+        return gmapGFF3
+
 if __name__ == "__main__":
     pass
