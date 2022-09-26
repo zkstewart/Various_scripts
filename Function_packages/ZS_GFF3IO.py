@@ -88,6 +88,33 @@ class Feature:
                 pass
         return None
     
+    def reset_child(self, childFeature):
+        '''
+        Rather than adding a child, this method will reset this Feature
+        object's state such that the provided child Feature will be the
+        ONLY feature it contains.
+        
+        This may be helpful when dealing with single child parents
+        (so brave...). Specifically, a gene feature where the mRNA
+        Feature has been changed.
+        
+        Parameters:
+            childFeature -- should be a Feature object, but any object
+                            will be accepted.
+        '''
+        self.children = []
+        self.types = {}
+        
+        self.children.append(childFeature)
+        try:
+            self.__dict__.setdefault(childFeature.type, [])
+            self.__dict__[childFeature.type].append(childFeature)
+            
+            self.types.setdefault(childFeature.type, [])
+            self.types[childFeature.type].append(childFeature)
+        except:
+            pass
+    
     def retrieve_all_children(self):
         childList = []
         for child in self.children:

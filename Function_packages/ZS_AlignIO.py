@@ -3,13 +3,6 @@
 # Contains various Classes to perform manipulations involving
 # FASTA objects that are to be aligned or have been aligned.
 
-# TBD
-## Aligner class that can
-## 1) align a FASTA and update its FastASeq.gap_seq values [-]
-## 2) align nucleotides as peptide then convert back to nucleotide [-]
-## 3) detect outliers in a MSA by sequence conservation [-]
-## 4) detect outliers in a MSA by phylogeny mismatch [-]
-
 import os, platform, sys, subprocess, hashlib, time, random, re, subprocess, shutil
 from pathlib import Path
 from copy import deepcopy
@@ -1344,11 +1337,8 @@ class GMAP:
         Runs GMAP using the parameters set in this object.
         
         Returns:
-            ## TBD
-            blastDict -- a dict with structure:
-                query_id: [[target_id, identity_pct, query_start, query_end, target_start, target_end, evalue], ...]
-            blastResultFile -- a string indicating the file name of the results file. If self.clean is True,
-                               this will instead return None.
+            gmapGFF3 -- a ZS_GFF3IO.GFF3 object containing all results reported by
+                        GMAP.
         '''
         # Make sure target file is ready for GMAP
         if not self._target_build_exists():
