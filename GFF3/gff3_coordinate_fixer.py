@@ -4,10 +4,16 @@
 # file and will attempt to correct any GFF3 features where
 # the coordinates don't match the real feature.
 
-import os, argparse, sys, hashlib, pickle, math
+import os, argparse, sys, hashlib, pickle
+from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from Function_packages import ZS_GFF3IO, ZS_SeqIO, ZS_AlignIO
+
+START_CODONS_POS = ["ATG"] #, "CTG", "TTG"]
+START_CODONS_NEG = ["CAT"] #, "CAG", "CAA"]
+STOP_CODONS_POS = ["TAA", "TAG", "TGA"]
+STOP_CODONS_NEG = ["TTA", "CTA", "TCA"]
 
 # Define functions
 def validate_args(args):
@@ -28,6 +34,27 @@ def validate_args(args):
         print('I am unable to locate the exonerate exe file (' + args.exonerateExe + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    # Handle optional parameters
+    if args.gmapDir != None or args.transcriptFastaFile != None:
+        assert args.transcriptFastaFile != None and args.gmapDir != None, \
+            "Must receive both transcriptFASTA_obj and gmapDir if you provide one of these!"
+        if not os.path.isdir(args.gmapDir):
+            print('I am unable to locate the GMAP binaries directory (' + args.gmapDir + ')')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+        if not os.path.isfile(os.path.join(args.gmapDir, "gmap")):
+            print('I am unable to locate the gmap executable (expected to be at ' + os.path.join(args.gmapDir, "gmap") + ')')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+        if not os.path.isfile(os.path.join(args.gmapDir, "gmap_build")):
+            print('I am unable to locate the gmap_build executable (expected to be at ' + os.path.join(args.gmapDir, "gmap_build") + ')')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+        if args.transcriptFastaFile != None:
+            if not os.path.isfile(args.transcriptFastaFile):
+                print('I am unable to locate the transcript FASTA file (' + args.transcriptFastaFile + ')')
+                print('Make sure you\'ve typed the file name or location correctly and try again.')
+                quit()
     # Validate output file location
     if os.path.isfile(args.outputFileName):
         print('File already exists at output location (' + args.outputFileName + ')')
@@ -55,9 +82,9 @@ def find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProte
         isProtein -- a boolean indicating whether the sequences in the
                      FASTA object are proteins or not (i.e., are nucleotides)
     Returns:
-        nonequalIDs -- a list containing ID values corresponding to
-                       sequences that don't match between the GFF3 and
-                       FASTA objects at all.
+        problemIDs -- a list containing ID values corresponding to
+                      sequences that don't match between the GFF3 and
+                      FASTA objects at all.
         fixesDict -- a dictionary with structure like:
                      {
                          'seqID1': [strand, frame],
@@ -65,7 +92,7 @@ def find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProte
                          ...
                      }
     '''
-    nonequalIDs = []
+    problemIDs = []
     fixesDict = {}
     for FastASeq_obj in cdsFASTA_obj:
         assert FastASeq_obj.id in GFF3_obj, \
@@ -102,12 +129,12 @@ def find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProte
             alt_isEqual = True if alt_gff3ProtSequence.rstrip("*") == fastaProtSequence.rstrip("*") else False
             
             if not alt_isEqual: # just put it in the "this is fucked" basket
-                nonequalIDs.append(FastASeq_obj.id)
+                problemIDs.append(FastASeq_obj.id)
             else:
                 fixesDict[FastASeq_obj.id] = [alt_strand, alt_frame]
-    return nonequalIDs, fixesDict
+    return problemIDs, fixesDict
 
-def fix_nonequivalent_features(nonequalIDs, exonerateResultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProtein=False):
+def fix_nonequivalent_features(problemIDs, exonerateResultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProtein=False, transcriptFASTA_obj=None, gmapRunner=None):
     '''
     Intended to follow on from find_nonequivalent_features(), this function will
     instead aim to correct the coordinates of any GFF3 features that don't match
@@ -115,9 +142,9 @@ def fix_nonequivalent_features(nonequalIDs, exonerateResultsDict, GFF3_obj, cdsF
     GFF3_obj.
     
     Parameters:
-        nonequalIDs -- a list containing ID values corresponding to
-                       sequences that don't match between the GFF3 and
-                       FASTA objects at all.
+        problemIDs -- a list containing ID values corresponding to
+                      sequences that don't match between the GFF3 and
+                      FASTA objects at all.
         GFF3_obj -- a ZS_GFF3IO.GFF3 object containing features
                     with .ID values found within the cdsFASTA_obj
         cdsFASTA_obj -- a ZS_SeqIO.FASTA object containing sequences
@@ -126,30 +153,61 @@ def fix_nonequivalent_features(nonequalIDs, exonerateResultsDict, GFF3_obj, cdsF
                            corresponding to .contig values found within the GFF3_obj
         isProtein -- a boolean indicating whether the sequences in the
                      FASTA object are proteins or not (i.e., are nucleotides)
+        gmapRunner -- OPTIONAL; a ZS_AlignIO.GMAP object set with a dummy query file
+                      and the appropriate genome FASTA set as the target.
+    Returns:
+        fixedIDs -- a list containing ID values corresponding to sequences that we've
+                    fixed by enacting this function.
     '''
-    for problemSeqID in nonequalIDs:
-        FastASeq_obj = cdsFASTA_obj[problemSeqID]
+    LENGTH_PCT_DIFF_ALLOWANCE = 0.10
+    SIMILARITY_MINUMUM_ALLOWANCE = 90.0
+    
+    if transcriptFASTA_obj != None or gmapRunner != None:
+        assert transcriptFASTA_obj != None and gmapRunner != None, \
+            "fix_nonequivalent_features needs both transcriptFASTA_obj AND gmapRunner; providing only one doesn't work"
+    
+    fixedIDs = []
+    for problemSeqID in problemIDs:
+        cdsFastASeq_obj = cdsFASTA_obj[problemSeqID]
         feature = GFF3_obj[problemSeqID]
         
         # Get translation of FASTA sequence if relevant
         if not isProtein:
-            fastaProtSequence, _, _ = FastASeq_obj.get_translation(
+            cdsProtSequence, _, _ = cdsFastASeq_obj.get_translation(
                 findBestFrame=False,
                 strand=1,
                 frame=0
             )
         else:
-            fastaProtSequence = FastASeq_obj.seq
+            cdsProtSequence = cdsFastASeq_obj.seq
         
         # Get exonerate results if applicable
         if problemSeqID in exonerateResultsDict:
             exonerateResults = exonerateResultsDict[problemSeqID]
         else:
-            continue # nothing we can do in this scenario
+            exonerateResults = None
         
-        # Find the best exonerate result in the closest proximity to the original gene annotation
+        # Get GMAP results if applicable
+        if gmapRunner != None:
+            gmapRunner.query = transcriptFASTA_obj[problemSeqID]
+            gmapResults = gmapRunner.run_gmap()
+            gmapRunner.clean(query=True)
+        else:
+            gmapResults = None
+        
+        # Skip if we have no results, or merge them otherwise
+        if exonerateResults == None and gmapResults == None:
+            continue
+        elif exonerateResults != None and gmapResults != None:
+            searchResults = exonerateResults + gmapResults.types["gene"]
+        elif exonerateResults == None:
+            searchResults = gmapResults.types["gene"]
+        else:
+            searchResults = exonerateResults
+        
+        # Find the best result in the closest proximity to the original gene annotation
         bestResults = [] # [feature, distance, lengthDifference, similarity]
-        for geneFeature in exonerateResults:
+        for geneFeature in searchResults:
             if geneFeature.contig == feature.contig:
                 mrnaFeature = geneFeature.mRNA[0]
                 
@@ -159,23 +217,46 @@ def fix_nonequivalent_features(nonequalIDs, exonerateResultsDict, GFF3_obj, cdsF
                 else:
                     distance = min(abs(mrnaFeature.end - feature.start), abs(feature.end - mrnaFeature.start))
                 
-                # Get the difference in CDS length between the genes
+                # Extend the gene to its start codon, stop codon boundaries
                 mrnaFeature_FastASeq_obj, _, _ = GFF3_obj.retrieve_sequence_from_FASTA(
                     genomeFASTA_obj, mrnaFeature, "CDS"
                 )
-                lengthDifference = abs(len(fastaProtSequence) - (len(mrnaFeature_FastASeq_obj.seq) / 3))
+                feature_cds_extension_maximal(mrnaFeature, mrnaFeature_FastASeq_obj, genomeFASTA_obj, MAX_EXTENSION=30)
                 
-                # Finally, store the above and the similarity score
-                bestResults.append([mrnaFeature, distance, lengthDifference, float(mrnaFeature.similarity)])
+                # Validate that start and stop codons were found appropriately
+                mrnaFeature_FastASeq_obj, _, _ = GFF3_obj.retrieve_sequence_from_FASTA(
+                    genomeFASTA_obj, mrnaFeature, "CDS"
+                )
+                startCodon = mrnaFeature_FastASeq_obj.seq[0:3].upper()
+                stopCodon = mrnaFeature_FastASeq_obj.seq[-3:].upper()
+                if startCodon not in START_CODONS_POS or stopCodon not in STOP_CODONS_POS:
+                    continue
+                
+                # Validate that the difference in gene length isn't crazy
+                mrnaFeature_FastASeq_obj, _, _ = GFF3_obj.retrieve_sequence_from_FASTA(
+                    genomeFASTA_obj, mrnaFeature, "CDS"
+                )
+                lengthDifference = abs(len(cdsProtSequence) - (len(mrnaFeature_FastASeq_obj.seq) / 3))
+                if lengthDifference > (len(cdsProtSequence) * LENGTH_PCT_DIFF_ALLOWANCE):
+                    continue
+                
+                # Validate that the similarity score is good
+                similarity = float(mrnaFeature.similarity) if hasattr(mrnaFeature, "similarity") \
+                    else (float(mrnaFeature.identity) * float(mrnaFeature.coverage)) / 100
+                if similarity < SIMILARITY_MINUMUM_ALLOWANCE:
+                    continue
+                
+                # Finally, store the result
+                bestResults.append([geneFeature, distance, lengthDifference, similarity])
         bestResults.sort(key = lambda x: (-x[3], x[1], x[2]))
-        bestResult = bestResults[0][0]
-        stop
-        # Extend the gene to its start codon, stop codon boundaries
         
-        # Validate that this result has a comparable protein
-        
-        ## TBD...
-        stop
+        # Save the best result if there's any!
+        if bestResults == []:
+            continue
+        else:
+            GFF3_obj[problemSeqID] = bestResults[0][0]
+            fixedIDs.append(problemSeqID)
+    return fixedIDs
 
 def feature_cds_extension_maximal(mrnaFeature, mrnaFeature_FastASeq_obj, genomeFASTA_obj, MAX_EXTENSION=30):
     '''
@@ -195,12 +276,9 @@ def feature_cds_extension_maximal(mrnaFeature, mrnaFeature_FastASeq_obj, genomeF
                            corresponding to .contig values found within the GFF3_obj
         MAX_EXTENSION -- an integer setting the maximum amount of base pairs a CDS
                          will be extended in search of a good start or stop codon.
+    Returns:
+        mrnaFeature -- the same input object, modified as per the actions of this function
     '''
-    START_CODONS_POS = ["ATG"] #, "CTG", "TTG"]
-    START_CODONS_NEG = ["CAT"] #, "CAG", "CAA"]
-    STOP_CODONS_POS = ["TAA", "TAG", "TGA"]
-    STOP_CODONS_NEG = ["TTA", "CTA", "TCA"]
-    
     # Determine what our start and stop codons are
     currentStart = mrnaFeature_FastASeq_obj.seq[0:3].upper()
     currentStop = mrnaFeature_FastASeq_obj.seq[-3:].upper()
@@ -293,70 +371,278 @@ def feature_cds_extension_maximal(mrnaFeature, mrnaFeature_FastASeq_obj, genomeF
             newCoords = [i, newCoords[1]]
     
     # Update any coordinates as needed
-    stophere
-    ## TBD
-    # coord_cds_region_update(coords, startChange, stopChange, orientation)
+    mrnaFeature = feature_coord_update(
+        mrnaFeature,
+        newCoords[0] if newCoords[0] != None else mrnaFeature.start,
+        newCoords[1] if newCoords[1] != None else mrnaFeature.end
+    )
     
-    raise NotImplementedError("AAAA")
-    #return coords, cds, startCodonsPos                              # We want to return the start codons since we'll use them later
+    return mrnaFeature
 
-def coord_cds_region_update(coords, startChange, stopChange, orientation):
-    # Part 1: Cull exons that aren't coding and figure out how far we are chopping into coding exons
-    origStartChange = startChange
-    origStopChange = stopChange
-    startExonLen = 0
-    stopExonLen = 0
-    microExonSize = -3      # This value is an arbitrary measure where, if a terminal exon is less than this size, we consider it 'fake' and delete it
-    for i in range(2):
-        while True:
-            if i == 0:                      # The GFF3 is expected to be formatted such that + features are listed lowest coord position -> highest, whereas - features are listed from highest -> lowest
-                exon = coords[0]        # This is done by PASA and by the exonerate GFF3 parsing system of this code, and it basically means that our first listed exon is always our starting exon
-            else:
-                exon = coords[-1]
-            # Extract details
-            rightCoord = int(exon[1])
-            leftCoord = int(exon[0])
-            exonLen = rightCoord - leftCoord + 1
-            # Update our change values
-            if i == 0:
-                startChange -= exonLen          # This helps us to keep track of how much we need to reduce startChange
-                if startChange > 0:             # when we begin chopping into the first exon - if the original first exon 
-                    del coords[0]           # is the one we chop, we end up with reduction value == 0
-                    startExonLen += exonLen
-                # Handle microexons at gene terminal
-                elif startChange > microExonSize:
-                    del coords[0]
-                    startExonLen += exonLen
-                else:
-                    break
-            else:
-                stopChange -= exonLen
-                if stopChange > 0:
-                    del coords[-1]
-                    stopExonLen += exonLen  # We hold onto exon lengths so we can calculate how much we chop into the new start exon
-                # Handle microexons at gene terminal
-                elif stopChange > microExonSize:
-                    del coords[-1]
-                    stopExonLen += exonLen
-                else:                           # by calculating stopChange - stopExonLen... if we didn't remove an exon, stopExonLen == 0
-                    break
-    origStartChange -= startExonLen
-    origStopChange -= stopExonLen
-    # Step 2: Using the chopping lengths derived in part 1, update our coordinates
-    for i in range(len(coords)):
-        splitCoord = coords[i]
-        if i == 0:
-            if orientation == '+':
-                splitCoord[0] = int(splitCoord[0]) + origStartChange
-            else:
-                splitCoord[1] = int(splitCoord[1]) - origStartChange
-        if i == len(coords) - 1:
-            if orientation == '+':
-                splitCoord[1] = int(splitCoord[1]) - origStopChange
-            else:
-                splitCoord[0] = int(splitCoord[0]) + origStopChange
-        coords[i] = splitCoord
-    return coords
+def feature_coord_update(feature, newStart, newEnd):
+    '''
+    Function to receive a feature and new start / stop coordinates and update the feature
+    to cull any subfeatures/modify them to account for this change.
+    
+    Parameters:
+        mrnaFeature -- a ZS_GFF3IO.Feature object of any feature containing .exon and/or
+                       .CDS values.
+        newStart -- an integer indicating the new start / left boundary to the feature
+        newEnd -- an integer indicating the new end / right boundary to the feature
+        updateParent -- a boolean indicating whether updated coordinates
+                        should be propagated to the parent feature (True)
+                        or not (False)
+    '''
+    assert isinstance(newStart, int) and isinstance(newEnd, int), \
+        "newStart and newStop inputs must be integers"
+    
+    assert hasattr(feature, "CDS") or hasattr(feature, "exon"), \
+        "feature object lacks CDS and exon values; updating its coords is not relevant"
+    
+    # Make sure the parameters are sensible in the context of this function
+    "Someone might mistake the left/right-ness of our start/stop idea and go for a sense/antisense based approach"
+    newStart, newEnd = min(newStart, newEnd), max(newStart, newEnd)
+    
+    # Make sure feature values are sorted ascendingly for this function
+    if hasattr(feature, "CDS"):
+        feature.CDS.sort(key = lambda x: x.start)
+    if hasattr(feature, "exon"):
+        feature.exon.sort(key = lambda x: x.start)
+    
+    # Modify the start
+    "Cut into CDS first since we'd prefer to use the exon data for the feature.coords stuff"
+    if hasattr(feature, "CDS"):
+        cdsToDrop = 0
+        
+        for cdsFeature in feature.CDS:
+            if cdsFeature.end < newStart: # drop this exon
+                cdsToDrop += 1
+            else: # modify this exon ## newStart > cdsFeature.start
+                cdsFeature.start = newStart
+                cdsFeature.coords = [newStart, cdsFeature.end]
+                feature.start = newStart
+                feature.coords = [newStart, cdsFeature.end]
+                break
+        
+        feature.CDS = feature.CDS[cdsToDrop:]
+    
+    if hasattr(feature, "exon"):
+        exonsToDrop = 0
+        
+        for exonFeature in feature.exon:
+            if exonFeature.end < newStart: # drop this exon
+                exonsToDrop += 1
+            else: # modify this exon ## newStart > cdsFeature.start
+                exonFeature.start = newStart
+                exonFeature.coords = [newStart, exonFeature.end]
+                feature.start = newStart
+                feature.coords = [newStart, feature.end]
+                break
+        
+        feature.exon = feature.exon[exonsToDrop:]
+    
+    # Modify the end
+    if hasattr(feature, "CDS"):
+        cdsToDrop = 0
+        
+        for cdsFeature in feature.CDS[::-1]:
+            if cdsFeature.start > newEnd: # drop this CDS
+                cdsToDrop += 1
+            else: # modify this CDS ## newEnd < cdsFeature.end
+                cdsFeature.end = newEnd
+                cdsFeature.coords = [cdsFeature.start, newEnd]
+                feature.end = newEnd
+                feature.coords = [cdsFeature.start, newEnd]
+                break
+        
+        if cdsToDrop != 0:
+            feature.CDS = feature.CDS[:-cdsToDrop]
+    
+    if hasattr(feature, "exon"):
+        exonsToDrop = 0
+        
+        for exonFeature in feature.exon[::-1]:
+            if exonFeature.start > newEnd: # drop this exon
+                exonsToDrop += 1
+            else: # modify this exon ## newEnd < cdsFeature.end or newEnd > cdsFeature.end
+                exonFeature.end = newEnd
+                exonFeature.coords = [exonFeature.start, newEnd]
+                feature.end = newEnd
+                feature.coords = [feature.start, newEnd]
+                break
+        
+        if exonsToDrop != 0:
+            feature.exon = feature.exon[:-exonsToDrop]
+    
+    # Address situations where the range is contained within an intron
+    if (hasattr(feature, "CDS") and feature.CDS == []) and (hasattr(feature, "exon") and feature.exon == []):
+        "We only want to create a new CDS value if the exon values no longer exist"
+        newCdsFeature = ZS_GFF3IO.Feature()
+        newCdsFeature.add_attributes({
+            "ID": f"{feature.ID}.cds.1", "Parent": feature.ID,
+            "contig": feature.contig, "source": feature.source, "type": "CDS",
+            "start": newStart, "end": newEnd, "coords": [newStart, newEnd],
+            "score": ".", "strand": feature.strand, "frame": "."
+        })
+        feature.CDS.append(newCdsFeature)
+    
+    if hasattr(feature, "exon") and feature.exon == []:
+        newExonFeature = ZS_GFF3IO.Feature()
+        newExonFeature.add_attributes({
+            "ID": f"{feature.ID}.exon.1", "Parent": feature.ID,
+            "contig": feature.contig, "source": feature.source, "type": "exon",
+            "start": newStart, "end": newEnd, "coords": [newStart, newEnd],
+            "score": ".", "strand": feature.strand, "frame": "."
+        })
+        feature.exon.append(newExonFeature)
+        feature.coords = [newStart, newEnd]
+        
+        # Update the main feature values
+        "We only do this here since, entering this if statement must mean we also entered the one above"
+        feature.start = newStart
+        feature.end = newEnd
+        feature.coords = [newStart, newEnd]
+    
+    # Sort feature values as they should be in general GFF3 convention again
+    "+ve stranded features will be sorted appropriately if they're in ascending order"
+    if hasattr(feature, "CDS"):
+        if feature.strand == "-":
+            feature.CDS.sort(key = lambda x: -x.end)
+    if hasattr(feature, "exon"):
+        if feature.strand == "-":
+            feature.exon.sort(key = lambda x: -x.end)
+    
+    return feature
+
+def fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProtein=False, slideLength=500):
+    '''
+    This function attempts to reconcile issues seen in the GFF3 annotation when compared
+    to extracted CDS sequences by sliding the gene models along the contig looking
+    for a match. If we found a match, we'll save it in the GFF3 object directly.
+    Otherwise, we'll return a list of the sequences we couldn't fix like this.
+    
+    Parameters:
+        slideLength -- an integer limiting how far we want to slide the feature
+                       looking for the fixed sequence
+    Returns:
+        unfixedIDs -- a list indicating the sequences that we failed to fix using
+                      this function
+    '''
+    unfixedIDs = []
+    for problemSeqID in problemIDs:
+        cdsFastASeq_obj = cdsFASTA_obj[problemSeqID]
+        feature = GFF3_obj[problemSeqID]
+        
+        # Get translation of FASTA sequence if relevant
+        if not isProtein:
+            cdsProtSequence, _, _ = cdsFastASeq_obj.get_translation(
+                findBestFrame=False,
+                strand=1,
+                frame=0
+            )
+        else:
+            cdsProtSequence = cdsFastASeq_obj.seq
+        
+        # Slide the gene left
+        foundFix = False
+        leftSlideFeature = deepcopy(feature) # make a backup so changes aren't permanent
+        for i in range(min(slideLength, len(genomeFASTA_obj[feature.contig].seq) - feature.start)):
+            slide_feature(leftSlideFeature, 1, "left")
+            leftSlide_FastASeq_obj, _, _ = GFF3_obj.retrieve_sequence_from_FASTA(
+                genomeFASTA_obj, leftSlideFeature, "CDS"
+            )
+            leftSlideProtSequence, _, _ = leftSlide_FastASeq_obj.get_translation(
+                findBestFrame=True,
+                strand=1
+            )
+            
+            # If we got a hit, store it and move on
+            if leftSlideProtSequence.rstrip("*") == cdsProtSequence:
+                foundFix = True
+                GFF3_obj[problemSeqID] = leftSlideFeature
+                
+                # Reset the parent gene feature with the new mRNA feature (if applicable)
+                if hasattr(leftSlideFeature, "Parent"): # this means we are handling a mRNA feature
+                    parentFeature = GFF3_obj[leftSlideFeature.Parent]
+                    parentFeature.reset_child(leftSlideFeature)
+                break
+        if foundFix is True:
+            continue
+        
+        # Slide the gene right
+        rightSlideFeature = deepcopy(feature) # make a backup so changes aren't permanent
+        for i in range(min(slideLength, len(genomeFASTA_obj[feature.contig].seq) - feature.end)):
+            slide_feature(rightSlideFeature, 1, "right")
+            rightSlide_FastASeq_obj, _, _ = GFF3_obj.retrieve_sequence_from_FASTA(
+                genomeFASTA_obj, rightSlideFeature, "CDS"
+            )
+            rightSlideProtSequence, _, _ = rightSlide_FastASeq_obj.get_translation(
+                findBestFrame=True,
+                strand=1
+            )
+            
+            # If we got a hit, store it and move on
+            if rightSlideProtSequence.rstrip("*") == cdsProtSequence:
+                foundFix = True
+                GFF3_obj[problemSeqID] = rightSlideFeature
+                
+                # Reset the parent gene feature with the new mRNA feature (if applicable)
+                if hasattr(rightSlideFeature, "Parent"):
+                    parentFeature = GFF3_obj[rightSlideFeature.Parent]
+                    parentFeature.reset_child(rightSlideFeature)
+                break
+        if foundFix is True:
+            continue
+        
+        unfixedIDs.append(problemSeqID)
+    return unfixedIDs
+
+def slide_feature(mrnaFeature, slideLength, direction):
+    '''
+    Simply put, will slide all the coordinates of a feature to the left or right
+    a set distance. That means each coordinate value will be +slideLength (right)
+    or -slideLength (left).
+    
+    This function isn't safe with respect to sliding things out of bounds. That's
+    up to you to make sure of.
+    
+    Parameters:
+        mrnaFeature -- a ZS_GFF3IO.Feature object indicating an mRNA feature or,
+                       just any feature with both CDS and exon subfeatures
+        slideLength -- an integer limiting how far we want to slide the feature
+                       looking for the fixed sequence
+        direction -- a string in the list of ["left", "right"] which will result
+                     in us sliding the feature
+    '''
+    assert hasattr(mrnaFeature, "CDS") and hasattr(mrnaFeature, "exon"), \
+        "slide_feature will only accept a feature with both CDS and exon attributes"
+    assert isinstance(slideLength, int) and slideLength > 0, \
+        "slideLength must be a positive integer"
+    assert direction.lower() in ["left", "right"], \
+        "direction value must be 'left' or 'right'"
+    
+    def _slide_it_left(feature, slideLength):
+        feature.start = feature.start - slideLength
+        feature.end = feature.end - slideLength
+        feature.coords = [feature.start, feature.end]
+    
+    def _slide_it_right(feature, slideLength):
+        feature.start = feature.start + slideLength
+        feature.end = feature.end + slideLength
+        feature.coords = [feature.start, feature.end]
+    
+    if direction.lower() == "left":
+        _slide_it_left(mrnaFeature, slideLength)
+        for cdsFeature in mrnaFeature.CDS:
+            _slide_it_left(cdsFeature, slideLength)
+        for exonFeature in mrnaFeature.exon:
+            _slide_it_left(exonFeature, slideLength)
+    else:
+        _slide_it_right(mrnaFeature, slideLength)
+        for cdsFeature in mrnaFeature.CDS:
+            _slide_it_right(cdsFeature, slideLength)
+        for exonFeature in mrnaFeature.exon:
+            _slide_it_right(exonFeature, slideLength)
 
 def get_args_hash(args):
     '''
@@ -380,6 +666,12 @@ def main():
     # User input
     usage = """%(prog)s accepts a GFF3 file and ...
     
+    This script is intended to work with protein CDS files (giving a nucleotide will just
+    have it translated to protein), with exonerate providing the approximate gene models.
+    But, if you have transcripts, this script can also employ GMAP to get the alignments
+    including UTRs, from which the CDS file can be used to identify the ORF from within the
+    model. This is the best case scenario.
+    
     Note that the IDs of everything are expected to match. That means you might need to do some
     prep work on some of the FASTA files to make their IDs match the GFF3.
     """
@@ -391,11 +683,17 @@ def main():
                 help="Specify the location of the genome FASTA file")
     p.add_argument("-c", dest="cdsFastaFile", required=True,
                 help="Specify the location of the CDS nucleotide/protein FASTA file")
-    p.add_argument("-e", dest="exonerateExe", required=True,
-                help="Specify the location of the exonerate executable file")
     p.add_argument("-o", dest="outputFileName", required=True,
                 help="Specify the location to write the modified GFF3 file to")
+    p.add_argument("-e", dest="exonerateExe", required=True,
+                help="Specify the location of the exonerate executable file")
     # Opts
+    p.add_argument("--gmapDir", dest="gmapDir", required=True,
+                help="""Optionally, specify the location of the GMAP binary files
+                if you're going to provide a transcript FASTA file""")
+    p.add_argument("--transcriptFastaFile", dest="transcriptFastaFile", required=False,
+                help="""Optionally, specify the location of the transcript
+                nucleotide FASTA file if you want to run GMAP""")
     p.add_argument("--isProtein", dest="isProtein", required=False, action="store_true",
                 help="Optionally specify that the cdsFastaFile contains protein sequences",
                 default=False)
@@ -413,25 +711,35 @@ def main():
         os.path.dirname(args.outputFileName),
         f"exonerate_results_{argsHash}.pkl"
     )
-
+    ## TESTING
+    exoneratePickleFile = r"F:\plant_group\plant_haplotypes\gff3_fixing\exonerate_results_6ae9da5c61f393af7558.pkl"
+    
     # Parse GFF3
     GFF3_obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False) # non-strict parsing
     
     # Parse FASTA files
     genomeFASTA_obj = ZS_SeqIO.FASTA(args.genomeFastaFile)
     cdsFASTA_obj = ZS_SeqIO.FASTA(args.cdsFastaFile)
+    transcriptFASTA_obj = ZS_SeqIO.FASTA(args.transcriptFastaFile) \
+        if args.transcriptFastaFile != None else None
     
-    # Get exonerate results depending on whether we can resume or not
+    # Find the problem sequence IDs
+    problemIDs, fixesDict = find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
+    
+    # Try to fix genes by sliding existing models up/down their contig
+    problemIDs = fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
+    
+    # Get exonerate results to help with fixing any remaining IDs
+    ## TBD -- pick up from here
     if args.resume is False or not os.path.isfile(exoneratePickleFile):
         # Get a FASTA file for the sequences we need to search against the genome
-        nonequalIDs, fixesDict = find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
-        nonequalFASTA_obj = ZS_SeqIO.FASTA(None)
-        nonequalIDs = nonequalIDs[0:5]
-        for seqID in nonequalIDs:
-            nonequalFASTA_obj.add(cdsFASTA_obj[seqID])
+        problem_FASTA_obj = ZS_SeqIO.FASTA(None)
+        problemIDs = problemIDs[0:5] ## TESTING
+        for seqID in problemIDs:
+            problem_FASTA_obj.add(cdsFASTA_obj[seqID])
         
         tmpFileName = ZS_AlignIO._tmp_file_name_gen("tmpExonerateQuery", "fasta")
-        nonequalFASTA_obj.write(tmpFileName)
+        problem_FASTA_obj.write(tmpFileName)
         
         # Perform exonerate search
         exonerateSearcher = ZS_AlignIO.Exonerate(args.exonerateExe, tmpFileName, args.genomeFastaFile)
@@ -440,12 +748,20 @@ def main():
         
         # Save result as pickle & clean up temp file
         with open(exoneratePickleFile, "wb") as fileOut:
-            pickle.dump([resultsDict, nonequalIDs, fixesDict], fileOut)
+            pickle.dump(resultsDict, fileOut)
         os.unlink(tmpFileName)
     else:
         # Load in the exonerate pickle
         with open(exoneratePickleFile, "rb") as fileIn:
-            resultsDict, nonequalIDs, fixesDict = pickle.load(fileIn)
+            resultsDict = pickle.load(fileIn)
+    
+    # Ensure that the GMAP database exists and we have an object to run it with if applicable
+    if args.gmapDir != None:
+        gmapRunner = ZS_AlignIO.GMAP(args.gmapDir, "ATCG", args.genomeFastaFile) # ATCG as placeholder query
+        gmapRunner.gmap_build()
+        gmapRunner.clean(query=True)
+    else:
+        gmapRunner = None
     
     # Filter resultsDict to only have relevant results
     MIN_IDENTITY, MIN_SIMILARITY = 98.0, 98.0
@@ -453,10 +769,9 @@ def main():
         resultsDict, num_hits=5, identity=MIN_IDENTITY, similarity=MIN_SIMILARITY
     )
     
-    # Attempt to fix genes
+    # Attempt to fix remaining genes via exonerate/GMAP search
     exonerateResultsDict = resultsDict
-    fix_nonequivalent_features(nonequalIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
-    
+    fixedIDs = fix_nonequivalent_features(problemIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein, transcriptFASTA_obj, gmapRunner)
     
     # Handle simple fixes
     ## TBD
@@ -468,4 +783,5 @@ def main():
     print("Program completed successfully!")
 
 if __name__ == "__main__":
-    main()
+    pass
+    #main()
