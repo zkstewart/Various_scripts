@@ -10,7 +10,7 @@
 ## 3) detect outliers in a MSA by sequence conservation [-]
 ## 4) detect outliers in a MSA by phylogeny mismatch [-]
 
-import os, platform, sys, subprocess, hashlib, time, random, re, subprocess
+import os, platform, sys, subprocess, hashlib, time, random, re, subprocess, shutil
 from pathlib import Path
 from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
@@ -22,6 +22,8 @@ from ZS_GFF3IO import Feature, GFF3
 import parasail
 if platform.system() != 'Windows':
     from skbio.alignment import StripedSmithWaterman
+
+##############################
 
 def _tmp_file_name_gen(prefix, suffix):
     '''
@@ -43,7 +45,7 @@ def _tmp_file_name_gen(prefix, suffix):
         else:
             return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
-def _get_hash_for_query_or_target(qt, randomHash=True):
+def _get_hash_for_query_or_target(qt, randomHash=True, maxLength=20):
     '''
     Hidden function for use when boiling down one of the three data types (FASTA, FastASeq,
     and string) into a string representing the file name [note: without creating the file].
@@ -51,120 +53,210 @@ def _get_hash_for_query_or_target(qt, randomHash=True):
     The function can be guaranteed to produce a truly random hash, or produce something
     consistent. Randomness is good for truly temporary files; consistency can be useful
     for dealing with files that might persist.
+    
+    Parameters:
+        randomHash -- a boolean indicating whether we want the hash to be consistent when
+                      qt is the same (True), or produce truly randomised results always (False)
+        maxLength -- an integer for the maximum length of the hash string you want returned
     '''
     assert isinstance(randomHash, bool), \
-            "randomHash value must be True or False"
-        
-    # Get a hash for temporary file creation
-    strForHash = qt if isinstance(qt, str) \
-                    else qt.fileOrder[0][0] if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder != [] \
-                    else str(qt) if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder == []  \
-                    else qt.id
+        "randomHash value must be True or False"
+    assert isinstance(maxLength, int) and maxLength > 0, \
+        "maxLength must be an integer greater than zero"
+    
+    # Get a string for hash building
+    if isinstance(qt, str):
+        strForHash = qt
+    elif type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA":
+        strForHash = ""
+        for FastASeq_obj in qt:
+            strForHash += FastASeq_obj.id
+            strForHash += FastASeq_obj.seq[0:1000]
+            strForHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
+    elif type(qt).__name__ == "ZS_SeqIO.FastASeq" or type(qt).__name__ == "FastASeq":
+        strForHash = qt.id + qt.seq[0:1000]
+    else:
+        raise ValueError("_get_hash_for_query_or_target can't handle the given object type")
+    
+    # Get the hash in a randomised or non-randomised way
     if randomHash is True:
         tmpHash = hashlib.sha256(bytes(strForHash + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
     else:
         tmpHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
     
-    return tmpHash
+    return tmpHash[0:maxLength]
 
-def _get_filename_for_query_or_target(tmpHash, suffix):
+##############################
+
+def _get_fasta_string_or_FASTA_object(value):
     '''
-    Very simple helper to format the file name the way we expect it to be done.
+    Hidden function for use when boiling down one of the three data types (FASTA, FastASeq,
+    and string) into a FASTA object.
     
+    If it's already a string for a file, this does nothing. Otherwise, it'll make sure
+    that you're handling a FASTA object.
+    
+    Parameters:
+        value -- the value of a query or target FASTA, in either 1) string format pointing
+                    a file path, 2) a string representation of a nucleotide or protein, 
+                    3) FastASeq format, or 4) FASTA format.
     Returns:
-        tmpFileName -- a string with format like:
-                       f"alignIO_tmp_{tmpHash[0:20]}.fasta", 
-                       possibly with a .#. prior to the file extension.
+        value -- the value of a query or target FASTA, in either 1) string format pointing
+                    a file path, or 2) FASTA format.
     '''
-    return _tmp_file_name_gen("alignIO_tmp_" + tmpHash[0:20], suffix)
+    # If value is a string...
+    if isinstance(value, str):
+        # ... and already a file, return it now
+        if os.path.isfile(value):
+            return value
+        
+        # ... or not a file, make it a FastASeq object
+        value = FastASeq("tmpID", value)
+    
+    # If value is now or was already a FastASeq object, make it a FASTA object
+    if hasattr(value, "isFastASeq") and value.isFastASeq is True:
+        tmpFASTA = FASTA(None)
+        tmpFASTA.add(value)
+        value = tmpFASTA
+    
+    # If value is now or was already a FASTA object, validate and return it
+    if hasattr(value, "isFASTA") and value.isFASTA is True:
+        return value
+    else:
+        raise TypeError("value type was not a string, FastASeq, or FASTA!")
+
+def _get_filename_for_FASTA_object(FASTA_obj, useExistingFile=True):
+    '''
+    Parameters:
+        useExistingFile -- a boolean indicating whether an existing file with the
+                            expected file name hash should be used as-is, or if we
+                            should create a new file instead.
+    '''
+    assert hasattr(FASTA_obj, "isFASTA") and FASTA_obj.isFASTA is True, \
+        "Value provided to _get_filename_for_FASTA_object is not actually a FASTA object"
+    assert isinstance(useExistingFile, bool), \
+        "useExistingFile value must be True or False"
+    
+    tmpHash = _get_hash_for_query_or_target(FASTA_obj, randomHash=False, maxLength=20)
+    
+    if useExistingFile is True:
+        return f"alignIO_tmp_{tmpHash}.fasta"
+    else:
+        return _tmp_file_name_gen("alignIO_tmp_" + tmpHash, "fasta")
+
+def _create_file_from_FASTA_object(FASTA_obj, useExistingFile=True):
+    '''
+    Parameters:
+        useExistingFile -- a boolean indicating whether an existing file with the
+                            expected file name hash should be used as-is, or if we
+                            should create a new file instead.
+    Returns:
+        fastaFileName -- a string indicating the location of an existing FASTA file
+        fileWasCreated -- a boolean indicating whether a new file was created (True)
+                          or not (False)
+    '''
+    assert hasattr(FASTA_obj, "isFASTA") and FASTA_obj.isFASTA is True, \
+        "Value provided to _get_filename_for_FASTA_object is not actually a FASTA object"
+    assert isinstance(useExistingFile, bool), \
+        "useExistingFile value must be True or False"
+    
+    # Get our expected file name
+    fastaFileName = _get_filename_for_FASTA_object(FASTA_obj, useExistingFile)
+    
+    # If file already exists, just return that file name
+    "If the file exists, that means it already exists, AND that useExistingFile is True"
+    if os.path.isfile(fastaFileName):
+        return fastaFileName, False # file was not created
+    
+    # Otherwise, create a new file
+    "If the file does not exist, that means the file wasn't already there OR useExistingFile is False"
+    FASTA_obj.write(fastaFileName)
+    return fastaFileName, True # file was created
 
 def _get_file_for_query_or_target(qt, randomHash=True):
-        '''
-        Hidden function for use when boiling down one of the three data types (FASTA, FastASeq,
-        and string) into a string representing an actually existing file name.
-        
-        If it's already a string for a file, this does nothing. Otherwise, it will make sure
-        a file exists with the FASTA data contents.
-        
-        The function can be guaranteed to produce a truly random hash, or produce something
-        consistent. Randomness is good for truly temporary files; consistency can be useful
-        for dealing with files that might persist.
-        
-        Parameters:
-            qt -- the value of a query or target FASTA, in either 1) string format pointing
-                  a file path, 2) a string representation of a nucleotide or protein, 
-                  3) FastASeq format, or 4) FASTA format.
-            randomHash -- a boolean to indicate whether we want the hash to be random each
-                          time (default; True) or if we want it to be consistent (False)
-        Returns:
-            qt -- a string indicating the file name for the input value of qt. If it was
-                  already a string, this will be the same. Otherwise, it will be a file
-                  name containing the contents of the FASTA or FastASeq object.
-            isTemporary -- a Boolean indicating whether the returned qt value has been
-                           created by this method as a temporary file (True) or if it was
-                           already existing (False) i.e., qt was already a string file path
-        '''
-        assert isinstance(randomHash, bool), \
-            "randomHash value must be True or False"
-        
-        # Get a hash for temporary file creation
-        tmpHash = _get_hash_for_query_or_target(qt, randomHash)
-        
-        # If qt is a string but not a file, make it a FastASeq object
-        if isinstance(qt, str) and not os.path.isfile(qt):
-            qt = FastASeq("tmpID", qt)
-        
-        # If qt is a FastASeq, make it a FASTA object
-        if type(qt).__name__ == "FastASeq" or type(qt).__name__ == "ZS_SeqIO.FastASeq":
-            tmpFASTA = FASTA(None)
-            tmpFASTA.add(qt)
-            qt = tmpFASTA
-        
-        # If qt is a FASTA, make it into a file
-        isTemporary = False
-        if type(qt).__name__ == "FASTA" or type(qt).__name__ == "ZS_SeqIO.FASTA":
-            tmpQtName = _get_filename_for_query_or_target(tmpHash, "fasta")
-            qt.write(tmpQtName)
-            qt = tmpQtName # after this point, qt will be a string indicating a FASTA file name
-            isTemporary = True # if we set this, qt was not originally a string
-        
-        return qt, isTemporary
+    '''
+    Hidden function for use when boiling down one of the three data types (FASTA, FastASeq,
+    and string) into a string representing an actually existing file name.
+    
+    If it's already a string for a file, this does nothing. Otherwise, it will make sure
+    a file exists with the FASTA data contents.
+    
+    The function can be guaranteed to produce a truly random hash, or produce something
+    consistent. Randomness is good for truly temporary files; consistency can be useful
+    for dealing with files that might persist.
+    
+    Parameters:
+        qt -- the value of a query or target FASTA, in either 1) string format pointing
+                a file path, 2) a string representation of a nucleotide or protein, 
+                3) FastASeq format, or 4) FASTA format.
+        randomHash -- a boolean to indicate whether we want the hash to be random each
+                        time (default; True) or if we want it to be consistent (False)
+    Returns:
+        qt -- a string indicating the file name for the input value of qt. If it was
+                already a string, this will be the same. Otherwise, it will be a file
+                name containing the contents of the FASTA or FastASeq object.
+        isTemporary -- a Boolean indicating whether the returned qt value has been
+                        created by this method as a temporary file (True) or if it was
+                        already existing (False) i.e., qt was already a string file path
+    '''
+    assert isinstance(randomHash, bool), \
+        "randomHash value must be True or False"
+    
+    # Get a hash for temporary file creation
+    tmpHash = _get_hash_for_query_or_target(qt, randomHash)
+    
+    # Get qt as a string (if it's a file already) or a FASTA object (if it's not a file already)
+    qt = _get_fasta_string_or_FASTA_object(qt)
+    
+    # If qt is a FASTA, make it into a file
+    isTemporary = False
+    if type(qt).__name__ == "FASTA" or type(qt).__name__ == "ZS_SeqIO.FASTA":
+        tmpQtName = _tmp_file_name_gen("alignIO_tmp_" + tmpHash[0:20], "fasta")
+        qt.write(tmpQtName)
+        qt = tmpQtName # after this point, qt will be a string indicating a FASTA file name
+        isTemporary = True # if we set this, qt was not originally a string
+    
+    return qt, isTemporary
+
+##############################
 
 def convert_windows_to_wsl_path(windowsPath):
-        '''
-        Utility function of AlignIO.
-        
-        Provides simple functionality to infer the WSL path from
-        a windows path, provided as a string.
-        
-        Parameters:
-            windowsPath -- a string indicating the full path to a file
-                           or directory of interest; this MUST include
-                           the root character e.g., 'D:\\' or 'C:\\'
-        Returns:
-            wslPath -- a string indicating the inferred full path to the
-                       given file or directory using WSL formatting
-        '''
-        # Check that the path is something we can work with
-        driveRegex = re.compile(r"^([A-Za-z]{1}):\\")
-        assert driveRegex.match(windowsPath) != None, \
-            f"'{windowsPath}' is not recognised as a full, root drive inclusive path"
-        
-        # assert os.path.exists(windowsPath), \
-        #     f"'{windowsPath}' is not recognised as an existing path"
-        "We don't actually need this in this function; sometimes the file shouldn't exist yet"
-        
-        # If it is, convert it
-        driveLetter = driveRegex.match(windowsPath).group(1)
-        wslPath = "/{0}".format("/".join(
-            [
-                "mnt",
-                driveLetter.lower(),
-                *windowsPath.split("\\")[1:]
-            ]
-        ))
-        
-        return wslPath
+    '''
+    Utility function of AlignIO.
+    
+    Provides simple functionality to infer the WSL path from
+    a windows path, provided as a string.
+    
+    Parameters:
+        windowsPath -- a string indicating the full path to a file
+                        or directory of interest; this MUST include
+                        the root character e.g., 'D:\\' or 'C:\\'
+    Returns:
+        wslPath -- a string indicating the inferred full path to the
+                    given file or directory using WSL formatting
+    '''
+    # Check that the path is something we can work with
+    driveRegex = re.compile(r"^([A-Za-z]{1}):\\")
+    assert driveRegex.match(windowsPath) != None, \
+        f"'{windowsPath}' is not recognised as a full, root drive inclusive path"
+    
+    # assert os.path.exists(windowsPath), \
+    #     f"'{windowsPath}' is not recognised as an existing path"
+    "We don't actually need this in this function; sometimes the file shouldn't exist yet"
+    
+    # If it is, convert it
+    driveLetter = driveRegex.match(windowsPath).group(1)
+    wslPath = "/{0}".format("/".join(
+        [
+            "mnt",
+            driveLetter.lower(),
+            *windowsPath.split("\\")[1:]
+        ]
+    ))
+    
+    return wslPath
+
+##############################
 
 class MAFFT:
     '''
@@ -962,8 +1054,9 @@ class GMAP:
         self.gmapDir = gmapDir
         self.query = query
         self.target = target
+        self.dbWasCreated = False
         
-        # Set default attributes
+        # Set default GMAP parameters
         self.npaths = 5 # GMAP default
         self.batch = 5 # GMAP default is 2, but I always use this
         self.max_intronlength_middle = 500000 # GMAP default
@@ -997,8 +1090,21 @@ class GMAP:
     def query(self, value):
         recognisedTypes = ["str", "FASTA", "ZS_SeqIO.FASTA", "FastASeq", "ZS_SeqIO.FastASeq"]
         assert type(value).__name__ in recognisedTypes, \
-            "Query value type not handled by Exonerate class"
-        self._query = value
+            "Query value type not handled by GMAP class"
+        
+        # Derive an existing file string, or non-existing file FASTA
+        tmpQuery = _get_fasta_string_or_FASTA_object(value)
+        
+        # If it's an existing file string, store it as-is and mark it as non-temporary
+        if isinstance(tmpQuery, str): # if this is True, os.path.isfile(tmpQuery) is implicitly also True
+            self._query = tmpQuery
+            self._queryFile = value
+            self._queryIsTemporary = False
+        
+        # Otherwise, store the FASTA object, create a file for it, and mark it as temporary
+        else:
+            self._query = tmpQuery 
+            self._queryFile, self._queryIsTemporary = _create_file_from_FASTA_object(tmpQuery, useExistingFile=True)
     
     @property
     def target(self):
@@ -1008,8 +1114,40 @@ class GMAP:
     def target(self, value):
         recognisedTypes = ["str", "FASTA", "ZS_SeqIO.FASTA", "FastASeq", "ZS_SeqIO.FastASeq"]
         assert type(value).__name__ in recognisedTypes, \
-            "Target value type not handled by Exonerate class"
-        self._target = value
+            "Query value type not handled by GMAP class"
+        
+        # Derive an existing file string, or non-existing file FASTA
+        tmpTarget = _get_fasta_string_or_FASTA_object(value)
+        
+        # If it's an existing file string, store it as-is and mark it as non-temporary
+        if isinstance(tmpTarget, str): # if this is True, os.path.isfile(tmpTarget) is implicitly also True
+            self._target = tmpTarget
+            self._targetFile = value
+            self._targetIsTemporary = False
+        
+        # Otherwise, store the FASTA object, create a file for it, and mark it as temporary
+        else:
+            self._target = tmpTarget 
+            self._targetFile, self._targetIsTemporary = _create_file_from_FASTA_object(tmpTarget, useExistingFile=True)
+    
+    @property
+    def queryFile(self):
+        return self._queryFile
+    
+    @property
+    def targetFile(self):
+        return self._targetFile
+    
+    @property
+    def dbWasCreated(self):
+        return self._dbWasCreated
+    
+    @dbWasCreated.setter
+    def dbWasCreated(self, value):
+        assert isinstance(value, bool), \
+            "dbWasCreated value must be a boolean"
+        
+        self._dbWasCreated = value
     
     @property
     def npaths(self):
@@ -1078,26 +1216,39 @@ class GMAP:
     
     @property
     def targetDB(self):
-        if not isinstance(self.target, str) or not os.path.isfile(self.target):
-            tmpHash = _get_hash_for_query_or_target(self.target, randomHash=False)
-            targetFile = _get_filename_for_query_or_target(tmpHash, "fasta")
-        else:
-            targetFile = self.target
-        
-        return f"{targetFile}.gmap"
+        return f"{self.targetFile}.gmap"
     
-    def _format_build_cmd(self, targetFile):
+    def clean(self, query=False, target=False, db=False):
+        '''
+        This Class creates several temporary files. Call this method when you're done
+        using it to remove the left over junk.
+        
+        Parameters:
+            query -- a boolean indicating whether the query file should be cleaned up
+                     (if applicable); if the query file was not made by this script,
+                     it will NOT be removed
+            target -- a boolean indicating whether the target file should be cleaned up
+                      (if applicable); if the target file was not made by this script,
+                      it will NOT be removed
+            db -- a boolean indicating whether the gmap_build directory should be cleaned up
+                  (if applicable); if this directory was not made by this script,
+                  it will NOT be removed
+        '''
+        if query is True and self._queryIsTemporary is True:
+            os.unlink(self._queryFile)
+        
+        if target is True and self._targetIsTemporary is True:
+            os.unlink(self._targetFile)
+        
+        if db is True and self.dbWasCreated is True:
+            shutil.rmtree(self.targetDB)
+    
+    def _format_build_cmd(self):
         '''
         Hidden helper function for getting a list amenable to subprocess.run()
         that sets all relevant cmd tags depending on this object's properties in
         order to run gmap_build and index a target FASTA file.
         
-        It expects that the target file has already been subjected to
-        ._get_file_for_query_or_target(), and its return value is being
-        given to this function.
-        
-        Parameters:
-            targetFile -- a string pointing to a FASTA file that exists
         Returns:
             cmds -- a list amenable to subprocess.run()
         '''
@@ -1106,12 +1257,15 @@ class GMAP:
             cmds += ["wsl", "~", "-e"]
         
         cmds += [
-            Path(self.gmapDir, "gmap_build").as_posix(), "-D",
-            convert_windows_to_wsl_path(os.path.dirname(targetFile)) \
-                if platform.system() == "Windows" else os.path.dirname(targetFile),
-            "-d", f"{os.path.basename(targetFile)}.gmap",
-            convert_windows_to_wsl_path(targetFile) if platform.system() == "Windows" \
-                else targetFile
+            Path(self.gmapDir, "gmap_build").as_posix(),
+            
+            "-D", convert_windows_to_wsl_path(os.path.abspath(os.path.dirname(self.targetFile))) \
+                if platform.system() == "Windows" else os.path.dirname(self.targetFile),
+            
+            "-d", f"{os.path.basename(self.targetDB)}",
+            
+            convert_windows_to_wsl_path(os.path.abspath(self.targetFile)) if platform.system() == "Windows" \
+                else self.targetFile
         ]
         
         return cmds
@@ -1132,15 +1286,13 @@ class GMAP:
         Makes a GMAP database out of the .target value. Skips doing so if the output
         folder already exists
         '''
+        # Check if calling this function is necessary
         if self._target_build_exists():
             print("gmap_build results already exist")
             return
         
-        # Get file name for target after data type coercion
-        t, tIsTemporary = _get_file_for_query_or_target(self.target, randomHash=False)
-        
         # Run GMAP build
-        cmds = self._format_build_cmd(t)
+        cmds = self._format_build_cmd()
         gmapBuild = subprocess.run(cmds, capture_output=True)
         
         # Validate that build was successful
@@ -1148,25 +1300,15 @@ class GMAP:
         assert stderr.rstrip("\n").split("\n")[-1] == "Done", \
             f"Unexpected error occuring during gmap_build run; stderr == {stderr}"
         
-        # Clean up
-        if tIsTemporary:
-            os.unlink(t)
+        # Set flag so we can clean up at the end if necessary
+        self.dbWasCreated = True
     
-    def _format_search_cmd(self, queryFile, targetFile):
+    def _format_search_cmd(self):
         '''
         Hidden helper function for getting a list amenable to subprocess.run()
         that sets all relevant cmd tags depending on this object's properties in
         order to run GMAP and get GFF3 formatted results.
         
-        It expects that the target file has already been subjected to
-        ._get_file_for_query_or_target(), and its return value is being
-        given to this function.
-        
-        Parameters:
-            queryFile -- a string pointing to a FASTA file that exists
-            targetFile -- a string pointing to a FASTA file that exists
-            resultsFileName -- a string pointing to a non-existing file that
-                               will be created by GMAP.
         Returns:
             cmds -- a list amenable to subprocess.run() that will perform a GMAP search
         '''
@@ -1175,15 +1317,24 @@ class GMAP:
             cmds += ["wsl", "~", "-e"]
         
         cmds += [
-            Path(self.gmapDir, "gmap").as_posix(), "-D",
-            convert_windows_to_wsl_path(os.path.dirname(self.targetDB)) \
-                if platform.system() == "Windows" else os.path.dirname(self.targetDB),
-            "-d", f"{os.path.basename(targetFile)}.gmap",
-            "-f", "2", "-n", str(self.npaths), "-t", str(self.nthreads), "-B", str(self.batch),
+            Path(self.gmapDir, "gmap").as_posix(),
+            
+            "-D", convert_windows_to_wsl_path(os.path.dirname(os.path.abspath(self.targetDB))) \
+                if platform.system() == "Windows" else os.path.dirname(os.path.abspath(self.targetDB)),
+            
+            "-d", f"{os.path.basename(self.targetDB)}",
+            
+            "-f", "2",
+            "-n", str(self.npaths),
+            "-t", str(self.nthreads),
+            "-B", str(self.batch),
+            
             f"--max-intronlength-middle={self.max_intronlength_middle}",
+            
             f"--max-intronlength-ends={self.max_intronlength_ends}",
-            convert_windows_to_wsl_path(os.path.abspath(queryFile)) if platform.system() == "Windows" \
-                else os.path.abspath(queryFile)
+            
+            convert_windows_to_wsl_path(os.path.abspath(self.queryFile)) if platform.system() == "Windows" \
+                else os.path.abspath(self.queryFile)
         ]
         
         return cmds
@@ -1199,20 +1350,16 @@ class GMAP:
             blastResultFile -- a string indicating the file name of the results file. If self.clean is True,
                                this will instead return None.
         '''
-        # Get file names for query and target after data type coercion
-        q, qIsTemporary = _get_file_for_query_or_target(self.query)
-        t, tIsTemporary = _get_file_for_query_or_target(self.target)
-        
         # Make sure target file is ready for GMAP
         if not self._target_build_exists():
             self.gmap_build()
         
         # Get temporary results file name
-        tmpHash = _get_hash_for_query_or_target(q + t, randomHash=True)
-        tmpResultsName = _get_filename_for_query_or_target(tmpHash, "gff3")
+        tmpHash = _get_hash_for_query_or_target(self._queryFile + self._targetFile, randomHash=True, maxLength=20)
+        tmpResultsName = _tmp_file_name_gen(f"alignIO_tmp_" + tmpHash, "gff3")
         
         # Get cmds and run
-        cmds = self._format_search_cmd(q, t)
+        cmds = self._format_search_cmd()
         with open(tmpResultsName, "w") as fileOut:
             gmap = subprocess.run(cmds, stderr=subprocess.PIPE, stdout=fileOut)
         
@@ -1223,10 +1370,6 @@ class GMAP:
         
         # Parse result & clean up
         gmapGFF3 = GFF3(tmpResultsName)
-        if qIsTemporary:
-            os.unlink(q)
-        if tIsTemporary:
-            os.unlink(t)
         os.unlink(tmpResultsName)
         
         return gmapGFF3
