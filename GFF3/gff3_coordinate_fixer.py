@@ -115,7 +115,7 @@ def find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProte
         )
         gff3ProtSequence, _, _ = gff3_FastASeq_obj.get_translation(
             findBestFrame=False,
-            strand=1 if feature.strand == "+" else -1,
+            strand=1,
             frame=int(feature.frame) if feature.frame.isdigit() else 0
         )
         
@@ -156,8 +156,8 @@ def fix_features_with_exonerate_and_gmap(problemIDs, exonerateResultsDict, GFF3_
         gmapRunner -- OPTIONAL; a ZS_AlignIO.GMAP object set with a dummy query file
                       and the appropriate genome FASTA set as the target.
     Returns:
-        fixedIDs -- a list containing ID values corresponding to sequences that we've
-                    fixed by enacting this function.
+        problemIDs -- a list containing ID values corresponding to
+                      sequences that we couldn't fix
     '''
     LENGTH_PCT_DIFF_ALLOWANCE = 0.10
     SIMILARITY_MINUMUM_ALLOWANCE = 90.0
@@ -166,7 +166,7 @@ def fix_features_with_exonerate_and_gmap(problemIDs, exonerateResultsDict, GFF3_
         assert transcriptFASTA_obj != None and gmapRunner != None, \
             "fix_features_with_exonerate_and_gmap needs both transcriptFASTA_obj AND gmapRunner; providing only one doesn't work"
     
-    fixedIDs = []
+    problemIDs = []
     for problemSeqID in problemIDs:
         cdsFastASeq_obj = cdsFASTA_obj[problemSeqID]
         feature = GFF3_obj[problemSeqID]
@@ -251,11 +251,11 @@ def fix_features_with_exonerate_and_gmap(problemIDs, exonerateResultsDict, GFF3_
         
         # Save the best result if there's any!
         if bestResults == []:
+            problemIDs.append(problemSeqID)
             continue
         else:
             GFF3_obj[problemSeqID] = bestResults[0][0]
-            fixedIDs.append(problemSeqID)
-    return fixedIDs
+    return problemIDs
 
 def feature_cds_extension_maximal(mrnaFeature, mrnaFeature_FastASeq_obj, genomeFASTA_obj, MAX_EXTENSION=30):
     '''
@@ -749,8 +749,6 @@ def main():
         os.path.dirname(args.outputFileName),
         f"exonerate_results_{argsHash}.pkl"
     )
-    ## TESTING
-    exoneratePickleFile = r"F:\plant_group\plant_haplotypes\gff3_fixing\exonerate_results_6ae9da5c61f393af7558.pkl"
     
     # Parse GFF3
     GFF3_obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False) # non-strict parsing
@@ -764,24 +762,21 @@ def main():
     # Find the problem sequence IDs
     problemIDs, fixesDict = find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
     
+    # Enact fixes to sequence frames identified by find_nonequivalent_features()
+    for featureID, strand_frame_pair in fixesDict.items():
+        strand, frame = strand_frame_pair
+        GFF3_obj[featureID].strand = "+" if strand == 1 else "-"
+    
     # Try to fix genes by sliding existing models up/down their contig
     problemIDs = fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
     
     # Try to fix genes by checking if their contig is misannotated
     problemIDs = fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
     
-    ### TESTING ###
-    # with open("test_problemIDs.pkl", "wb") as fileOut:
-    #     pickle.dump([problemIDs, fixesDict], fileOut)
-    with open("test_problemIDs.pkl", "rb") as fileIn:
-        problemIDs, fixesDict = pickle.load(fileIn)
-    ### END TESTING ###
-    
     # Get exonerate results to help with fixing any remaining IDs
     if args.resume is False or not os.path.isfile(exoneratePickleFile):
         # Get a FASTA file for the sequences we need to search against the genome
         problem_FASTA_obj = ZS_SeqIO.FASTA(None)
-        problemIDs = problemIDs[0:5] ## TESTING
         for seqID in problemIDs:
             problem_FASTA_obj.add(cdsFASTA_obj[seqID])
         
@@ -817,14 +812,12 @@ def main():
     )
     
     # Attempt to fix remaining genes via exonerate/GMAP search
-    fixedIDs = fix_features_with_exonerate_and_gmap(problemIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein, transcriptFASTA_obj, gmapRunner)
+    problemIDs = fix_features_with_exonerate_and_gmap(problemIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein, transcriptFASTA_obj, gmapRunner)
     
-    # Handle simple fixes
-    ## Use fixesDict 
-    
-    # mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(GFF3_obj[geneID])
-    # cds_FastASeq_obj, cds_featureType, cds_startingFrame = GFF3_obj.retrieve_sequence_from_FASTA(genomeFASTA_obj, mrnaFeature.ID, "CDS")
-    
+    # Report the results of this program
+    ## Report genes fixed by sliding
+    ## Report genes fixed by contig checking
+    ## Report remaining, unfixed genes
     
     print("Program completed successfully!")
 
