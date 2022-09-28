@@ -540,8 +540,9 @@ def fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, is
                 genomeFASTA_obj, leftSlideFeature, "CDS"
             )
             leftSlideProtSequence, _, _ = leftSlide_FastASeq_obj.get_translation(
-                findBestFrame=True,
-                strand=1
+                findBestFrame=False,
+                strand=1,
+                frame=0
             )
             
             # If we got a hit, store it and move on
@@ -565,8 +566,9 @@ def fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, is
                 genomeFASTA_obj, rightSlideFeature, "CDS"
             )
             rightSlideProtSequence, _, _ = rightSlide_FastASeq_obj.get_translation(
-                findBestFrame=True,
-                strand=1
+                findBestFrame=False,
+                strand=1,
+                frame=0
             )
             
             # If we got a hit, fix the original sequence and move on
