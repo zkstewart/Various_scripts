@@ -156,8 +156,11 @@ def fix_features_with_exonerate_and_gmap(problemIDs, exonerateResultsDict, GFF3_
         gmapRunner -- OPTIONAL; a ZS_AlignIO.GMAP object set with a dummy query file
                       and the appropriate genome FASTA set as the target.
     Returns:
-        problemIDs -- a list containing ID values corresponding to
-                      sequences that we couldn't fix
+        unfixedIDs -- a list indicating the sequences that we failed to fix using
+                      this function
+        fixedIDs -- a list indicating the sequences that we successfully fixed using
+                      this function
+        
     '''
     LENGTH_PCT_DIFF_ALLOWANCE = 0.10
     SIMILARITY_MINUMUM_ALLOWANCE = 90.0
@@ -166,7 +169,8 @@ def fix_features_with_exonerate_and_gmap(problemIDs, exonerateResultsDict, GFF3_
         assert transcriptFASTA_obj != None and gmapRunner != None, \
             "fix_features_with_exonerate_and_gmap needs both transcriptFASTA_obj AND gmapRunner; providing only one doesn't work"
     
-    problemIDs = []
+    unfixedIDs = []
+    fixedIDs = []
     for problemSeqID in problemIDs:
         cdsFastASeq_obj = cdsFASTA_obj[problemSeqID]
         feature = GFF3_obj[problemSeqID]
@@ -251,11 +255,12 @@ def fix_features_with_exonerate_and_gmap(problemIDs, exonerateResultsDict, GFF3_
         
         # Save the best result if there's any!
         if bestResults == []:
-            problemIDs.append(problemSeqID)
+            unfixedIDs.append(problemSeqID)
             continue
         else:
             GFF3_obj[problemSeqID] = bestResults[0][0]
-    return problemIDs
+            fixedIDs.append(problemSeqID)
+    return unfixedIDs, fixedIDs
 
 def feature_cds_extension_maximal(mrnaFeature, mrnaFeature_FastASeq_obj, genomeFASTA_obj, MAX_EXTENSION=30):
     '''
@@ -507,8 +512,11 @@ def fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, is
     Returns:
         unfixedIDs -- a list indicating the sequences that we failed to fix using
                       this function
+        fixedIDs -- a list indicating the sequences that we successfully fixed using
+                      this function
     '''
     unfixedIDs = []
+    fixedIDs = []
     for problemSeqID in problemIDs:
         cdsFastASeq_obj = cdsFASTA_obj[problemSeqID]
         feature = GFF3_obj[problemSeqID]
@@ -572,10 +580,11 @@ def fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, is
                     parentFeature.reset_child(rightSlideFeature)
                 break
         if foundFix is True:
+            fixedIDs.append(problemSeqID)
             continue
         
         unfixedIDs.append(problemSeqID)
-    return unfixedIDs
+    return unfixedIDs, fixedIDs
 
 def slide_feature(mrnaFeature, slideLength, direction):
     '''
@@ -633,8 +642,11 @@ def fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA
     Returns:
         unfixedIDs -- a list indicating the sequences that we failed to fix using
                       this function
+        fixedIDs -- a list indicating the sequences that we successfully fixed using
+                      this function
     '''
     unfixedIDs = []
+    fixedIDs = []
     for problemSeqID in problemIDs:
         cdsFastASeq_obj = cdsFASTA_obj[problemSeqID]
         feature = GFF3_obj[problemSeqID]
@@ -677,10 +689,11 @@ def fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA
                 break
         
         if foundFix is True:
+            fixedIDs.append(problemSeqID)
             continue
         
         unfixedIDs.append(problemSeqID)
-    return unfixedIDs
+    return unfixedIDs, fixedIDs
 
 def get_args_hash(args):
     '''
@@ -699,6 +712,42 @@ def get_args_hash(args):
         hashes.append(hashlib.sha256(bytes(str(key) + str(value), 'utf-8')).hexdigest())
     overallHash = hashlib.sha256(bytes("".join(hashes), 'utf-8')).hexdigest()
     return overallHash[0:20]
+
+def report_program_results(GFF3_obj, outputFileName, numOriginalProblems,
+                           numFixedByStrandChecking, numFixedBySliding,
+                           numFixedByContigChecking, numFixedByReannotation,
+                           problemIDs, isLastReport=False):
+    '''
+    Function to print out a formatted report detailing what this program has done.
+    It will automatically make the decision of whether the program is meant to continue
+    or not depending on how many problems remain.
+    '''
+    # Format report
+    report = [
+        f"Number of problem sequences identified = {numOriginalProblems}",
+        f"Number fixed by changing strand annotation = {numFixedByStrandChecking}",
+        f"Number fixed by sliding along their contig = {numFixedBySliding}",
+        f"Number fixed by moving to another contig = {numFixedByContigChecking}",
+        f"Number fixed by reannotation (GMAP/exonerate) = {numFixedByReannotation}",
+        f"Number of problem sequences remaining = {len(problemIDs)}"
+    ]
+    
+    # Handle no problem found scenario
+    if numOriginalProblems == 0 and numFixedByStrandChecking == 0:
+        print("No issues have been detected; program will exit now")
+        quit()
+    
+    # Handle all problems fixed scenario
+    if len(problemIDs) == 0:
+        GFF3_obj.write(outputFileName)
+        print("\n".join(report))
+        quit()
+    
+    # Handle isLastReport scenario
+    if isLastReport is True:
+        GFF3_obj.write(outputFileName)
+        print("\n".join(report))
+        print("Unfixed sequence IDs = {0}".format("\n".join(problemIDs)))
 
 def main():
     # User input
@@ -726,7 +775,7 @@ def main():
     p.add_argument("-e", dest="exonerateExe", required=True,
                 help="Specify the location of the exonerate executable file")
     # Opts
-    p.add_argument("--gmapDir", dest="gmapDir", required=True,
+    p.add_argument("--gmapDir", dest="gmapDir", required=False,
                 help="""Optionally, specify the location of the GMAP binary files
                 if you're going to provide a transcript FASTA file""")
     p.add_argument("--transcriptFastaFile", dest="transcriptFastaFile", required=False,
@@ -750,28 +799,51 @@ def main():
         f"exonerate_results_{argsHash}.pkl"
     )
     
+    # Set variables to keep track of program performance
+    numOriginalProblems = 0
+    numFixedByStrandChecking = 0
+    numFixedBySliding = 0
+    numFixedByContigChecking = 0
+    numFixedByReannotation = 0
+    
     # Parse GFF3
     GFF3_obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False) # non-strict parsing
     
     # Parse FASTA files
     genomeFASTA_obj = ZS_SeqIO.FASTA(args.genomeFastaFile)
     cdsFASTA_obj = ZS_SeqIO.FASTA(args.cdsFastaFile)
-    transcriptFASTA_obj = ZS_SeqIO.FASTA(args.transcriptFastaFile) \
-        if args.transcriptFastaFile != None else None
     
     # Find the problem sequence IDs
     problemIDs, fixesDict = find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
+    numOriginalProblems = len(problemIDs)
+    numFixedByStrandChecking = len(fixesDict)
     
-    # Enact fixes to sequence frames identified by find_nonequivalent_features()
+    # Enact fixes to sequence strands
     for featureID, strand_frame_pair in fixesDict.items():
         strand, frame = strand_frame_pair
         GFF3_obj[featureID].strand = "+" if strand == 1 else "-"
     
+    # If no problems existed, or no more exist after strand fixing, report that and exit program
+    report_program_results(GFF3_obj, args.outputFileName, numOriginalProblems,
+                           numFixedByStrandChecking, numFixedBySliding,
+                           numFixedByContigChecking, numFixedByReannotation,
+                           problemIDs, isLastReport=False)
+    
     # Try to fix genes by sliding existing models up/down their contig
-    problemIDs = fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
+    problemIDs, fixedIDs = fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
+    numFixedBySliding = len(fixedIDs)
+    report_program_results(GFF3_obj, args.outputFileName, numOriginalProblems,
+                           numFixedByStrandChecking, numFixedBySliding,
+                           numFixedByContigChecking, numFixedByReannotation,
+                           problemIDs, isLastReport=False)
     
     # Try to fix genes by checking if their contig is misannotated
-    problemIDs = fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
+    problemIDs, fixedIDs = fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
+    numFixedByContigChecking = len(fixedIDs)
+    report_program_results(GFF3_obj, args.outputFileName, numOriginalProblems,
+                           numFixedByStrandChecking, numFixedBySliding,
+                           numFixedByContigChecking, numFixedByReannotation,
+                           problemIDs, isLastReport=False)
     
     # Get exonerate results to help with fixing any remaining IDs
     if args.resume is False or not os.path.isfile(exoneratePickleFile):
@@ -812,15 +884,16 @@ def main():
     )
     
     # Attempt to fix remaining genes via exonerate/GMAP search
-    problemIDs = fix_features_with_exonerate_and_gmap(problemIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein, transcriptFASTA_obj, gmapRunner)
-    
-    # Report the results of this program
-    ## Report genes fixed by sliding
-    ## Report genes fixed by contig checking
-    ## Report remaining, unfixed genes
+    transcriptFASTA_obj = ZS_SeqIO.FASTA(args.transcriptFastaFile) \
+        if args.transcriptFastaFile != None else None
+    problemIDs, fixedIDs = fix_features_with_exonerate_and_gmap(problemIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein, transcriptFASTA_obj, gmapRunner)
+    numFixedByReannotation = len(fixedIDs)
+    report_program_results(GFF3_obj, args.outputFileName, numOriginalProblems,
+                           numFixedByStrandChecking, numFixedBySliding,
+                           numFixedByContigChecking, numFixedByReannotation,
+                           problemIDs, isLastReport=True)
     
     print("Program completed successfully!")
 
 if __name__ == "__main__":
-    pass
-    #main()
+    main()

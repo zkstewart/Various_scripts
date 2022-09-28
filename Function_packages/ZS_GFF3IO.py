@@ -122,6 +122,33 @@ class Feature:
             childList += child.retrieve_all_children()
         return childList
     
+    def format_as_gff3(self):
+        '''
+        This method will attempt to render a GFF3-correct format of the
+        data this object contains. Several assumptions are made which, if you
+        haven't done anything truly weird, will hold true.
+        '''
+        # Separate object attributes according to 1) expected GFF3 columns, and 2) anything else
+        gff3Attributes = ["contig", "source", "type", "start", "end", "score", "strand", "frame"]
+        for attribute in gff3Attributes:
+            assert attribute in self.__dict__, \
+                f"Feature lacks expected GFF3 value '{attribute}'; we can't format it appropriately"
+        
+        objectAttributes = ["children", "types", "isFeature", "coords"] # these come from the Feature class itself
+        detailAttributes = [attribute for attribute in self.__dict__ \
+            if attribute not in objectAttributes and attribute not in gff3Attributes and attribute not in self.types]
+        detailAttributes.sort(key = lambda x: (0 if x.lower() == "id" else 2, 1 if x.lower() == "parent" else 2)) # always bring ID and Parent to front
+        
+        # Format a string and return
+        gff3Line = "\t".join([str(self.__dict__[attribute]) for attribute in gff3Attributes])
+        gff3Line += "\t{0}".format(
+            ";".join(
+                ["{0}={1}".format(attribute, str(self.__dict__[attribute])) for attribute in detailAttributes]
+            )
+        )
+        
+        return gff3Line
+    
     def __getitem__(self, key):
         return self.retrieve_child(key)
     
@@ -739,6 +766,40 @@ class GFF3:
         # Create FastASeq object to represent this sequence
         FastASeq_obj = FastASeq(id=featureID, seq=sequence)
         return FastASeq_obj, featureType, startingFrame
+    
+    @staticmethod
+    def _recursively_write_feature_details(feature, fileHandle):
+        '''
+        Hidden helper to use recursion for writing GFF3 features to file
+        '''
+        # Write parent details
+        fileHandle.write(feature.format_as_gff3() + "\n")
+        
+        # Iteratively write children details
+        for childFeature in sorted(feature.children, key = lambda x: x.start):
+            GFF3._recursively_write_feature_details(childFeature, fileHandle)
+    
+    def write(self, outputFileName, force=False):
+        '''
+        Writes the GFF3 object out to file at the location provided. Formatting will be done
+        in a strictly correct GFF3 style. However, it will be done in unconventional manner
+        wherein parent types will be ordered first, before contig order and positional order.
+        
+        Params:
+            outputFileName -- a string indicating the file location to write to. This file
+                              must not exist or an error will be raised (unless Force==True)
+            force -- a boolean indicating whether any existing file should be overwritten (True)
+                     or if an error should be raised instead (False)
+        '''
+        if not isinstance(outputFileName, str):
+            raise TypeError("GFF3 can only be written to a string file path; provided outputFileName type unrecognised")
+        if os.path.isfile(outputFileName) and force is False:
+            raise FileExistsError(f"GFF3 can't be written to '{outputFileName}' since it already exists and force is False")
+        
+        with open(outputFileName, "w") as fileOut:
+            for parentType in self.parentTypes:
+                for feature in sorted(self.types[parentType], key = lambda x: (x.contig, x.start)):
+                    GFF3._recursively_write_feature_details(feature, fileOut)
     
     def __getitem__(self, key):
         return self.features[key]
