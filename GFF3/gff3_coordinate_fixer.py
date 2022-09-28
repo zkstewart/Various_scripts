@@ -690,6 +690,7 @@ def fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA
         
         # Make a copy of the feature and begin scrolling through all available contigs for a good hit
         feature = deepcopy(feature)
+        foundFix = False
         for contig in genomeFASTA_obj.ids:
             if len(genomeFASTA_obj[contig].seq) < feature.end:
                 continue
