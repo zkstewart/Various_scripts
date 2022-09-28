@@ -555,6 +555,7 @@ def fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, is
                     parentFeature.reset_child(leftSlideFeature)
                 break
         if foundFix is True:
+            fixedIDs.append(problemSeqID)
             continue
         
         # Slide the gene right
@@ -741,6 +742,7 @@ def report_program_results(GFF3_obj, outputFileName, numOriginalProblems,
     if len(problemIDs) == 0:
         GFF3_obj.write(outputFileName)
         print("\n".join(report))
+        print("Program exited successfully after finding no more problems to fix!")
         quit()
     
     # Handle isLastReport scenario
