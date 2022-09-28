@@ -547,12 +547,11 @@ def fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, is
             # If we got a hit, store it and move on
             if leftSlideProtSequence.rstrip("*") == cdsProtSequence:
                 foundFix = True
-                GFF3_obj[problemSeqID] = leftSlideFeature
+                slide_feature(GFF3_obj[problemSeqID], i+1, "left")
                 
                 # Reset the parent gene feature with the new mRNA feature (if applicable)
                 if hasattr(leftSlideFeature, "Parent"): # this means we are handling a mRNA feature
-                    parentFeature = GFF3_obj[leftSlideFeature.Parent]
-                    parentFeature.reset_child(leftSlideFeature)
+                    slide_feature(GFF3_obj[rightSlideFeature.Parent], i+1, "left")
                 break
         if foundFix is True:
             fixedIDs.append(problemSeqID)
@@ -570,15 +569,14 @@ def fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, is
                 strand=1
             )
             
-            # If we got a hit, store it and move on
+            # If we got a hit, fix the original sequence and move on
             if rightSlideProtSequence.rstrip("*") == cdsProtSequence:
                 foundFix = True
-                GFF3_obj[problemSeqID] = rightSlideFeature
+                slide_feature(GFF3_obj[problemSeqID], i+1, "right")
                 
                 # Reset the parent gene feature with the new mRNA feature (if applicable)
                 if hasattr(rightSlideFeature, "Parent"):
-                    parentFeature = GFF3_obj[rightSlideFeature.Parent]
-                    parentFeature.reset_child(rightSlideFeature)
+                    slide_feature(GFF3_obj[rightSlideFeature.Parent], i+1, "right")
                 break
         if foundFix is True:
             fixedIDs.append(problemSeqID)
@@ -604,8 +602,8 @@ def slide_feature(mrnaFeature, slideLength, direction):
         direction -- a string in the list of ["left", "right"] which will result
                      in us sliding the feature
     '''
-    assert hasattr(mrnaFeature, "CDS") and hasattr(mrnaFeature, "exon"), \
-        "slide_feature will only accept a feature with both CDS and exon attributes"
+    # assert hasattr(mrnaFeature, "CDS") and hasattr(mrnaFeature, "exon"), \
+    #     "slide_feature will only accept a feature with both CDS and exon attributes"
     assert isinstance(slideLength, int) and slideLength > 0, \
         "slideLength must be a positive integer"
     assert direction.lower() in ["left", "right"], \
@@ -623,16 +621,42 @@ def slide_feature(mrnaFeature, slideLength, direction):
     
     if direction.lower() == "left":
         _slide_it_left(mrnaFeature, slideLength)
-        for cdsFeature in mrnaFeature.CDS:
-            _slide_it_left(cdsFeature, slideLength)
-        for exonFeature in mrnaFeature.exon:
-            _slide_it_left(exonFeature, slideLength)
+        try:
+            for cdsFeature in mrnaFeature.CDS:
+                _slide_it_left(cdsFeature, slideLength)
+        except:
+            pass # we mustn't have .CDS features
+        try:
+            for exonFeature in mrnaFeature.exon:
+                _slide_it_left(exonFeature, slideLength)
+        except:
+            pass # we mustn't have .exon features
     else:
         _slide_it_right(mrnaFeature, slideLength)
-        for cdsFeature in mrnaFeature.CDS:
-            _slide_it_right(cdsFeature, slideLength)
-        for exonFeature in mrnaFeature.exon:
-            _slide_it_right(exonFeature, slideLength)
+        try:
+            for cdsFeature in mrnaFeature.CDS:
+                _slide_it_right(cdsFeature, slideLength)
+        except:
+            pass
+        try:
+            for exonFeature in mrnaFeature.exon:
+                _slide_it_right(exonFeature, slideLength)
+        except:
+            pass
+
+def feature_contig_update(feature, contig):
+    '''
+    Simply put, will update the contig attribute for all subfeatures.
+    
+    Parameters:
+        mrnaFeature -- a ZS_GFF3IO.Feature object indicating an mRNA feature or,
+                       just any feature with both CDS and exon subfeatures
+        contig -- a string indicating what value should be set for .contig in this
+                  and all children features
+    '''
+    feature.contig = contig
+    for childFeature in feature.children:
+        feature_contig_update(childFeature, contig)
 
 def fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProtein=False, slideLength=500):
     '''
@@ -678,15 +702,14 @@ def fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA
                 strand=1
             )
             
-            # If we got a hit, store it and move on
+            # If we got a hit, update the original feature and move on
             if featureProtSequence.rstrip("*") == cdsProtSequence:
                 foundFix = True
-                GFF3_obj[problemSeqID] = feature
+                feature_contig_update(GFF3_obj[problemSeqID], contig)
                 
                 # Reset the parent gene feature with the new mRNA feature (if applicable)
                 if hasattr(feature, "Parent"): # this means we are handling a mRNA feature
-                    parentFeature = GFF3_obj[feature.Parent]
-                    parentFeature.reset_child(feature)
+                    feature_contig_update(GFF3_obj[feature.Parent], contig)
                 break
         
         if foundFix is True:
