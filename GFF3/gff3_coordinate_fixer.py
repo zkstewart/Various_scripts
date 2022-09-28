@@ -734,40 +734,60 @@ def get_args_hash(args):
         argsHash -- a sha256 hash of the args which will always be identical when
                     the args parameters are the same.
     '''
+    ARGS_TO_IGNORE = ["reportToFile", "outputFileName", "resume"] # these don't change the operation of the program
     hashes = []
     for key, value in args.__dict__.items():
+        if key in ARGS_TO_IGNORE:
+            continue
         hashes.append(hashlib.sha256(bytes(str(key) + str(value), 'utf-8')).hexdigest())
     overallHash = hashlib.sha256(bytes("".join(hashes), 'utf-8')).hexdigest()
     return overallHash[0:20]
 
-def report_program_results(GFF3_obj, outputFileName, numOriginalProblems,
+def report_program_results(GFF3_obj, outputFileName, originalProblems,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
-                           problemIDs, isLastReport=False):
+                           problemIDs, isLastReport=False, reportToFile=False):
     '''
     Function to print out a formatted report detailing what this program has done.
     It will automatically make the decision of whether the program is meant to continue
     or not depending on how many problems remain.
     '''
+    # Get report file name if necessary
+    if reportToFile is True:
+        reportFileName = ZS_AlignIO._tmp_file_name_gen("gff3_fixer_report", "txt")
+    
     # Format report
     report = [
-        f"Number of problem sequences identified = {numOriginalProblems}",
+        f"GFF3 being fixed = {GFF3_obj.fileLocation}",
+        f"Number of problem sequences identified = {len(originalProblems)}",
         f"Number fixed by changing strand annotation = {numFixedByStrandChecking}",
         f"Number fixed by sliding along their contig = {numFixedBySliding}",
         f"Number fixed by moving to another contig = {numFixedByContigChecking}",
         f"Number fixed by reannotation (GMAP/exonerate) = {numFixedByReannotation}",
-        f"Number of problem sequences remaining = {len(problemIDs)}"
+        f"Number of problem sequences remaining = {len(problemIDs)}",
+        "#####",
+        "Original problem sequence IDs = {0}".format("\n".join(originalProblems))
     ]
+    if len(problemIDs) != 0:
+        report.append("#####")
+        report.append("Unfixed sequence IDs = {0}".format("\n".join(problemIDs)))
     
     # Handle no problem found scenario
-    if numOriginalProblems == 0 and numFixedByStrandChecking == 0:
+    if len(originalProblems) == 0 and numFixedByStrandChecking == 0:
         print("No issues have been detected; program will exit now")
+        if reportToFile is True:
+            with open(reportFileName, "w") as fileOut:
+                fileOut.write("\n".join(report))
         quit()
     
     # Handle all problems fixed scenario
     if len(problemIDs) == 0:
         GFF3_obj.write(outputFileName)
         print("\n".join(report))
+        if reportToFile is True:
+            with open(reportFileName, "w") as fileOut:
+                fileOut.write("\n".join(report))
+        
         print("Program exited successfully after finding no more problems to fix!")
         quit()
     
@@ -775,7 +795,9 @@ def report_program_results(GFF3_obj, outputFileName, numOriginalProblems,
     if isLastReport is True:
         GFF3_obj.write(outputFileName)
         print("\n".join(report))
-        print("Unfixed sequence IDs = {0}".format("\n".join(problemIDs)))
+        if reportToFile is True:
+            with open(reportFileName, "w") as fileOut:
+                fileOut.write("\n".join(report))
 
 def main():
     # User input
@@ -816,6 +838,10 @@ def main():
                 help="""Optionally provide this tag to save a pickle of the exonerate
                 results which can be resumed from""",
                 default=False)
+    p.add_argument("--reportToFile", dest="reportToFile", required=False, action="store_true",
+                help="""Optionally provide this tag to write reporting information to file
+                rather than printing to terminal""",
+                default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -828,7 +854,6 @@ def main():
     )
     
     # Set variables to keep track of program performance
-    numOriginalProblems = 0
     numFixedByStrandChecking = 0
     numFixedBySliding = 0
     numFixedByContigChecking = 0
@@ -843,7 +868,7 @@ def main():
     
     # Find the problem sequence IDs
     problemIDs, fixesDict = find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
-    numOriginalProblems = len(problemIDs)
+    originalProblems = problemIDs
     numFixedByStrandChecking = len(fixesDict)
     
     # Enact fixes to sequence strands
@@ -852,26 +877,26 @@ def main():
         GFF3_obj[featureID].strand = "+" if strand == 1 else "-"
     
     # If no problems existed, or no more exist after strand fixing, report that and exit program
-    report_program_results(GFF3_obj, args.outputFileName, numOriginalProblems,
+    report_program_results(GFF3_obj, args.outputFileName, originalProblems,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
-                           problemIDs, isLastReport=False)
+                           problemIDs, isLastReport=False, reportToFile=args.reportToFile)
     
     # Try to fix genes by sliding existing models up/down their contig
     problemIDs, fixedIDs = fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
     numFixedBySliding = len(fixedIDs)
-    report_program_results(GFF3_obj, args.outputFileName, numOriginalProblems,
+    report_program_results(GFF3_obj, args.outputFileName, originalProblems,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
-                           problemIDs, isLastReport=False)
+                           problemIDs, isLastReport=False, reportToFile=args.reportToFile)
     
     # Try to fix genes by checking if their contig is misannotated
     problemIDs, fixedIDs = fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
     numFixedByContigChecking = len(fixedIDs)
-    report_program_results(GFF3_obj, args.outputFileName, numOriginalProblems,
+    report_program_results(GFF3_obj, args.outputFileName, originalProblems,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
-                           problemIDs, isLastReport=False)
+                           problemIDs, isLastReport=False, reportToFile=args.reportToFile)
     
     # Get exonerate results to help with fixing any remaining IDs
     if args.resume is False or not os.path.isfile(exoneratePickleFile):
@@ -916,10 +941,10 @@ def main():
         if args.transcriptFastaFile != None else None
     problemIDs, fixedIDs = fix_features_with_exonerate_and_gmap(problemIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein, transcriptFASTA_obj, gmapRunner)
     numFixedByReannotation = len(fixedIDs)
-    report_program_results(GFF3_obj, args.outputFileName, numOriginalProblems,
+    report_program_results(GFF3_obj, args.outputFileName, originalProblems,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
-                           problemIDs, isLastReport=True)
+                           problemIDs, isLastReport=True, reportToFile=args.reportToFile)
     
     print("Program completed successfully!")
 
