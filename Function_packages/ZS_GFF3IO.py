@@ -206,20 +206,26 @@ class Feature:
         if not isinstance(newID, str):
             raise ValueError("newID should be a string")
         
-        if GFF3_obj != None:
-            if self.ID in GFF3_obj:
-                del GFF3_obj[self.ID]
+        thisFeatureOrigID = self.ID
+        for attributeKey, attributeValue in self.__dict__.items():
+            if isinstance(attributeValue, str):
+                self.__dict__[attributeKey] = attributeValue.replace(origID, newID)
+        # self.ID = self.ID.replace(origID, newID)
         
-        self.ID = self.ID.replace(origID, newID)
-        
         if GFF3_obj != None:
-            GFF3_obj[self.ID] = self
+            if thisFeatureOrigID in GFF3_obj:
+                GFF3_obj.features.pop(thisFeatureOrigID)
+                GFF3_obj[self.ID] = self
         
         # Update children recursively
-        for childFeature in self.children():
+        for childFeature in self.children:
             childOrigID = childFeature.Parent
             childFeature.Parent = self.ID
-            childFeature.update_id(childOrigID, self.ID, GFF3_obj)
+            if childFeature.type.upper() == "CDS":
+                "CDS features are annoying and this is how we'll handle them; they're always childless"
+                childFeature.ID = f"{newID}.cds"
+            else:
+                childFeature.update_id(childOrigID, self.ID, GFF3_obj)
     
     def __getitem__(self, key):
         return self.retrieve_child(key)
