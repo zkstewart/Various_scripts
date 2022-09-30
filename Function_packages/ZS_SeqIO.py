@@ -261,7 +261,7 @@ class FastASeq:
         protein = ""
         for i in range(0, len(dnaString), 3):
             codon = dnaString[i:i+3]
-            if len(codon) < 2 and codon.upper() not in FastASeq.TRANSLATION_TABLE:
+            if len(codon) < 2 or (len(codon) == 2 and codon.upper() not in FastASeq.TRANSLATION_TABLE):
                 continue
             protein += FastASeq.TRANSLATION_TABLE[codon.upper()] if codon.upper() in FastASeq.TRANSLATION_TABLE else "X"
         return protein
