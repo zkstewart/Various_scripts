@@ -50,7 +50,12 @@ class FastASeq:
         'TCM':'S', 'TCR':'S', 'TCW':'S', 'TCS':'S', 'TCY':'S', 'TCK':'S', 'TCV':'S', 'TCH':'S', 'TCD':'S', 'TCB':'S', 
         'TTY':'F', 'TTR':'L',
         'TAY':'Y', 'TAR':'*',
-        'TGY':'C', 
+        'TGY':'C',
+        # Incomplete codon handling
+        'AC':'T',
+        'CT':'L', 'CC':'P', 'CG':'R',
+        'GT':'V', 'GC':'A', 'GG': 'G',
+        'TC':'S'
     }
     
     def __init__(self, id, seq=None, alt=None, gapSeq=None):
@@ -257,7 +262,7 @@ class FastASeq:
         protein = ""
         for i in range(0, len(dnaString), 3):
             codon = dnaString[i:i+3]
-            if len(codon) < 3:
+            if len(codon) < 2 or codon.upper() not in self.TRANSLATION_TABLE:
                 continue
             protein += self.TRANSLATION_TABLE[codon.upper()] if codon.upper() in self.TRANSLATION_TABLE else "X"
         return protein
