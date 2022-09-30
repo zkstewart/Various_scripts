@@ -71,6 +71,39 @@ class Feature:
         except:
             pass
     
+    def del_child(self, childFeatureID, childFeatureType):
+        '''
+        This method is intended to delete child Features from this Feature.
+        In the process of deleting the child feature, it will clean up
+        fields as necessary if they become empty.
+        
+        It will also make sure this feature's coordinate values make sense
+        after deletion of the child by calling .update_coordinates().
+        
+        Parameters:
+            childFeatureID -- the child features .ID attribute value
+        '''
+        # From .children
+        parentChildIndices = [i for i in range(len(self.children)) if self.children[i].ID == childFeatureID]
+        for index in reversed(parentChildIndices):
+            del self.children[index]
+        
+        # From .types
+        parentTypeIndices = [i for i in range(len(self.types[childFeatureType])) if self.types[childFeatureType][i].ID == childFeatureID]
+        for index in reversed(parentTypeIndices):
+            del self.types[childFeatureType][index]
+        if len(self.types[childFeatureType]) == 0: # if this .type[key] is now empty
+            del self.types[childFeatureType]
+        
+        # From attributes associated with .types
+        parentAttributeIndices = [i for i in range(len(self.__dict__[childFeatureType])) if self.__dict__[childFeatureType][i].ID == childFeatureID]
+        for index in reversed(parentAttributeIndices):
+            del self.__dict__[childFeatureType][index]
+        if len(self.__dict__[childFeatureType]) == 0: # if this .key is now empty
+            delattr(self, childFeatureType)
+        
+        self.update_coordinates()
+    
     def retrieve_child(self, childID):
         '''
         Parameters:
@@ -87,33 +120,6 @@ class Feature:
             except:
                 pass
         return None
-    
-    def reset_child(self, childFeature):
-        '''
-        Rather than adding a child, this method will reset this Feature
-        object's state such that the provided child Feature will be the
-        ONLY feature it contains.
-        
-        This may be helpful when dealing with single child parents
-        (so brave...). Specifically, a gene feature where the mRNA
-        Feature has been changed.
-        
-        Parameters:
-            childFeature -- should be a Feature object, but any object
-                            will be accepted.
-        '''
-        self.children = []
-        self.types = {}
-        
-        self.children.append(childFeature)
-        try:
-            self.__dict__.setdefault(childFeature.type, [])
-            self.__dict__[childFeature.type].append(childFeature)
-            
-            self.types.setdefault(childFeature.type, [])
-            self.types[childFeature.type].append(childFeature)
-        except:
-            pass
     
     def retrieve_all_children(self):
         childList = []
@@ -148,6 +154,72 @@ class Feature:
         )
         
         return gff3Line
+    
+    def update_coordinates(self):
+        '''
+        This method assumes that this Feature object is being used in a typical fashion
+        for GFF3 feature storage. This means it will have .coord, .start, and .end attributes.
+        
+        If the children of this object have been changed, the coordinates of this parent might
+        also need to change. For example, a gene feature's start and end values are contigent upon
+        the earliest start and latest end of all its children values.
+        
+        Hence, this methods's goal is to make sure this feature's coordinates properly reflect
+        the children that it contains, if any.
+        '''
+        earliestStart = None
+        latestEnd = None
+        
+        for childFeature in self.children:
+            if earliestStart == None or childFeature.start < earliestStart:
+                earliestStart = childFeature.start
+            if latestEnd == None or childFeature.end > latestEnd:
+                latestEnd = childFeature.end
+        
+        if earliestStart != None:
+            self.start = earliestStart
+            self.coords[0] = earliestStart
+        if latestEnd != None:
+            self.end = latestEnd
+            self.coords[1] = latestEnd
+    
+    def update_id(self, origID, newID, GFF3_obj=None):
+        '''
+        This method assumes that this Feature object is being used in a typical fashion
+        for GFF3 feature storage. This means it will have a .ID value, and its immediate
+        children will have .Parent values of the same value.
+        
+        This method's goal is to update a Feature's .ID value such that its children
+        reflect this change. It will try to do it in a GFF3-aware style, which means that
+        a string replacement will occur recursively on children to rename all .ID values
+        e.g., in the case of features with an .ID value like ${.Parent}.exon2.
+        
+        Parameters:
+            origID -- a string value indicating the original part of the ID to change
+                      to be newID
+            newID -- a string value to be used for replacing the origID part of the
+                     this and any children Feature's .ID and .Parent values.
+            GFF3_obj -- OPTIONAL; if you provide this, any references to the
+                        original ID will be deleted and this new ID will be indexed
+                        instead within the GFF3 object.
+        '''
+        if not isinstance(newID, str):
+            raise ValueError("newID should be a string")
+        
+        if GFF3_obj != None:
+            if self.ID in GFF3_obj:
+                del GFF3_obj[self.ID]
+        
+        self.ID = self.ID.replace(origID, newID)
+        
+        if GFF3_obj != None:
+            GFF3_obj[self.ID] = self
+        
+        # Update children recursively
+        for childFeature in self.children():
+            childOrigID = childFeature.Parent
+            childFeature.Parent = self.ID
+            childFeature.update_id(childOrigID, self.ID, GFF3_obj)
     
     def __getitem__(self, key):
         return self.retrieve_child(key)
@@ -281,20 +353,20 @@ class GFF3:
                             )
                             continue
                     
-                    # Create feature and index it
+                    # Create feature and populate it with details
                     feature = Feature()
-                    self.features[featureID] = feature
-                    self.types.setdefault(featureType, [])
-                    self.types[featureType].append(feature)
-                    self.parentTypes.add(featureType)
-                    
-                    # Populate feature with details
                     feature.add_attributes(attributesDict)
                     feature.add_attributes({
                         "contig": contig, "source": source, "type": featureType,
                         "start": int(start), "end": int(end), "coords": [int(start), int(end)],
                         "score": score, "strand": strand, "frame": frame
                     })
+                    
+                    # Index feature
+                    self.features[featureID] = feature
+                    self.types.setdefault(featureType, [])
+                    self.types[featureType].append(feature)
+                    self.parentTypes.add(featureType)
                 
                 # Handle subfeatures
                 else:
@@ -332,20 +404,20 @@ class GFF3:
                                 "'{0}' feature is associated to a parent '{1}' more than once; \
                                 for debugging, line #{2} == {3}; parsing will stop now".format(featureID, parentID, lineCount, line)
                         
-                        # Create feature and index it
+                        # Create feature and populate it with details
                         feature = Feature()
-                        if featureType.lower() != "cds": # since CDS features aren't guaranteed to have unique IDs, there's no point indexing them
-                            self.features[featureID] = feature
-                        self.types.setdefault(featureType, [])
-                        self.types[featureType].append(feature)
-                        
-                        # Populate feature with details
                         feature.add_attributes(attributesDict)
                         feature.add_attributes({
                             "contig": contig, "source": source, "type": featureType,
                             "start": int(start), "end": int(end), "coords": [int(start), int(end)],
                             "score": score, "strand": strand, "frame": frame
                         })
+                        
+                        # Index feature
+                        if featureType.lower() != "cds": # since CDS features aren't guaranteed to have unique IDs, there's no point indexing them
+                            self.features[featureID] = feature
+                        self.types.setdefault(featureType, [])
+                        self.types[featureType].append(feature)
                         
                         # Add it as a child of the parent
                         "It's important to fully-specify the child before running add_child()"
@@ -810,8 +882,74 @@ class GFF3:
     def __len__(self):
         return len(self.features)
     
+    def _eliminate_feature(self, thisFeature, isInRecursion=False):
+        '''
+        When we're eliminating a feature, there's a few places we need
+        to look for references. At a whole class level, the GFF3 object will
+        index anything other than CDS in the .feature dictionary. That's an
+        easy target. It will also store everything in the .types dictionary,
+        which itself indexes the various feature types alongside a list of
+        every feature of that type. That's more difficult, since those
+        values do not have keys.
+        
+        Otherwise, we need to consider the Feature class. It can contain
+        various references to a given feature. We expect this to be in
+        the .children value, as well as any values indexed within
+        self.types. Importantly, we need to do this recursively since
+        the feature whose ID is being given to this method might have
+        a child, which has a child, which has a child... and on and on.
+        All of those children need to be eliminated at the GFF3 class level,
+        and also within their own Feature attributes.
+        
+        Parameters:
+            isInRecursion -- a boolean that you shouldn't touch. It will
+                             let this method know if it's being called
+                             from within a recursion or not. If it is
+                             in a recursion, it won't try to touch Parents
+                             lest things break. It is only the initial
+                             method call that will escalate elimination
+                             up to the Parent if applicable
+        '''
+        thisFeatureID = thisFeature.ID
+        thisFeatureType = thisFeature.type
+        
+        # Recurse into this feature's children first (depth-first deletion)
+        for childFeature in thisFeature.children:
+            self._eliminate_feature(childFeature, isInRecursion=True)
+        
+        # GFF3 elimination: .features
+        if thisFeatureID in self.features:
+            del self.features[thisFeatureID]
+        
+        # GFF3 elimination: .types
+        typeIndices = [i for i in range(len(self.types[thisFeatureType])) if self.types[thisFeatureType][i].ID == thisFeatureID]
+        for index in reversed(typeIndices):
+            del self.types[thisFeatureType][index]
+        if thisFeatureType in self.types and len(self.types[thisFeatureType]) == 0: # if the GFF3 overall no longer has objects of this type
+            del self.types[thisFeatureType]
+        
+        # Feature elimination: delete from this feature
+        thisFeature.children = None
+        for _type in thisFeature.types.keys():
+            thisFeature.__dict__[_type] = None
+        thisFeature.types = None
+        
+        # Feature handling: delete from the parent
+        if isInRecursion is False and hasattr(thisFeature, "Parent"):
+            parentFeature = self[thisFeature.Parent]
+            parentFeature.del_child(thisFeatureID, thisFeatureType)
+        
+        # GFF3 handling: delete parent if it's now child free
+        if isInRecursion is False and hasattr(thisFeature, "Parent"):
+            if len(self[thisFeature.Parent].children) == 0:
+                self._eliminate_feature(self[thisFeature.Parent])
+    
     def __delitem__(self, key):
-        del self.features[key]
+        if key not in self.features:
+            raise ValueError(f"'{key}' not found in this GFF3 object")
+        else:
+            featureToBeDeleted = self.features[key]
+            self._eliminate_feature(featureToBeDeleted)
     
     def __iter__(self):
         return iter(self.features)
