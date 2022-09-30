@@ -110,13 +110,13 @@ def find_nonequivalent_features(GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProte
         
         # Get translation of GFF3 feature
         feature = GFF3_obj[FastASeq_obj.id]
-        gff3_FastASeq_obj, _, _ = GFF3_obj.retrieve_sequence_from_FASTA(
+        gff3_FastASeq_obj, _, startingFrame = GFF3_obj.retrieve_sequence_from_FASTA(
             genomeFASTA_obj, feature.ID, "CDS"
         )
         gff3ProtSequence, _, _ = gff3_FastASeq_obj.get_translation(
             findBestFrame=False,
             strand=1,
-            frame=int(feature.frame) if feature.frame.isdigit() else 0
+            frame=int(startingFrame) if startingFrame.isdigit() else 0
         )
         
         # Find equivalency
