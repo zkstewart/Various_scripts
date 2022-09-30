@@ -211,12 +211,11 @@ class FastASeq:
         # Handle normal cases (findBestFrame is False)
         if not findBestFrame:
             if strand == 1 and frame == 0:
-                return self._dna_to_protein(self.seq), strand, frame
+                return FastASeq.dna_to_protein(self.seq), strand, frame
             else:
                 nuc = self.seq if strand == 1 else self.get_reverse_complement()
-                length = 3 * ((len(nuc)-frame) // 3)
-                frameNuc = nuc[frame:frame+length]
-                frameProt = self._dna_to_protein(frameNuc)
+                frameNuc = nuc[frame:]
+                frameProt = FastASeq.dna_to_protein(frameNuc)
                 return frameProt, strand, frame
         # Handle other cases
         else:
@@ -226,9 +225,8 @@ class FastASeq:
             for strand in strandsToCheck:
                 nuc = self.seq if strand == 1 else self.get_reverse_complement()
                 for frame in framesToCheck:
-                    length = 3 * ((len(nuc)-frame) // 3)
-                    frameNuc = nuc[frame:frame+length]
-                    frameProt = self._dna_to_protein(frameNuc)
+                    frameNuc = nuc[frame:]
+                    frameProt = FastASeq.dna_to_protein(frameNuc)
                     # Add bias to ORF if its translation ends in a stop codon
                     """If strand==1 has an ORF ending in a stop codon, and strand==-1
                     has an unbroken ORF not ending in a stop codon, without this
@@ -246,7 +244,8 @@ class FastASeq:
             _, protein, strand, frame = longest
             return protein, strand, frame
     
-    def _dna_to_protein(self, dnaString):
+    @staticmethod
+    def dna_to_protein(dnaString):
         '''
         Hidden method for FastASeq to convert a string DNA sequence into
         its protein sequence. Peforms a simple codon substitution based on
@@ -262,9 +261,9 @@ class FastASeq:
         protein = ""
         for i in range(0, len(dnaString), 3):
             codon = dnaString[i:i+3]
-            if len(codon) < 2 or codon.upper() not in self.TRANSLATION_TABLE:
+            if len(codon) < 2 and codon.upper() not in FastASeq.TRANSLATION_TABLE:
                 continue
-            protein += self.TRANSLATION_TABLE[codon.upper()] if codon.upper() in self.TRANSLATION_TABLE else "X"
+            protein += FastASeq.TRANSLATION_TABLE[codon.upper()] if codon.upper() in FastASeq.TRANSLATION_TABLE else "X"
         return protein
     
     def get_reverse_complement(self, staticSeq=None):
