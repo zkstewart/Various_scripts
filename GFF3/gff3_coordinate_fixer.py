@@ -253,12 +253,14 @@ def fix_features_with_exonerate_and_gmap(problemIDs, exonerateResultsDict, GFF3_
             bestResults.append([geneFeature, distance, lengthDifference, similarity])
         bestResults.sort(key = lambda x: (-x[3], x[1], x[2], -(x[0].end - x[0].start))) # last sort will prioritise UTR prediction from GMAP
         
-        # Save the best result if there's any!
+        # If there's no good results, note it and continue
         if bestResults == []:
             unfixedIDs.append(problemSeqID)
             continue
+        # If there is a good result, update this model
         else:
-            GFF3_obj[problemSeqID] = bestResults[0][0]
+            del GFF3_obj[problemSeqID]
+            GFF3_obj.add_feature(bestResults[0][0])
             fixedIDs.append(problemSeqID)
     return unfixedIDs, fixedIDs
 
@@ -498,6 +500,135 @@ def feature_coords_update(feature, newLeftExonBorder, newRightExonBorder, newLef
         feature.CDS.sort(key = lambda x: -x.end)
     
     return feature
+
+def fix_genes_by_renaming(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProtein=False):
+    '''
+    This function receives a GFF3 and a FASTA that is meant to
+    correspond to the sequences extracted from that GFF3. The goal
+    is to find cases where the sequences differ, and to return
+    these feature/sequence IDs as a list for further work to be done on them.
+    
+    It will also resolve easy to solve issues pertaining to strand and frame
+    annotations. If either appear to be wrong, this function will identify it
+    easily! It's up to you to change that in the GFF3_obj though.
+    
+    Parameters:
+        problemIDs -- a list containing ID values corresponding to
+                      sequences that don't match between the GFF3 and
+                      FASTA objects at all.
+        GFF3_obj -- a ZS_GFF3IO.GFF3 object containing features
+                    with .ID values found within the cdsFASTA_obj
+        cdsFASTA_obj -- a ZS_SeqIO.FASTA object containing sequences
+                        with  .id values found within the GFF3_obj
+        genomeFASTA_obj -- a ZS_SeqIO.FASTA object containing contig sequences
+                           corresponding to .contig values found within the GFF3_obj
+        isProtein -- a boolean indicating whether the sequences in the
+                     FASTA object are proteins or not (i.e., are nucleotides)
+    Returns:
+        unfixedIDs -- a list indicating the sequences that we failed to fix using
+                      this function
+        fixedIDs -- a list indicating the sequences that we successfully fixed using
+                      this function
+    '''
+    unfixedIDs = []
+    fixedIDs = []
+    
+    fastaSeqDict = {}
+    for problemSeqID in problemIDs:
+        cdsFastASeq_obj = cdsFASTA_obj[problemSeqID]
+        feature = GFF3_obj[problemSeqID]
+        
+        # Get translation of FASTA sequence if relevant
+        if not isProtein:
+            cdsProtSequence, _, _ = cdsFastASeq_obj.get_translation(
+                findBestFrame=False,
+                strand=1,
+                frame=0
+            )
+        else:
+            cdsProtSequence = cdsFastASeq_obj.seq
+        
+        # Get translation of GFF3 feature
+        gff3_FastASeq_obj, _, startingFrame = GFF3_obj.retrieve_sequence_from_FASTA(
+            genomeFASTA_obj, feature.ID, "CDS"
+        )
+        gff3ProtSequence, _, _ = gff3_FastASeq_obj.get_translation(
+            findBestFrame=False,
+            strand=1,
+            frame=int(startingFrame) if startingFrame.isdigit() else 0
+        )
+        
+        # If this translation matches, that means we must've swapped it already, and it fixed things
+        if gff3ProtSequence.rstrip("*") == cdsProtSequence.rstrip("*"):
+            fixedIDs.append(problemSeqID)
+            continue
+        
+        # Get translated sequences of all features of the same type as the problem
+        for typeFeature in GFF3_obj.types[feature.type]:
+            if typeFeature.ID not in fastaSeqDict:
+                type_FastASeq_obj, _, startingFrame = GFF3_obj.retrieve_sequence_from_FASTA(
+                    genomeFASTA_obj, typeFeature.ID, "CDS"
+                )
+                typeProtSequence, _, _ = type_FastASeq_obj.get_translation(
+                    findBestFrame=False,
+                    strand=1,
+                    frame=int(startingFrame) if startingFrame.isdigit() else 0
+                )
+                fastaSeqDict[typeFeature.ID] = typeProtSequence
+        
+        # Look for a match to this sequence
+        matchIDs = [seqID for seqID, protSeq in fastaSeqDict.items() if protSeq.rstrip("*") == cdsProtSequence.rstrip("*")]
+        
+        # Filter 1: match(es) to just a single good one
+        filter1IDs = []
+        for matchID in matchIDs:
+            # Match must not exist in CDS file, or it must be a problem ID
+            if matchID in cdsFASTA_obj and not matchID in problemIDs:
+                continue
+            filter1IDs.append(matchID)
+        
+        # Filter 2: If multiple matches, select the one on the same contig
+        if len(filter1IDs) > 1:
+            filter2IDs = []
+            for matchID in filter1IDs:
+                if GFF3_obj[matchID].contig == feature.contig:
+                    filter2IDs.append(matchID)
+        else:
+            filter2IDs = filter1IDs
+        
+        # Filter 3: Only allow a single unambiguous match
+        if len(filter2IDs) != 1:
+            unfixedIDs.append(problemSeqID)
+            continue
+        matchID = filter2IDs[0]
+        
+        # If we have a good match and it is a problem sequence...
+        if matchID in problemIDs:
+            "It being a problem sequence means it IS in the CDS file"
+            # ... and if it's already been fixed, we won't touch it
+            if matchID in fixedIDs:
+                unfixedIDs.append(problemSeqID)
+                continue
+            
+            # ... but, if it hasn't been fixed, let's just swap them
+            "This might fix both models, but if it doesn't we'll get to it later"
+            GFF3_obj[problemSeqID].update_id(problemSeqID, "tmp_problem_seq_id", GFF3_obj)
+            GFF3_obj[matchID].update_id(matchID, "tmp_match_seq_id", GFF3_obj)
+            
+            GFF3_obj["tmp_problem_seq_id"].update_id("tmp_problem_seq_id", matchID, GFF3_obj)
+            GFF3_obj["tmp_match_seq_id"].update_id("tmp_match_seq_id", problemSeqID, GFF3_obj)
+        
+        # If we have a good match and it isn't in the CDS file...
+        else:
+            "If we get here, we know it ISN'T in the CDS file"
+            # ... just replace the model
+            del GFF3_obj[problemSeqID]
+            GFF3_obj[matchID].update_id(matchID, problemSeqID, GFF3_obj)
+        
+        # Note it as fixed and continue
+        fixedIDs.append(problemSeqID)
+    
+    return unfixedIDs, fixedIDs
 
 def fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, isProtein=False, slideLength=500):
     '''
@@ -743,7 +874,7 @@ def get_args_hash(args):
     overallHash = hashlib.sha256(bytes("".join(hashes), 'utf-8')).hexdigest()
     return overallHash[0:20]
 
-def report_program_results(GFF3_obj, outputFileName, originalProblems,
+def report_program_results(GFF3_obj, outputFileName, originalProblems, numFixedByRenaming,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
                            problemIDs, isLastReport=False, reportToFile=False):
@@ -760,6 +891,7 @@ def report_program_results(GFF3_obj, outputFileName, originalProblems,
     report = [
         f"GFF3 being fixed = {GFF3_obj.fileLocation}",
         f"Number of problem sequences identified = {len(originalProblems)}",
+        f"Number fixed by changing their sequence ID = {numFixedByRenaming}",
         f"Number fixed by changing strand annotation = {numFixedByStrandChecking}",
         f"Number fixed by sliding along their contig = {numFixedBySliding}",
         f"Number fixed by moving to another contig = {numFixedByContigChecking}",
@@ -857,6 +989,7 @@ def main():
     numFixedByStrandChecking = 0
     numFixedBySliding = 0
     numFixedByContigChecking = 0
+    numFixedByRenaming = 0
     numFixedByReannotation = 0
     
     # Parse GFF3
@@ -877,7 +1010,15 @@ def main():
         GFF3_obj[featureID].strand = "+" if strand == 1 else "-"
     
     # If no problems existed, or no more exist after strand fixing, report that and exit program
-    report_program_results(GFF3_obj, args.outputFileName, originalProblems,
+    report_program_results(GFF3_obj, args.outputFileName, originalProblems, numFixedByRenaming,
+                           numFixedByStrandChecking, numFixedBySliding,
+                           numFixedByContigChecking, numFixedByReannotation,
+                           problemIDs, isLastReport=False, reportToFile=args.reportToFile)
+    
+    # Try to fix genes by renaming the model
+    problemIDs, fixedIDs = fix_genes_by_renaming(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
+    numFixedByRenaming = len(fixedIDs)
+    report_program_results(GFF3_obj, args.outputFileName, originalProblems, numFixedByRenaming,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
                            problemIDs, isLastReport=False, reportToFile=args.reportToFile)
@@ -885,7 +1026,7 @@ def main():
     # Try to fix genes by sliding existing models up/down their contig
     problemIDs, fixedIDs = fix_genes_by_sliding(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
     numFixedBySliding = len(fixedIDs)
-    report_program_results(GFF3_obj, args.outputFileName, originalProblems,
+    report_program_results(GFF3_obj, args.outputFileName, originalProblems, numFixedByRenaming,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
                            problemIDs, isLastReport=False, reportToFile=args.reportToFile)
@@ -893,7 +1034,7 @@ def main():
     # Try to fix genes by checking if their contig is misannotated
     problemIDs, fixedIDs = fix_genes_by_contig_checking(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein)
     numFixedByContigChecking = len(fixedIDs)
-    report_program_results(GFF3_obj, args.outputFileName, originalProblems,
+    report_program_results(GFF3_obj, args.outputFileName, originalProblems, numFixedByRenaming,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
                            problemIDs, isLastReport=False, reportToFile=args.reportToFile)
@@ -941,7 +1082,7 @@ def main():
         if args.transcriptFastaFile != None else None
     problemIDs, fixedIDs = fix_features_with_exonerate_and_gmap(problemIDs, resultsDict, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, args.isProtein, transcriptFASTA_obj, gmapRunner)
     numFixedByReannotation = len(fixedIDs)
-    report_program_results(GFF3_obj, args.outputFileName, originalProblems,
+    report_program_results(GFF3_obj, args.outputFileName, originalProblems, numFixedByRenaming,
                            numFixedByStrandChecking, numFixedBySliding,
                            numFixedByContigChecking, numFixedByReannotation,
                            problemIDs, isLastReport=True, reportToFile=args.reportToFile)
