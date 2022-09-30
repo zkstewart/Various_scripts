@@ -879,6 +879,30 @@ class GFF3:
                 for feature in sorted(self.types[parentType], key = lambda x: (x.contig, x.start)):
                     GFF3._recursively_write_feature_details(feature, fileOut)
     
+    def add_feature(self, feature):
+        '''
+        This method will receive a fully-formed Feature, which includes children,
+        and will integrate it into this GFF3 object.
+        
+        Parameters:
+            feature -- a Feature object which is fully specified with/without children.
+        '''
+        
+        if feature.type.upper() != "CDS":
+            # Integrate this Feature
+            if not hasattr(feature, "Parent"):
+                self.parentTypes.add(feature.type)
+            self.features[feature.ID] = feature
+            self.types.setdefault(feature.type, [])
+            self.types[feature.type].append(feature)
+            
+            # Integrate children
+            for childFeature in feature.children:
+                self.add_feature(childFeature)
+        else:
+            self.types.setdefault("CDS", [])
+            self.types["CDS"].append(feature)
+    
     def __getitem__(self, key):
         return self.features[key]
     
