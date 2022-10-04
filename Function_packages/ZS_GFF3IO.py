@@ -425,6 +425,9 @@ class GFF3:
                         self.types.setdefault(featureType, [])
                         self.types[featureType].append(feature)
                         
+                        # Double-index for special child attributes
+                        self._index_products(feature)
+                        
                         # Add it as a child of the parent
                         "It's important to fully-specify the child before running add_child()"
                         self.features[parentID].add_child(feature)
@@ -902,6 +905,26 @@ class GFF3:
         else:
             self.types.setdefault("CDS", [])
             self.types["CDS"].append(feature)
+    
+    def _index_products(self, feature):
+        '''
+        Hidden helper for indexing features with the .product attribute. These are found in
+        some GFF3 files, and often any protein files generated from these will have the
+        product ID associated to the translated features. This can prove problematic when
+        trying to find their coordinates in the GFF3 since we'll find no matches.
+        
+        This method will index the product so it's discoverable within the GFF3 object.
+        It won't be listed as a parentType (it should always be under a gene parent), and
+        
+        '''
+        if hasattr(feature, "Product"):
+            "We want the case of this to be predictable"
+            feature.product = feature.Product
+            delattr(feature, "Product")
+        if hasattr(feature, "product"):
+            self.features[feature.product] = feature
+            self.types.setdefault("product", [])
+            self.types["product"].append(feature)
     
     def __getitem__(self, key):
         return self.features[key]
