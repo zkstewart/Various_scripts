@@ -1,8 +1,7 @@
 #! python3
-# beagle_gene_haplotypes.py
-# Script to take in a GFF3 file and a phased VCF
-# as output by Beagle and predicts haplotypes for
-# gene sequences (CDS only)
+# predict_gene_haplotypes.py
+# Script to take in a GFF3 file and a phased VCF,
+# predicting haplotypes for gene sequences (CDS only)
 
 import os, argparse, sys
 
@@ -14,8 +13,8 @@ from Function_packages import ZS_GFF3IO, ZS_SeqIO
 # Define functions
 def validate_args(args):
     # Validate input file locations
-    if not os.path.isfile(args.beagleVCF):
-        print('I am unable to locate the VCF file (' + args.beagleVCF + ')')
+    if not os.path.isfile(args.vcf):
+        print('I am unable to locate the VCF file (' + args.vcf + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     if not os.path.isfile(args.gff3):
@@ -39,10 +38,14 @@ def validate_args(args):
 def get_phased_genotypes_from_vcf(vcfFile):
     '''
     This function expects the provided VCF file to contain phased genotypes
-    as per Beagle's output. It doesn't necessarily have to be a VCF produced
-    by Beagle, but it must have a GT field we can parse. Any ambiguous genotypes
-    in any samples will result in the variant being completely ignored
-    and a warning being printed.
+    within the GT field separated by |, and genotypes that were unphased as \.
+    
+    Missing genotypes will be imputed as 0|0, since this may be the case when
+    merging VCFs as in the workflow of using Clair3.
+    
+    Ambiguous genotypes (e.g., 0/1) will simply be imputed as 0|0; if doing so
+    makes the variant "disappear" such that all samples are now 0|0, we'll
+    just ignore the variant call.
     
     Returns:
         snpGenotypes -- a dictionary with structure like:
@@ -64,7 +67,6 @@ def get_phased_genotypes_from_vcf(vcfFile):
                             ...,
                         }
     '''
-    #snpPositions = {}
     snpGenotypes = {}
     with open(vcfFile, "r") as fileIn:
         for line in fileIn:
@@ -91,7 +93,6 @@ def get_phased_genotypes_from_vcf(vcfFile):
             
             # Format a dictionary to store sample genotypes for this position
             posGenotypeDict = {}
-            imputeWarningSkip = False
             ongoingCount = 0 # This gives us the index for our samples header list 
             for sampleResult in l[9:]: # This gives us the results for each sample as per fieldsDescription
                 # Grab our genotype
@@ -100,29 +101,34 @@ def get_phased_genotypes_from_vcf(vcfFile):
                 else:
                     genotype = sampleResult
                 
-                # Validate genotype is formatted correctly and not missing data
-                if "." in genotype or "/" in genotype:
-                    print(f"Warning: unphased/non-imputed genotype being skipped at {chrom}:{pos}")
-                    imputeWarningSkip = True
-                    break
+                # Edit genotype if "/" ambiguity is given for a homozygous allele
+                if "/" in genotype and len(set(genotype.split("/"))) == 1:
+                    genotype = genotype.replace("/", "|")
+                
+                # Impute empty genotypes
+                genotype = genotype.replace(".", "0")
+                
+                # Impute ambiguous genotypes
+                if "/" in genotype:
+                    genotype = "0|0"
+                assert "/" not in genotype
                 
                 # Parse and store genotype
                 samplePopulation = samples[ongoingCount]
                 posGenotypeDict[samplePopulation] = list(map(int, genotype.split("|")))
                 
                 ongoingCount += 1
-            if imputeWarningSkip is True:
+            
+            # Check to see if this genotype, after imputation, still has a variant allele
+            alleles = set([allele for key, allelePair in posGenotypeDict.items() if key != "ref_alt" for allele in allelePair])
+            if alleles == {0}: # skip if it doesn't
                 continue
             
             # Store in our overall dictionaries
-            # snpPositions.setdefault(chrom, [])
-            # snpPositions[chrom].append(pos)
-            
             snpGenotypes.setdefault(chrom, {})
             snpGenotypes[chrom][pos] = posGenotypeDict
             snpGenotypes[chrom][pos]["ref_alt"] = [ref, *alt]
     
-    #return snpPositions, snpGenotypes
     return snpGenotypes
 
 def get_genotyped_snps_for_genes(gff3Obj, snpGenotypes):
@@ -446,13 +452,13 @@ def sequence_function_alteration_inference(referenceSequence, modifiedSequence):
 ## Main
 def main():
     # User input
-    usage = """%(prog)s reads in GFF3 and a phased VCF file as output by Beagle
-    and generates haplotype predictions for genes containing a variant within its
-    CDS. Outputs will be written to the provided directory.
+    usage = """%(prog)s reads in GFF3 and a phased VCF file and generates haplotype
+    predictions for genes containing a variant within its CDS. Outputs will be written
+    to the provided directory.
     """
     p = argparse.ArgumentParser(description=usage)
     ## Required
-    p.add_argument("-v", dest="beagleVCF",
+    p.add_argument("-v", dest="vcf",
                    required=True,
                    help="Input phased VCF")
     p.add_argument("-g", dest="gff3",
@@ -481,7 +487,7 @@ def main():
     gff3Obj.create_ncls_index(typeToIndex="gene")
     
     # Parse VCF to get SNP genotypes
-    snpGenotypes = get_phased_genotypes_from_vcf(args.beagleVCF)
+    snpGenotypes = get_phased_genotypes_from_vcf(args.vcf)
     
     # Parse genome FASTA
     genomeFASTA_obj = ZS_SeqIO.FASTA(args.fasta)
