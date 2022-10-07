@@ -31,6 +31,9 @@ CONTIGS=scaffold514_cov87
 # Specify the computational resources to use
 CPUS=4
 
+# Specify the location to store the main outputs
+MAINOUTDIR=main_results
+
 #################################
 
 # > STEP 1: Activate the conda environment
@@ -67,3 +70,18 @@ run_clair3.sh \
 
 # > STEP 7: Gunzip file for human reading
 gunzip -c ${PREFIX}/phased_merge_output.vcf.gz > ${PREFIX}/phased_merge_output.vcf
+
+# > STEP 8: Link to file in main results folder
+mkdir -p ${MAINOUTDIR}
+cd ${MAINOUTDIR}
+ln -s ../${PREFIX}/phased_merge_output.vcf ${PREFIX}_clair3_output.vcf
+
+# > STEP 9: bgzip, index, and reheader to enable later merging
+bgzip -i ${PREFIX}_clair3_output.vcf
+bcftools index ${PREFIX}_clair3_output.vcf.gz
+
+echo ${PREFIX} > tmp_${PREFIX}_reheader.txt
+bcftools reheader --samples tmp_${PREFIX}_reheader.txt -o ${PREFIX}_clair3_output_fix.vcf.gz ${PREFIX}_clair3_output.vcf.gz
+rm tmp_${PREFIX}_reheader.txt
+bcftools index ${PREFIX}_clair3_output_fix.vcf.gz
+
