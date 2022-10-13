@@ -579,31 +579,7 @@ class GFF3:
         Hidden helper method of retrieve_sequence_from_FASTA(). Intended to work with
         many different object types i.e., a FASTA, FastASeq, or Biopython sequence.
         '''
-        # Handle Biopython dict type
-        if type(contigSequences).__name__ == "dict":
-            assert contigID in contigSequences, \
-                "'{0}' does not exist within the dictionary contig sequences object".format(contigID)
-            assert type(contigSequences[contigID]).__name__ == "SeqRecord", \
-                "contigSequences is a dictionary, but values aren't Biopython SeqRecords? Can't handle."
-            
-            sequence = str(contigSequences[contigID].seq)
-        
-        # Handle ZS_SeqIO.FASTA type
-        elif hasattr(contigSequences, "isFASTA") and contigSequences.isFASTA is True:
-            try:
-                sequence = contigSequences[contigID].seq
-            except:
-                raise TypeError("'{0}' does not exist within the FASTA object".format(contigID))
-        
-        # Handle ZS_SeqIO.FastASeq type
-        elif hasattr(contigSequences, "isFastASeq") and contigSequences.isFastASeq is True:
-            assert contigID == contigSequences.id or contigID == contigSequences.alt, \
-                "'{0}' contig does not match the provided FastASeq object".format(contigID)
-            sequence = contigSequences.seq
-        
-        # Throw error for unhandled types
-        else:
-            raise TypeError("Unrecognised data type '{0}' for contig string retrieval".format(type(contigSequences).__name__))
+        sequence = GFF3._get_contig_as_string(contigSequences, contigID)
         
         # Create a FastASeq object to return
         outputSeq = FastASeq(id=contigID, seq=sequence)
@@ -617,11 +593,10 @@ class GFF3:
         '''
         # Handle Biopython dict type
         if type(contigSequences).__name__ == "dict":
-            assert contigID in contigSequences, \
-                "'{0}' does not exist within the dictionary contig sequences object".format(contigID)
-            assert type(contigSequences[contigID]).__name__ == "SeqRecord", \
-                "contigSequences is a dictionary, but values aren't Biopython SeqRecords? Can't handle."
-            
+            if contigID not in contigSequences:
+                raise KeyError("'{0}' does not exist within the dictionary contig sequences object".format(contigID))
+            if type(contigSequences[contigID]).__name__ != "SeqRecord":
+                raise TypeError("contigSequences is a dictionary, but values aren't Biopython SeqRecords? Can't handle.")
             sequence = str(contigSequences[contigID].seq)
         
         # Handle ZS_SeqIO.FASTA type
@@ -629,12 +604,12 @@ class GFF3:
             try:
                 sequence = contigSequences[contigID].seq
             except:
-                raise TypeError("'{0}' does not exist within the FASTA object".format(contigID))
+                raise KeyError("'{0}' does not exist within the FASTA object".format(contigID))
         
         # Handle ZS_SeqIO.FastASeq type
         elif hasattr(contigSequences, "isFastASeq") and contigSequences.isFastASeq is True:
-            assert contigID == contigSequences.id or contigID == contigSequences.alt, \
-                "'{0}' contig does not match the provided FastASeq object".format(contigID)
+            if contigID != contigSequences.id and contigID != contigSequences.alt:
+                raise ValueError("'{0}' contig does not match the provided FastASeq object".format(contigID))
             sequence = contigSequences.seq
         
         # Throw error for unhandled types
