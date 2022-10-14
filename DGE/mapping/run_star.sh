@@ -57,7 +57,7 @@ cd ${BASENAME}
 ## We set up cmds in an array so we can conditionally add something to it
 cmd=(${STARDIR}/STAR --runThreadN ${CPUS} \
         --genomeDir ${PBS_O_WORKDIR} \
-        --readFilesIn ${PREFIX}1${SUFFIX} ${PREFIX}1${SUFFIX} \
+        --readFilesIn ${PREFIX}1${SUFFIX} ${PREFIX}2${SUFFIX} \
         --outSAMtype BAM SortedByCoordinate \
         --outSAMunmapped Within \
         --quantMode TranscriptomeSAM GeneCounts)
