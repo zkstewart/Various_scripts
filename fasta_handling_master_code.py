@@ -1033,7 +1033,7 @@ def main():
         if args.function == 'listrename':
                 listrename(args.fastaFileName, args.string, args.outputFileName)
         if args.function == 'appendrename':
-                appendrename(args.fastaFileName, args.string, args.outputFileName)
+                appendrename(args.fastaFileName, args.string, args.outputFileName, listOutName)
         if args.function == 'removestringfseqid':
                 removestringfseqid(args.fastaFileName, args.string, args.outputFileName)
         if args.function == 'splitseqidatstring_start':
