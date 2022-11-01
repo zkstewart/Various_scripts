@@ -226,6 +226,32 @@ def rename(fastaFile, stringInput, outputFileName, listFileName):
                         listOut.write(oldseqid + '\t' + newseqid + '\n')
                         ongoingCount += 1
 
+def appendrename(fastaFile, stringInput, outputFileName, listFileName):
+        # Check for file type
+        seqType = fasta_or_fastq(fastaFile)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        ongoingCount = 1
+        with open(outputFileName, 'w') as fastaOut, open(listFileName, 'w') as listOut:
+                for record in records:
+                        # Extract relevant details regardless of fasta or fastq
+                        if seqType == 'fasta':
+                                seq = str(record.seq)
+                                qual = ''
+                        else:
+                                seq, qual = fastq_format_extract(record)
+                        # Main function action
+                        oldseqid = record.description
+                        newseqid = f"{oldseqid}{stringInput}"
+                        # Output
+                        if seqType == 'fasta':
+                                fastaOut.write('>' + newseqid + '\n' + seq + '\n')                  #fa
+                        else:
+                                fastaOut.write('@' + newseqid + '\n' + seq + '\n+\n' + qual + '\n') #fq
+                        listOut.write(oldseqid + '\t' + newseqid + '\n')
+                        ongoingCount += 1
+
 def listrename(fastaFile, listFileName, outputFileName):
         # Check for file type
         seqType = fasta_or_fastq(fastaFile)
@@ -833,6 +859,12 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 as prefix and the iterating number will be added to the end of it e.g.,
                 string input of 'seq' will become 'seq1, 'seq2', etc.
                 '''
+                appendrename = '''
+                The _appendrename_ function accepts a string input. It will simply append
+                the provided string to the existing sequence ID. For example, an existing
+                ID of '>scaffold100' will become '>scaffold100{string}' without any
+                space inbetween.
+                '''
                 removeseqwstring = '''
                 The _removeseqwstring_ function accepts a string input. Any sequence
                 which contains the specified string (case sensitive) will not be present
@@ -966,7 +998,7 @@ def main():
         SeqIO.QualityIO.FastqGeneralIterator = AltFastqGeneralIterator # This helps in cases where qual IDs differ from title IDs, preventing a program-terminating error
         
         # Function list - update as new ones are added
-        stringFunctions = ['rename', 'listrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
+        stringFunctions = ['rename', 'listrename', 'appendrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
         numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi']
         basicFunctions = ['ids', 'descriptions', 'lengths', 'lengths_tsv', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc']
         functionList = stringFunctions + numberFunctions + basicFunctions
@@ -999,7 +1031,9 @@ def main():
         if args.function == 'rename':
                 rename(args.fastaFileName, args.string, args.outputFileName, listOutName)
         if args.function == 'listrename':
-                listrename(args.fastaFileName, args.string, args.outputFileName)     
+                listrename(args.fastaFileName, args.string, args.outputFileName)
+        if args.function == 'appendrename':
+                appendrename(args.fastaFileName, args.string, args.outputFileName)
         if args.function == 'removestringfseqid':
                 removestringfseqid(args.fastaFileName, args.string, args.outputFileName)
         if args.function == 'splitseqidatstring_start':
