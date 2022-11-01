@@ -242,7 +242,7 @@ def appendrename(fastaFile, stringInput, outputFileName, listFileName):
                         else:
                                 seq, qual = fastq_format_extract(record)
                         # Main function action
-                        oldseqid = record.description
+                        oldseqid = record.id
                         newseqid = f"{oldseqid}{stringInput}"
                         # Output
                         if seqType == 'fasta':
