@@ -70,7 +70,7 @@ def get_phased_genotypes_from_vcf(vcfFile):
     snpGenotypes = {}
     with open(vcfFile, "r") as fileIn:
         for line in fileIn:
-            l = line.rstrip("\r\n").split("\t")
+            l = line.rstrip("\r\n").replace('"', '').split("\t") # replace quotations may help with Excel files
             
             # Handle header lines
             if line.startswith("#CHROM"):
@@ -241,7 +241,7 @@ def get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, minSnps=0):
     haploSeqDict = {}
     for geneID, snpDict in geneSnpDict.items():
         # Skip genes which fail minSnps threshold
-        if (len(snpDict) - 1) < minSnps: # -1 to offset the "ref_alt" key
+        if len(snpDict) < minSnps: # this len gives us the number of SNPs in this gene
             continue
         
         # Get the representative mRNA feature and sequence
