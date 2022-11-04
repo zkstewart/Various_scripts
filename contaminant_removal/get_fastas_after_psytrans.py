@@ -34,7 +34,8 @@ def main():
         usage = """After running PsyTrans, an output FASTA file will be produced. This script will
         get any corresponding amino acid or mRNA transcript FASTA files containing the corresponding
         sequences output from PsyTrans. Files will be produced with identical file names at the current
-        working directory."""
+        working directory. Note that this script anticipates file names that will come out of my own
+        EvidentialGene pipeline, and so utrorf sequences are handled specifically in that light."""
         # Required
         p = argparse.ArgumentParser(description=usage)
         p.add_argument("-p", dest="psyTransFile",
@@ -48,25 +49,43 @@ def main():
         validate_args(args)
         
         # Parse PsyTrans FASTA sequence IDs
+        psyIDs = {}
+        psyIDsNoUTR = {}
         with open(args.psyTransFile, "r") as fileIn:
-            psyIDs = {line[1:].rstrip("\r\n "): None for line in fileIn if line.startswith(">")}
+            for line in fileIn:
+                if line.startswith(">"):
+                    seqid = line[1:].rstrip("\r\n ")
+                    psyIDs[seqid] = None
+                    psyIDsNoUTR[seqid.split("utrorf")[0]] = None
         
         # Parse all input FASTAs and get the appropriate sequences as output
         for fastaFile in args.inputFastaFiles:
-            records = SeqIO.parse(fastaFile, "fasta")
+            # Quickly check to see if we need to account for utrorf sequences
+            hasUtrOrfs = any([r.id.endswith("utrorf") for r in SeqIO.parse(fastaFile, "fasta")])
+            idsToCheckAgainst = psyIDs if hasUtrOrfs else psyIDsNoUTR
+            
+            # Parse all records for ID matches
             foundSeqs = []
+            records = SeqIO.parse(fastaFile, "fasta")
             with open(os.path.basename(fastaFile), "w") as fileOut:
                 for record in records:
-                    if record.id in psyIDs:
-                        fileOut.write(f">{record.description}\n{str(record.seq)}\n")
-                        foundSeqs.append(record.id)
-            if len(foundSeqs) == len(psyIDs):
-                print(f"Found all sequences (n={len(psyIDs)}) in '{fastaFile}'")
+                    if hasUtrOrfs:
+                        if record.id in psyIDs:
+                            fileOut.write(f">{record.description}\n{str(record.seq)}\n")
+                            foundSeqs.append(record.id)
+                    else:
+                        if record.id in psyIDsNoUTR:
+                            fileOut.write(f">{record.description}\n{str(record.seq)}\n")
+                            foundSeqs.append(record.id)
+            
+            # Check to see if all sequences were found
+            if len(foundSeqs) == len(idsToCheckAgainst):
+                print(f"Found all sequences (n={len(foundSeqs)}) in '{fastaFile}'")
             else:
-                print(f"FAILED: Did not find all sequences (missing n={len(psyIDs) - len(foundSeqs)}) in '{fastaFile}' !!")
-                missingSeqs = set(psyIDs.keys()).difference(set(foundSeqs))
+                print(f"FAILED: Did not find all sequences (missing n={len(idsToCheckAgainst) - len(foundSeqs)}) in '{fastaFile}' !!")
+                missingSeqs = set(foundSeqs).difference(set(idsToCheckAgainst.keys()))
                 print("An excerpt of missed IDs is below:\n{0}".format(
-                    "; ".join(list(missingSeqs)[0:10])
+                "; ".join(list(missingSeqs)[0:10])
                 ))
         
         # Done!
