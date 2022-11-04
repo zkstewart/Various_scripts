@@ -1,0 +1,56 @@
+#!/bin/bash -l
+#PBS -N salmon
+#PBS -l walltime=24:00:00
+#PBS -l mem=50G
+#PBS -l ncpus=8
+#PBS -J 1-12
+
+cd $PBS_O_WORKDIR
+
+## MANUAL SETUP BELOW
+
+# >> SETUP: Specify salmon executable location
+SALMONDIR=/home/stewarz2/various_programs/salmon/salmon-1.9.0_linux_x86_64/bin
+
+# >> SETUP: Specify salmon index location
+INDEXDIR=/home/stewarz2/anemones/cassie/mapping
+INDEXFILE=cassie_okay-okalt.fasta_salmon_index
+
+# >> SETUP: Specify reads location & file suffix
+## For the suffix, it's assumed that just prior to the given string there
+## is the 1 / 2 suffix differentiating forward / reverse reads
+READSDIR=/home/stewarz2/anemones/cassie/trimmomatic
+SUFFIX=P.fq
+
+# >> SETUP: Specify computational resources
+CPUS=8
+
+## MANUAL SETUP END
+
+## RUN PROGRAM
+# STEP 1: Locate all read prefixes for mapping
+declare -a RNAPREFIXES
+i=0
+for f in ${READSDIR}/*1${SUFFIX}; do
+    RNAPREFIXES[${i}]=$(echo "${f%%1${SUFFIX}}");
+    i=$((i+1));
+done
+
+# STEP 2: Handle batch submission variables
+ARRAY_INDEX=$((${PBS_ARRAY_INDEX}-1))
+PREFIX=${RNAPREFIXES[${ARRAY_INDEX}]}
+BASENAME=$(basename ${PREFIX} _) # strip any _ trailing characters
+
+# STEP 3: Run mapping procedure for each sample
+${SALMONDIR}/salmon quant --threads ${CPUS} \
+	--index ${INDEXDIR}/${INDEXFILE} \
+	--libType A \
+	--dumpEq \
+	--hardFilter \
+	--skipQuant \
+	-1 ${PREFIX}1${SUFFIX} \
+	-2 ${PREFIX}2${SUFFIX} \
+	-o ${BASENAME}.out
+
+# STEP 4: Unzip files for corset handling
+gunzip ${BASENAME}.out/aux_info/eq_classes.txt.gz
