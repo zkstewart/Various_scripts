@@ -58,7 +58,7 @@ def fasta_or_fastq(fastaFile):
                 quit()
 
 ## Fasta retrieve/remove functions
-def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList, idShortDict, behaviour, effort):
+def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idSet, idShortDict, behaviour, effort):
         # Ensure behaviour value makes sense
         if behaviour.lower() not in ['retrieve', 'remove']:
                 print('fasta_retrieve_remove_tofile: Input behaviour value is not "retrieve" or "remove" but is instead "' + str(behaviour) + '".')
@@ -69,23 +69,23 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList
         foundList = []          # foundList will let us keep track of which entries we encountered; if we found none or just a handful of these, we'll report that later
         with open(outputFileName, 'w') as fileOut:
                 for record in fastaRecords:
-                        # Find if sequence ID is in our idList
+                        # Find if sequence ID is in our idSet
                         seqid = None
-                        if record.name in idList:
+                        if record.name in idSet:
                                 seqid = record.name
                                 foundList.append(seqid)
-                        elif record.long_name in idList:
+                        elif record.long_name in idSet:
                                 seqid = record.long_name
                                 foundList.append(seqid)
                         elif idShortDict != None:
                                 if record.name in idShortDict:
                                         seqid = record.long_name
                                         foundList.append(idShortDict[record.name])
-                        # If relevant, put more effort into finding ID in our idList
+                        # If relevant, put more effort into finding ID in our idSet
                         elif effort == True:
-                                idMatches = [seqid for seqid in idList if record.long_name.startswith(seqid)]                   # This will return all entries in the idList that partially match the current record's long name
+                                idMatches = [seqid for seqid in idSet if record.long_name.startswith(seqid)]                   # This will return all entries in the idSet that partially match the current record's long name
                                 cleanMatches = []
-                                for match in idMatches:                                                                         # Here we begin to look through our partial idList matches
+                                for match in idMatches:                                                                         # Here we begin to look through our partial idSet matches
                                         if not match in fastaRecords and not match in longIndex:                                     # Firstly, we make sure this ID doesn't already have a perfect match; if it does, it belongs to that entry and we ignore it
                                                 matchMatches = [seqid for seqid in fastaRecords.keys() if seqid.startswith(match)]   # Next we check to see if this ID matches more than one sequence in the FASTA; if it does, our program can't work
                                                 if len(matchMatches) == 1:
@@ -122,7 +122,6 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idList
                                         continue
         # Report details re: foundList
         foundSet = set(foundList)
-        idSet = set(idList)
         if foundSet == idSet:
                 print('All values in the ID list were successfully ' + behaviour + 'd.')
         else:
@@ -236,7 +235,7 @@ while '' in idList:
 
 # Extract sequences if handling command-line argument
 if operationType == 'command-line':
-        fasta_retrieve_remove_tofile(records, longIndex, args.outputFileName, idList, idShortDict, args.behaviour, args.effort)
+        fasta_retrieve_remove_tofile(records, longIndex, args.outputFileName, set(idList), idShortDict, args.behaviour, args.effort)
                 
 # Open CMD window and allow for ongoing sequence retrieval otherwise
 elif operationType == 'CMD':
