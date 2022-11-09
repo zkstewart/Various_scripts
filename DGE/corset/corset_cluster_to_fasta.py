@@ -159,11 +159,28 @@ def main():
     representatives = find_corset_representatives(clustersDict, seqLens, blastDict)
     
     # Write representatives to file
-    records = SeqIO.parse(open(args.fastaFile, "r"), "fasta") # load in again for the sequences
+    found = set()
     with open(args.outputFile, "w") as fileOut:
+        records = SeqIO.parse(open(args.fastaFile, "r"), "fasta") # load in again for the sequences
         for r in records:
             if r.id in representatives:
+                found.add(r.id)
                 fileOut.write(r.format("fasta"))
+        
+        # Try to rescue sequences not found if they're utrorf only sequences
+        diff = representatives.difference(found)
+        if len(diff) > 0:
+            records = SeqIO.parse(open(args.fastaFile, "r"), "fasta") # load in again for the sequences...
+            for r in records:
+                if r.id.replace("utrorf", "") in diff:
+                    found.add(r.id)
+                    fileOut.write(r.format("fasta"))
+    
+    # Validate that it worked
+    if len(found) == len(representatives):
+        print(f"Found all {len(representatives)} expected sequences")
+    else:
+        print(f"Warning: Only found {len(found)} sequences, instead of the expected {len(representatives)}")
     
     # Done!
     print('Program completed successfully!')
