@@ -73,11 +73,13 @@ def find_corset_representatives(clustersDict, seqLens, blastDict):
     This function is manually tuned to handle EvidentialGene transcripts
     and be friendly with utrorf sequences.
     '''
-    representatives = set()
+    # representatives = set()
+    representatives = {}
     for clustID, seqIDs in clustersDict.items():
         # Handle single member clusters
         if len(seqIDs) == 1:
-            representatives.add(seqIDs[0])
+            # representatives.add(seqIDs[0])
+            representatives[seqIDs[0]] = clustID
         # Handle multi-member clusters
         else:
             # Get evidence criteria sorted by priority
@@ -95,7 +97,8 @@ def find_corset_representatives(clustersDict, seqLens, blastDict):
             repEvidence.sort(key = lambda x: (-x[1], -x[2], x[3]))
             
             # Hold onto the best based on evidence sorting
-            representatives.add(repEvidence[0][0])
+            # representatives.add(repEvidence[0][0])
+            representatives[repEvidence[0][0]] = clustID
     
     return representatives
 
@@ -135,6 +138,11 @@ def main():
                    help="""Specify this tag if the transcriptome file being read in contains
                    nucleotide sequences; by default, it is assumed to be protein.""",
                    default=False)
+    p.add_argument("--writeClusterIDs", dest="writeClusterIDs", action="store_true",
+                   required=False,
+                   help="""Specify this tag if you'd like to write output sequences not with
+                   their original transcript ID but with the Corset cluster ID""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -165,16 +173,23 @@ def main():
         for r in records:
             if r.id in representatives:
                 found.add(r.id)
-                fileOut.write(r.format("fasta"))
+                if args.writeClusterIDs is True:
+                    fileOut.write(">{0} original_id={1}\n{2}\n".format(representatives[r.id], r.id, str(r.seq)))
+                else:
+                    fileOut.write(r.format("fasta"))
         
         # Try to rescue sequences not found if they're utrorf only sequences
-        diff = representatives.difference(found)
+        repSet = set(representatives.keys())
+        diff = repSet.difference(found)
         if len(diff) > 0:
             records = SeqIO.parse(open(args.fastaFile, "r"), "fasta") # load in again for the sequences...
             for r in records:
                 if r.id.replace("utrorf", "") in diff:
                     found.add(r.id)
-                    fileOut.write(r.format("fasta"))
+                    if args.writeClusterIDs is True:
+                        fileOut.write(">{0} original_id={1}\n{2}\n".format(representatives[r.id.replace("utrorf", "")], r.id, str(r.seq)))
+                    else:
+                        fileOut.write(r.format("fasta"))
     
     # Validate that it worked
     if len(found) == len(representatives):
