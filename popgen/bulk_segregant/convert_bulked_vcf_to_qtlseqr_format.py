@@ -64,6 +64,12 @@ def parse_vcf(vcfFile):
                     "ALT": alt,
                 }
                 
+                # Parse DP from info in case imputing is required below
+                if "DP=" in info:
+                    infoDP = [x.split("=")[1] for x in info.split(";") if x.startswith("DP=")][0]
+                else:
+                    infoDP = None
+                
                 # Parse sample details according to FORMAT 
                 for i in range(len(sampleIDs)):
                     sampleFormat = format.split(":")
@@ -73,7 +79,16 @@ def parse_vcf(vcfFile):
                     for x in range(len(sampleFormat)):
                         sampleDict[sampleFormat[x]] = sampleDetails[x]
                     
+                    # Store result
                     vcfDict[chrom][pos][sampleIDs[i]] = sampleDict # sampleIDs[i] == sampleName
+                
+                # Roughly impute DP per sample if not already existing (and if it's even possible)
+                if "DP" not in sampleDict and infoDP != None and "AD" in sampleDict: # most recently used sampleDict is fine
+                    sampleADs = [vcfDict[chrom][pos][id]["AD"] for id in sampleIDs]
+                    adsRatio = [sum(map(int, ad.split(","))) / int(infoDP) for ad in sampleADs]
+                    dpsImpute = [int(adR*int(infoDP)) for adR in adsRatio]
+                    for i in range(len(sampleIDs)):
+                        vcfDict[chrom][pos][sampleIDs[i]]["DP"] = str(dpsImpute[i])
     return vcfDict
 
 def main():
