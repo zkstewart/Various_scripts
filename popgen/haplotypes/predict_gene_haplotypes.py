@@ -251,6 +251,10 @@ def get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, minSnps=0):
         # Update snpDict coordinates to be localised to the extracted CDS (rather than genomic coordinates)
         newSnpDict = convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict)
         
+        # Skip if we've found no variants actually within the CDS
+        if newSnpDict == {}:
+            continue
+        
         # Get haplotype codes for all samples
         haploCodeDict = {sampleID:[[], []] for genotypeDict in newSnpDict.values() for sampleID in genotypeDict.keys() if sampleID != "ref_alt"}
         
