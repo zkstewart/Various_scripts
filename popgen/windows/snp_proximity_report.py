@@ -19,6 +19,16 @@ def validate_args(args):
         print('I am unable to locate the GFF3 file (' + args.gff3 + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if args.windowsTable != None:
+        if not os.path.isfile(args.windowsTable):
+            print('I am unable to locate the windows table file (' + args.windowsTable + ')')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+    if args.annotationTable != None:
+        if not os.path.isfile(args.annotationTable):
+            print('I am unable to locate the annotation table file (' + args.annotationTable + ')')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     # Validate output file location
     if os.path.isfile(args.outputFilePrefix + ".snp_proximity.tsv"):
         print(f'File already exists at output location ({args.outputFilePrefix + ".snp_proximity.tsv"})')
@@ -28,6 +38,11 @@ def validate_args(args):
         print(f'File already exists at output location ({args.outputFilePrefix + ".gene_proximity.tsv"})')
         print('Make sure you specify a unique file name and try again.')
         quit()
+    # Validate other parameters
+    if args.windowsColumns != None:
+        if len(args.windowsColumns) != 3:
+            print("windowsColumns, if provided, must consist of 3 separate column names (no spaces please!)")
+            quit()
 
 def get_snp_positions_from_vcf(vcfFile):
     '''
@@ -65,8 +80,10 @@ def get_snp_positions_from_vcf(vcfFile):
     
     return snpPositions
 
-def generate_snp_proximity_dict(gff3Obj, snpPositions):
+def generate_snp_proximity_dict(gff3Obj, snpPositions, windows=None):
     '''
+    Reads in a GFF3 and locates SNPs in relation to these features.
+    
     Parameters:
         gff3Obj -- a ZS_GFF3IO.GFF3 object with NCLS indexing of the gene features
         snpPositions -- a dictionary as produced by get_snp_positions_from_vcf()
@@ -75,6 +92,13 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions):
                             'contig1': [pos1, pos2, ...],
                             'contig2': ...,
                         }
+        windows -- a dictionary with structure like:
+                   {
+                       chromID1: [ [start1, end1], [start2, end2], ... ],
+                       chromID2: [ ... ],
+                       ...
+                   }
+                   OR, None if this is irrelevant.
     Returns:
         snpProximityDict -- a dictionary with structure like:
                             {
@@ -119,6 +143,12 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions):
                 "rightGeneDistance": ".",
                 "rightGeneStrand": "."
             }
+            if windows != None:
+                snpResultDict["isInsideWindow"] = "."
+            
+            # Establish whether this SNP is inside a window (if relevant)
+            if windows != None:
+                snpResultDict["isInsideWindow"] = "Y" if locate_snp_within_window(contig, pos, windows) else "N"
             
             # Scenario 1: SNP located within a gene
             matches = gff3Obj.ncls_finder(pos, pos, "contig", contig)
@@ -135,6 +165,9 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions):
                     }
                 )
                 geneProximityDict[geneID]["snpWithin"].append(snpLocation)
+                if windows != None:
+                    geneProximityDict[geneID]["isInsideWindow"] = snpResultDict["isInsideWindow"][:]
+                
             
             # Scenario 2: SNP located not inside, but near a gene
             else:
@@ -151,7 +184,9 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions):
                         }
                     )
                     geneProximityDict[nearestLeft[1]]["snpRight"].append(pos) # if gene is left of SNP, SNP is right of gene!
-                
+                    if windows != None:
+                        geneProximityDict[nearestLeft[1]]["isInsideWindow"] = snpResultDict["isInsideWindow"][:]
+                    
                 if nearestRight[1] != None:
                     snpResultDict["rightGeneID"] = nearestRight[1]
                     snpResultDict["rightGeneDistance"] = nearestRight[0]
@@ -164,6 +199,8 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions):
                         }
                     )
                     geneProximityDict[nearestRight[1]]["snpLeft"].append(pos)
+                    if windows != None:
+                        geneProximityDict[nearestRight[1]]["isInsideWindow"] = snpResultDict["isInsideWindow"][:]
             
             # Store whatever results we have found if relevant
             if any([value != "." for value in snpResultDict.values()]):
@@ -279,6 +316,110 @@ def find_genes_nearest_snp(chromosomeGeneRegions, snpPositions, numNearest):
             
     return list(set(genes))
 
+def parse_windows_table(windowsTableFile, windowsColumns):
+    '''
+    Intended to receive a CSV or TSV file containing at least 3 columns
+    which indicate the chromosome/contig, start, and end positions of
+    predicted QTL windows.
+    
+    Parameters:
+        windowsTableFile -- a string indicating the location of the windows
+                            CSV / TSV file.
+        windowsColumns -- a list containing 3 string values which correspond to
+                          values in the header of the table file.
+    Returns:
+        windows -- a dictionary with structure like:
+                   {
+                       chromID1: [ [start1, end1], [start2, end2], ... ],
+                       chromID2: [ ... ],
+                       ...
+                   }
+    '''
+    windows = {}
+    
+    skipLine = True
+    with open(windowsTableFile, "r") as fileIn:
+        for line in fileIn:
+            l = line.rstrip("\r\n ").replace("'", "").replace('"', "")
+            sl = l.split("\t") if "\t" in l else l.split(",")
+            # Skip any lines prior to our header line; handle the header when we find it
+            if skipLine == True:
+                headerLine = all([c in sl for c in windowsColumns])
+                if headerLine == True:
+                    skipLine = False
+                    colIndices = [sl.index(c) for c in windowsColumns]
+            # Handle content lines
+            else:
+                chrom, start, end = [sl[i] for i in colIndices]
+                windows.setdefault(chrom, [])
+                windows[chrom].append([int(start), int(end)])
+    return windows
+
+def locate_snp_within_window(contig, pos, windows):
+    '''
+    Return
+    
+    Parameters:
+        contig -- a string indicating which contig/chromosome we want to check
+        pos -- a string or integer indicating the position in the chromosome to check
+        windows -- a dictionary with structure like:
+                   {
+                       chromID1: [ [start1, end1], [start2, end2], ... ],
+                       chromID2: [ ... ],
+                       ...
+                   }
+    Returns:
+        isInsideWindow -- a boolean indicating whether the identified positon is inside
+                          of a window (True) or not (False)
+    '''
+    assert str(pos).isdigit(), \
+        "locate_snp_within_window needs pos to be an integer or a str representation of an int"
+    
+    if contig not in windows:
+        return False
+    else:
+        for start, end in windows[contig]:
+            if int(pos) >= start and int(pos) <= end:
+                return True
+    return False
+
+def parse_annotation_table_geneids(annotationTableFile, geneSet):
+    '''
+    Specifically parses an annotation table file and returns annotations for the
+    genes specified.
+    
+    Parameters:
+        annotationTableFile -- a string indicating the location of a gene annotation
+                               table produced using my (ZKS)'s pipeline.
+        geneSet -- a set containing string values which correspond to one or more
+                    rows in the annotation table.
+    Returns:
+        geneAnnotationDict -- a dictionary with structure like:
+                              {
+                                  'geneID1': ['geneName1', ["GO_ID1", "GO_ID2"]],
+                                  'geneID2': ['geneName2', ["GO_ID3", "GO_ID4"]],
+                                  ...
+                              }
+    '''
+    geneAnnotationDict = {}
+    with open(annotationTableFile, "r") as fileIn:
+        for line in fileIn:
+            l = line.rstrip("\r\n ")
+            if l.startswith("#") or l == "":
+                continue
+            
+            sl = l.split("\t")
+            geneID = sl[0]
+            if geneID not in geneSet:
+                geneID = geneID.rsplit(".", maxsplit=1)[0] # attempt a rescue
+                if geneID not in geneSet:
+                    continue
+            geneName = sl[3].split(" [")[0]
+            GOs = sl[18]
+            geneAnnotationDict[geneID] = [geneName, GOs]
+    
+    return geneAnnotationDict
+
 ## Main
 def main():
     # User input
@@ -292,12 +433,28 @@ def main():
     """
     p = argparse.ArgumentParser(description=usage)
     ## Required
-    p.add_argument("-v", dest="vcf", required=True,
-        help="Input VCF containing only SNPs of interest (filter it beforehand)")
-    p.add_argument("-g", dest="gff3", required=True,
-        help="Input GFF3 file")
-    p.add_argument("-o", dest="outputFilePrefix", required=True,
-        help="Output prefix for .snp_proximity.tsv and .gene_proximity.tsv files")
+    p.add_argument("-v", dest="vcf",
+                   required=True,
+                   help="Input VCF containing only SNPs of interest (filter it beforehand)")
+    p.add_argument("-g", dest="gff3",
+                   required=True,
+                   help="Input GFF3 file")
+    p.add_argument("-o", dest="outputFilePrefix",
+                   required=True,
+                   help="Output prefix for .snp_proximity.tsv and .gene_proximity.tsv files")
+    ## Optional
+    p.add_argument("--annotationTable", dest="annotationTable",
+                   required=False,
+                   help="Optionally, specify the gene annotation table file (produced by ZKS pipeline scripts)")
+    p.add_argument("--windowsTable", dest="windowsTable",
+                   required=False,
+                   help="Optionally, specify the QTL windows table file (must be TSV or CSV file)")
+    p.add_argument("--windowsColumns", dest="windowsColumns", nargs="+",
+                   required=False,
+                   help="""Optionally, indicate which columns identify relevant window details;
+                   must be ordered to specify the contig/chromosome, its start, and then its end
+                   position (default=='CHROM start end')""",
+                   default=["CHROM", "start", "end"])
     
     args = p.parse_args()
     validate_args(args)
@@ -309,23 +466,43 @@ def main():
     # Parse VCF as dictionary indexing contig: [positions]
     snpPositions = get_snp_positions_from_vcf(args.vcf)
     
+    # Parse windows table file (if relevant)
+    if args.windowsTable != None:
+        windows = parse_windows_table(args.windowsTable, args.windowsColumns)
+    else:
+        windows = None
+    
     # Get the proximity reporting dicts
-    snpProximityDict, geneProximityDict = generate_snp_proximity_dict(gff3Obj, snpPositions)
+    snpProximityDict, geneProximityDict = generate_snp_proximity_dict(gff3Obj, snpPositions, windows)
+    
+    # Parse the annotation table (if relevant)
+    if args.annotationTable != None:
+        annotations = parse_annotation_table_geneids(args.annotationTable, set(geneProximityDict.keys()))
+    else:
+        annotations = None
     
     # Produce output file 1: SNP-centric report
     with open(args.outputFilePrefix + ".snp_proximity.tsv", "w") as fileOut:
-        fileOut.write("#contig\tpos\tinside\tat location\tleft of\tat distance\tright of\tat distance\n")
+        # Handle header
+        header = [
+            "#contig", "pos", "inside",
+            "at location", "left of", "at distance",
+            "right of", "at distance"
+        ]
+        if windows != None:
+            header.append("inside window")
+        fileOut.write("\t".join(header) + "\n")
+        
+        # Handle content
         for contig in snpProximityDict.keys():
             orderedPositions = list(snpProximityDict[contig].keys())
             orderedPositions.sort()
             
             for pos in orderedPositions:
                 snpResultsDict = snpProximityDict[contig][pos]
-                fileOut.write("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}\t{7}\n".format(
-                    contig,
-                    pos,
-                    snpResultsDict["insideGeneID"],
-                    snpResultsDict["insideGeneLocation"],
+                contents = list(map(str, 
+                    [contig, pos,
+                    snpResultsDict["insideGeneID"], snpResultsDict["insideGeneLocation"],
                     
                     snpResultsDict["rightGeneID"] + f" ({snpResultsDict['rightGeneStrand']})" \
                         if snpResultsDict["rightGeneID"] != "." else ".",
@@ -333,32 +510,52 @@ def main():
                     
                     snpResultsDict["leftGeneID"] + f" ({snpResultsDict['leftGeneStrand']})" \
                         if snpResultsDict["leftGeneID"] != "." else ".",
-                    snpResultsDict["leftGeneDistance"] # {7}
+                    snpResultsDict["leftGeneDistance"]]
                 ))
+                if windows != None:
+                    contents.append(snpResultsDict["isInsideWindow"])
+                
+                fileOut.write("{0}\n".format("\t".join(contents)))
     
     # Produce output file 2: Gene-centric report
     with open(args.outputFilePrefix + ".gene_proximity.tsv", "w") as fileOut:
-        fileOut.write("#gene\tcoords\tstrand\tsnp within\tleft snp at pos\tright snp at pos\n")
+        # Handle header
+        header = [
+            "#gene", "coords", "strand", "contig",
+            "snp within", "left snp at pos", "right snp at pos"
+        ]
+        if annotations != None:
+            header.insert(1, "GO terms")
+            header.insert(1, "gene name")
+        if windows != None:
+            header.append("inside window")
+        fileOut.write("\t".join(header) + "\n")
         
+        # Handle content
         orderedGenes = list(geneProximityDict.keys())
         orderedGenes.sort()
-        
         for geneID in orderedGenes:
             geneResultsDict = geneProximityDict[geneID]
             geneCoords = f"{gff3Obj[geneID].start}-{gff3Obj[geneID].end}"
             geneStrand = gff3Obj[geneID].strand
+            geneContig = gff3Obj[geneID].contig
             
-            fileOut.write("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n".format(
-                geneID,
-                geneCoords,
-                geneStrand,
+            contents = [
+                geneID, geneCoords, geneStrand, geneContig,
                 "; ".join(geneResultsDict["snpWithin"]) \
                     if geneResultsDict["snpWithin"] != [] else ".",
                 "; ".join(map(str, geneResultsDict["snpLeft"])) \
                     if geneResultsDict["snpLeft"] != [] else ".",
                 "; ".join(map(str, geneResultsDict["snpRight"])) \
                     if geneResultsDict["snpRight"] != [] else "." # {5}
-            ))
+            ]
+            if annotations != None:
+                contents.insert(1, annotations[geneID][1])
+                contents.insert(1, annotations[geneID][0])
+            if windows != None:
+                contents.append(geneResultsDict["isInsideWindow"])
+            
+            fileOut.write("{0}\n".format("\t".join(contents)))
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
