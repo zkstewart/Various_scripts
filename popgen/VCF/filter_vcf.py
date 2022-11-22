@@ -3,7 +3,10 @@
 # Simple filtration options that aren't easily accessible
 # through things like vcftools
 
-import os, argparse
+import os, sys, argparse
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from Function_packages import ZS_VCFIO
 
 # Define functions
 def validate_args(args):
@@ -27,12 +30,18 @@ def validate_args(args):
     elif args.minimumSnps < 0:
         print("minimumSnps should be 0 or greater")
         quit()
+    elif args.sampleDP < 0:
+        print("sampleDP should be 0 or greater")
+        quit()
 
 ## Data parsing and filtering
 def parse_pops_file(popsFile):
     pops = {}
     with open(popsFile, "r") as fileIn:
         for line in fileIn:
+            if line.startswith("#"):
+                continue
+            
             sample, population = line.rstrip("\r\n").split("\t")
             # Bidirectional indexing
             pops[sample] = population
@@ -41,156 +50,147 @@ def parse_pops_file(popsFile):
             pops[population].append(sample)
     return pops
 
-def filter_vcf_by_population(vcfFile, pops, missingPerPopulation=0.5):
-    outputLines = []
-    with open(vcfFile, "r") as fileIn:
-        for line in fileIn:
-            l = line.rstrip("\r\n").split("\t")
+def filter_vcf_by_population_missingness(vcf, pops, missingPerPopulation=0.5):
+    '''
+    Receives a ZS_VCFIO.VCF object and filters it (i.e., removes sites) that
+    don't have at least >= missingPerPopulation presence in each population.
+    
+    Parameters:
+        vcf -- a ZS_VCFIO.VCF object
+        pops -- a dictionary which, at minimum, contains keys (population IDs)
+                which index lists that contain the samples associated with
+                the population
+        missingPerPopulation -- a float from 0->1 (inclusive) indicating what
+                                proportion of missingness will be tolerated before
+                                excluding the variant
+    '''
+    # Check VCF to find variants that fail filtration
+    toDrop = {}
+    for contigID, contigDict in vcf.items():
+        for pos, posDict in contigDict.items():
+            gtIndex = posDict["FORMAT"].index("GT")
             
-            # Handle header lines
-            if line.startswith("#CHROM"):
-                samples = l[9:] # This gives us the ordered sample IDs
-            if line.startswith("#"):
-                outputLines.append("\t".join(l)) # Store all header lines for output
-                continue
-            
-            # Determine which field position we're extracting for each filtration
-            fieldsDescription = l[8]
-            if ":" not in fieldsDescription:
-                gtIndex = -1
-            else:
-                gtIndex = fieldsDescription.split(":").index("GT")
-            
-            # Filter: Per-population missing samples
+            # Tally presence across populations
             popsCount = {}
-            ongoingCount = 0 # This gives us the index for our samples header list 
-            for sampleResult in l[9:]: # This gives us the results for each sample as per fieldsDescription
-                # Grab our genotype
-                if gtIndex != -1:
-                    genotype = sampleResult.split(":")[gtIndex]
-                else:
-                    genotype = sampleResult
-                # Assess data presence/absence for this sample
-                present, absent = 0, 0
-                for g in genotype.replace("|", "/").split("/"): # Temporarily ensure all genotype fields can be iterated through
-                    if g == ".":
-                        absent += 1
-                    else:
-                        present += 1
-                # Tally presence/absence data across populations
-                samplePopulation = pops[samples[ongoingCount]] # Samples is our column headers; ongoingCount the sample index for this loop
-                if samplePopulation not in popsCount:
-                    popsCount[samplePopulation] = [0, 0]
-                popsCount[samplePopulation][0] += present
-                popsCount[samplePopulation][1] += absent
+            for sampleID in vcf.samples:
+                if posDict[sampleID] == ["."]: # handle freebayes non-called
+                    continue
                 
-                ongoingCount += 1
+                sampleGT = posDict[sampleID][gtIndex]
+                samplePop = pops[sampleID]
+                popsCount.setdefault(samplePop, 0)
+                
+                if sampleGT != "./.":
+                    popsCount[samplePop] += 1
             
-            # Check if filter passes
-            skip = False
-            for key, value in popsCount.items():
-                total = sum(value)
-                if (value[1] / total) > missingPerPopulation:
-                    skip = True
-                    break
-            if skip:
-                continue
-            
-            # Store results if all filter(s) pass
-            outputLines.append("\t".join(l))
-            
-    return outputLines
-
-def filter_lines_by_contig(vcfLines, minimumSnps):
-    contingCountDict = {}
-    for line in vcfLines:
-        l = line.rstrip("\r\n").split("\t")
-        
-        # Handle header lines
-        if line.startswith("#"):
-            continue
-        
-        # Count this contig
-        contingCountDict.setdefault(l[0], 0)
-        contingCountDict[l[0]] += 1
-    
-    # See which contigs meet or exceed our minimum cutoff
-    contigsToDrop = []
-    for contigID, count in contingCountDict.items():
-        if count < minimumSnps:
-            contigsToDrop.append(contigID)
-    
-    # Filter lines
-    outputLines = []
-    for line in vcfLines:
-        l = line.rstrip("\r\n").split("\t")
-        
-        # Handle header lines
-        if line.startswith("#"):
-            pass
-        # Handle other lines
-        elif l[0] in contigsToDrop:
-            continue
-        
-        outputLines.append(line)
-    
-    return outputLines
-
-## File out
-def write_vcf_file(vcfLines, outputFileName):
-    with open(outputFileName, "w") as fileOut:
-        fileOut.write("\n".join(vcfLines))
-
-def write_geno_file(vcfLines, outputFileName):
-    # Find header from vcfLines
-    for line in vcfLines:
-        if not line.startswith("#CHROM"):
-            continue
-        else:
-            l = line.rstrip("\r\n").split("\t")
-            samples = l[9:] # This gives us the ordered sample IDs
-            break
-    
-    # Write output geno
-    with open(outputFileName, "w") as fileOut:
-        # Write header to file
-        fileOut.write("#CHROM\tPOS\t{0}\n".format("\t".join(samples)))
-        # Write everything else
-        for line in vcfLines:
-            if line.startswith("#"): continue
-            
-            # Extract relevant info
-            l = line.split("\t")
-            chrom = l[0]
-            pos = l[1]
-            ref = l[3]
-            alt = l[4]
-            gtOptions = [ref, *alt.split(",")] # This enables us to deal with multi-allelic calling
-            fieldsDescription = l[8]
-            
-            # Determine which field position we're extracting to get genotype
-            if ":" not in fieldsDescription:
-                gtIndex = -1
+            # Compute the missingness per population
+            failed = False
+            if popsCount == {}: # happens if ALL samples are blank after we dropped samples
+                failed = True
             else:
-                gtIndex = fieldsDescription.split(":").index("GT")
+                for popID, popCount in popsCount.items():
+                    pctMissing = 1 - (popCount / len(pops[popID]))
+                    if pctMissing > missingPerPopulation: # if this FAILS the filter
+                        failed = True
+                        break
+            if failed:
+                toDrop.setdefault(contigID, set())
+                toDrop[contigID].add(pos)
+    
+    # Eliminate variants if they failed the filter
+    for contigID, posSet in toDrop.items():
+        for pos in posSet:
+            vcf.del_variant(contigID, pos)
+
+def filter_vcf_by_sample_dp(vcf, dpMinimum=5):
+    '''
+    Receives a ZS_VCFIO.VCF object and modifies sample variant calls to be ambiguous
+    (all "."s) if they have a DP value smaller than the given cutoff.
+    
+    Note that this function assumes each sample has a DP value, which should be safe
+    in most instances since the VCF class automatically imputes this value if possible.
+    If this wasn't able to happen, this function simply cannot work and it'll error
+    out ungracefully (but still informatively).
+    
+    Parameters:
+        vcf -- a ZS_VCFIO.VCF object
+        dpMinimum -- an integer specifying the minimum DP required for a sample to have its
+                     genotype called
+    '''
+    # Check VCF to find variants that fail filtration
+    for contigID, contigDict in vcf.items():
+        for pos, posDict in contigDict.items():
+            gtIndex = posDict["FORMAT"].index("GT")
+            dpIndex = posDict["FORMAT"].index("DP")
             
-            # Parse genotype per sample
-            genotypes = []
-            ongoingCount = 0 # This gives us the index for the sample in order
-            for sampleResult in l[9:]: # This gives us the results for each sample as per fieldsDescription
-                if gtIndex != -1:
-                    genotype = sampleResult.split(":")[gtIndex]
+            # Check DP per sample
+            for sampleID in vcf.samples:
+                if posDict[sampleID] == ["."]: # freebayes does non-called like this
+                    continue
+                
+                sampleDP = posDict[sampleID][dpIndex]
+                if sampleDP == ".": # vcftools does non-called like this
+                    continue
+                
+                elif int(sampleDP) < dpMinimum:
+                    for i in range(0, len(posDict[sampleID])):
+                        if i == gtIndex:
+                            posDict[sampleID][i] = "./."
+                        else:
+                            posDict[sampleID][i] = "."
+
+def filter_vcf_by_contig_snps(vcf, minimumSnps):
+    '''
+    Receives a ZS_VCFIO.VCF object and drops contigs and any SNPs annotated on them
+    if the contig has fewer than the indicated SNPs located on it.
+    
+    Parameters:
+        vcf -- a ZS_VCFIO.VCF object
+        minimumSnps -- an integer specifying the minimum number of SNPs required for us
+                       to retain it in the VCF
+    '''
+    toDrop = []
+    # Check VCF to find variants that fail filtration
+    for contigID, contigDict in vcf.items():
+        if len(contigDict) < minimumSnps:
+            toDrop.append(contigID)
+    
+    # Remove any contigs flagged through this
+    for contigID in toDrop:
+        vcf.del_contig(contigID)
+
+def filter_vcf_where_no_alt_allele(vcf):
+    '''
+    Simple filter to remove variants where no samples with the variant are
+    called.
+    '''
+    toDrop = {}
+    for contigID, contigDict in vcf.items():
+        for pos, posDict in contigDict.items():
+            gtIndex = posDict["FORMAT"].index("GT")
+            
+            # Check GT per sample
+            foundAlt = False
+            for sampleID in vcf.samples:
+                if posDict[sampleID] == ["."]: # freebayes does non-called like this
+                    continue
+                
+                sampleGT = posDict[sampleID][gtIndex]
+                if sampleGT == "./." or sampleGT == "0/0":
+                    continue
                 else:
-                    genotype = sampleResult
-                # Multi-allelic compatible genotype finding
-                for i in range(0, len(gtOptions)):
-                    genotype = genotype.replace(str(i), gtOptions[i]).replace(".", "N") # need to switch to N to satisfy the .geno requirements
-                # Store results
-                genotypes.append(genotype)
-                ongoingCount += 1
+                    foundAlt = True
+                    break
             
-            # Write to file
-            fileOut.write("{0}\t{1}\t{2}\n".format(chrom, pos, "\t".join(genotypes)))
+            # Fail this site if we didn't find any alt alleles
+            if foundAlt == False:
+                toDrop.setdefault(contigID, set())
+                toDrop[contigID].add(pos)
+    
+    # Eliminate variants if they failed the filter
+    for contigID, posSet in toDrop.items():
+        for pos in posSet:
+            vcf.del_variant(contigID, pos)
 
 ## Main
 def main():
@@ -212,36 +212,62 @@ def main():
     ## Optional
     p.add_argument("--mpp", dest="missingPerPopulation", type=float,
         help="""This number is the minimum proportion of samples per population
-        that is tolerated; default=0.5 (range 0 -> 1)""",
+        where ambiguity will be tolerated before dropping the site; default=0.5 (range 0 -> 1)""",
         default=0.5)
+    p.add_argument("--min", dest="minimumSnps", type=int,
+        help="""Optionally, specify how many SNPs must be on a contig
+        for it to be retained (default == 1)""",
+        default=0)
+    p.add_argument("--dp", dest="sampleDP", type=int,
+        help="""Optionally, specify the per-sample DP required for the
+        genotype call in that sample to not be converted to ambiguous (default=5)""",
+        default=5)
     p.add_argument("--geno", dest="genoOutput", action="store_true",
         help="""Optionally, produce a .geno formatted output rather than .vcf""",
         default=False)
-    p.add_argument("--min", dest="minimumSnps", type=int,
-        help="""Optionally, specify how many SNPs must be on a contig
-        for it to be retained (default == 0)""",
-        default=0)
     
     args = p.parse_args()
     validate_args(args)
     
+    # Parse VCF file
+    vcf = ZS_VCFIO.VCF(args.vcfFile)
+    
     # Parse populations into bidirectional dictionary structure
     pops = parse_pops_file(args.popsFile)
     
-    # Get VCF lines filtered by population presence
-    vcfLines = filter_vcf_by_population(args.vcfFile, pops, args.missingPerPopulation)
+    # Remove any samples that aren't in our population file
+    samplesNotFound = set(vcf.samples).difference(pops.keys())
+    for sampleID in samplesNotFound:
+        vcf.del_sample(sampleID)
     
-    # Check to see if any contigs should be filtered due to --min
-    if args.minimumSnps > 1:
-        vcfLines = filter_lines_by_contig(vcfLines, args.minimumSnps)
-    else:
-        pass # no point running filter_lines_by_contig() if everything will pass!
+    # Modify VCF by per-sample DP to set sample as ambiguous if its DP is too low
+    filter_vcf_by_sample_dp(vcf, args.sampleDP)
     
-    # Write output write_vcf_file file
-    if not args.genoOutput:
-        write_vcf_file(vcfLines, args.outputFileName)
+    # Filter VCF by population missingness/ambiguity
+    filter_vcf_by_population_missingness(vcf, pops, args.missingPerPopulation)
+    
+    # Filter VCF by contig SNP count
+    filter_vcf_by_contig_snps(vcf, args.minimumSnps)
+    
+    # Filter VCF to remove sites that no longer have a variant predicted
+    "Might happen if the only sample(s) that had a ALT allele predicted were removed/made ambiguous"
+    filter_vcf_where_no_alt_allele(vcf)
+    
+    # Write filtered output (if relevant)
+    if len(vcf) == 0:
+        print("In the process of filtering this VCF, we ended up with 0 SNPs remaining!")
+        print("You should check to make sure your parameters make sense...")
+        print("(Since there's no SNPs left, there's nothing to write to an output file)")
     else:
-        write_geno_file(vcfLines, args.outputFileName)
+        vcf.comments["footer"].append("##filter_vcf {0} {1} {2}".format(
+            f"mpp={args.missingPerPopulation}",
+            f"min={args.minimumSnps}",
+            f"dp={args.sampleDP}"
+        ))
+        if args.genoOutput:
+            vcf.write_geno(args.outputFileName)
+        else:
+            vcf.write_vcf(args.outputFileName)
 
 if __name__ == "__main__":
     main()
