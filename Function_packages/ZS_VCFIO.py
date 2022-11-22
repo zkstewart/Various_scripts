@@ -97,38 +97,206 @@ class VCF:
                         "ALT": alt,
                         "QUAL": qual,
                         "FILTER": filter,
-                        "INFO": info,
-                        "FORMAT": format
+                        "INFO": info.split(";"),
+                        "FORMAT": format.split(":")
                     }
                     
-                    # Parse sample details according to FORMAT 
+                    # Store sample details in compact format
                     for i in range(len(self.samples)):
-                        sampleFormat = format.split(":")
                         sampleDetails = sl[9+i].split(":")
-                        
-                        sampleDict = {}
-                        for x in range(len(sampleFormat)):
-                            sampleDict[sampleFormat[x]] = sampleDetails[x]
-                        
-                        # Store result
-                        self.variants[chrom][pos][self.samples[i]] = sampleDict # sampleIDs[i] == sampleName
+                        self.variants[chrom][pos][self.samples[i]] = sampleDetails # sampleIDs[i] == sampleName
                     
                     # If DP is listed in info but not per-sample, impute it now
-                    if "DP=" in info:
-                        infoDP = [x.split("=")[1] for x in info.split(";") if x.startswith("DP=")][0]
-                    
-                        if "DP" not in sampleDict and "AD" in sampleDict: # most recently used sampleDict is fine
-                            self._impute_dp(chrom, pos, infoDP)
+                    infoDP = VCF.parse_info(info.split(";"), "DP")
+                    if infoDP != None and "DP" not in self.variants[chrom][pos]["FORMAT"] and "AD" in self.variants[chrom][pos]["FORMAT"]:
+                        self.variants[chrom][pos]["FORMAT"] += ":DP"
+                        self._impute_dp(chrom, pos, infoDP)
+    
+    @staticmethod
+    def parse_info(info, tag):
+        '''
+        Helper static function to look through the INFO field for a specific tag's value,
+        returning said value.
+        
+        Parameters:
+            info -- a list indexed by self.variants[chrom][pos]["INFO"]
+            tag -- the specific {tag}= to find a value for. If it doesn't exist, instead returns None
+        '''
+        for tagValue in info:
+            if tagValue.startswith(f"{tag}="):
+                return tagValue.split("=")[1]
+        return None
     
     def _impute_dp(self, chrom, pos, infoDP):
         '''
         Simply put, imputes DP for each sample if it's not found for any samples.
         '''
-        sampleADs = [self.variants[chrom][pos][id]["AD"] for id in self.samples]
-        adsRatio = [sum(map(int, ad.split(","))) / int(infoDP) for ad in sampleADs]
-        dpsImpute = [int(adR*int(infoDP)) for adR in adsRatio]
+        adIndex = self.variants[chrom][pos]["FORMAT"].index("AD")
+        
+        sampleADs = [
+            self.variants[chrom][pos][id].split(":")[adIndex]
+                for id in self.samples
+        ]
+        
+        adsRatio = [
+            sum(map(int, ad.split(","))) / int(infoDP)
+                for ad in sampleADs
+        ]
+        
+        dpsImpute = [
+            int(adR*int(infoDP))
+                for adR in adsRatio
+        ]
+        
         for i in range(len(self.samples)):
-            self.variants[chrom][pos][self.samples[i]]["DP"] = str(dpsImpute[i])
+            self.variants[chrom][pos][self.samples[i]] += f":{str(dpsImpute[i])}"
+    
+    def del_variant(self, contig, pos):
+        '''
+        Parameters:
+            contig -- a string indicating a contigID that is indexed in self.variants
+            pos -- a string or int indicating a position that is indexed in
+                   self.variants[contig]
+        '''
+        assert contig in self.variants, \
+            f"Cannot delete {contig}-{pos} since {contig} doesn't exist in the VCF"
+        assert str(pos) in self.variants[contig], \
+            f"Cannot delete {pos} from {contig} since {pos} isn't indexed under that contig"
+        
+        # Delete the variant
+        del self.variants[contig][pos]
+        
+        # Delete the contig if no more variants exist
+        if len(self.variants[contig]) == 0:
+            self.del_contig(contig)
+    
+    def del_sample(self, sampleID):
+        '''
+        Simply put, eliminates a sample from the dictionary structure.
+        
+        Parameters:
+            sampleID -- a string indicating a sample that is listed in self.samples
+        '''
+        assert sampleID in self.samples, \
+            f"'{sampleID}' doesn't exist in the VCF"
+        
+        for contigID, contigDict in self.variants.items():
+            for pos, posDict in contigDict.items():
+                del posDict[sampleID]
+        
+        del self.samples[self.samples.index(sampleID)]
+    
+    def del_contig(self, contig):
+        '''
+        Removes the contig both from self.variants, as well as self.comments["contigs"]
+        
+        Parameters:
+            contig -- a string indicating a contigID that is indexed in self.variants
+        '''
+        del self.variants[contig]
+        
+        contigComment = [contigComment for contigComment in self.comments["contigs"] if f"contig=<ID={contig}" in contigComment]
+        assert len(contigComment) == 1, \
+            f"Somehow {contig} matches against more than one VCF contig comment? Hits = {contigComment}"
+        
+        commentIndex = self.comments["contigs"].index(contigComment[0])
+        del self.comments["contigs"][commentIndex]
+    
+    def write_vcf(self, outputFileName):
+        '''
+        Takes the VCF represented by this object and write it to a new VCF file.
+        Implicitly makes sure the file is ordered by contig ID sorting.
+        '''
+        assert not os.path.isfile(outputFileName), \
+            f"VCF won't write to '{outputFileName}' since a file already exists here!"
+        
+        with open(outputFileName, "w") as fileOut:
+            # Get our contigs comment line
+            contigComments = [cComment for cComment in self.comments["contigs"] if cComment.split(",")[0].split("ID=")[1] in self.variants]
+            
+            # Write comments
+            fileOut.write("\n".join(self.comments["header"]))
+            if len(self.comments["header"]) != 0: # spacer
+                fileOut.write("\n")
+                
+            fileOut.write("\n".join(sorted(
+                contigComments, key=lambda x: x.split(",")[0].split("ID=")[1]
+            )))
+            if len(contigComments) != 0: # spacer
+                fileOut.write("\n")
+            
+            fileOut.write("\n".join(self.comments["footer"]))
+            if len(self.comments["footer"]) != 0: # spacer
+                fileOut.write("\n")
+            
+            fileOut.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{0}\n".format(
+                "\t".join(self.samples)
+            ))
+            
+            # Write contents
+            for contigID in sorted(self.variants.keys()):
+                for pos, posDict in self.variants[contigID].items():
+                    lineOut = "{CHROM}\t{POS}\t{ID}\t{REF}\t{ALT}\t{QUAL}\t{FILTER}".format(
+                        CHROM=contigID,
+                        POS=pos,
+                        ID=posDict["ID"],
+                        REF=posDict["REF"],
+                        ALT=posDict["ALT"],
+                        QUAL=posDict["QUAL"],
+                        FILTER=posDict["FILTER"]
+                    )
+                    lineOut += "\t{0}\t{1}\t{2}\n".format(
+                        ";".join(posDict["INFO"]),
+                        ":".join(posDict["FORMAT"]),
+                        "\t".join(
+                            [":".join(posDict[sID]) for sID in self.samples]
+                        )
+                    )
+                    fileOut.write(lineOut)
+    
+    def write_geno(self, outputFileName):
+        '''
+        Takes the VCF represented by this object and write it to a new .geno file.
+        Implicitly makes sure the file is ordered by contig ID sorting.
+        '''
+        assert not os.path.isfile(outputFileName), \
+            f"VCF won't write to '{outputFileName}' since a file already exists here!"
+        
+        with open(outputFileName, "w") as fileOut:
+            # Write comments
+            fileOut.write("#CHROM\tPOS\t{0}\n".format(
+                "\t".join(self.samples)
+            ))
+            
+            # Write contents
+            for contigID in sorted(self.variants.keys()):
+                for pos, posDict in self.variants[contigID].items():
+                    # Extract relevant info
+                    gtOptions = [posDict["REF"], *posDict["ALT"].split(",")] # This enables us to deal with multi-allelic calling
+                    gtIndex = posDict["FORMAT"].index("GT")
+                    
+                    # Parse genotype per sample
+                    genotypes = []
+                    for sampleID in self.samples:
+                        if posDict[sampleID] == ["."]: # handle freebayes non-called
+                            genotypes.append("N/N")
+                            continue
+                        
+                        # Multi-allelic compatible genotype finding
+                        sampleGT = posDict[sampleID][gtIndex]
+                        for i in range(0, len(gtOptions)):
+                            sampleGT = sampleGT.replace(str(i), gtOptions[i]).replace(".", "N") # need to switch to N to satisfy the .geno requirements
+                        
+                        # Store results
+                        genotypes.append(sampleGT)
+                    
+                    # Format output line
+                    lineOut = "{CHROM}\t{POS}\t{GENOTYPES}\n".format(
+                        CHROM=contigID,
+                        POS=pos,
+                        GENOTYPES="\t".join(genotypes)
+                    )
+                    fileOut.write(lineOut)
     
     def __getitem__(self, key):
         return self.variants[key]
@@ -138,12 +306,6 @@ class VCF:
     
     def __len__(self):
         return len(self.variants)
-    
-    def __delitem__(self, key):
-        if key not in self.variants:
-            raise ValueError(f"'{key}' not found in this VCF object")
-        else:
-            del self.variants[key]
     
     def __iter__(self):
         return iter(self.variants)
@@ -164,15 +326,10 @@ class VCF:
         return self.variants.items()
     
     def __repr__(self):
-        # return "<VCF object;file='{0}';num_variants={1};{2}>".format(
-        #     self.fileLocation,
-        #     len(self.variants),
-        #     ";".join(["num_{0}={1}".format(key, len(self.types[key])) for key in self.types.keys()])
-        # )
-        return "<VCF object;file='{0}';num_contigs={1};num_variants=TBD>".format(
+        return "<VCF object;file='{0}';num_contigs={1};num_variants={2}>".format(
             self.fileLocation,
             len(self.variants),
-            len(self.variants.values())
+            sum([len(v) for v in self.variants.values()])
         )
 
 if __name__ == "__main__":
