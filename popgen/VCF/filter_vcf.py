@@ -80,7 +80,7 @@ def filter_vcf_by_population_missingness(vcf, pops, missingPerPopulation=0.5):
                 samplePop = pops[sampleID]
                 popsCount.setdefault(samplePop, 0)
                 
-                if sampleGT != "./.":
+                if sampleGT != "." and sampleGT != "./.":
                     popsCount[samplePop] += 1
             
             # Compute the missingness per population
@@ -176,7 +176,7 @@ def filter_vcf_where_no_alt_allele(vcf):
                     continue
                 
                 sampleGT = posDict[sampleID][gtIndex]
-                if sampleGT == "./." or sampleGT == "0/0":
+                if sampleGT == "." or sampleGT == "./." or sampleGT == "0/0":
                     continue
                 else:
                     foundAlt = True
