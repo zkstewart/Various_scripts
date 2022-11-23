@@ -192,6 +192,38 @@ def filter_vcf_where_no_alt_allele(vcf):
         for pos in posSet:
             vcf.del_variant(contigID, pos)
 
+def filter_vcf_where_sample_is_untyped(vcf, mustBeTyped):
+    '''
+    Simple filter to remove variants where the samples in mustBeTyped
+    are untyped.
+    '''
+    toDrop = {}
+    for contigID, contigDict in vcf.items():
+        for pos, posDict in contigDict.items():
+            gtIndex = posDict["FORMAT"].index("GT")
+            
+            # Check GT for mustBeTyped samples
+            wasNotTyped = False
+            for sampleID in mustBeTyped:
+                if posDict[sampleID] == ["."]: # freebayes does non-called like this
+                    wasNotTyped = True
+                    break
+                
+                sampleGT = posDict[sampleID][gtIndex]
+                if sampleGT == "." or sampleGT == "./.":
+                    wasNotTyped = True
+                    break
+            
+            # Fail this site if any samples were untyped
+            if wasNotTyped == True:
+                toDrop.setdefault(contigID, set())
+                toDrop[contigID].add(pos)
+    
+    # Eliminate variants if they failed the filter
+    for contigID, posSet in toDrop.items():
+        for pos in posSet:
+            vcf.del_variant(contigID, pos)
+
 ## Main
 def main():
     # User input
@@ -203,28 +235,41 @@ def main():
     """
     p = argparse.ArgumentParser(description=usage)
     ## Required
-    p.add_argument("-v", dest="vcfFile", required=True,
-        help="Input VCF file for filtering")
-    p.add_argument("-p", dest="popsFile", required=True,
-        help="Input population file")
-    p.add_argument("-o", dest="outputFileName", required=True,
-        help="Output file name for the filtered SNPs")
+    p.add_argument("-v", dest="vcfFile",
+                   required=True,
+                   help="Input VCF file for filtering")
+    p.add_argument("-p", dest="popsFile",
+                   required=True,
+                   help="Input population file")
+    p.add_argument("-o", dest="outputFileName",
+                   required=True,
+                   help="Output file name for the filtered SNPs")
     ## Optional
+    p.add_argument("--mbt", dest="mustBeTyped", nargs="+",
+                   required=False,
+                   help="""Optionally, provide one or more sample IDs that must be typed
+                   for us to retain the site overall""",
+                   default=[])
     p.add_argument("--mpp", dest="missingPerPopulation", type=float,
-        help="""This number is the minimum proportion of samples per population
-        where ambiguity will be tolerated before dropping the site; default=0.5 (range 0 -> 1)""",
-        default=0.5)
+                   required=False,
+                   help="""This number is the minimum proportion of samples per population
+                   where ambiguity will be tolerated before dropping the site; default=0.5
+                   (range 0 -> 1)""",
+                   default=0.5)
     p.add_argument("--min", dest="minimumSnps", type=int,
-        help="""Optionally, specify how many SNPs must be on a contig
-        for it to be retained (default == 1)""",
-        default=0)
+                   required=False,
+                   help="""Optionally, specify how many SNPs must be on a contig
+                   for it to be retained (default == 1)""",
+                   default=0)
     p.add_argument("--dp", dest="sampleDP", type=int,
-        help="""Optionally, specify the per-sample DP required for the
-        genotype call in that sample to not be converted to ambiguous (default=5)""",
-        default=5)
+                   required=False,
+                   help="""Optionally, specify the per-sample DP required for the
+                   genotype call in that sample to not be converted to ambiguous (default=5)""",
+                   default=5)
     p.add_argument("--geno", dest="genoOutput", action="store_true",
-        help="""Optionally, produce a .geno formatted output rather than .vcf""",
-        default=False)
+                   required=False,
+                   help="""Optionally, produce a .geno formatted output rather than .vcf""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -253,16 +298,21 @@ def main():
     "Might happen if the only sample(s) that had a ALT allele predicted were removed/made ambiguous"
     filter_vcf_where_no_alt_allele(vcf)
     
+    # Filter VCF to remove sites where specific samples have not been typed
+    if args.mustBeTyped != []:
+        filter_vcf_where_sample_is_untyped(vcf, args.mustBeTyped)
+    
     # Write filtered output (if relevant)
     if len(vcf) == 0:
         print("In the process of filtering this VCF, we ended up with 0 SNPs remaining!")
         print("You should check to make sure your parameters make sense...")
         print("(Since there's no SNPs left, there's nothing to write to an output file)")
     else:
-        vcf.comments["footer"].append("##filter_vcf {0} {1} {2}".format(
+        vcf.comments["footer"].append("##filter_vcf {0} {1} {2} {3}".format(
             f"mpp={args.missingPerPopulation}",
             f"min={args.minimumSnps}",
-            f"dp={args.sampleDP}"
+            f"dp={args.sampleDP}",
+            "mbt={0}".format(",".join(args.mustBeTyped)) if args.mustBeTyped != [] else "mb=NA"
         ))
         if args.genoOutput:
             vcf.write_geno(args.outputFileName)
