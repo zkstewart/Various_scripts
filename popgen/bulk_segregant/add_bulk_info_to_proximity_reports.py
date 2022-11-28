@@ -10,7 +10,7 @@ def validate_args(args):
     # Validate input file location
     for suffix in [".gene_proximity.tsv", ".snp_proximity.tsv"]:
         if not os.path.isfile(args.proximityReportPrefix + suffix):
-            print(f'I am unable to locate one of the proximity report files ({os.path.isfile(args.proximityReportPrefix + suffix)})')
+            print(f'I am unable to locate one of the proximity report files ({args.proximityReportPrefix + suffix})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
     if not os.path.isfile(args.vcf):
