@@ -126,27 +126,6 @@ def bulk_vcf_to_file(vcfFile, popsDict, outputFileName):
                 # Make into a Pandas dataframe
                 samplesDF = pd.DataFrame.from_dict(samplesDict, orient="index")
                 
-                # # Fix GL when it's unrealistically big
-                # "It's causing issues when using PL_INTERPRETATION"
-                # uniqueAlleles = list(sorted(set([g for gt in set(samplesDF["GT"]) for g in gt.split("/")])))
-                
-                # # >> First, fix the genotype values if they're weird
-                # foundFixes = False
-                # for i in range(len(uniqueAlleles)):
-                #     if int(uniqueAlleles[i]) != i:
-                #         foundFixes = True
-                #         for index, row in samplesDF.iterrows():
-                #             splitRowGT = row["GT"].split("/")
-                #             for x in range(len(splitRowGT)):
-                #                 thisSplitGT = int(splitRowGT)[x]
-                #                 if thisSplitGT == uniqueAlleles[i]:
-                #                     thisSplitGT[x] = str(i)
-                #             row["GT"] = "/".join(thisSplitGT)
-                
-                # # >> Then, fix the GL values
-                # for index, row in samplesDF.iterrows():
-                #     splitRowGL = row["GL"].split(",")
-                
                 # Impute GL fields
                 longestGL = max([len(row.split(",")) for row in samplesDF["GL"]])
                 
