@@ -1,13 +1,13 @@
 #! python3
 
-import os, argparse
+import os, argparse, re
 
 # Define functions for later use
 ## Argument validation
 def validate_args(args):
     # Validate input location
-    if not os.path.isdir(args.fastqsDir):
-        print('I am unable to locate the input FASTQs directory (' + args.fastqsDir + ')')
+    if not os.path.isdir(args.readsDir):
+        print('I am unable to locate the input FASTQs directory (' + args.readsDir + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Handle file overwrites
@@ -15,81 +15,224 @@ def validate_args(args):
         print(args.outputFileName + ' already exists. Specify a different output file name or delete, move, or rename this file and run the program again.')
         quit()
 
+def get_rnaseq_files(readsDir, readsSuffix, isSingleEnd):
+    # Locate files from the directory
+    forwardReads = []
+    reverseReads = []
+    for file in os.listdir(readsDir):
+        if file.endswith(readsSuffix):
+            if isSingleEnd:
+                forwardReads.append(os.path.join(readsDir, file))
+            else:
+                if file.endswith(f"1{readsSuffix}"):
+                    forwardReads.append(os.path.join(readsDir, file))
+                elif file.endswith(f"2{readsSuffix}"):
+                    reverseReads.append(os.path.join(readsDir, file))
+                else:
+                    raise ValueError(f"{file} ends with the expected suffix '{readsSuffix}' but is not preceeded by a 1 or 2!")
+    forwardReads.sort()
+    reverseReads.sort()
+    
+    # Validate that paired files match
+    if not isSingleEnd:
+        assert len(forwardReads) == len(reverseReads), \
+            f"Number of reads don't match for forward ({len(forwardReads)}) and reverse ({len(reverseReads)}) files"
+        for i in range(len(forwardReads)):
+            prefix = os.path.commonprefix([forwardReads[i], reverseReads[i]])
+            assert prefix != "", \
+                "forward and reverse read pairs don't have a common prefix?"
+            assert forwardReads[i].startswith(f"{prefix}1") and reverseReads[i].startswith(f"{prefix}2"), \
+                f"forward and reverse reads don't start with a recognised prefix ({prefix} should preceed a 1 or 2)"
+    
+    # Return files
+    return forwardReads, reverseReads if reverseReads != [] else None
+
+def group_reads_across_lanes(forwardReads, reverseReads, laneRegex):
+    '''
+    Parameters:
+        forwardReads -- a list containing strings pointing to the absolute file paths
+                        of forward reads from read pairs
+        reverseReads -- a list containing strings pointing to the absolute file paths
+                        of reverse reads from read pairs; can be None if handling
+                        single end reads
+        laneRegex -- a regex that can locate the lane identifier from a string
+    Returns:
+        forwardReadGroups -- a list containing sublists with structure like:
+                             [
+                                 [lane1_reads, lane2_reads],
+                                 [lane1_reads],
+                                 [lane1_reads, lane2_reads],
+                                 ...
+                             ]
+        reverseReadGroups -- likewise with forwardReadGroups, but with the reverse
+                             reads; can be None if handling single end reads
+    '''    
+    # Handle forward reads from pairs or single reads
+    forwardReadGroups = []
+    for readFile in forwardReads:
+        readFileBase = os.path.basename(readFile)
+        assert laneRegex.search(readFileBase) != None, \
+            f"Lane identifier not found in '{readFileBase}'; can't handle this"
+        
+        readFileNoLane = laneRegex.sub("", readFileBase)
+        
+        groupToAddTo = None
+        for i in range(len(forwardReadGroups)):
+            readGroup = forwardReadGroups[i]
+            for groupFile in readGroup:
+                groupFileBase = os.path.basename(groupFile)
+                groupFileNoLane = laneRegex.sub("", groupFileBase)
+                
+                if readFileNoLane == groupFileNoLane:
+                    assert groupToAddTo == None, \
+                        f"Found multiple groups I could add {readFileNoLane} into; can't handle this"
+                    groupToAddTo = i
+        
+        if groupToAddTo == None:
+            forwardReadGroups.append([readFile])
+        else:
+            forwardReadGroups[groupToAddTo].append(readFile)
+    
+    # Handle reverse reads from pairs(if applicable)
+    if reverseReads != None:
+        "This code is just copy pasted from the forward part; cbf sub functionalising it"
+        reverseReadGroups = []
+        for readFile in reverseReads:
+            readFileBase = os.path.basename(readFile)
+            assert laneRegex.search(readFileBase) != None, \
+                f"Lane identifier not found in '{readFileBase}'; can't handle this"
+            
+            readFileNoLane = laneRegex.sub("", readFileBase)
+            
+            groupToAddTo = None
+            for i in range(len(reverseReadGroups)):
+                readGroup = reverseReadGroups[i]
+                for groupFile in readGroup:
+                    groupFileBase = os.path.basename(groupFile)
+                    groupFileNoLane = laneRegex.sub("", groupFileBase)
+                    
+                    if readFileNoLane == groupFileNoLane:
+                        assert groupToAddTo == None, \
+                            f"Found multiple groups I could add {readFileNoLane} into; can't handle this"
+                        groupToAddTo = i
+            
+            if groupToAddTo == None:
+                reverseReadGroups.append([readFile])
+            else:
+                reverseReadGroups[groupToAddTo].append(readFile)
+    else:
+        reverseReadGroups = None
+    
+    return forwardReadGroups, reverseReadGroups
+
 def main():
     #### USER INPUT SECTION
-    usage = """%(prog)s receives a directory containing FASTQs that have been trimmed
-    by trimmomatic wherein samples have been split across several lanes. Assuming the
-    file naming standard of Illumina (_L00#), this script will produce a shell script
-    that can be qsubbed to concatenate the FASTQs into a single forward/reverse file
+    usage = """%(prog)s receives a directory containing FASTQs that been split
+    across several lanes. This script will produce a shell script that can be
+    qsubbed to concatenate the FASTQs into a single forward/reverse file
     per sample.
+    
+    Some notes: laneIdentifier by default is "L00", which means we can expect
+    files from different lanes to have values like "L001" and "L002" for example.
+    Otherwise, these file names should have no differences.
     """
     
     # Reqs
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-d", dest="fastqsDir", required=True,
-                help="Input directory containing trimmed FASTQs")
+    p.add_argument("-d", dest="readsDir",
+                   required=True,
+                   help="Input directory containing trimmed FASTQs")
+    p.add_argument("-rs", dest="readsSuffix",
+                   required=True,
+                   help="""Suffix which uniquely identifies all relevant read files
+                   e.g., 'P.fq.gz' for trimmomatic reads""")
     # Opts
-    p.add_argument("-o", dest="outputFileName", required=False,
-                help="Optionally specify shell script name (default==run_read_prep.sh)", default="run_read_prep.sh")
-    p.add_argument("--suffix", dest="fastqSuffix", required=False,
-                help="Optionally specify FASTQ suffix(default==.fq.gz)", default=".fq.gz")
+    p.add_argument("-o", dest="outputFileName",
+                   required=False,
+                   help="Optionally specify shell script name (default==run_read_prep.sh)",
+                   default="run_read_prep.sh")
+    p.add_argument("--singleEnd", dest="isSingleEnd",
+                   required=False,
+                   action="store_true",
+                   help="Optionally indicate whether the reads are expected to be single-ended rather than paired",
+                   default=False)
+    p.add_argument("--laneIdentifier", dest="laneIdentifier",
+                   required=False,
+                   help="Optionally specify how we tell lanes apart (default==\"L00\")",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
     
     # Locate files from the directory
-    fileNames = []
-    for file in os.listdir(args.fastqsDir):
-        if file.endswith(args.fastqSuffix):
-            fileNames.append(file)
+    forwardReads, reverseReads = get_rnaseq_files(args.readsDir, args.readsSuffix, args.isSingleEnd)
     
-    # Get the prefixes and suffixes for reads
-    uniquePrefixes=set()
-    uniqueSuffixes=set()
-    for fileName in fileNames:
-        prefix = fileName.split("_L00")[0]
-        uniquePrefixes.add(prefix)
-        
-        suffix = fileName.split("_L00")[1].split(".")[0] 
-        uniqueSuffixes.add(suffix)
-    
-    # Get ordered suffixes
-    orderedSuffixes = list(uniqueSuffixes)
-    orderedSuffixes.sort(key = lambda x: int(x))
+    # Group reads from different lanes
+    laneRegex = re.compile(args.laneIdentifier + r"\d")
+    forwardReadGroups, reverseReadGroups = group_reads_across_lanes(forwardReads, reverseReads, laneRegex)
     
     # Format cat commands to join lane files
     catCmds = []
-    for prefix in uniquePrefixes:
-        # Format command one with suffixes that exist
-        cmd1Files = []
-        for suffix in orderedSuffixes:
-            if os.path.isfile(os.path.join(args.fastqsDir, f"{prefix}_L00{suffix}.trimmed_1P.fq.gz")):
-                cmd1Files.append(f"${{TRIMMEDDIR}}/{prefix}_L00{suffix}.trimmed_1P.fq.gz")
+    for i in range(len(forwardReadGroups)):
+        # Format forward read commands
+        forwardGroup = forwardReadGroups[i]
         
-        # Format command two with suffixes that exist
-        cmd2Files = []
-        for suffix in orderedSuffixes:
-            if os.path.isfile(os.path.join(args.fastqsDir, f"{prefix}_L00{suffix}.trimmed_2P.fq.gz")):
-                cmd2Files.append(f"${{TRIMMEDDIR}}/{prefix}_L00{suffix}.trimmed_2P.fq.gz")
-        
-        # Store commands if relevant files were found
-        if len(cmd1Files) > 1:
-            cmd1 = "cat " + " ".join(cmd1Files) + f" > {prefix}_1.fq.gz"
+        if len(forwardGroup) > 1:
+            prefix = os.path.commonprefix([
+                laneRegex.split(os.path.basename(f))[0].rstrip("_")
+                    for f in forwardGroup
+            ])
+            
+            cmd1 = "cat {forwardFiles} > {prefix}{suffix}.fq.gz".format(
+                forwardFiles=" ".join(
+                    [f"${{TRIMMEDDIR}}/{os.path.basename(f)}" for f in forwardGroup]
+                ),
+                prefix=prefix,
+                suffix="_1" if not args.isSingleEnd else ""
+            )
             catCmds.append(cmd1)
-        elif len(cmd1Files) == 1:
-            cmd1 = f"ln -s {cmd1Files[0]} {prefix}_1.fq.gz"
+        elif len(forwardGroup) == 1:
+            prefix = laneRegex.split(os.path.basename(forwardGroup[0]))[0].rstrip("_")
+            
+            cmd1 = "ln -s {forwardFiles[0]} {prefix}_1.fq.gz".format(
+                forwardFiles=[f"${{TRIMMEDDIR}}/{os.path.basename(f)}" for f in forwardGroup],
+                prefix=prefix,
+                suffix="_1" if not args.isSingleEnd else ""
+            )
             catCmds.append(cmd1)
         else:
-            print(f"Warning: no forward files (_1) found for {prefix}")
+            print(f"Error: no forward files (_1) found for a group; this shouldn't be possible?")
+            quit()
         
-        if len(cmd2Files) > 1:
-            cmd2 = "cat " + " ".join(cmd2Files) + f" > {prefix}_2.fq.gz"
+        # Format reverse read commands
+        reverseGroup = reverseReadGroups[i]
+        
+        if len(reverseGroup) > 1:
+            prefix = os.path.commonprefix([
+                laneRegex.split(os.path.basename(f))[0].rstrip("_")
+                    for f in reverseGroup
+            ])
+            
+            cmd2 = "cat {reverseFiles} > {prefix}{suffix}.fq.gz".format(
+                reverseFiles=" ".join(
+                    [f"${{TRIMMEDDIR}}/{os.path.basename(f)}" for f in reverseGroup]
+                ),
+                prefix=prefix,
+                suffix="_2" if not args.isSingleEnd else ""
+            )
             catCmds.append(cmd2)
-        elif len(cmd2Files) == 1:
-            cmd2 = f"ln -s {cmd2Files[0]} {prefix}_2.fq.gz"
+        elif len(reverseGroup) == 1:
+            prefix = laneRegex.split(os.path.basename(reverseGroup[0]))[0].rstrip("_")
+            
+            cmd2 = "ln -s {reverseFiles[0]} {prefix}{suffix}.fq.gz".format(
+                reverseFiles=[f"${{TRIMMEDDIR}}/{os.path.basename(f)}" for f in reverseGroup],
+                prefix=prefix,
+                suffix="_2" if not args.isSingleEnd else ""
+            )
             catCmds.append(cmd2)
         else:
-            print(f"Warning: no reverse files (_2) found for {prefix}")
+            print(f"Error: no reverse files (_2) found for a group; this shouldn't be possible?")
+            quit()
     
     # Write the script file
     script = f'''#!/bin/bash -l
@@ -100,7 +243,7 @@ def main():
 
 cd $PBS_O_WORKDIR
 
-TRIMMEDDIR={os.path.abspath(args.fastqsDir)}
+TRIMMEDDIR={os.path.abspath(args.readsDir)}
 '''
     script += "\n".join(catCmds)
 
