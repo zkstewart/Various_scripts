@@ -159,7 +159,7 @@ def main():
     p.add_argument("--laneIdentifier", dest="laneIdentifier",
                    required=False,
                    help="Optionally specify how we tell lanes apart (default==\"L00\")",
-                   default=False)
+                   default="L00")
     
     args = p.parse_args()
     validate_args(args)
