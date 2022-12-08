@@ -1,12 +1,28 @@
 #! python3
 # ZS_BlastIO.py
 # Specifies the BLAST Class for performing BLAST searches
-# using ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects.
+# using ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects, as well
+# as for parsing outfmt6 results.
 
-import os, sys, subprocess, hashlib, time, random
+import os, sys, subprocess, hashlib, time, random, codecs
 
 sys.path.append(os.path.dirname(__file__))
 from ZS_SeqIO import FASTA
+
+def get_codec(fileName):
+    try:
+        f = codecs.open(fileName, encoding='utf-8', errors='strict')
+        for line in f:
+            pass
+        return "utf-8"
+    except:
+        try:
+            f = codecs.open(fileName, encoding='utf-16', errors='strict')
+            for line in f:
+                pass
+            return "utf-16"
+        except UnicodeDecodeError:
+            print(f"BlastIO class can't tell what codec '{fileName}' is!!")
 
 class BLAST:
     '''
@@ -187,48 +203,6 @@ class BLAST:
         blastout, blasterr = run_blast.communicate()
         if blasterr.decode("utf-8") != '':
             raise Exception('BLAST error text below\n' + blasterr.decode("utf-8"))
-
-    def parse_blast_hit_coords(self, outfmt6File):
-        '''
-        Parameters:
-            outfmt6File -- a string indicating the location of a BLAST results file in
-                           outfmt6 format.
-        Returns:
-            blastDict -- a dict with structure:
-                query_id: [[target_id, identity_pct, query_start, query_end, target_start, target_end, evalue], ...]
-        '''
-        blastDict = {}
-        with open(outfmt6File, 'r') as fileIn:
-            for line in fileIn:
-                # Extract details
-                sl = line.rstrip("\r\n").split('\t')
-                qid = sl[0]
-                tid = sl[1]
-                identityPct = float(sl[2])
-                qstart = int(sl[6])
-                qend = int(sl[7])
-                tstart = int(sl[8])
-                tend = int(sl[9])
-                evalue = float(sl[10])
-                bitscore = float(sl[11])
-                
-                # Skip if evalue isn't significant
-                if evalue > self.evalue: # filter here since self.evalue might differ between BLAST run and parsing now
-                    continue
-                
-                # Store result
-                if qid not in blastDict:
-                    blastDict[qid] = [[tid, identityPct, qstart, qend, tstart, tend, evalue, bitscore]]
-                else:
-                    blastDict[qid].append([tid, identityPct, qstart, qend, tstart, tend, evalue, bitscore])
-        
-        # Sort individual entries in blastDict
-        for value in blastDict.values():
-            value.sort(key = lambda x: (x[6], x[7])) # sort by evalue and bitscore
-            for v in value:
-                del v[7] # drop the bitscore since we don't need it after sorting
-        
-        return blastDict
     
     def get_blast_results(self):
         '''
@@ -259,7 +233,7 @@ class BLAST:
         self.blast(q, t, tmpResultName)
         
         # Parse BLAST results
-        blastDict = self.parse_blast_hit_coords(tmpResultName)
+        blastDict = BLAST_Results(tmpResultName).results # have to do this to support existing code
         
         # Clean up q and t temporary files
         if qIsTemporary:
@@ -349,6 +323,143 @@ class BLAST:
                 ongoingCount += 1
             else:
                 return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
+
+class BLAST_Results:
+    '''
+    The BLAST_Results Class provides parsing capability for outfmt6 files.
+    
+    Attributes:
+        file -- a string indicating the location of the outfmt6 file that was
+                parsed to generate this object instance
+        evalue -- an int or float value indicating the cutoff to enforce for
+                  retrieving hits for a query
+        num_hits -- an int value which can be -1 (to retrieve all hits) or a value
+                    > 0 to get that many hits per query
+    '''
+    def __init__(self, outfmt6File):
+        # Validate input types
+        assert isinstance(outfmt6File, str)
+        
+        # Validate that input file location exists
+        if not os.path.isfile(outfmt6File):
+            raise Exception(f"'{outfmt6File} does not point to an existing file location")
+        self.file = outfmt6File
+        
+        # Set default property values
+        self.evalue = 1e-5
+        self.num_hits = -1
+        
+        # Do main Class action of parsing an outfmt6 file
+        self.parse_blast_hit_coords()
+        
+        # Also set helper attribute
+        self.isBLAST_Results = True
+    
+    @property
+    def evalue(self):
+        return self._evalue
+    
+    @evalue.setter
+    def evalue(self, value):
+        assert isinstance(value, float) or isinstance(value, int), \
+            "evalue can only be set to a float or integer value"
+        
+        if value < 0:
+            raise ValueError("evalue must be a value >= 0")
+        
+        self._evalue = value
+    
+    @property
+    def num_hits(self):
+        return self._num_hits
+    
+    @num_hits.setter
+    def num_hits(self, value):
+        assert isinstance(value, int), \
+            "num_hits must be an integer value"
+        
+        if value == 0:
+            raise ValueError("num_hits cannot be 0 (which would retrieve no hits)")
+        if value < -1:
+            raise ValueError("num_hits cannot be less than -1 (which retrieves all hits)")
+        
+        self._num_hits = value
+    
+    def parse_blast_hit_coords(self):
+        '''
+        Parameters:
+            self.file -- a string indicating the location of a BLAST results file in
+                         outfmt6 format.
+        Sets:
+            self.results -- a dict with structure like:
+                                query_id1: [
+                                    [target_id, identity_pct, query_start, query_end, target_start, target_end, evalue],
+                                    ...
+                                ],
+                                query_id2: [ ... ],
+                                ...
+        '''
+        blastDict = {}
+        
+        with open(self.file, "r", encoding=get_codec(self.file)) as fileIn:
+            for line in fileIn:
+                # Extract details
+                sl = line.rstrip("\r\n").split('\t')
+                qid = sl[0]
+                tid = sl[1]
+                identityPct = float(sl[2])
+                qstart = int(sl[6])
+                qend = int(sl[7])
+                tstart = int(sl[8])
+                tend = int(sl[9])
+                evalue = float(sl[10])
+                bitscore = float(sl[11])
+                
+                # Skip if evalue isn't significant
+                if evalue > self.evalue: # filter here since self.evalue might differ between BLAST run and parsing now
+                    continue
+                
+                # Store result
+                if qid not in blastDict:
+                    blastDict[qid] = [[tid, identityPct, qstart, qend, tstart, tend, evalue, bitscore]]
+                else:
+                    blastDict[qid].append([tid, identityPct, qstart, qend, tstart, tend, evalue, bitscore])
+        
+        # Sort individual entries in blastDict
+        for value in blastDict.values():
+            value.sort(key = lambda x: (x[6], x[7])) # sort by evalue and bitscore
+            for v in value:
+                del v[7] # drop the bitscore since we don't need it after sorting
+            
+        # Enforce num_hits threshold
+        if self.num_hits != -1:
+            for key in blastDict.keys():
+                blastDict[key] = blastDict[key][0:self.num_hits]
+        
+        self.results = blastDict
+    
+    def __iter__(self):
+        return iter(self.results)
+    
+    def __len__(self):
+        return len(self.results)
+    
+    def __getitem__(self, key):
+        if key in self.results:
+            return self.results[key]
+    
+    def __contains__(self, item):
+        return True if self[item] is not None else False
+    
+    def __str__(self):
+        return "BLAST_Results; parsed '{0}' file, contains results for {1} queries".format(
+            self.file, len(self)
+        )
+    
+    def __repr__(self):
+        return "BLAST_Results(outfmt6='{0}', queries={1}, evalue={2}, num_hits={3})".format(
+            self.file, len(self), self.evalue, self.num_hits
+        )
 
 if __name__ == "__main__":
     pass
