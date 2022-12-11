@@ -9,7 +9,6 @@
 import os, argparse, sys
 from Bio import SeqIO
 from ete3 import NCBITaxa
-from collections import Counter
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) # 3 dirs up is where we find dependencies
 from Function_packages import ZS_BlastIO
