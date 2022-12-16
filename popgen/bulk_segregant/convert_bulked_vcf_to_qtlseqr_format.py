@@ -117,7 +117,7 @@ def main():
     vcfDict = parse_vcf(args.vcf)
     
     # Validate that bulk columns exist, and check which fields we are writing
-    FIELDS_TO_WRITE = ["AD", "DP", "GQ", "PL"]
+    FIELDS_TO_WRITE = ["GT", "AD", "DP", "GQ", "PL"]
     for chromDict in vcfDict.values():
         for posDict in chromDict.values():
             assert args.bulk1Column in posDict and args.bulk2Column in posDict, \
@@ -135,6 +135,19 @@ def main():
         ))
         for chrom, chromDict in vcfDict.items():
             for pos, posDict in chromDict.items():
+                # Update GT
+                ref_alts = [posDict["REF"], *posDict["ALT"].split(",")]
+                posDict[args.bulk1Column]["GT"] = posDict[args.bulk1Column]["GT"].replace(".", "0")
+                posDict[args.bulk2Column]["GT"] = posDict[args.bulk2Column]["GT"].replace(".", "0")
+                
+                posDict[args.bulk1Column]["GT"] = "/".join([
+                    ref_alts[int(gtNum)] for gtNum in posDict[args.bulk1Column]["GT"].split("/")
+                ])
+                posDict[args.bulk2Column]["GT"] = "/".join([
+                    ref_alts[int(gtNum)] for gtNum in posDict[args.bulk2Column]["GT"].split("/")
+                ])
+                
+                # Write line
                 line = "{chrom}\t{pos}\t{ref}\t{alt}\t{b1Values}\t{b2Values}\n".format(
                     chrom=chrom,
                     pos=pos,
