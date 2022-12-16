@@ -13,8 +13,8 @@ def validate_args(args):
             print(f'I am unable to locate one of the proximity report files ({args.proximityReportPrefix + suffix})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
-    if args.scanoneFile == None and args.scanTwoFile == None:
-        print("One or both of scanone and scantwo file(s) must be provided!")
+    if args.scanoneFile == None and args.scanTwoFile == None and args.windowsFile == None:
+        print("At least one of the scanone, scantwo, or windows file(s) must be provided!")
         print("Correct this issue and try again.")
         quit()
     if args.scanoneFile != None:
@@ -27,10 +27,11 @@ def validate_args(args):
             print(f'I am unable to locate the scantwo file ({args.scantwoFile})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
-    if not os.path.isfile(args.vcf):
-        print('I am unable to locate the QTLseq VCF file (' + args.vcf + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    if args.windowsFile != None:
+        if not os.path.isfile(args.windowsFile):
+            print(f'I am unable to locate the windows file ({args.windowsFile})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     # Validate numeric inputs
     if args.kbRadius < 1:
         print("kbRadius must be a positive integer (greater than zero)")
@@ -43,47 +44,6 @@ def validate_args(args):
         if os.path.isfile(args.outputFilePrefix + suffix):
             print(f'"{args.outputFilePrefix + suffix}" already exists. Delete/move/rename this file and run the program again.')
             quit()
-
-def parse_snp_proximity_file(snpProxFile):
-    '''
-    Parameters:
-        snpProxFile -- a string indicating the location of the .snp_proximity.tsv file
-    Returns:
-        snpProxDict -- a dictionary with structure like:
-                       {
-                           'contigID1':
-                           {
-                               'pos1':
-                               {
-                                   'at location': 'UTR',
-                                   'left of': '.',
-                                   ...
-                               },
-                               'pos2':
-                               {
-                                   ...
-                               },
-                               ...
-                           },
-                           ...
-                       }
-    '''
-    snpProxDict = {}
-    with open(snpProxFile, "r") as fileIn:
-        for line in fileIn:
-            if line.startswith("#"):
-                header = line[1:].rstrip("\r\n ").split("\t")
-                continue
-            sl = line.rstrip("\r\n ").split("\t")
-            
-            # Index values
-            geneID, pos = sl[0], sl[1]
-            snpProxDict.setdefault(geneID, {})
-            thisSnpDict = {}
-            for i in range(2, len(sl)):
-                thisSnpDict[header[i]] = sl[i]
-            snpProxDict[geneID][pos] = thisSnpDict
-    return snpProxDict
 
 def parse_scanone_file(scanoneFile, pvalueFilter=0.05, lodFilter=10.0):
     '''
@@ -188,6 +148,57 @@ def parse_scantwo_file(scantwoFile, pvalueFilter=0.05, lodFilter=10.0):
     
     return scantwoDict
 
+def parse_windows_file(windowsFile, cols=["contig", "start", "end"]):
+    '''
+    Expects a TSV or CSV file containing, at minimum, three columns with a single
+    header row with split by tab containing the columns indicated by the cols value.
+    
+    Parameters:
+        windowsFile -- a string indicating the file location of a TSV or CSV file
+                       containing at least the contig ID, start, and end positions
+                       as numbers
+        cols -- a list containing three values indicating the header column values
+                for the contig, start, and end positions (in that order!)
+    Returns:
+        windowsDict -- a dictionary with structure like:
+            {
+                "chr1": [[bp1, bp2], [ ... ], ... ], # bp == nucleotide bp as int value
+                "chr2": [ [ ... ], ... ],
+                ...
+            }
+    '''
+    windowsDict = {}
+    
+    firstLine = True
+    with open(windowsFile, "r") as fileIn:
+        for line in fileIn:
+            # Parse TSV or CSV
+            if "\t" in line:
+                sl = line.rstrip("\r\n ").split("\t")
+            else:
+                sl = line.rstrip("\r\n ").split(",")
+            
+            # Handle header line
+            if firstLine == True:
+                contigIndex = sl.index(cols[0])
+                startIndex = sl.index(cols[1])
+                endIndex = sl.index(cols[2])
+                
+                firstLine = False
+                continue
+            # Handle content lines
+            else:
+                # Get relevant information from this line
+                contig = sl[contigIndex]
+                start = int(sl[startIndex])
+                end = int(sl[endIndex])
+                
+                # Store results
+                windowsDict.setdefault(contig, [])
+                windowsDict[contig].append([start, end])
+    
+    return windowsDict
+
 def main():
     # User input
     usage = """%(prog)s receives the proximity report files generated by
@@ -210,10 +221,18 @@ def main():
     # Optional
     p.add_argument("-s1", dest="scanoneFile",
                    required=False,
-                   help="Input scanone file produced by QTL-seq")
+                   help="Input scanone file produced by Rqtl")
     p.add_argument("-s2", dest="scantwoFile",
                    required=False,
-                   help="Input scantwo file produced by QTL-seq")
+                   help="Input scantwo file produced by Rqtl")
+    p.add_argument("-w", dest="windowsFile",
+                   required=False,
+                   help="Input windows file containing at least 3 columns for contig, start, end")
+    p.add_argument("--windowColumns", dest="windowColumns", nargs="+",
+                   required=False,
+                   help="""Optionally, specify the names of the three columns to parse from the windows file
+                   (default == ["contig", "start", "end"]""",
+                   default=["contig", "start", "end"])
     p.add_argument("--kbRadius", dest="kbRadius", type=int,
                    required=False,
                    help="Optionally, specify the radius of the window in kb (default==100)",
@@ -234,9 +253,6 @@ def main():
     snpProxFile = os.path.join(args.proximityReportPrefix + ".snp_proximity.tsv")
     geneProxFile = os.path.join(args.proximityReportPrefix + ".gene_proximity.tsv")
     
-    # Parse the proximity files
-    snpProxDict = parse_snp_proximity_file(snpProxFile)
-    
     # Parse the scanone file (if relevant)
     if args.scanoneFile != None:
         scanoneDict = parse_scanone_file(args.scanoneFile, args.pvalue, args.lod)
@@ -249,6 +265,12 @@ def main():
     else:
         scantwoDict = {}
     
+    # Parse the windows file (if relevant)
+    if args.scantwoFile != None:
+        windowsDict = parse_windows_file(args.windowsFile, args.windowColumns)
+    else:
+        windowsDict = {}
+    
     # Write new SNP proximity file
     with open(snpProxFile, "r") as fileIn, open(args.outputFilePrefix + ".snp_proximity.tsv", "w") as fileOut:
         for line in fileIn:
@@ -256,7 +278,7 @@ def main():
             
             # Update header
             if l.startswith("#"):
-                l += "\tscanone_window\tscantwo_window"
+                l += "\tscanone_window\tscantwo_window\ttsnp_window"
                 fileOut.write(f"{l}\n")
             # Update content lines
             else:
@@ -293,10 +315,20 @@ def main():
                         if lowerBoundary <= pos <= upperBoundary:
                             scanTwoNum.append(qtlNum)
                 
+                # Check to see if it's contained within a window
+                isInWindow = False
+                if contig in windowsDict:
+                    thisContigWindows = windowsDict[contig]
+                    for windowStart, windowEnd in thisContigWindows:
+                        if windowStart <= pos <= windowEnd:
+                            isInWindow = True
+                            break
+                
                 # Write line to file
-                l += "\t{0}\t{1}".format(
+                l += "\t{0}\t{1}\t{2}".format(
                     "y" if isScanOne is True else "n",
-                    "; ".join([f"qtl{n}" for n in scanTwoNum]) if scanTwoNum != [] else "."  
+                    "; ".join([f"qtl{n}" for n in scanTwoNum]) if scanTwoNum != [] else ".",
+                    "y" if isInWindow is True else "n"
                 )
                 fileOut.write(f"{l}\n")
     
@@ -310,7 +342,7 @@ def main():
             if l.startswith("#"):
                 coordsIndex = sl.index("coords") # for retrieving coords from content lines
                 contigIndex = sl.index("contig") # likewise
-                l += "\tscanone_window\tscantwo_window"
+                l += "\tscanone_window\tscantwo_window\tsnp_window"
                 fileOut.write(f"{l}\n")
             # Update content lines
             else:
@@ -348,10 +380,21 @@ def main():
                         if start <= upperBoundary and end >= lowerBoundary: # if it overlaps
                             scanTwoNum.append(qtlNum)
                 
+                # Check to see if it's contained within a window
+                isInWindow = False
+                if contig in windowsDict:
+                    thisContigWindows = windowsDict[contig]
+                    for windowStart, windowEnd in thisContigWindows:
+                        
+                        if (windowStart <= start <= windowEnd) or (windowStart <= end <= windowEnd):
+                            isInWindow = True
+                            break
+                
                 # Write line to file
-                l += "\t{0}\t{1}".format(
+                l += "\t{0}\t{1}\t{2}".format(
                     "y" if isScanOne is True else "n",
-                    "; ".join([f"qtl{n}" for n in scanTwoNum]) if scanTwoNum != [] else "."  
+                    "; ".join([f"qtl{n}" for n in scanTwoNum]) if scanTwoNum != [] else ".",
+                    "y" if isInWindow is True else "n"
                 )
                 fileOut.write(f"{l}\n")
     
