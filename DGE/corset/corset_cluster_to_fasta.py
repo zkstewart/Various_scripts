@@ -23,6 +23,11 @@ def validate_args(args):
             print("Make sure you specified the right file name and location, then try again.")
             quit()
     # Ensure that the output location is sensible
+    if args.outputTSV != None:
+        if os.path.isfile(args.outputTSV):
+            print(f"The specified output TSV '{args.outputTSV}' already exists. This script will not overwrite existing files.")
+            print("Make sure to move this file or specify a different file name, then try again.")
+            quit()
     if os.path.isfile(args.outputFile):
         print(f"The specified output file '{args.outputFile}' already exists. This script will not overwrite existing files.")
         print("Make sure to move this file or specify a different file name, then try again.")
@@ -143,6 +148,10 @@ def main():
                    help="""Specify this tag if you'd like to write output sequences not with
                    their original transcript ID but with the Corset cluster ID""",
                    default=False)
+    p.add_argument("--outputTSV", dest="outputTSV",
+                   required=False,
+                   help="""Optionally, specify a file name to write a TSV file pairing
+                   cluster IDs to their representative sequence ID""")
     
     args = p.parse_args()
     validate_args(args)
@@ -167,35 +176,45 @@ def main():
     representatives = find_corset_representatives(clustersDict, seqLens, blastDict)
     
     # Write representatives to file
-    found = set()
+    found = {}
     with open(args.outputFile, "w") as fileOut:
         records = SeqIO.parse(open(args.fastaFile, "r"), "fasta") # load in again for the sequences
         for r in records:
             if r.id in representatives:
-                found.add(r.id)
                 if args.writeClusterIDs is True:
                     fileOut.write(">{0} original_id={1}\n{2}\n".format(representatives[r.id], r.id, str(r.seq)))
                 else:
                     fileOut.write(r.format("fasta"))
+                
+                # Hold onto pairing for validation and potential TSV output
+                found[representatives[r.id]] = r.id
         
         # Try to rescue sequences not found if they're utrorf only sequences
         repSet = set(representatives.keys())
-        diff = repSet.difference(found)
+        diff = repSet.difference(set(found.values()))
         if len(diff) > 0:
             records = SeqIO.parse(open(args.fastaFile, "r"), "fasta") # load in again for the sequences...
             for r in records:
                 if r.id.replace("utrorf", "") in diff:
-                    found.add(r.id)
                     if args.writeClusterIDs is True:
                         fileOut.write(">{0} original_id={1}\n{2}\n".format(representatives[r.id.replace("utrorf", "")], r.id, str(r.seq)))
                     else:
                         fileOut.write(r.format("fasta"))
+                    
+                    # Hold onto pairing for validation and potential TSV output
+                    found[representatives[r.id.replace("utrorf", "")]] = r.id
     
     # Validate that it worked
     if len(found) == len(representatives):
         print(f"Found all {len(representatives)} expected sequences")
     else:
         print(f"Warning: Only found {len(found)} sequences, instead of the expected {len(representatives)}")
+    
+    # Write TSV if applicable
+    if args.outputTSV != None:
+        with open(args.outputTSV, "w") as fileOut:
+            for clustID, repID in found.items():
+                fileOut.write(f"{clustID}\t{repID}\n")
     
     # Done!
     print('Program completed successfully!')
