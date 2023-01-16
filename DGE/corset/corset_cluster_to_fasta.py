@@ -73,6 +73,52 @@ def parse_best_blast(blastFile, evalueCutoff):
     
     return blastDict
 
+def parse_annot_blast(annotTableFile, evalueCutoff):
+    TID_COLUMN = "Target_accessions"
+    EVALUE_COLUMN = "Expect_value"
+    BIT_COLUMN = "Bit_score"
+    
+    blastDict = {}
+    with open(annotTableFile , 'r') as fileIn:
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            
+            # Parse header row
+            if sl[0].startswith("#"):
+                tidIndex = sl.index(TID_COLUMN)
+                evalueIndex = sl.index(EVALUE_COLUMN)
+                bitIndex = sl.index(BIT_COLUMN)
+                continue
+            # Skip if irrelevant
+            if len(sl) != 12:
+                continue
+            
+            # Parse details and skip if no hit recorded
+            qid, tids, evalues, bitscores = sl[0], sl[tidIndex], sl[evalueIndex], sl[bitIndex]
+            if tids == ".":
+                continue
+            tids = tids.replace(" ", "").replace("]", "").split("[")
+            evalues = evalues.replace(" ", "").replace("]", "").split("[")
+            bitscores = bitscores.replace(" ", "").replace("]", "").split("[")
+            assert len(tids) == len(evalues)
+            
+            # Sort details to get the best hit
+            hits = [[tids[i], float(evalues[i]), float(bitscores[i])] for i in range(len(tids))]
+            hits.sort(key = lambda x: -x[2])
+            
+            tid, evalue, bitscore = hits[0]
+            
+            # Skip hits that don't pass E-value cutoff
+            if evalue > evalueCutoff:
+                continue
+            
+            # Store hit
+            blastDict.setdefault(qid, [tid, bitscore])
+            if blastDict[qid][1] < bitscore:
+                blastDict[qid] = [tid, bitscore]
+    
+    return blastDict
+
 def find_corset_representatives(clustersDict, seqLens, blastDict):
     '''
     This function is manually tuned to handle EvidentialGene transcripts
@@ -132,6 +178,11 @@ def main():
                    required=False,
                    help="""Optionally, specify a BLAST file for help with
                    picking the representative sequence""")
+    p.add_argument("--isAnnotTable", dest="isAnnotTable", action="store_true",
+                   required=False,
+                   help="""Specify this tag if the BLAST file being read in is actually
+                   an annotation table; by default, it's expected to be outfmt6.""",
+                   default=False)
     p.add_argument("--evalue", dest="evalue", type=float,
                    required=False,
                    help="""Optionally, if a BLAST file is being used for representative
@@ -168,7 +219,10 @@ def main():
     
     # Load in BLAST results if relevant
     if args.blastFile != None:
-        blastDict = parse_best_blast(args.blastFile, args.evalue)
+        if args.isAnnotTable == True:
+            blastDict = parse_annot_blast(args.blastFile, args.evalue) # handle annotation table
+        else:
+            blastDict = parse_best_blast(args.blastFile, args.evalue) # handle outfmt6
     else:
         blastDict = {}
     
