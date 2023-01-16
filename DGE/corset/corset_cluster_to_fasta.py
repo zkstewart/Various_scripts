@@ -90,7 +90,7 @@ def parse_annot_blast(annotTableFile, evalueCutoff):
                 bitIndex = sl.index(BIT_COLUMN)
                 continue
             # Skip if irrelevant
-            if len(sl) != 12:
+            if len(sl) < 12:
                 continue
             
             # Parse details and skip if no hit recorded
