@@ -41,6 +41,12 @@ def main():
     p.add_argument("-o", dest="outputFile",
                    required=True,
                    help="Specify the name of the output clustered annotation table file")
+    # Optional
+    p.add_argument("--writeClusterIDs", dest="writeClusterIDs", action="store_true",
+                   required=False,
+                   help="""Specify this tag if you'd like to write rows not with
+                   their original transcript ID but with the Corset cluster ID""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -69,7 +75,10 @@ def main():
             
             # Figure out if we want to write this line to file
             if id in representatives:
-                fileOut.write(line)
+                if args.writeClusterIDs:
+                    sl[0] = representatives[id] # Switch to cluster ID if specified
+                
+                fileOut.write("\t".join(sl) + "\n")
     
     print("Program completed successfully!")
 
