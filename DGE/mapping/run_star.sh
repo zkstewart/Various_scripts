@@ -12,15 +12,6 @@ cd $PBS_O_WORKDIR
 # >> SETUP: Specify STAR executable location
 STARDIR=/home/stewarz2/various_programs/STAR-2.7.10a/bin/Linux_x86_64_static
 
-# >> SETUP: Specify genome location
-GENDIR=/home/stewarz2/plant_group/leena/genome
-GENFILE=NbLab360.genome.fasta
-
-# >> SETUP: Specify gene annotation GTF location
-## If you have a GFF3, convert it to GTF with agat_convert_sp_gff2gtf.pl
-GTFDIR=/home/stewarz2/plant_group/leena/annotation
-GTFFILE=NbLab360.v103.gtf
-
 # >> SETUP: Specify reads location & file suffix
 ## For the suffix, it's assumed that just prior to the given string there
 ## is the 1 / 2 suffix differentiating forward / reverse reads
@@ -29,9 +20,6 @@ SUFFIX=.fq.gz
 
 # >> SETUP: Specify computational resources
 CPUS=4
-
-# >> SETUP: Specify output prefix
-OUTPREFIX=leena
 
 ## MANUAL SETUP END
 
