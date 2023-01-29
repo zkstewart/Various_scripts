@@ -29,7 +29,7 @@ usage = """%(prog)s will parse the Orthogroups.csv file output by Orthofinder an
 produce a modified output file with only orthogroups which contain sequences from
 the specified species of interest (SOI). Specification of SOI is in the form of
 providing the name of the column(s) you want; if specifying more than one column,
-separate each value with a comma e.g., -s species1,species2
+separate each value with a space e.g., -s species1 species2.
 """
 
 # Reqs
@@ -40,6 +40,11 @@ p.add_argument("-o", "-output", dest="outputFileName",
                help="Output file name")
 p.add_argument("-s", "-soi", dest="soi", nargs="+",
                help="Column name(s) of the species of interest (SOI)")
+# Optional
+p.add_argument("--mustContain", dest="mustContain", action="store_true",
+               help="""Optionally, ensure that output contains at least one
+               representative from each of the specified SOIs""",
+               default=False)
 
 args = p.parse_args()
 validate_args(args)
@@ -64,9 +69,14 @@ with open(args.orthogroups, 'r') as fileIn, open(args.outputFileName, 'w') as fi
                         fileOut.write(line)
                 else:
                         sl = line.rstrip('\r\n').split('\t')
-                        for index in soiIndices:
-                                if sl[index+1] != '':           # Add +1 since these lines have the OG# at the start, whereas we got rid of the blank space in the header that corresponds to this column
-                                        fileOut.write(line)
+                        if not args.mustContain:
+                            for index in soiIndices:
+                                    if sl[index+1] != '':           # Add +1 since these lines have the OG# at the start, whereas we got rid of the blank space in the header that corresponds to this column
+                                            fileOut.write(line)
+                        else:
+                            containsAll = all([ True if sl[index+1] != '' else False for index in soiIndices ])
+                            if containsAll:
+                                fileOut.write(line)
 
 # Done!
 print('Program completed successfully!')
