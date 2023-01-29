@@ -59,7 +59,7 @@ def fasta_or_fastq(fastaFile):
                 quit()
 
 ## Fasta retrieve/remove functions
-def fasta_retrieve_remove_tofile(fastaRecords, outputFileName, idList, behaviour, effort):
+def fasta_retrieve_remove_tofile(fastaRecords, outputFileName, idSet, behaviour, effort):
         # Ensure behaviour value makes sense
         if behaviour.lower() not in ['retrieve', 'remove']:
                 print('fasta_retrieve_remove_tofile: Input behaviour value is not "retrieve" or "remove" but is instead "' + str(behaviour) + '".')
@@ -71,19 +71,19 @@ def fasta_retrieve_remove_tofile(fastaRecords, outputFileName, idList, behaviour
         with open(outputFileName, 'w') as fileOut:
                 for key in fastaRecords.keys():
                         record = fastaRecords[key]
-                        # Find if sequence ID is in our idList
+                        # Find if sequence ID is in our idSet
                         seqid = None
-                        if record.id in idList:
+                        if record.id in idSet:
                                 seqid = record.id
                                 foundList.append(seqid)
-                        elif record.description in idList:
+                        elif record.description in idSet:
                                 seqid = record.description
                                 foundList.append(seqid)
-                        # If relevant, put more effort into finding ID in our idList
+                        # If relevant, put more effort into finding ID in our idSet
                         elif effort == True:
-                                idMatches = [seqid for seqid in idList if record.description.startswith(seqid)]                   # This will return all entries in the idList that partially match the current record's long name
+                                idMatches = [seqid for seqid in idSet if record.description.startswith(seqid)]                  # This will return all entries in the idSet that partially match the current record's long name
                                 cleanMatches = []
-                                for match in idMatches:                                                                         # Here we begin to look through our partial idList matches
+                                for match in idMatches:                                                                         # Here we begin to look through our partial idSet matches
                                         if not match in fastaRecords:                                     # Firstly, we make sure this ID doesn't already have a perfect match; if it does, it belongs to that entry and we ignore it
                                                 matchMatches = [seqid for seqid in fastaRecords.keys() if seqid.startswith(match)]   # Next we check to see if this ID matches more than one sequence in the FASTA; if it does, our program can't work
                                                 if len(matchMatches) == 1:
@@ -120,7 +120,6 @@ def fasta_retrieve_remove_tofile(fastaRecords, outputFileName, idList, behaviour
                                         continue
         # Report details re: foundList
         foundSet = set(foundList)
-        idSet = set(idList)
         if foundSet == idSet:
                 print('All values in the ID list were successfully ' + behaviour + 'd.')
         else:
@@ -144,7 +143,9 @@ def text_file_to_list(textFile):
         outList = []
         with open(textFile, 'r') as fileIn:
                 for line in fileIn:
-                        outList.append(line.rstrip('\r\n'))
+                        l = line.rstrip("\r\n ")
+                        if l != "":
+                                outList.append(l)
         return outList
 
 ## Custom fasta dictionary
@@ -222,16 +223,15 @@ if args.idString == None or args.idString == '' or args.idString == []:
 idList = list(set(textIds).union(set(args.idString)))
 
 # Strip > characters if they exist in our idList
-for i in range(len(idList)):
-        if idList[i].startswith('>'):
-                idList[i] = idList[i].lstrip('>')       # Hopefully no one uses sequence IDs like ">>>>>>>>>1_contig"; these shouldn't be legal FASTA format IDs anyway AFAIK
+idList = [ id.lstrip(">") for id in idList ]
+
 # Remove blank entries if they exist in our idList
 while '' in idList:
         del idList[idList.index('')]
 
 # Extract sequences if handling command-line argument
 if operationType == 'command-line':
-        fasta_retrieve_remove_tofile(records, args.outputFileName, idList, args.behaviour, args.effort)
+        fasta_retrieve_remove_tofile(records, args.outputFileName, set(idList), args.behaviour, args.effort)
                 
 # Open CMD window and allow for ongoing sequence retrieval otherwise
 elif operationType == 'CMD':

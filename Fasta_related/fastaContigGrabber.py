@@ -154,7 +154,9 @@ def text_file_to_list(textFile):
         outList = []
         with open(textFile, 'r') as fileIn:
                 for line in fileIn:
-                        outList.append(line.rstrip('\r\n'))
+                        l = line.rstrip("\r\n ")
+                        if l != "":
+                                outList.append(l)
         return outList
 
 #### USER INPUT SECTION
@@ -226,9 +228,8 @@ for seqID in idList:
                 break
 
 # Strip > characters if they exist in our idList
-for i in range(len(idList)):
-        if idList[i].startswith('>'):
-                idList[i] = idList[i].lstrip('>')       # Hopefully no one uses sequence IDs like ">>>>>>>>>1_contig"; these shouldn't be legal FASTA format IDs anyway AFAIK
+idList = [ id.lstrip(">") for id in idList ]
+
 # Remove blank entries if they exist in our idList
 while '' in idList:
         del idList[idList.index('')]
