@@ -29,15 +29,15 @@ CPUS=4
 declare -a RNAFILES
 i=0
 for f in ${READSDIR}/*1${SUFFIX}; do
-    RNAFILES[${i}]=$(echo "${f%%_R1${SUFFIX}}");
+    RNAFILES[${i}]=$(echo "${f%%1${SUFFIX}}");
     i=$((i+1));
 done
 
 ## STEP 2: Get job details
 ARRAY_INDEX=$((${PBS_ARRAY_INDEX}-1))
 FILEPREFIX=${RNAFILES[${ARRAY_INDEX}]}
-BASEPREFIX=$(basename ${FILEPREFIX})
+BASEPREFIX=$(basename ${FILEPREFIX} _) # strip any _ trailing characters
 
 ## STEP 3: Run FASTQC
 mkdir -p ${BASEPREFIX}
-fastqc -o ${BASEPREFIX} -t ${CPUS} ${FILEPREFIX}_R1${SUFFIX} ${FILEPREFIX}_R2${SUFFIX}
+fastqc -o ${BASEPREFIX} -t ${CPUS} ${FILEPREFIX}1${SUFFIX} ${FILEPREFIX}2${SUFFIX}
