@@ -14,9 +14,6 @@ module load java/1.8.0_92
 ## SETUP: Specify bbmap location
 BBDIR=/home/stewarz2/various_programs/bbmap
 
-## SETUP: Specify file prefixes
-SPECIES=bactrocera
-
 ## SETUP: Specify RNAseq reads dir
 READSDIR=/home/stewarz2/flies/mitch/prepared_reads
 SUFFIX=.fq.gz
