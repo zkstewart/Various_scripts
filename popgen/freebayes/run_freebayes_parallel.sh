@@ -33,8 +33,9 @@ PREFIX=citrus
 #################################
 
 # > STEP 1: Make sure freebayes and vcflib are in our path
-#export PATH="${VCFLIBDIR}:$PATH"
+export PATH="${VCFLIBDIR}:$PATH"
 export PATH="${FBDIR}:$PATH"
+export PATH="${FBSCRIPT}:$PATH"
 
 # > STEP 2: Get our file list
 declare -a BAMFILES
