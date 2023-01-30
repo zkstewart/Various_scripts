@@ -5,9 +5,14 @@
 # map the KEGG terms from the official genome annotation
 # to the one in question.
 
-import sys, argparse, os, requests, re
+import sys, argparse, os, requests, re, pickle
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_BlastIO
+
+API_PICKLE_FILE = ".kegg_api_data.pkl" # global this for convenience
+BRITE_REGEX = re.compile(r"BRITE(.+?)(POSITION|MOTIF)", re.DOTALL) # sometimes POSITION isn't present
+ORTHO_REGEX = re.compile(r"ORTHOLOGY\s+(K\d{5})\s+(.+?)\n")
+KO_REGEX = re.compile(r"(\d{5})\s(.+?)\n")
 
 def validate_args(args):
     # Validate input data locations
@@ -162,46 +167,41 @@ def download_ko_information(organismID, geneID):
                 ]
     '''
     api_url = "https://rest.kegg.jp/get/{0}:{1}".format(organismID, geneID)
-    briteRegex = re.compile(r"BRITE(.+?)POSITION", re.DOTALL)
-    
-    # Get the response and parse out the block of text containing BRITE information
-    response = requests.get(api_url)
-    briteTextBlock = briteRegex.findall(response.text)[0].strip(" ")
-    
-    # Parse the BRITE information to retrieve KOs
+    koBlockRegex = re.compile(r"KEGG Orthology \(KO\)(.+?)" + geneID, re.DOTALL)
     kos = []
-    firstLine = True
-    prevLine = None
-    for line in briteTextBlock.split("\n"):
-        if line == "":
-            continue
-        elif line.startswith("KEGG Orthology (KO)"):
-            continue
-        elif firstLine == True: # first line AFTER the initial KO line
-            # Get the length of empty space before the line starts [lets us check indentation]
-            topIndentation = len(line.split(line.split()[0])[0]) # ugly AF code, checks length of "   " before first character
-            firstLine = False
-        else:
-            # Abort scanning if we've gone into another indented section
-            thisIndentation = len(line.split(line.split()[0])[0])
-            if thisIndentation < topIndentation:
-                break
-            
-            # Parse this line
-            sl = line.split(maxsplit=1)
-            
-            # If it's our gene ID...
-            if sl[0] == geneID:
-                # ... and the previous line isn't a BRITE hierarchy, store it
-                if "[BR:" not in prevLine[1]:
-                    kos.append(prevLine)
-            
-            # Hold onto line for next iteration
-            prevLine = sl
     
+    # Get the response
+    response = requests.get(api_url)
+    
+    # Parse out the gene-level orthology
+    geneOrthology = ORTHO_REGEX.findall(response.text)
+    assert len(geneOrthology) == 1 # for debugging, make sure there's no outliers
+    
+    geneOrthology = list(map(list, geneOrthology))
+    geneOrthology[0][1] = geneOrthology[0][1].split(" [EC")[0] # remove the ugly enzyme code
+    
+    kos.append(geneOrthology[0])
+    
+    # Parse out the block of text containing BRITE information
+    briteTextBlock = BRITE_REGEX.findall(response.text)[0][0].strip(" ")
+    
+    # Get the segment containing just KO values
+    if "KEGG Orthology (KO)" in briteTextBlock:
+        koTextBlock = koBlockRegex.findall(briteTextBlock)[0]
+        
+        # Parse out the KOs from this segment
+        briteKOs = KO_REGEX.findall(koTextBlock)
+        for briteKO in briteKOs:
+            kos.append(list(briteKO)) # just in case list matters versus tuple
+        
     return kos
 
-if __name__ == "__main__":
+def save_pickle(queriedAccs):
+    if queriedAccs != {}:
+        with open(API_PICKLE_FILE, "wb") as pickleOut:
+            pickle.dump(queriedAccs, pickleOut)
+
+def main():
     usage = """%(prog)s receives an input FASTA containing protein sequences, and
     uses BLAST to map annotations to these sequences based on the best hit against
     an official KEGG annotated protein FASTA. This is useful when using a newer genome
@@ -243,61 +243,81 @@ if __name__ == "__main__":
     if args.blastFile == None:
         blastDict, _ = blaster.get_blast_results() # throw away the blastFileName return since it will be None
     else:
-        blastDict = blaster.parse_blast_hit_coords(args.blastFile)
+        blastDict = ZS_BlastIO.BLAST_Results(args.blastFile).results
     
     # Query KEGG API for mapping information
     proteinMapDict = download_ncbi_protein_to_kegg_gene_map(args.keggID)
     keggPathwayMap = download_kegg_gene_to_kegg_pathway_map(args.keggID)
     
+    # Load in any API queries that may have been performed already
+    if os.path.isfile(API_PICKLE_FILE):
+        with open(API_PICKLE_FILE, "rb") as pickleIn:
+            apiDict = pickle.load(pickleIn)
+    else:
+        apiDict = {}
+    
     # Map input FASTA IDs to KEGG information
     inputFasta = ZS_SeqIO.FASTA(args.inputFastaFile)
     inputMapDict = {}
     nameDict = {}
-    foundDict = {}
-    for FastASeq_obj in inputFasta:
-        inputID = FastASeq_obj.id
-        
-        # If there's no BLAST hit, no mapping can commence
-        if inputID not in blastDict:
-            inputMapDict[inputID] = "0"
-            continue
-        
-        # Retrieve the best hit, and skip if it's not good enough
-        bestID, identity, qstart, qend, tstart, tend, evalue = blastDict[inputID][0]
-        if identity < args.identity: # if it's not a good enough hit, skip it
-            inputMapDict[inputID] = "0"
-            continue
-        
-        # If there's no protein ID mapping, we can't proceed
-        bestID = bestID.rsplit(".", maxsplit=1)[0] # correct isoform IDs
-        if bestID not in proteinMapDict:
-            inputMapDict[inputID] = "0"
-            continue
-        
-        # If we can't map the KEGG gene ID to its pathway, we can't proceed
-        '''
-        I'm running under an assumption I believe holds true: if a gene does not
-        have a pathway mapping, it will not have any KO terms associated to it.
-        '''
-        bestKeggID = proteinMapDict[bestID]
-        if bestKeggID not in keggPathwayMap:
-            inputMapDict[inputID] = "0"
-            continue
-        
-        # If we can do the mapping, grab all relevant information for this gene
-        else:
-            # Skip API calls if this pathway has already been queried
-            if bestKeggID in foundDict:
-                kos = foundDict[bestKeggID]
-            # Otherwise, make the API call
-            else:
-                kos = download_ko_information(args.keggID, bestKeggID)
-                foundDict[bestKeggID] = kos
+    try:
+        for FastASeq_obj in inputFasta:
+            inputID = FastASeq_obj.id
             
-            # Associate results to our relevant dictionaries
-            inputMapDict[inputID] = [pair[0] for pair in kos]
-            for pair in kos:
-                nameDict[pair[0]] = pair[1]
+            # If there's no BLAST hit, no mapping can commence
+            if inputID not in blastDict:
+                inputMapDict[inputID] = "0"
+                continue
+            
+            # Retrieve the best hit, and skip if it's not good enough
+            bestID, identity, qstart, qend, tstart, tend, evalue = blastDict[inputID][0]
+            if identity < args.identity: # if it's not a good enough hit, skip it
+                inputMapDict[inputID] = "0"
+                continue
+            
+            # If there's no protein ID mapping, we can't proceed
+            bestID = bestID.rsplit(".", maxsplit=1)[0] # correct isoform IDs
+            if bestID not in proteinMapDict:
+                inputMapDict[inputID] = "0"
+                continue
+            
+            # If we can't map the KEGG gene ID to its pathway, we can't proceed
+            '''
+            I'm running under an assumption I believe holds true: if a gene does not
+            have a pathway mapping, it will not have any KO terms associated to it.
+            '''
+            bestKeggID = proteinMapDict[bestID]
+            if bestKeggID not in keggPathwayMap:
+                inputMapDict[inputID] = "0"
+                continue
+            
+            # If we can do the mapping, grab all relevant information for this gene
+            else:
+                # Skip API calls if this pathway has already been queried
+                if bestKeggID in apiDict:
+                    kos = apiDict[bestKeggID]
+                # Otherwise, make the API call
+                else:
+                    kos = download_ko_information(args.keggID, bestKeggID)
+                    apiDict[bestKeggID] = kos
+                
+                # Associate results to our relevant dictionaries
+                inputMapDict[inputID] = [pair[0] for pair in kos]
+                for pair in kos:
+                    nameDict[pair[0]] = pair[1]
+    # If program is ending unsuccessfuly, save any API queries now and provide debug info
+    except:
+        save_pickle(apiDict)
+        
+        print("## DEBUG:")
+        print("## Program broke on sequence ID={0}".format(inputID))
+        print("## Best KEGG ID = {0}".format(bestKeggID))
+        
+        print("Program ended after failing =(")
+        quit()
+    
+    # Save any API queries that may have been performed after finishing successfully
+    save_pickle(apiDict)
     
     # Write output KEGG pathway mapping
     with open(args.outputFilePrefix + "_keggmap.tsv", "w") as fileOut:
@@ -308,6 +328,8 @@ if __name__ == "__main__":
     with open(args.outputFilePrefix + "_keggnames.tsv", "w") as fileOut:
         for key, value in nameDict.items():
             fileOut.write("{0}\t{1}\n".format(key, value))
-        
     
     print("Program completed successfully!")
+
+if __name__ == "__main__":
+    main()
