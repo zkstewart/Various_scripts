@@ -35,7 +35,7 @@ def validate_args(args):
         os.makedirs(args.outputDirectory)
         print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
 
-def get_phased_genotypes_from_vcf(vcfFile):
+def get_phased_genotypes_from_vcf(vcfFile, assumePhased=False):
     '''
     This function expects the provided VCF file to contain phased genotypes
     within the GT field separated by |, and genotypes that were unphased as \.
@@ -102,7 +102,7 @@ def get_phased_genotypes_from_vcf(vcfFile):
                     genotype = sampleResult
                 
                 # Edit genotype if "/" ambiguity is given for a homozygous allele
-                if "/" in genotype and len(set(genotype.split("/"))) == 1:
+                if ("/" in genotype and len(set(genotype.split("/"))) == 1) or assumePhased == True:
                     genotype = genotype.replace("/", "|")
                 
                 # Impute empty genotypes
@@ -481,6 +481,12 @@ def main():
                    help="""Optionally, specify how many SNPs are needed
                    to be considered a haplotype (default==2)""",
                    default=2)
+    p.add_argument("--assumePhased", dest="assumePhased",
+                   action="store_true",
+                   required=False,
+                   help="""Optionally, specify this flag if your VCF isn't
+                   phased but you want to treat it like it is anyway""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -491,7 +497,7 @@ def main():
     gff3Obj.create_ncls_index(typeToIndex="gene")
     
     # Parse VCF to get SNP genotypes
-    snpGenotypes = get_phased_genotypes_from_vcf(args.vcf)
+    snpGenotypes = get_phased_genotypes_from_vcf(args.vcf, args.assumePhased)
     
     # Parse genome FASTA
     genomeFASTA_obj = ZS_SeqIO.FASTA(args.fasta)
