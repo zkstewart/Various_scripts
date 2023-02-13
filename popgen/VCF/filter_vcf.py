@@ -64,6 +64,8 @@ def filter_vcf_by_population_missingness(vcf, pops, missingPerPopulation=0.5):
                                 proportion of missingness will be tolerated before
                                 excluding the variant
     '''
+    numPopGroups = sum([1 for key, value in pops.items() if isinstance(value, list)])
+    
     # Check VCF to find variants that fail filtration
     toDrop = {}
     for contigID, contigDict in vcf.items():
@@ -88,6 +90,8 @@ def filter_vcf_by_population_missingness(vcf, pops, missingPerPopulation=0.5):
             # Compute the missingness per population
             failed = False
             if popsCount == {}: # happens if ALL samples are blank after we dropped samples
+                failed = True
+            elif len(popsCount) != numPopGroups: # happens if ALL OF A POPULATION'S samples are blank
                 failed = True
             else:
                 for popID, popCount in popsCount.items():
@@ -320,6 +324,8 @@ def main():
             vcf.write_geno(args.outputFileName)
         else:
             vcf.write_vcf(args.outputFileName)
+    
+    print("Program completed successfully!")
 
 if __name__ == "__main__":
     main()
