@@ -73,7 +73,9 @@ def filter_vcf_by_population_missingness(vcf, pops, missingPerPopulation=0.5):
             # Tally presence across populations
             popsCount = {}
             for sampleID in vcf.samples:
-                if posDict[sampleID] == ["."]: # handle freebayes non-called
+                # Skip non-called sites
+                "This should handle formats produced by Freebayes and VCFtools"
+                if set(posDict[sampleID]) == {'.', './.'} or set(posDict[sampleID]) == {'.'}:
                     continue
                 
                 sampleGT = posDict[sampleID][gtIndex]
