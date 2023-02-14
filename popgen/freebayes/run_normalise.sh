@@ -17,33 +17,38 @@ PREFIX=bactrocera
 
 #################################
 
-# > STEP 1: Split multiallelic records to biallelic
-if [[ ! -f ${PREFIX}.vcf.gz  ]]; then
-    bgzip ${PREFIX}.vcf
+# > STEP 1: Drop sites which have no coverage
+if [[ ! -f ${PREFIX}.dp.vcf  ]]; then
+    vcffilter -f "DP > 0" ${PREFIX}.vcf > ${PREFIX}.dp.vcf
 fi
-if [[ ! -f ${PREFIX}.vcf.gz.csi  ]]; then
-    bcftools index ${PREFIX}.vcf.gz
+if [[ ! -f ${PREFIX}.dp.vcf.gz  ]]; then
+    bgzip -c ${PREFIX}.dp.vcf > ${PREFIX}.dp.vcf.gz
 fi
-if [[ ! -f ${PREFIX}.split.vcf.gz  ]]; then
-    bcftools norm -m- -Oz -o ${PREFIX}.split.vcf.gz -N ${PREFIX}.vcf.gz # with or without -N?
+if [[ ! -f ${PREFIX}.dp.vcf.gz.csi  ]]; then
+    bcftools index ${PREFIX}.dp.vcf.gz
 fi
 
-# > STEP 2: Rejoin biallic sites into multiallelic sites
+# > STEP 2: Split multiallelic records to biallelic
+if [[ ! -f ${PREFIX}.split.vcf.gz  ]]; then
+    bcftools norm -m- -Oz -o ${PREFIX}.split.vcf.gz -N ${PREFIX}.dp.vcf.gz # with or without -N?
+fi
+
+# > STEP 3: Rejoin biallic sites into multiallelic sites
 if [[ ! -f ${PREFIX}.rejoin.vcf.gz  ]]; then
     bcftools norm -m+ -Oz -o ${PREFIX}.rejoin.vcf.gz -N ${PREFIX}.split.vcf.gz # with or without -N
 fi
 
-# > STEP 3: Left-align and normalise everything
+# > STEP 4: Left-align and normalise everything
 if [[ ! -f ${PREFIX}.normalised.vcf  ]]; then
     bcftools norm -f ${GENOMEDIR}/${GENOME} -Ov -o ${PREFIX}.normalised.vcf ${PREFIX}.rejoin.vcf.gz
 fi
 
-# > STEP 4: vt decompose SNPs
+# > STEP 5: vt decompose SNPs
 if [[ ! -f ${PREFIX}.decomposed.vcf  ]]; then
     vt decompose_blocksub ${PREFIX}.normalised.vcf > ${PREFIX}.decomposed.vcf
 fi
 
-# > STEP 5: Make file ready for next steps
+# > STEP 6: Make file ready for next steps
 if [[ ! -f ${PREFIX}.decomposed.vcf.gz  ]]; then
     bgzip -c ${PREFIX}.decomposed.vcf > ${PREFIX}.decomposed.vcf.gz
 fi
