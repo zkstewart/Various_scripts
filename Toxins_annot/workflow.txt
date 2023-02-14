@@ -1,0 +1,8 @@
+# STEP 1: Run hmmsearch
+hmmsearch --domtblout proteome_domains.domtblout -o proteome_domains.out F:\anemones\toxins_annot\HANDOVER\domains\hmm\toxin_domains.hmm F:\toxins_annot\proteomes\proteome.renamed.fasta
+
+# STEP 2: Parse and segregate
+python D:\Libraries\Documents\GitHub\Various_scripts\Toxins_annot\parse_domtblout_segregate.py -i proteome_domains.domtblout -o proteome_domains.hmm_parsed -le 50
+
+# STEP 3: Classify toxins
+python D:\Libraries\Documents\Github\Various_scripts\Toxins_annot\toxin_classify_from_parse.py -i proteome_domains.hmm_parsed -f F:\toxins_annot\proteomes\proteome.renamed.fasta -o proteome_families
