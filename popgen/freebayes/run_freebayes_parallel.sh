@@ -6,10 +6,19 @@
 
 cd $PBS_O_WORKDIR
 
+module unload gcc/4.9.3-2.25
+module unload gcccore/4.9.3
+module unload binutils/2.25-gcccore-4.9.3
+module unload zlib/1.2.8-foss-2016a
+module load gcc/10.3.0
+
+module unload libxml2/2.9.3-foss-2016a
+module load libxml2/2.9.10-gcccore-10.3.0
+
 #################################
 
 # Specify the location of Freebayes and vcflib
-FBDIR=/home/stewarz2/various_programs/freebayes # should be executable called 'freebayes' in this dir
+FBDIR=/home/stewarz2/various_programs/freebayes_built/freebayes/build # should be executable called 'freebayes' in this dir
 FBSCRIPT=/home/stewarz2/various_programs/freebayes_built/freebayes/scripts
 VCFLIBDIR=/home/stewarz2/various_programs/freebayes_built/freebayes/vcflib/bin
 

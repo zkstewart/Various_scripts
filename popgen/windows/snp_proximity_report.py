@@ -167,7 +167,6 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions, windows=None):
                 geneProximityDict[geneID]["snpWithin"].append(snpLocation)
                 if windows != None:
                     geneProximityDict[geneID]["isInsideWindow"] = snpResultDict["isInsideWindow"][:]
-                
             
             # Scenario 2: SNP located not inside, but near a gene
             else:
