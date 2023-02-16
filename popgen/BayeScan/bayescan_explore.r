@@ -102,20 +102,38 @@ lines(c(log10(FDR),log10(FDR)),c(-1,1),lwd=2)
 return(list("outliers"=outliers,"nb_outliers"=length(outliers)))
 }
 
-## Run function now [EDITS BY ZAC]
-FST_FILE = 'F:/flies/genome_based_2022/original/Parental_Selected/bayescan/btrys06_parental.final.g_fst.txt'
+
+##### PROGRAM RUN ######
+
+
+# Specify working dir and file prefix
+WORK_DIR="F:/flies/chapa_2022/bayescan/individual"
+PREFIX="c2022"
+
+setwd(WORK_DIR)
+
+
+# Run function
+FST_FILE = paste0(PREFIX, '_fst.txt')
 result = plot_bayescan(FST_FILE,FDR=0.05)
 
-## Get the outlier SNPs as output
-OUTPUT_FILE = 'F:/flies/genome_based_2022/original/Parental_Selected/bayescan/btrys06_parental.final.outliers.txt'
+
+# Get the outlier SNPs as output
+OUTPUT_FILE = paste0(PREFIX, '.outliers_fst.txt')
+
 outliers = result$outliers
 fst.table = read.table(file=FST_FILE, header = TRUE, stringsAsFactors = FALSE)
+
 outliers.table = fst.table[rownames(fst.table) %in% outliers,]
 write.table(outliers.table, file=OUTPUT_FILE, sep="\t", quote=FALSE, col.names=NA)
 
-## Evaluate convergence [http://evomics.org/learning/population-and-speciation-genomics/2016-population-and-speciation-genomics/bayescan-exercise/]
+
+# Evaluate convergence
+## Code from http://evomics.org/learning/population-and-speciation-genomics/2016-population-and-speciation-genomics/bayescan-exercise/
+
 library(coda)
-G.SEL_FILE = 'F:/flies/genome_based_2022/original/Parental_Selected/bayescan/btrys06_parental.final.g.sel'
+G.SEL_FILE = paste0(PREFIX, '.sel')
+
 chain <- read.table(G.SEL_FILE,header=TRUE)
 chain <- mcmc(chain,thin=10)
 
