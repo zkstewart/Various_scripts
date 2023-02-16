@@ -8,20 +8,20 @@ import os, argparse
 # Define functions
 def validate_args(args):
     # Validate input file location
-    if not os.path.isfile(args.outliersFile):
-        print('I am unable to locate the BayeScan outliers file (' + args.outliersFile + ')')
+    if not os.path.isfile(args.outliersFstFile):
+        print('I am unable to locate the BayeScan outliers FST file (' + args.outliersFstFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     if not os.path.isfile(args.vcfFile):
         print('I am unable to locate the VCF file (' + args.vcfFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.gesteFile):
-        print('I am unable to locate the GESTE file (' + args.gesteFile + ')')
+    if not os.path.isfile(args.verifFile):
+        print('I am unable to locate the BayeScan verif file (' + args.verifFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.pgdVcfFile):
-        print('I am unable to locate the PGDSpider VCF file (' + args.pgdVcfFile + ')')
+    if not os.path.isfile(args.metadataFile):
+        print('I am unable to locate the pops metadata file (' + args.metadataFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Validate output file location
@@ -31,117 +31,173 @@ def validate_args(args):
         quit()
 
 def parse_bayescan_outliers(outliersFile):
-    outliers=[]
+    outliers=set()
     with open(outliersFile, "r") as fileIn:
         for line in fileIn:
             l = line.strip(" \r\n").split()
             if l[0] == "prob": # this is the header line, so let's skip it
                 continue
             else:
-                outliers.append(int(l[0]))
+                outliers.add(int(l[0]))
     return outliers
 
-def parse_geste_for_loci_num(gesteFile):
-    numLoci = None
-    with open(gesteFile, "r") as fileIn:
+def parse_bayescan_verif(verifFile):
+    verifDict = {}
+    with open(verifFile, "r") as fileIn:
         for line in fileIn:
-            if line.startswith("[loci]"):
-                numLoci = int(line.rstrip("\r\n ").split("=")[1])
-                break
-    assert numLoci != None, "GESTE file doesn't have a [loci] line in it...?"
-    return numLoci
-
-def parse_pgd_vcf_for_loci(pgdVcfFile):
-    '''
-    Note that you can use the length of the returned list to tell you how
-    many loci were found in this VCF.
-    
-    Returns:
-        vcfLoci -- a list containing sublists with structure like:
-                        [
-                            [chrom, position, ref, alt],
-                            ...
-                        ]
-    '''
-    vcfLoci = []
-    with open(pgdVcfFile, "r") as fileIn:
-        for line in fileIn:
-            if line.startswith("#"): # header line
+            if not line.startswith("Pop. "):
                 continue
             else:
-                sl = line.rstrip("\r\n ").split("\t")
-                vcfLoci.append([sl[0], sl[1], sl[3], sl[4]])
-    return vcfLoci
+                sl = line.rstrip("\r\n ").split()
+                pop = sl[1]
+                locus = int(sl[3])
+                nums = list(map(int, sl[5:]))
+                
+                verifDict.setdefault(locus, {})
+                verifDict[locus][pop] = nums
+    return verifDict
 
-def write_outlier_vcf(outliers, pgdLoci, vcfFile, outputFileName):
-    wroteIndices=[]
-    with open(vcfFile, "r") as fileIn, open(outputFileName, "w") as fileOut:
-        ongoingCount = 1 # this will relate to the index of a BayeScan SNP
+def parse_pops_metadata(metadataFile):
+    metadataDict = {}
+    with open(metadataFile, "r") as fileIn:
         for line in fileIn:
-            # Skip header lines
-            if line.startswith("#"):
-                fileOut.write(line)
-            # Handle info lines
+            sl = line.rstrip("\r\n ").split("\t")
+            if sl == []:
+                continue
             else:
-                # Get relevant details
-                sl = line.rstrip("\r\n ").split("\t")
-                chrom, pos, ref, alt = sl[0], sl[1], sl[3], sl[4]
+                sample, pop = sl
+                metadataDict.setdefault(pop, set())
+                metadataDict[pop].add(sample)
+    return metadataDict
+
+def validate_bayescan_outliers(outliers, verifDict, metadataDict):
+    # Check that our outliers don't exceed the range of verifDict
+    for outlierIndex in outliers:
+        if outlierIndex not in verifDict:
+            raise ValueError(
+                f"{outlierIndex} outlier index not found in verif file!"
+            )
+    
+    # Check that verifDict only has pops found in metadataDict
+    metadataPops = set(metadataDict.keys())
+    for index, popAlleles in verifDict.items():
+        if not set(popAlleles.keys()) == metadataPops:
+            raise ValueError(
+                f"Pops in verif file ({set(popAlleles.keys())}) don't match metadata ({metadataPops})"
+            )
+
+def get_pop_from_key(sampleID, metadataDict):
+    for key, value in metadataDict.items():
+        if sampleID in value:
+            return key
+    return None
+
+def get_vcf_lines_of_outliers(vcfFile, verifDict, metadataDict, outliers):
+    '''
+    Parameters:
+        vcfFile -- as string indicating the location of the VCF file used for
+                   BayeScan outlier prediction
+        verifDict -- a dictionary containing the parsed contents of the BayeScan
+                     verif text file
+        metadataDict -- a dictionary containing the parsed contents of the metadata
+                        text file used for GESTE file creation
+        outliers -- a set containing BayeScan indices of outlier SNPs
+    Returns:
+        linesToWrite -- a set containing 0-based indices of VCF content lines
+                        that should be output since they are 1) outliers, and 
+                        2) are index-adjusted to account for changes during GESTE
+                        file creation from the original VCF.
+    '''
+    
+    pops = set(metadataDict.keys())
+    
+    linesToWrite = set() # will hold onto the line numbers we should write as outliers
+    
+    verifCounter = 1
+    vcfCounter = 0
+    with open(vcfFile, "r") as fileIn:
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            # Handle header line
+            if line.startswith("#CHROM"):
+                sampleIDs = sl[9:]
+            # Skip comment lines
+            elif line.startswith("#"):
+                continue
+            # Handle body lines
+            else:
+                # Extract details from line
+                chrom, pos, id, ref, alt, \
+                    qual, filt, info, \
+                    format = sl[0:9]
+                samples = sl[9:]
+                gtIndex = format.split(":").index("GT")
                 
-                # Skip lines that aren't used by BayeScan
-                found = any(
-                    [True
-                        for _chrom, _pos, _ref, _alt in pgdLoci
-                        if [_chrom, _pos] == [chrom, pos]
-                        and sorted(_ref.split(",")) == sorted(ref.split(","))
-                        and sorted(_alt.split(",")) == sorted(alt.split(",")) # sometimes PGDSpider sorts it differently...
-                    ]
-                )
+                # Tabulate allele frequency for each population
+                alleleDict = {
+                    pop: [0 for x in range(0, len(alt.split(",")) + 1)]
+                        for pop in pops
+                }
                 
-                # Skip lines that aren't used by BayeScan
-                if not found:
-                    continue
+                for i in range(len(samples)):
+                    # Extract details for this sample's VCF data
+                    sampleID = sampleIDs[i]
+                    samplePop = get_pop_from_key(sampleID, metadataDict)
+                    
+                    sampleGT = samples[i].split(":")[gtIndex]
+                    sampleAlleles = sampleGT.split("/")
+                    
+                    # Skip uncalled genotypes
+                    if sampleGT == "./.":
+                        continue
+                    
+                    # Store result in allele dict
+                    for allele in sampleAlleles:
+                        alleleDict[samplePop][int(allele)] += 1
+
+                # Check to see if this lines up with the verif file
+                verifAlleles = verifDict[verifCounter]
                 
-                # If this line is valid and detected as an outlier, write to file
-                if ongoingCount in outliers:
-                    fileOut.write(line)
-                    wroteIndices.append(ongoingCount)
-                
-                # Iterate our loci counter
-                ongoingCount += 1
-    assert wroteIndices == outliers, "Writing the VCF failed! The output file can't be used, sorry!"
+                if all([ set(verifAlleles[pop]) == set(alleleDict[pop])
+                            for pop in pops        
+                ]):
+                    if verifCounter in outliers:
+                        linesToWrite.add(vcfCounter) 
+                    verifCounter += 1
+            
+                vcfCounter += 1
+    return linesToWrite
 
 def main():
     # User input
     usage = """%(prog)s will curate a VCF file to retain only SNPs that are
     detected as being an outlier by BayeScan. This script is handy since BayeScan
     only gives SNP indices rather than a meaningful identifier.
-
-    Several inputs are needed. You will need 1) the BayeScan outliers text file, and
-    2) the original VCF from which the BayeScan GESTE file was created with PGDSpider.
     
-    To validate things and ensure everything is working correctly, you also need
-    3) a VCF created with PGDSpider using the same settings as the GESTE file was made,
-    and 4) the GESTE file itself.
+    Several inputs are needed:
+    1) the original VCF file prior to conversion to GESTE file,
+    2) the BayeScan FST file subset to only significant outlier loci,
+    3) the BayeScan verif.txt file, and
+    4) the pops metadata file used for GESTE file creation
     
-    The reason for inputs 3) and 4) is to get the number of loci from the GESTE file
-    that BayeScan actually used, and to ensure that we'll extract the correct loci
-    from the original VCF.
-    
-    It's a whole hassle but doing this makes sure your results are valid!
+    We need to do this because, when converting to GESTE file for BayeScan input,
+    some variants can be silently dropped. Hence, your original VCF may be different
+    to the input and your variant indices will differ. It's a hassle but this script
+    will make sure your results are valid!
     """
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-b", dest="outliersFile",
-                   required=True,
-                   help="Input BayeScan outliers text file")
-    p.add_argument("-v", dest="vcfFile",
+    p.add_argument("-vcf", dest="vcfFile",
                    required=True,
                    help="Input VCF file")
-    p.add_argument("-pv", dest="pgdVcfFile",
+    p.add_argument("-f", dest="outliersFstFile",
                    required=True,
-                   help="Input VCF file that has been run through PGDSpider")
-    p.add_argument("-g", dest="gesteFile",
+                   help="Input BayeScan outliers FST file")
+    p.add_argument("-verif", dest="verifFile",
                    required=True,
-                   help="Input geste file that BayeScan was run with")
+                   help="Input BayeScan verif text file")
+    p.add_argument("-m", dest="metadataFile",
+                   required=True,
+                   help="Input pops metadata file")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output VCF file filtered to just outlier SNPs")
@@ -149,22 +205,31 @@ def main():
     validate_args(args)
     
     # Get BayeScan outlier SNP indices
-    outliers = parse_bayescan_outliers(args.outliersFile)
+    outliers = parse_bayescan_outliers(args.outliersFstFile)
     
-    # Parse PGDSpider VCF
-    pgdLoci = parse_pgd_vcf_for_loci(args.pgdVcfFile)
+    # Parse BayeScan verif file
+    verifDict = parse_bayescan_verif(args.verifFile)
     
-    # Parse GESTE file
-    gesteLociNum = parse_geste_for_loci_num(args.gesteFile)
+    # Parse metadata file
+    metadataDict = parse_pops_metadata(args.metadataFile)
     
-    # Validate that our loci numbers match
-    if len(pgdLoci) != gesteLociNum:
-        print("Loci counts differ between the GESTE file ({0}) and PGDSpider VCF file ({1})".format(gesteLociNum, pgdLociNum))
-        print("This is an irreconcilable issue. It means your input files aren't matched.")
-        quit()
+    # Validate that outliers, verif, and metadata match
+    validate_bayescan_outliers(outliers, verifDict, metadataDict)
+    
+    # Figure out which lines we are going to write as output
+    linesToWrite = get_vcf_lines_of_outliers(args.vcfFile, verifDict, metadataDict, outliers)
     
     # Write the output file
-    write_outlier_vcf(outliers, pgdLoci, args.vcfFile, args.outputFileName)
+    with open(args.vcfFile, "r") as fileIn, open(args.outputFileName, "w") as fileOut:
+        ongoingCount = 1
+        for line in fileIn:
+            if line.startswith("#"):
+                fileOut.write(line)
+            else:
+                if ongoingCount in linesToWrite:
+                    fileOut.write(line)
+                ongoingCount += 1
+    
     print("Program completed successfully!")
 
 if __name__ == "__main__":
