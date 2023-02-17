@@ -148,7 +148,7 @@ def get_vcf_lines_of_outliers(vcfFile, verifDict, metadataDict, outliers):
                     sampleAlleles = sampleGT.split("/")
                     
                     # Skip uncalled genotypes
-                    if sampleGT == "./.":
+                    if sampleGT == "./." or sampleGT == ".":
                         continue
                     
                     # Store result in allele dict
