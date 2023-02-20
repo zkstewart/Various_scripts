@@ -433,9 +433,9 @@ def edit_reference_to_alt_sequence(referenceSeq, pos, refAllele, varAllele, stra
 ## Main
 def main():
     # User input
-    usage = """%(prog)s reads in GFF3 and a phased VCF file and generates haplotype
-    predictions for genes containing a variant within its CDS. Outputs will be written
-    to the provided directory.
+    usage = """%(prog)s reads in GFF3 and a VCF file and generates a tabular file
+    indicating what coding sequence changes exist relative to the reference coding
+    sequence. Outputs will be written to the provided file as TSV.
     """
     p = argparse.ArgumentParser(description=usage)
     ## Required
@@ -451,7 +451,6 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Specify file name to write output to")
-    
     args = p.parse_args()
     validate_args(args)
     
