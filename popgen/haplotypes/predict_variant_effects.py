@@ -28,13 +28,24 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
-def get_genotypes_from_vcf(vcfFile):
+def get_genotypes_from_vcf(vcfFile, snpPositions=None):
     '''
     This function will simply read in a VCF and store data in a dictionary so as to
     allow easy query operations.
     
     Missing genotypes will be imputed as 0/0.
     
+    Parameters:
+        vcfFile -- a string indicating the location of a VCF file to be parsed.
+        snpPositions -- optional; providing a dictionary with structure indicated
+                        below will only index SNPs at the indicated positions:
+                        {
+                            'contig1': set([
+                                pos1, pos2, pos3, ...
+                            ]),
+                            'contig2': set([ ... ]),
+                            ...
+                        }
     Returns:
         snpGenotypes -- a dictionary with structure like:
                         {
@@ -66,18 +77,23 @@ def get_genotypes_from_vcf(vcfFile):
             if line.startswith("#"):
                 continue
             
+            # Extract relevant details of the SNP
+            chrom = l[0]
+            pos = int(l[1])
+            ref = l[3]
+            alt = l[4].split(",")
+            
+            # Skip indexing this line if snpPositions is provided
+            if snpPositions != None:
+                if not (chrom in snpPositions and pos in snpPositions[chrom]):
+                    continue
+            
             # Determine which field position we're extracting to get our GT value
             fieldsDescription = l[8]
             if ":" not in fieldsDescription:
                 gtIndex = -1
             else:
                 gtIndex = fieldsDescription.split(":").index("GT")
-            
-            # Extract relevant details of the SNP
-            chrom = l[0]
-            pos = int(l[1])
-            ref = l[3]
-            alt = l[4].split(",")
             
             # Format a dictionary to store sample genotypes for this position
             posGenotypeDict = {}
