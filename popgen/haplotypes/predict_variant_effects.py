@@ -260,75 +260,9 @@ def get_variant_effects(gff3Obj, genomeFASTA_obj, geneSnpDict):
         
         # Loop through this gene's variants and ...
         for pos, genotypeDict in newSnpDict.items():
-            # Figure out what amino acid our reference allele codes for
-            ref = genotypeDict["ref_alt"][0]
-            refRange = range(pos, pos + len(ref))
-            
-            refCodons = [
-                cds_FastASeq_obj.seq[x:x+3]
-                    for x in range(0, len(cds_FastASeq_obj.seq), 3)
-                        if set(range(x,x+3)).intersection(refRange) != set()
-            ]
-            refAminos = [
-                ZS_SeqIO.FastASeq.dna_to_protein(codon)
-                    for codon in refCodons
-            ]
-            
-            formattedRef = "{0}({1})".format(ref, ",".join(refAminos))
-            
-            # Figure out what amino acid our alt alleles code for
-            formattedAlts = []
-            for alt in genotypeDict["ref_alt"][1:]:
-                altRange = range(pos, pos + len(alt))
-                altSequence = edit_reference_to_alt_sequence(cds_FastASeq_obj.seq[:], pos, ref, alt, mrnaFeature.strand)
-                
-                altCodons = [
-                    altSequence[x:x+3]
-                        for x in range(0, len(altSequence), 3)
-                            if set(range(x,x+3)).intersection(altRange) != set()
-                ]
-                altAminos = [
-                    ZS_SeqIO.FastASeq.dna_to_protein(codon)
-                        for codon in altCodons
-                ]
-                
-                formattedAlt = "{0}({1})".format(alt, ",".join(altAminos))
-                formattedAlts.append(formattedAlt)
-            
-            # Partition samples into homozygotes and heterozygotes
-            homozygotes = [
-                sample + "({0})".format(genotypeDict["ref_alt"][genotypeDict[sample][0]]) # any index will do
-                
-                    for sample in genotypeDict.keys()
-                        if sample != "ref_alt"
-                        and len(set(genotypeDict[sample])) == 1
-            ]
-            homozygotes.sort(key = lambda x: 
-                (
-                    list(map(len, x.split("_"))), # try to sort by longest value in _ separated list; order by species name??
-                    x.split("(")[-1].rstrip(")"), # sort by the variant
-                    list(map(int, [
-                        thing for thing in x.split("_") if thing.isdigit()
-                    ])) # sort by any digits in the _ separated list
-                )
-            )
-            
-            heterozygotes = [
-                sample + "({0})".format(genotypeDict["ref_alt"][genotypeDict[sample][0]] + "/" + genotypeDict["ref_alt"][genotypeDict[sample][1]])
-                
-                for sample in genotypeDict.keys()
-                    if sample != "ref_alt"
-                    and len(set(genotypeDict[sample])) != 1
-            ]
-            heterozygotes.sort(key = lambda x: 
-                (
-                    list(map(len, x.split("_"))),
-                    x.split("(")[-1].rstrip(")"), # sort by the variant,
-                    list(map(int, [
-                        thing for thing in x.split("_") if thing.isdigit()
-                    ]))
-                )
-            )
+            # Predict variant details
+            formattedRef, formattedAlts, homozygotes, heterozygotes \
+                = predict_variant(genotypeDict, pos, cds_FastASeq_obj, mrnaFeature.strand)
             
             # Store data in our dictionary
             effectDict.setdefault(geneID, {})
@@ -340,7 +274,99 @@ def get_variant_effects(gff3Obj, genomeFASTA_obj, geneSnpDict):
             }
     return effectDict
 
-def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict):
+def predict_variant(genotypeDict, pos, cds_FastASeq_obj, strand):
+    '''
+    Parameters:
+        genotypeDict -- a dictionary with structure like:
+                        {
+                            "ref_alt": [refAllele, [altAllele1, ...]],
+                            'sample1': genotype,
+                            'sample2': genotype,
+                            ...
+                        }
+        pos -- an integer indicating the location of this SNP in CDS.
+        cds_FastASeq_obj -- a ZS_SeqIO.FastASeq object containing the reference
+                            coding sequence for the gene in question.
+        strand -- a value in the list ["+", "-"] indicating whether the gene
+                  is encoded on the +ve or -ve strand.
+    Returns:
+        formattedRef -- 
+        formattedAlts -- 
+        homozygotes -- 
+        heterozygotes -- 
+    '''
+    # Figure out what amino acid our reference allele codes for
+    ref = genotypeDict["ref_alt"][0]
+    refRange = range(pos, pos + len(ref))
+    
+    refCodons = [
+        cds_FastASeq_obj.seq[x:x+3]
+            for x in range(0, len(cds_FastASeq_obj.seq), 3)
+                if set(range(x,x+3)).intersection(refRange) != set()
+    ]
+    refAminos = [
+        ZS_SeqIO.FastASeq.dna_to_protein(codon)
+            for codon in refCodons
+    ]
+    
+    formattedRef = "{0}({1})".format(ref, ",".join(refAminos))
+    
+    # Figure out what amino acid our alt alleles code for
+    formattedAlts = []
+    for alt in genotypeDict["ref_alt"][1:]:
+        altRange = range(pos, pos + len(alt))
+        altSequence = edit_reference_to_alt_sequence(cds_FastASeq_obj.seq[:], pos, ref, alt, strand)
+        
+        altCodons = [
+            altSequence[x:x+3]
+                for x in range(0, len(altSequence), 3)
+                    if set(range(x,x+3)).intersection(altRange) != set()
+        ]
+        altAminos = [
+            ZS_SeqIO.FastASeq.dna_to_protein(codon)
+                for codon in altCodons
+        ]
+        
+        formattedAlt = "{0}({1})".format(alt, ",".join(altAminos))
+        formattedAlts.append(formattedAlt)
+    
+    # Partition samples into homozygotes and heterozygotes
+    homozygotes = [
+        sample + "({0})".format(genotypeDict["ref_alt"][genotypeDict[sample][0]]) # any index will do
+        
+            for sample in genotypeDict.keys()
+                if sample != "ref_alt"
+                and len(set(genotypeDict[sample])) == 1
+    ]
+    homozygotes.sort(key = lambda x: 
+        (
+            list(map(len, x.split("_"))), # try to sort by longest value in _ separated list; order by species name??
+            x.split("(")[-1].rstrip(")"), # sort by the variant
+            list(map(int, [
+                thing for thing in x.split("_") if thing.isdigit()
+            ])) # sort by any digits in the _ separated list
+        )
+    )
+    
+    heterozygotes = [
+        sample + "({0})".format(genotypeDict["ref_alt"][genotypeDict[sample][0]] + "/" + genotypeDict["ref_alt"][genotypeDict[sample][1]])
+        
+        for sample in genotypeDict.keys()
+            if sample != "ref_alt"
+            and len(set(genotypeDict[sample])) != 1
+    ]
+    heterozygotes.sort(key = lambda x: 
+        (
+            list(map(len, x.split("_"))),
+            x.split("(")[-1].rstrip(")"), # sort by the variant,
+            list(map(int, [
+                thing for thing in x.split("_") if thing.isdigit()
+            ]))
+        )
+    )
+    return formattedRef, formattedAlts, homozygotes, heterozygotes
+
+def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict, embedOriginalPos=False):
     '''
     Receives a mRNA feature and a dictionary indicating SNP locations as interpreted
     from a VCF, and alters the positions to point to locations in the CDS where edits
@@ -353,6 +379,10 @@ def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict):
                    {
                        pos1: { ... } # contents of dictionary don't matter
                    }
+        embedOriginalPos -- optional; boolean to indicate whether the output dict
+                            should also index the original SNP index. Provided as
+                            optional since I'm adding this functionality into
+                            legacy code and I don't want to break stuff.
     '''
     newSnpDict = {}
     ongoingCount = 0
@@ -410,6 +440,8 @@ def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict):
                 # Handle normal scenarios / index the modified alleles if relevant
                 if skipThisPos is False:
                     newSnpDict[newPos] = genotypeDict
+                    if embedOriginalPos is True:
+                        newSnpDict[newPos]["originalPos"] = pos
         ongoingCount += cdsFeature.end - cdsFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
     return newSnpDict
 
