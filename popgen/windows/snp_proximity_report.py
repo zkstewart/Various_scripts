@@ -208,33 +208,60 @@ def generate_snp_proximity_dict(gff3Obj, snpPositions, windows=None):
     return snpProximityDict, geneProximityDict
 
 def locate_snp_within_gene(matches, snpPos):
+    '''
+    Parameters:
+        matches -- a list of GFF3 Features obtained from the ncls_finder
+                   method of the ZS_GFF3IO Class. It can be either a gene
+                   or mRNA feature. Other features might be expected to break.
+        snpPos -- an integer indicating the position of the SNP
+    Returns:
+        bestLocation -- a string in the list of [ "CDS", "intron", "UTR" ]
+                        indicating where the SNP is located.
+        bestID -- a string indicating the gene ID as indexed in the GFF3
+    '''
+    assert all([ hasattr(m, "mRNA") or hasattr(m, "exon") for m in matches ])
+    
     bestLocation = None
     bestID = None
     for feature in matches:
         # Look for CDS overlap
+        cds = False
         try:
-            cds = False
-            for cdsFeature in feature.CDS:
-                if cdsFeature.start <= snpPos and snpPos <= cdsFeature.end: # if it overlaps...
-                    cds = True
-                    break
+            if hasattr(feature, "mRNA"):
+                for mrnaFeature in feature.mRNA:
+                    for cdsFeature in mrnaFeature.CDS:
+                        if cdsFeature.start <= snpPos and snpPos <= cdsFeature.end: # if it overlaps...
+                            cds = True
+                            break
+            elif hasattr(feature, "CDS"):
+                for cdsFeature in feature.CDS:
+                    if cdsFeature.start <= snpPos and snpPos <= cdsFeature.end: # if it overlaps...
+                        cds = True
+                        break
         except:
-            cds = False
+            pass
+        
         # Look for exon overlap (if CDS overlap wasn't found)
         if cds is False:
-            try:
-                exon = False
+            exon = False
+            if hasattr(feature, "mRNA"):
+                for mrnaFeature in feature.mRNA:
+                    for exonFeature in mrnaFeature.exon:
+                        if exonFeature.start <= snpPos and snpPos <= exonFeature.end: # if it overlaps...
+                            exon = True
+                            break
+            elif hasattr(feature, "CDS"):
                 for exonFeature in feature.exon:
                     if exonFeature.start <= snpPos and snpPos <= exonFeature.end: # if it overlaps...
                         exon = True
                         break
-            except:
-                exon = False
+        
         # Get the ID to index this under
         if feature.type == "mRNA":
             geneID = feature.Parent
         else:
             geneID = feature.ID
+        
         # Get the position of the SNP relative to the gene
         if cds:
             bestLocation = "CDS"
@@ -246,9 +273,10 @@ def locate_snp_within_gene(matches, snpPos):
         else:
             bestLocation = "intron" if (bestLocation != "CDS" and bestLocation != "UTR") else bestLocation
             bestID = geneID if (bestLocation != "CDS" and bestLocation != "UTR") else bestID
+    
     return bestLocation, bestID
 
-def locate_genes_near_snp(gff3Obj, contig, snpPos, radiusSize=50000):
+def locate_genes_near_snp(gff3Obj, contig, snpPos, radiusSize=50000, mrnaIndexing=True):
     '''
     This function assumes SNPs have been filtered so that SNPs overlapping a gene are
     absent. It won't cause any bugs, but the notion of finding a gene to the left
@@ -258,12 +286,24 @@ def locate_genes_near_snp(gff3Obj, contig, snpPos, radiusSize=50000):
     Parameters:
         radiusSize -- an integer indicating the distance to check surrounding
                       either side of a SNP for a gene
+        mrnaIndexing -- a boolean indicating True if the GFF3 NCLS is indexed
+                        with mRNA features, or False if it's indexed with
+                        gene features
+    Returns:
+        nearestLeft -- a list with structure like:
+                       [ distance, geneID ]
+        nearestRight -- same as above, but for the right-hand side of the
+                        SNP position
     '''
     # Get genes within radius length of the SNP position
     start = (snpPos - radiusSize) if (snpPos - radiusSize) >= 0 else 0
     end = snpPos + radiusSize
-    mrnaMatches = gff3Obj.ncls_finder(start, end, "contig", contig)
-    geneMatches = [gff3Obj[match.Parent] for match in mrnaMatches]
+    
+    if mrnaIndexing == True:
+        mrnaMatches = gff3Obj.ncls_finder(start, end, "contig", contig)
+        geneMatches = [gff3Obj[match.Parent] for match in mrnaMatches]
+    else:
+        geneMatches = gff3Obj.ncls_finder(start, end, "contig", contig)
     
     nearestLeft = [math.inf, None]
     nearestRight = [math.inf, None]
