@@ -6,6 +6,7 @@
 # Load normal/pip packages
 import os, argparse, sys
 from copy import deepcopy
+from goatools import obo_parser
 
 # Load ZS_IO Class code
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))) # 4 dirs up is where we find Function_packages
@@ -18,11 +19,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) # 3
 import windows # pulls relevant functions from snp_proximity_report.py
 import haplotypes
 
+# Hard-coded GO replacements
+replacedGOs = {"GO:0000453": "GO:0006364", "GO:0031224": "GO:0016020", "GO:0031225": "GO:0016020"}
+
 # Define functions
 def validate_args(args):
     # Validate input file locations
-    if not os.path.isfile(args.goFile):
-        print(f'I am unable to locate the GOextended annotation file ({args.goFile})')
+    if not os.path.isfile(args.annotFile):
+        print(f'I am unable to locate the GOextended annotation file ({args.annotFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     if not os.path.isfile(args.vcfFile):
@@ -41,6 +45,14 @@ def validate_args(args):
         print(f'I am unable to locate the SNP index-like file ({args.snpFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if not os.path.isfile(args.goOboFile):
+        print(f'I am unable to locate the GO .obo file ({args.goOboFile})')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
+    if not os.path.isfile(args.metadataFile):
+        print(f'I am unable to locate the metadata file ({args.metadataFile})')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
     # Validate optional input file locations
     if args.scanoneFile != None:
         if not os.path.isfile(args.scanoneFile):
@@ -53,8 +65,8 @@ def validate_args(args):
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
     # Validate column header parameter
-    if len(args.snpColumns) != 2:
-        print("snpColumns should provide two values corresponding to header labels")
+    if len(args.snpColumns) != 3:
+        print("snpColumns should provide three values corresponding to header labels")
         print(f"You provided '{args.snpColumns}', which contains {len(args.snpColumns)} values")
         quit()
     # Validate numeric arguments
@@ -72,6 +84,19 @@ def validate_args(args):
         print(f'File already exists at output location ({args.outputFileName})')
         print('Make sure you specify a unique file name and try again.')
         quit()
+
+def parse_pops_metadata(metadataFile):
+    metadataDict = {}
+    with open(metadataFile, "r") as fileIn:
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            if sl == []:
+                continue
+            else:
+                sample, pop = sl
+                metadataDict.setdefault(pop, set())
+                metadataDict[pop].add(sample)
+    return metadataDict
 
 def get_snp_positions_from_indexlike(snpFile, snpColumns):
     '''
@@ -111,6 +136,51 @@ def get_snp_positions_from_indexlike(snpFile, snpColumns):
                 snpPositions.setdefault(contig, set())
                 snpPositions[contig].add(int(pos))
     return snpPositions
+
+def get_delta_snpindex_from_indexlike(snpFile, snpColumns):
+    '''
+    Parameters:
+        snpFile -- a string indicating the location of the SNP index-like
+                   file from which we want to parse contig>position pairs.
+        snpColumns -- a list containing three values indicating the header
+                      values for the relevant columns we can extract
+                      the pairs from. Should be contig first, position
+                      second, and delta SNP index third in the list.
+    Returns:
+        deltaSnpIndex -- a dictionary with structure like:
+                        {
+                            "contig1": {
+                                pos1: delta_SNPindex1,
+                                pos2: delta_SNPindex2,
+                                pos3: ...,
+                                ...
+                            }
+                            "contig2": {
+                                ...
+                            },
+                            ...
+                        }
+    '''
+    assert len(snpColumns) == 3, \
+        "get_delta_snpindex_from_indexlike needs a snpColumns list with only 2 values!"
+    
+    deltaSnpIndex = {}
+    with open(snpFile, "r") as fileIn:
+        firstLine = True
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            # Handle header line
+            if firstLine == True:
+                contigIndex = sl.index(snpColumns[0])
+                posIndex = sl.index(snpColumns[1])
+                deltaIndex = sl.index(snpColumns[2])
+                firstLine = False
+            # Handle content lines
+            else:
+                contig, pos, delta = sl[contigIndex], sl[posIndex], sl[deltaIndex]
+                deltaSnpIndex.setdefault(contig, {})
+                deltaSnpIndex[contig][int(pos)] = float(delta)
+    return deltaSnpIndex
 
 def generate_bsa_proximity_dict(gff3Obj, genomeFASTA_obj, snpGenotypes):
     '''
@@ -358,6 +428,27 @@ def convert_scantwo_to_windows(scantwoDict, windowSize):
 def format_snp_types(snpDict):
     '''
     Helper function for formatting SNP data into within/left/right categories.
+    
+    Parameters:
+        snpDict -- a dictionary with structure like:
+                   {
+                       'contig': 'contig_id',
+                       'strand': '+', # or '-'
+                       ... ,
+                       snpPos1: { 'location': 'left/right/CDS', 'distance': intValue },
+                       snpPos2: { ... },
+                       ...
+                   }
+    Returns:
+        snpDetails -- a dictionary with structure like:
+                      {
+                          'within_pos': '', # "; " separated list of values in [sCDS, UTR, T>G, etc.]
+                          'within_location': '.', # numeric list of SNP positions
+                          'left': '4095701', # numeric list of SNP positions
+                          'left_dist': '23043', # numeric list of distances of SNP from nearest gene
+                          'right': '.', # numeric list of SNP positions
+                          'right_dist': '.' # numeric list of distances of SNP from nearest gene
+                      }
     '''
     orderedSNPs = sorted([x for x in snpDict.keys() if isinstance(x, int)])
     within_pos, within_location, left, left_dist, right, right_dist = [], [], [], [], [], []
@@ -400,6 +491,156 @@ def format_snp_types(snpDict):
         "right_dist": "; ".join(right_dist) if right_dist != [] else "."
     }
 
+def format_genotypes(snpGenotypes, snpDetails, contigID, metadataDict):
+    '''
+    Parameters:
+        snpGenotypes -- a dictionary as produced by get_genotyped_snps_for_genes()
+                        with structure like:
+                        {
+                            'contig1': {
+                                pos1: {
+                                    'ref_alt': ['nucleotide1', 'nucleotide2'],
+                                    'sample1': [allele1, allele2],
+                                    'sample2': [...],
+                                    ...
+                                },
+                                pos2: { ... },
+                                ...
+                            }
+                            'contig2': ...,
+                            ...
+                        }
+        snpDetails -- a dictionary as produced by format_snp_types() with structure like:
+                      {
+                          'within_pos': '', # "; " separated list of values in [sCDS, UTR, T>G, etc.]
+                          'within_location': '.', # numeric list of SNP positions
+                          'left': '4095701', # numeric list of SNP positions
+                          'left_dist': '23043', # numeric list of distances of SNP from nearest gene
+                          'right': '.', # numeric list of SNP positions
+                          'right_dist': '.' # numeric list of distances of SNP from nearest gene
+                      }
+        contigID -- a string indicating which contig the SNP is located on.
+        metadataDict -- a dictionary with structure like:
+                        {
+                            'parent': set(['parent1']),
+                            'bulk1': set(['b1sample1', 'b1sample2', ...]),
+                            'bulk2': set(['b2sample1', b2sample2', ...])
+                        }
+    '''
+    KEYS_TO_SKIP = ["ref_alt", "originalPos"]
+    
+    # Get SNP positions from snpDetails dict
+    snpNumbers = [
+        int(position)
+            for key in ["within_pos", "left", "right"]
+                for position in snpDetails[key].split("; ")
+                    if position != "."
+    ]
+    
+    # Format data pertaining to this SNP
+    snpGtDict = {}
+    for pos in snpNumbers:
+        # Figure out what genotypes exist for each SNP position
+        gtDict = snpGenotypes[contigID][pos]
+        gts = set([ "/".join(map(str, v)) for k,v in gtDict.items() if not k in KEYS_TO_SKIP ])
+        
+        # Set up for data storage of this SNP
+        snpGtDict[pos] = {}
+        for pop in metadataDict.keys():
+            snpGtDict[pos][pop] = { gt:0 for gt in gts}
+        
+        # Tally genotypes for each population
+        for key, value in gtDict.items():
+            if key in KEYS_TO_SKIP:
+                continue
+            else:
+                # Figure out what population this sample belongs to
+                pop = [ k for k,v in metadataDict.items() if key in v ]
+                assert len(pop) == 1, \
+                    "Issue in format_genotypes; your metadata file doesn't match your VCF"
+                pop = pop[0]
+                
+                # Figure out and store this genotype
+                gt = "/".join(map(str, value))
+                snpGtDict[pos][pop][gt] += 1
+    
+    # Reformat in sorted order of allele frequency
+    """
+    This format will directly correspond to something that can be tabulated. Hence,
+    it will have 3 columns for each population group (parents, bulk1, bulk2).
+    """
+    snpGtFormat = [[], [], []]
+    for pos, gtDict in snpGtDict.items():
+        # Handle parent
+        parentGTs = sorted(gtDict["parent"].items(), key = lambda item: -item[1])
+        parentGTs = ",".join([ f"{gt}={count}" for gt,count in parentGTs if count > 0])
+        
+        # Handle bulk1
+        bulk1GTs = sorted(gtDict["bulk1"].items(), key = lambda item: -item[1])
+        bulk1GTs = ",".join([ f"{gt}={count}" for gt,count in bulk1GTs if count > 0])
+        
+        # Handle bulk2
+        bulk2GTs = sorted(gtDict["bulk2"].items(), key = lambda item: -item[1])
+        bulk2GTs = ",".join([ f"{gt}={count}" for gt,count in bulk2GTs if count > 0])
+        
+        # Store into formatting list
+        snpGtFormat[0].append(f"{pos}: {parentGTs}")
+        snpGtFormat[1].append(f"{pos}: {bulk1GTs}")
+        snpGtFormat[2].append(f"{pos}: {bulk2GTs}")
+    
+    snpGtFormat[0] = "; ".join(snpGtFormat[0])
+    snpGtFormat[1] = "; ".join(snpGtFormat[1])
+    snpGtFormat[2] = "; ".join(snpGtFormat[2])
+    
+    return snpGtFormat
+
+def format_delta(deltaSnpIndex, snpDetails, contigID):
+    '''
+    Parameters:
+        deltaSnpIndex -- a dictionary as produced by get_delta_snpindex_from_indexlike()
+                        with structure like:
+                        {
+                            'contig1': {
+                                pos1: delta1,
+                                pos2: delta2,
+                                ...
+                            },
+                            'contig2': {
+                                pos1: delta1,
+                                ...
+                            },
+                            ...
+                        }
+        snpDetails -- a dictionary as produced by format_snp_types() with structure like:
+                      {
+                          'within_pos': '', # "; " separated list of values in [sCDS, UTR, T>G, etc.]
+                          'within_location': '.', # numeric list of SNP positions
+                          'left': '4095701', # numeric list of SNP positions
+                          'left_dist': '23043', # numeric list of distances of SNP from nearest gene
+                          'right': '.', # numeric list of SNP positions
+                          'right_dist': '.' # numeric list of distances of SNP from nearest gene
+                      }
+        contigID -- a string indicating which contig the SNP is located on.
+    '''
+    KEYS_TO_SKIP = ["ref_alt", "originalPos"]
+    
+    # Get SNP positions from snpDetails dict
+    snpNumbers = [
+        int(position)
+            for key in ["within_pos", "left", "right"]
+                for position in snpDetails[key].split("; ")
+                    if position != "."
+    ]
+    
+    # Format data pertaining to this SNP
+    snpDeltaFormat = []
+    for pos in snpNumbers:
+        delta = deltaSnpIndex[contigID][pos]
+        snpDeltaFormat.append(str(delta))
+    
+    snpDeltaFormat = "; ".join(snpDeltaFormat)
+    return snpDeltaFormat
+
 def main():
     # User input
     usage = """%(prog)s receives several files associated with a BSA
@@ -413,6 +654,7 @@ def main():
     and position for variants detected as being outliers.
     4) Gene annotation GFF3 file.
     5) Genome FASTA file.
+    6) GO .obo file.
     
     Optional input files are:
     1) R/qtl scanone file.
@@ -424,28 +666,33 @@ def main():
     
     # Required
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-go", dest="goFile",
+    p.add_argument("-annot", dest="annotFile",
                    required=True,
-                   help="Specify the output file name")
+                   help="Specify the GOextended annotation file name")
     p.add_argument("-vcf", dest="vcfFile",
                    required=True,
-                   help="Specify the output file name")
-    ## TBD - second/multiple VCF combined??
+                   help="Specify the VCF file name")
     p.add_argument("-gff", dest="gffFile",
                    required=True,
-                   help="Specify the output file name")
+                   help="Specify the genome annotation GFF3 file name")
     p.add_argument("-fasta", dest="fastaFile",
                    required=True,
-                   help="Specify the output file name")
+                   help="Specify the genome FASTA file name")
     p.add_argument("-snp", dest="snpFile",
                    required=True,
-                   help="Specify the output file name")
+                   help="Specify the SNP index-like file name")
     p.add_argument("--snpColumns", dest="snpColumns", nargs="+",
                    required=False,
-                   help="""Optionally, specify the header values of the two columns
+                   help="""Optionally, specify the header values of the three columns
                    to parse from the SNP index-like file
-                   (default == 'CHROM POSI' """,
-                   default=["CHROM", "POSI"])
+                   (default == 'CHROM POSI delta_SNPindex' """,
+                   default=["CHROM", "POSI", "delta_SNPindex"])
+    p.add_argument("-obo", dest="goOboFile",
+                   required=True,
+                   help="Specify the GO .obo file name")
+    p.add_argument("-meta", dest="metadataFile",
+                   required=True,
+                   help="Specify the metadata file name")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Specify the output file name")
@@ -477,6 +724,14 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
+    # Parse GO.obo
+    go = obo_parser.GODag(args.goOboFile)
+    
+    # Parse metadata file
+    metadataDict = parse_pops_metadata(args.metadataFile)
+    assert set(metadataDict.keys()) == {'bulk1', 'bulk2', 'parent'}, \
+        "Metadata file should have 3 populations: bulk1, bulk2, and parent!"
+    
     # Parse GFF3 with NCLS indexing
     gff3Obj = ZS_GFF3IO.GFF3(args.gffFile, strict_parse=False)
     gff3Obj.create_ncls_index(typeToIndex="gene")
@@ -484,11 +739,12 @@ def main():
     # Parse FASTA file
     genomeFASTA_obj = ZS_SeqIO.FASTA(args.fastaFile)
     
-    # Parse SNP index-like file for outlier SNPs
-    snpPositions = get_snp_positions_from_indexlike(args.snpFile, args.snpColumns)
+    # Parse SNP index-like file for outlier SNPs & delta SNP index values
+    snpPositions = get_snp_positions_from_indexlike(args.snpFile, args.snpColumns[0:2])
+    deltaSnpIndex = get_delta_snpindex_from_indexlike(args.snpFile, args.snpColumns)
     
     # Parse VCF data for outlier SNP genotypes
-    snpGenotypes = haplotypes.get_genotypes_from_vcf(args.vcfFile, snpPositions)
+    snpGenotypes = haplotypes.get_genotypes_from_vcf(args.vcfFile, snpPositions, imputeMissing=False)
     
     # Get the proximity reporting dict (including effects prediction)
     proximityDict = generate_bsa_proximity_dict(gff3Obj, genomeFASTA_obj, snpGenotypes)
@@ -509,12 +765,20 @@ def main():
     
     # Parse annotation file for relevant entries
     mrnaDict = { proximityDict[key]["mRNA"]: key for key in proximityDict.keys() }
-    annotDict = parse_annot_file(args.goFile, mrnaDict)
+    annotDict = parse_annot_file(args.annotFile, mrnaDict)
     
     # Combine everything into a table output
+    needsReplace = set()
     with open(args.outputFileName, "w") as fileOut:
         # Write header line
-        ## TBD...
+        fileOut.write("{0}\n".format("\t".join([
+            "#contig", "gene_ID", "mRNA_ID", "strand",
+            "coords", "gene_name", "GO_IDs", "GO_names",
+            "within_pos", "within_location", "left_pos",
+            "left_distance", "right_pos", "right_distance",
+            "scan1Window", "scan2Window", "parentGT",
+            "bulk1GT", "bulk2GT", "delta_SNPindex"
+        ])))
         
         # Write content lines
         for geneID, snpDict in proximityDict.items():
@@ -540,15 +804,35 @@ def main():
                 isScantwoWindow = False
             
             # Get GO names from IDs
-            goNames = "..." # placefiller, TBD
+            if annot["gos"] == ".":
+                goNames = "."
+            else:
+                goNames = []
+                for term in annot["gos"].split("; "):
+                    if term in replacedGOs:
+                        goNames.append(go.get(replacedGOs[term]).name)
+                    else:
+                        try:
+                            goNames.append(go.get(term).name)
+                        except:
+                            needsReplace.add(term)
+                goNames = "; ".join(goNames)
             
             # Format SNP details
             snpDetails = format_snp_types(snpDict)
             
+            # Format genotype info
+            snpGtFormat = format_genotypes(snpGenotypes, snpDetails, snpDict["contig"], metadataDict)
+            
+            # Format delta SNP index info
+            deltaFormat = format_delta(deltaSnpIndex, snpDetails, snpDict["contig"])
+            
             # Format output line
-            outputLine = "{geneID}\t{mrnaID}\t{strand}\t{coords}\t{geneName}\
+            outputLine = "{contig}\t{geneID}\t{mrnaID}\t{strand}\t{coords}\t{geneName}\
             \t{gos}\t{goNames}\t{within_pos}\t{within_location}\t{left}\
-            \t{left_dist}\t{right}\t{right_dist}\t{scan1}\t{scan2}\n".format(
+            \t{left_dist}\t{right}\t{right_dist}\t{scan1}\t{scan2}\
+            \t{gtFormat}\t{delta}\n".format(
+                contig = snpDict["contig"],
                 geneID = geneID,
                 mrnaID = snpDict["mRNA"],
                 strand = snpDict["strand"],
@@ -564,11 +848,17 @@ def main():
                 right_dist = snpDetails["right_dist"],
                 scan1 = "Y" if isScanoneWindow else ".",
                 scan2 = "Y" if isScantwoWindow else ".",
+                gtFormat = "\t".join(snpGtFormat),
+                delta = deltaFormat
             )
             
             # Write output row as line
             fileOut.write(outputLine)
-        
+    
+    if len(needsReplace) != 0:
+        print("Some GOs need replacing for this to work correctly!")
+        print(f"These are: {needsReplace}")
+    
     print("Program completed successfully!")
 
 if __name__ == "__main__":
