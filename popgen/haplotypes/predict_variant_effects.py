@@ -28,12 +28,10 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
-def get_genotypes_from_vcf(vcfFile, snpPositions=None):
+def get_genotypes_from_vcf(vcfFile, snpPositions=None, imputeMissing=True):
     '''
     This function will simply read in a VCF and store data in a dictionary so as to
     allow easy query operations.
-    
-    Missing genotypes will be imputed as 0/0.
     
     Parameters:
         vcfFile -- a string indicating the location of a VCF file to be parsed.
@@ -46,6 +44,8 @@ def get_genotypes_from_vcf(vcfFile, snpPositions=None):
                             'contig2': set([ ... ]),
                             ...
                         }
+        imputeMissing -- optional; boolean indicating whether missing data should
+                         be imputed as 0/0 or skipped.
     Returns:
         snpGenotypes -- a dictionary with structure like:
                         {
@@ -109,8 +109,12 @@ def get_genotypes_from_vcf(vcfFile, snpPositions=None):
                 "We don't care if the VCF is phased or not for this function"
                 genotype = genotype.replace("/", "|")
                 
-                # Impute empty genotypes
-                genotype = genotype.replace(".", "0")
+                # Impute empty genotypes (if applicable) or skip otherwise
+                if imputeMissing == True:
+                    genotype = genotype.replace(".", "0")
+                else:
+                    if "." in genotype:
+                        continue
                 
                 # Parse and store genotype
                 samplePopulation = samples[ongoingCount]
