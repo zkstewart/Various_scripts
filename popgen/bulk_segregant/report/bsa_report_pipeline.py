@@ -829,9 +829,9 @@ def main():
             
             # Format output line
             outputLine = "{contig}\t{geneID}\t{mrnaID}\t{strand}\t{coords}\t{geneName}\
-            \t{gos}\t{goNames}\t{within_pos}\t{within_location}\t{left}\
-            \t{left_dist}\t{right}\t{right_dist}\t{scan1}\t{scan2}\
-            \t{gtFormat}\t{delta}\n".format(
+\t{gos}\t{goNames}\t{within_pos}\t{within_location}\t{left}\
+\t{left_dist}\t{right}\t{right_dist}\t{scan1}\t{scan2}\
+\t{gtFormat}\t{delta}\n".format(
                 contig = snpDict["contig"],
                 geneID = geneID,
                 mrnaID = snpDict["mRNA"],
