@@ -119,6 +119,8 @@ def main():
                 # Write out updated line
                 newLine = sl[0:insertIndex+1] + newBits + sl[insertIndex+1:]
                 fileOut.write("\t".join(newLine) + "\n")
+    
+    print("Program completed successfully!")
 
 if __name__ == "__main__":
     main()
