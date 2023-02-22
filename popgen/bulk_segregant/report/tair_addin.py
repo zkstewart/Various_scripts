@@ -122,30 +122,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-##############################################
-
-
-
-
-
-
-origFileName = r"qtlseq_comparison_1_snp_report.gene_proximity.detailed.tsv"
-newFileName = r"qtlseq_comparison_1_snp_report.gene_proximity.tair_detailed.tsv"
-
-tairAnnotations = r"F:\daniel_mentorship\citrus\annotation\fortunella_TAIR_annotation.tsv"
-
-
-
-
-
-
