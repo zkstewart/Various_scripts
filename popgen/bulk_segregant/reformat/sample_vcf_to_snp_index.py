@@ -37,7 +37,7 @@ def parse_pops_metadata(metadataFile):
                 metadataDict[pop].add(sample)
     return metadataDict
 
-def vcf_to_snp_index(vcfFile, metadataDict): # , highValueBulk
+def vcf_to_snp_index(vcfFile, metadataDict):
     '''
     This function will parse a VCF file and return a dictionary which contains
     data that corresponds to the QTL-seq SNP index format (minus the p95 and
@@ -64,10 +64,6 @@ def vcf_to_snp_index(vcfFile, metadataDict): # , highValueBulk
                             'bulk2': ...,
                             ...
                         }
-        # highValueBulk -- a string in the list ["bulk1", "bulk2"] which indicates
-        #                  which bulk constitutes the high value trait e.g., the
-        #                  samples in that bulk group have the desirable trait like
-        #                  lower time to flower.
     Returns:
         snpIndexDict -- a dictionary with structure like:
                         {
@@ -150,13 +146,10 @@ def vcf_to_snp_index(vcfFile, metadataDict): # , highValueBulk
 https://github.com/YuSugihara/QTL-seq/blob/4b68ca1882fa0621d0996542250cac5633375437/qtlseq/snpfilt.py
                         """
                         if parentGT == 0:
-                            refAD = popAD[0]
                             altAD = sum(popAD[1:])
                         else:
-                            refAD = sum(popAD[1:])
                             altAD = popAD[0]
                         
-                        #altAD = sum(popAD[0:parentGT] + popAD[parentGT+1:])
                         popSnpIndex = altAD / sum(popAD) # sum of alternate / count of reads aligned
                         
                         # Store it
@@ -169,34 +162,10 @@ https://github.com/YuSugihara/QTL-seq/blob/4b68ca1882fa0621d0996542250cac5633375
                 
                 # Filter and skip positions according to QTL-seq publication
                 bothLowDepth = all([ v["depth"] < 7 for v in popDataDict.values() ])
-                # eitherLowIndex = any([ v["snpIndex"] < 0.3 for v in popDataDict.values() ])
-                
-                ## Figure out if both bulks have at least one homozygote or not
-                # bothHaveHomozygotes = True
-                # for pop in ["bulk1", "bulk2"]: # skip the parent
-                #     hasHomozygote = False
-                #     for sampleID in metadataDict[pop]:
-                #         sampleData = samplesDict[sampleID]
-                #         if len(set(sampleData["GT"].split("/"))) == 1:
-                #             hasHomozygote = True
-                #             break
-                #     if hasHomozygote == False:
-                #         bothHaveHomozygotes = False
-                #         break
-                "QTL-seq doesn't seem to filter on these, so I guess we shouldn't either"
-                
-                if bothLowDepth: # or eitherLowIndex or not bothHaveHomozygotes:
-                    continue # skipping constitutes filtering
+                if bothLowDepth:
+                    continue
                 
                 # Calculate delta SNP index
-                # if highValueBulk == "bulk1":
-                #     deltaSnpIndex = popDataDict["bulk1"]["snpIndex"] - popDataDict["bulk2"]["snpIndex"]
-                # else:
-                #     deltaSnpIndex = popDataDict["bulk2"]["snpIndex"] - popDataDict["bulk1"]["snpIndex"]
-                """QTL-seq always does bulk2 minus bulk1, irrespective as to which parent is
-                the high value stock. The commented out code immediately above would give a
-                more consistently predictable SNP index (i.e., +ve is always good) but oh well.
-                """
                 deltaSnpIndex = popDataDict["bulk2"]["snpIndex"] - popDataDict["bulk1"]["snpIndex"]
                 
                 # Store result
@@ -232,10 +201,6 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Specify the output file name")
-    # p.add_argument("--high", dest="highValueBulk",
-    #                required=True,
-    #                choices=["bulk1", "bulk2"],
-    #                help="Specify which bulk constitutes the high value trait")
     args = p.parse_args()
     validate_args(args)
     
@@ -245,7 +210,7 @@ def main():
         "Metadata file should only have 3 populations: bulk1, bulk2, and parent!"
     
     # Parse VCF file and generate SNP index dictionary structure
-    snpIndexDict = vcf_to_snp_index(args.vcfFile, metadataDict) # , args.highValueBulk
+    snpIndexDict = vcf_to_snp_index(args.vcfFile, metadataDict)
     
     # Write to output file
     with open(args.outputFileName, "w") as fileOut:
