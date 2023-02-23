@@ -93,6 +93,10 @@ def validate_snpGenotypes(snpGenotypes):
     This function exists to detect problems in the SNP parsing early into the process.
     I'm making it because I found problems slipped through the cracks in my own development.
     Luckily I noticed it, but it was otherwise creating a silent problem for the code.
+    
+    ACTUALLY - this is dumb and doesn't work except for QTL-seq files. Freebayes per-sample
+    prediction may have many more than 4 samples present. We're just gonna have to allow
+    the silent error to slip through; it is visible in the output file.
     '''
     for contigID, posDict in snpGenotypes.items():
         for pos, gtDict in posDict.items():
@@ -864,7 +868,7 @@ def main():
     
     # Parse VCF data for outlier SNP genotypes
     snpGenotypes = haplotypes.get_genotypes_from_vcf(args.vcfFile, snpPositions, imputeMissing=False)
-    validate_snpGenotypes(snpGenotypes) # raise a flag if something looks amiss
+    # validate_snpGenotypes(snpGenotypes) # raise a flag if something looks amiss
     
     # Get the proximity reporting dict (including effects prediction)
     proximityDict = generate_bsa_proximity_dict(gff3Obj, genomeFASTA_obj, snpGenotypes)
