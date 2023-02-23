@@ -20,7 +20,10 @@ import windows # pulls relevant functions from snp_proximity_report.py
 import haplotypes
 
 # Hard-coded GO replacements
-replacedGOs = {"GO:0000453": "GO:0006364", "GO:0031224": "GO:0016020", "GO:0031225": "GO:0016020"}
+replacedGOs = {"GO:0000453": "GO:0006364", "GO:0031224": "GO:0016020",
+               "GO:0031225": "GO:0016020", "GO:0031300": "GO:0031090",
+               "GO:0030176": "GO:0005789", "GO:0031227": "GO:0005789",
+               "GO:0031301": "GO:0031090"}
 
 # Define functions
 def validate_args(args):
@@ -84,6 +87,17 @@ def validate_args(args):
         print(f'File already exists at output location ({args.outputFileName})')
         print('Make sure you specify a unique file name and try again.')
         quit()
+
+def validate_snpGenotypes(snpGenotypes):
+    '''
+    This function exists to detect problems in the SNP parsing early into the process.
+    I'm making it because I found problems slipped through the cracks in my own development.
+    Luckily I noticed it, but it was otherwise creating a silent problem for the code.
+    '''
+    for contigID, posDict in snpGenotypes.items():
+        for pos, gtDict in posDict.items():
+            assert len(gtDict) == 4, \
+                "validate_snpGenotypes: detected problem with snpGenotypes; your SNP index is bad??"
 
 def parse_pops_metadata(metadataFile):
     metadataDict = {}
@@ -526,6 +540,18 @@ def format_genotypes(snpGenotypes, snpDetails, contigID, metadataDict):
                             'bulk1': set(['b1sample1', 'b1sample2', ...]),
                             'bulk2': set(['b2sample1', b2sample2', ...])
                         }
+    Returns:
+        snpGtFormat -- a list with three values, with structure like:
+                       [
+                           'parental GT per SNP',
+                           'bulk1 GT per SNP',
+                           'bulk2 GT per SNP'
+                       ]
+                       Note that the format for each string value is akin to:
+                            "snpPosition: 0/0=11,1/1=5,0/1=2"
+                       The snpPosition is a numeric value. All present genotypes
+                       and their tallies are presented as shown above with comma
+                       separation.
     '''
     KEYS_TO_SKIP = ["ref_alt", "originalPos"]
     
@@ -636,10 +662,98 @@ def format_delta(deltaSnpIndex, snpDetails, contigID):
     snpDeltaFormat = []
     for pos in snpNumbers:
         delta = deltaSnpIndex[contigID][pos]
-        snpDeltaFormat.append(str(delta))
+        snpDeltaFormat.append(f"{pos}: {delta}")
     
     snpDeltaFormat = "; ".join(snpDeltaFormat)
     return snpDeltaFormat
+
+def determine_desirable_delta(snpGtFormat, parentValue):
+    '''
+    Parameters:
+        snpGtFormat -- a list with three values, with structure like:
+                       [
+                           'parental GT per SNP',
+                           'bulk1 GT per SNP',
+                           'bulk2 GT per SNP'
+                       ]
+                       Note that the format for each string value is akin to:
+                            "snpPosition: 0/0=11,1/1=5,0/1=2"
+                       The snpPosition is a numeric value. All present genotypes
+                       and their tallies are presented as shown above with comma
+                       separation.
+        parentValue -- a string equal to "high" if the parent's phenotype is high
+                       value, or "low" for the opposite
+    Returns:
+        desirableDelta -- a string pairing the SNP positions to a possible value
+                          in the range of:
+                          [ "1", "-1", "." ]
+                          "." represents uncertainty which occurs when the
+                          parental genotype is a heterozygote or has ambiguity
+                          itself in terms of its genotype.
+                          
+                          For multiple SNPs, it will provide these values with "; "
+                          separation akin to:
+                          "snpPosition1: -1; snpPositions2: 1; ..."
+    '''
+    assert parentValue.lower() in ["high", "low"], \
+        f"determine_desirable_delta: '{parentValue}' must be equal to 'high' or 'low'!"
+    
+    parentalSnpGT = snpGtFormat[0]
+    desirableDelta = []
+    for snpGT in parentalSnpGT.split("; "):
+        position, gtCount = snpGT.split(": ")
+        gt = gtCount.split("=")[0]
+        gtSet = set(gt.replace("|", "/").split("/")) # replace just for safety purposes
+        # Handle ambiguity
+        if "." in gt:
+            desirableDelta.append(".")
+        # Handle homozygotes [note that we're assuming biallelic variants]
+        elif len(gtSet) == 1:
+            if parentValue.lower() == "high":
+                "We want the genotype to be EQUAL to the parent"
+                if "0" in gtSet: # if the desirable GT is the reference allele...
+                    desirableDelta.append(f"{position}: -1") # the good bulk SNP index == 0, and bad == 1, hence delta == -1
+                else:
+                    desirableDelta.append(f"{position}: 1") # the good bulk SNP index == 1, and bad == 0, hence delta == 1
+            else:
+                "We want the genotype to be OPPOSITE to the parent"
+                if "0" in gtSet: # if the desirable GT is the reference allele...
+                    desirableDelta.append(f"{position}: 1") # the good bulk SNP index == 1, and bad == 0, hence delta == 1
+                else:
+                    desirableDelta.append(f"{position}: -1") # the good bulk SNP index == 0, and bad == 1, hence delta == -1
+        # Handle heterozygotes
+        else:
+            desirableDelta.append(f"{position}: .")
+    
+    return "; ".join(desirableDelta)
+
+def has_desirable_delta(deltaFormat, desirableDelta):
+    '''
+    Returns a boolean indicating whether there's any correspondance between
+    our actual deltas, and our desired deltas.
+    
+    Note: This method isn't planned for use since QTL-seq doesn't appear to
+    calculate delta SNP index according to the formula they use in their
+    own paper. I'd have to dig into things to figure out what's going on...
+    
+    Parameters:
+        deltaFormat -- simialr to the below, but instead of having "1", "-1", or ".",
+                       just presents the actual delta value.
+        desirableDelta -- a string pairing the SNP positions to a possible value
+                          in the range of:
+                          [ "1", "-1", "." ]
+                          "." represents uncertainty which occurs when the
+                          parental genotype is a heterozygote or has ambiguity
+                          itself in terms of its genotype.
+                          
+                          For multiple SNPs, it will provide these values with "; "
+                          separation akin to:
+                          "snpPosition1: -1; snpPositions2: 1; ..."
+    '''
+    deltas = deltaFormat.split("; ")
+    desireds = desirableDelta.split("; ")
+    
+    return NotImplementedError()
 
 def main():
     # User input
@@ -693,6 +807,11 @@ def main():
     p.add_argument("-meta", dest="metadataFile",
                    required=True,
                    help="Specify the metadata file name")
+    # p.add_argument("-pheno", dest="parentalPhenotype",
+    #                required=True,
+    #                choices=["high", "low"],
+    #                help="""For the PARENT, specify whether it has a high or low
+    #                value phenotype""")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Specify the output file name")
@@ -745,6 +864,7 @@ def main():
     
     # Parse VCF data for outlier SNP genotypes
     snpGenotypes = haplotypes.get_genotypes_from_vcf(args.vcfFile, snpPositions, imputeMissing=False)
+    validate_snpGenotypes(snpGenotypes) # raise a flag if something looks amiss
     
     # Get the proximity reporting dict (including effects prediction)
     proximityDict = generate_bsa_proximity_dict(gff3Obj, genomeFASTA_obj, snpGenotypes)
@@ -777,7 +897,8 @@ def main():
             "within_pos", "within_location", "left_pos",
             "left_distance", "right_pos", "right_distance",
             "scan1Window", "scan2Window", "parentGT",
-            "bulk1GT", "bulk2GT", "delta_SNPindex"
+            "bulk1GT", "bulk2GT", "delta_SNPindex"#,
+            #"desirable_delta"
         ])))
         
         # Write content lines
@@ -827,6 +948,31 @@ def main():
             # Format delta SNP index info
             deltaFormat = format_delta(deltaSnpIndex, snpDetails, snpDict["contig"])
             
+            # Figure out what extreme of SNP index is desirable
+            """Depending on whether the phenotype of the parent is high or low value,
+            we'll want a +ve or -ve delta value.
+            
+            For example, let's say the parent has 0/0 genotype and is low value.
+            In that instance, a 1/1 genotype would be desirable. Hence, we'd want to
+            find a SNP with a +1 delta (high value bulk SNP index will be 1 since it
+            will have all alternative alleles; low value bulk SNP index will be 0 since
+            it will have all reference alleles).
+            
+            Alternatively, if the low value parent has 1/1 genotype, we'd want a 0/0
+            genotype. In that case, we'd prefer a SNP with -1 delta (high value bulk SNP
+            index == 0 since it has all reference alleles; low value bulk SNP index
+            == 1 since it has all alternate alleles).
+            
+            This realisation makes me see that the current delta SNP index is non-intuitive
+            and could be calculated better as:
+                SNP-index (at a position) = Count of HIGH-VALUE base/ Count of reads aligned.
+            That'd mean SNP-index == 1 will always be good. Oh well.
+            """
+            #desirableDelta = determine_desirable_delta(snpGtFormat, args.parentalPhenotype)
+            
+            # Provide a quick overview of whether a gene contains any desirable deltas
+            ## Not done, won't be implemented unless I figure out how QTL-seq calculates deltas
+            
             # Format output line
             outputLine = "{contig}\t{geneID}\t{mrnaID}\t{strand}\t{coords}\t{geneName}\
 \t{gos}\t{goNames}\t{within_pos}\t{within_location}\t{left}\
@@ -849,7 +995,8 @@ def main():
                 scan1 = "Y" if isScanoneWindow else ".",
                 scan2 = "Y" if isScantwoWindow else ".",
                 gtFormat = "\t".join(snpGtFormat),
-                delta = deltaFormat
+                delta = deltaFormat#,
+                #desirableDelta = desirableDelta
             )
             
             # Write output row as line
