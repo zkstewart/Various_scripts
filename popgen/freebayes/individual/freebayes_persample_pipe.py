@@ -406,51 +406,6 @@ fi
     with open(argsContainer.outputFileName, "w") as fileOut:
         fileOut.write(scriptText)
 
-def make_contig_ids_script(argsContainer):
-    scriptText = \
-"""#!/bin/bash -l
-#PBS -N ids_{prefix}
-#PBS -l walltime={walltime}
-#PBS -l mem={mem}
-#PBS -l ncpus={cpus}
-
-cd {workingDir}
-
-# Specify the location of the Various_scripts directory
-VARSCRIPTDIR={varScriptDir}
-
-# Specify the location of the genome FASTA
-GENOMEDIR={genomeDir}
-GENOME={genomeFile}
-
-# Specify prefix for the output file
-PREFIX={prefix}
-
-#################################
-
-# > STEP 1: Get our IDs list
-python ${{VARSCRIPTDIR}}/fasta_handling_master_code.py \\
-    -f ids \\
-    -i ${{GENOMEDIR}}/${{GENOME}} \\
-    -o ${{PREFIX}}.contig.ids
-""".format(
-    prefix=argsContainer.prefix,
-    workingDir=argsContainer.workingDir,
-    
-    walltime=argsContainer.walltime,
-    mem=argsContainer.mem,
-    cpus=argsContainer.cpus,
-    
-    genomeDir=os.path.dirname(argsContainer.genome),
-    genomeFile=os.path.basename(argsContainer.genome),
-    
-    varScriptDir=argsContainer.varScriptDir
-)
-
-    # Write script to file
-    with open(argsContainer.outputFileName, "w") as fileOut:
-        fileOut.write(scriptText)
-
 def make_vcf_split_script(argsContainer):
     scriptText = \
 """#!/bin/bash -l
@@ -678,7 +633,6 @@ fi
     cpus=argsContainer.cpus,
     
     varScriptDir=argsContainer.varScriptDir,
-    
     metadataFile=argsContainer.metadataFile
 )
 
@@ -782,7 +736,7 @@ def main():
         "suffix": args.bamSuffix,
         "outputFileName": fbRound1ScriptName
     }))
-    #fbRound1JobID = qsub(fbRound1ScriptName)
+    fbRound1JobID = qsub(fbRound1ScriptName)
     
     # Format and qsub normalisation
     normRound1ScriptName = os.path.join(round1Dir, "run_normalise_r1.sh")
@@ -799,7 +753,7 @@ def main():
         "suffix": args.bamSuffix,
         "outputFileName": normRound1ScriptName,
     }))
-    #normRound1JobID = qsub(normRound1ScriptName)
+    normRound1JobID = qsub(normRound1ScriptName)
     
     # Format and qsub merging
     mergeRound1ScriptName = os.path.join(round1Dir, "run_merge_r1.sh")
@@ -813,28 +767,13 @@ def main():
         "varScriptDir": args.varScriptDir,
         "outputFileName": mergeRound1ScriptName
     }))
-    #mergeRound1JobID = qsub(mergeRound1ScriptName)
+    mergeRound1JobID = qsub(mergeRound1ScriptName)
     
     #### PREP ROUND ####
     
     # Create directory where prepping will be performed
     prepDir = os.path.join(os.getcwd(), "prep")
     os.makedirs(prepDir, exist_ok=True)
-    
-    # Get all contig IDs
-    # contigIdsScriptName = os.path.join(prepDir, "run_contig_ids.sh")
-    # make_contig_ids_script(Container({
-    #     "prefix": args.prefix,
-    #     "workingDir": prepDir,
-    #     "walltime": params.contig_ids_time,
-    #     "mem": params.contig_ids_mem,
-    #     "cpus": params.contig_ids_cpu,
-    #     "genome": args.genomeFile,
-    #     "varScriptDir": args.varScriptDir,
-    #     "prefix": args.prefix,
-    #     "outputFileName": contigIdsScriptName
-    # }))
-    #contigIdsJobID = qsub(contigIdsScriptName)
     
     # Split VCF by contig
     vcfSplitScriptName = os.path.join(prepDir, "run_vcf_split.sh")
@@ -848,7 +787,7 @@ def main():
         "vcfDir": round1Dir,
         "outputFileName": vcfSplitScriptName
     }))
-    #vcfSplitJobID = qsub(vcfSplitScriptName)
+    vcfSplitJobID = qsub(vcfSplitScriptName)
     
     #### ROUND 2 ####
     
@@ -874,7 +813,7 @@ def main():
         "suffix": args.bamSuffix,
         "outputFileName": fbRound2ScriptName
     }))
-    #fbRound2JobID = qsub(fbRound2ScriptName)
+    fbRound2JobID = qsub(fbRound2ScriptName)
     
     # Format and qsub normalisation
     normRound2ScriptName = os.path.join(round2Dir, "run_normalise_r2.sh")
@@ -891,7 +830,7 @@ def main():
         "suffix": args.bamSuffix,
         "outputFileName": normRound2ScriptName,
     }))
-    #normRound2JobID = qsub(normRound2ScriptName)
+    normRound2JobID = qsub(normRound2ScriptName)
     
     # Format and qsub merging
     mergeRound2ScriptName = os.path.join(round2Dir, "run_merge_r2.sh")
@@ -905,14 +844,14 @@ def main():
         "varScriptDir": args.varScriptDir,
         "outputFileName": mergeRound2ScriptName
     }))
-    #mergeRound2JobID = qsub(mergeRound2ScriptName)
+    mergeRound2JobID = qsub(mergeRound2ScriptName)
     
     # Format and qsub filtering
     filterScriptName = os.path.join(round2Dir, "run_filter.sh")
     make_filter_script(Container({
         "prefix": args.prefix,
         "workingDir": round2Dir,
-        "prevJobs": normRound2JobID,
+        "prevJobs": mergeRound2JobID,
         "walltime": params.filter_time,
         "mem": params.filter_mem,
         "cpus": params.filter_cpu,
@@ -920,7 +859,7 @@ def main():
         "metadataFile": args.metadataFile,
         "outputFileName": filterScriptName
     }))
-    #filterJobID = qsub(filterScriptName)
+    filterJobID = qsub(filterScriptName)
     
     print("Program completed successfully!")
 
