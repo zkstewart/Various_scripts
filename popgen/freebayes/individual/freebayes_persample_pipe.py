@@ -212,11 +212,11 @@ index=${{PBS_ARRAY_INDEX}}-1
 INPUTFILE=${{BAMFILES[${{index}}]}}
 
 # > STEP 4: Get our output file prefix
-PREFIX=${{INPUTFILE%%${{SUFFIX}}}}
+PREFIX=$(basename ${{INPUTFILE}} ${{SUFFIX}})
 
 # > STEP 5: Run freebayes
 if [[ ! -f ${{PREFIX}}.vcf ]]; then
-    ${{FBDIR}}/{fbExe} -f ${{GENOMEDIR}}/${{GENOME}} ${{MAPDIR}}/${{INPUTFILE}} > ${{PREFIX}}.vcf;
+    ${{FBDIR}}/{fbExe} -f ${{GENOMEDIR}}/${{GENOME}} ${{INPUTFILE}} > ${{PREFIX}}.vcf;
 fi
 """.format(
     prefix=argsContainer.prefix,
