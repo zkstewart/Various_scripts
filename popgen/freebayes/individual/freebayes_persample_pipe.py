@@ -271,24 +271,20 @@ SUFFIX={suffix}
 #################################
 
 # > STEP 1: Get our file list
-cd ${{MAPDIR}}
 declare -a BAMFILES
 i=0
 for f in ${{MAPDIR}}/*${{SUFFIX}}; do
     BAMFILES[${{i}}]=$(echo "${{f}}");
     i=$((i+1));
 done
-cd ${{PBS_O_WORKDIR}}
 
 # > STEP 2: Get our array index
 declare -i index
 index=${{PBS_ARRAY_INDEX}}-1
 
-# > STEP 3: Get our file for analysis
+# > STEP 3: Get our file prefix
 INPUTFILE=${{BAMFILES[${{index}}]}}
-
-# > STEP 4: Get our output file prefix
-PREFIX=${{INPUTFILE%%${{SUFFIX}}}}
+PREFIX=$(basename ${{INPUTFILE}} ${{SUFFIX}})
 
 #################################
 
@@ -500,7 +496,7 @@ index=${{PBS_ARRAY_INDEX}}-1
 INPUTFILE=${{BAMFILES[${{index}}]}}
 
 # > STEP 4: Get our output file prefix
-PREFIX=${{INPUTFILE%%${{SUFFIX}}}}
+PREFIX=$(basename ${{INPUTFILE}} ${{SUFFIX}})
 
 # > STEP 5: Set up directory for containing component files
 mkdir -p ${{PREFIX}}
