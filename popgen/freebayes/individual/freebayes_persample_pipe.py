@@ -822,7 +822,7 @@ def main():
     # Format and qsub normalisation
     normRound2ScriptName = os.path.join(round2Dir, "run_normalise_r2.sh")
     make_normalisation_script(Container({
-        "prefix": "r1_" + args.prefix,
+        "prefix": "r2_" + args.prefix,
         "workingDir": round2Dir,
         "numJobs": len(sampleSet),
         "prevJobs": fbRound2JobID,
