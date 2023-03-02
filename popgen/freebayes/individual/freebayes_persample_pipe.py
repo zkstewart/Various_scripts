@@ -177,6 +177,7 @@ def make_freebayes_r1_script(argsContainer):
 #PBS -l mem={mem}
 #PBS -l ncpus={cpus}
 #PBS -J 1-{numJobs}
+{waitingLine}
 
 cd {workingDir}
 {modules}
@@ -221,6 +222,8 @@ fi
     prefix=argsContainer.prefix,
     workingDir=argsContainer.workingDir,
     numJobs=argsContainer.numJobs,
+    waitingLine="#PBS -W depend=afterok:{prevJobs}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
+        else "",
     
     walltime=argsContainer.walltime,
     mem=argsContainer.mem,
@@ -725,6 +728,7 @@ def main():
     make_freebayes_r1_script(Container({
         "prefix": args.prefix,
         "workingDir": round1Dir,
+        "prevJobs": None
         "numJobs": len(sampleSet),
         "walltime": params.freebayes_r1_time,
         "mem": params.freebayes_r1_mem,
