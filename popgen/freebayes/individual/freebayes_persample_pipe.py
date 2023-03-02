@@ -222,7 +222,7 @@ fi
     prefix=argsContainer.prefix,
     workingDir=argsContainer.workingDir,
     numJobs=argsContainer.numJobs,
-    waitingLine="#PBS -W depend=afterok:{prevJobs}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
+    waitingLine="#PBS -W depend=afterok:{0}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
         else "",
     
     walltime=argsContainer.walltime,
@@ -542,7 +542,7 @@ fi
     prefix=argsContainer.prefix,
     workingDir=argsContainer.workingDir,
     numJobs=argsContainer.numJobs,
-    waitingLine="#PBS -W depend=afterok:{prevJobs}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
+    waitingLine="#PBS -W depend=afterok:{0}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
         else "",
     
     walltime=argsContainer.walltime,
