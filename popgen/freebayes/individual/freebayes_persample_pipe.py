@@ -461,6 +461,7 @@ def make_freebayes_r2_script(argsContainer):
 #PBS -l mem={mem}
 #PBS -l ncpus={cpus}
 #PBS -J 1-{numJobs}
+{waitingLine}
 
 cd {workingDir}
 {modules}
@@ -541,6 +542,8 @@ fi
     prefix=argsContainer.prefix,
     workingDir=argsContainer.workingDir,
     numJobs=argsContainer.numJobs,
+    waitingLine="#PBS -W depend=afterok:{prevJobs}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
+        else "",
     
     walltime=argsContainer.walltime,
     mem=argsContainer.mem,
