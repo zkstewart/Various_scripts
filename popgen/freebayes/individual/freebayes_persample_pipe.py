@@ -728,7 +728,7 @@ def main():
     make_freebayes_r1_script(Container({
         "prefix": args.prefix,
         "workingDir": round1Dir,
-        "prevJobs": None
+        "prevJobs": None,
         "numJobs": len(sampleSet),
         "walltime": params.freebayes_r1_time,
         "mem": params.freebayes_r1_mem,
