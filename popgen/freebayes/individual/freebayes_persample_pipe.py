@@ -254,7 +254,7 @@ def make_normalisation_script(argsContainer):
 #PBS -l mem={mem}
 #PBS -l ncpus={cpus}
 #PBS -J 1-{numJobs}
-#PBS -W depend=afterok:{prevJobs}
+{waitingLine}
 
 cd {workingDir}
 
@@ -331,7 +331,8 @@ fi
     prefix=argsContainer.prefix,
     workingDir=argsContainer.workingDir,
     numJobs=argsContainer.numJobs,
-    prevJobs=argsContainer.prevJobs,
+    waitingLine="#PBS -W depend=afterok:{0}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
+        else "",
     
     walltime=argsContainer.walltime,
     mem=argsContainer.mem,
@@ -355,7 +356,7 @@ def make_merge_script(argsContainer):
 #PBS -l walltime={walltime}
 #PBS -l mem={mem}
 #PBS -l ncpus={cpus}
-#PBS -W depend=afterok:{prevJobs}
+{waitingLine}
 
 cd {workingDir}
 
@@ -436,7 +437,8 @@ done
 """.format(
     prefix=argsContainer.prefix,
     workingDir=argsContainer.workingDir,
-    prevJobs=argsContainer.prevJobs,
+    waitingLine="#PBS -W depend=afterok:{0}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
+        else "",
     
     walltime=argsContainer.walltime,
     mem=argsContainer.mem,
@@ -463,6 +465,9 @@ cd {workingDir}
 {modules}
 # Specify the location of Freebayes
 FBDIR={fbDir}
+
+# Specify the location of the Various_scripts directory
+VARSCRIPTDIR={varScriptDir}
 
 # Specify the location of the genome FASTA
 GENOMEDIR={genomeDir}
@@ -506,8 +511,19 @@ cd ${{PREFIX}}
 for VCF in ${{VCFDIR}}/*${{VCFSUFFIX}}; do
     CONTIG=$(basename ${{VCF}} ${{VCFSUFFIX}});
     if [[ ! -f ${{CONTIG}}.vcf ]]; then
-        samtools view -b ${{INPUTFILE}} ${{CONTIG}} | \\
-            ${{FBDIR}}/{fbExe} -f ${{GENOMEDIR}}/${{GENOME}} -@ ${{VCF}} --only-use-input-alleles --stdin > ${{CONTIG}}.vcf;
+        # >> 6.1: Generate BAM file for input
+        samtools view -b -h ${{INPUTFILE}} ${{CONTIG}} > ${{CONTIG}}.bam;
+        # >> 6.2: Continue processing only if BAM contains alignments
+        OUTPUT=$(samtools view ${{CONTIG}}.bam | head -n 1)
+        if [ ! -z "$OUTPUT" ]; then
+            # >> 6.3: Run freebayes
+            ${{FBDIR}}/{fbExe} -f ${{GENOMEDIR}}/${{GENOME}} -@ ${{VCF}} --only-use-input-alleles ${{CONTIG}}.bam > ${{CONTIG}}.vcf;
+            # >> 6.4: Gzip and index VCF file
+            bgzip ${{CONTIG}}.vcf;
+            bcftools index ${{CONTIG}}.vcf.gz;
+        fi
+        # >> 6.5: Clean up BAM file
+        rm ${{CONTIG}}.bam;
     fi
 done
 
@@ -515,7 +531,7 @@ done
 # >> 7.1: Get a list of all VCFs in this directory
 declare -a VCFFILES
 i=0
-for f in *.vcf; do
+for f in *.vcf.gz; do
     VCFFILES[${{i}}]=$(echo "${{f}}");
     i=$((i+1));
 done
@@ -557,7 +573,9 @@ fi
     vcfDir=argsContainer.vcfDir,
     
     bamDir=argsContainer.bamDir,
-    suffix=argsContainer.suffix
+    suffix=argsContainer.suffix,
+    
+    varScriptDir=argsContainer.varScriptDir
 )
 
     # Write script to file
@@ -571,7 +589,7 @@ def make_filter_script(argsContainer):
 #PBS -l walltime={walltime}
 #PBS -l mem={mem}
 #PBS -l ncpus={cpus}
-#PBS -W depend=afterok:{prevJobs}
+{waitingLine}
 
 cd {workingDir}
 
@@ -586,24 +604,7 @@ PREFIX={prefix}
 
 #################################
 
-# > STEP 1: Get our file list
-declare -a VCFFILES
-i=0
-for f in *.decomposed.vcf.gz; do
-    VCFFILES[${{i}}]=$(echo "${{f}}");
-    i=$((i+1));
-done
-
-# > STEP 2: Get our input files argument
-SEPARATOR=" "
-VCFTOOLS_ARG="$( printf "${{SEPARATOR}}%s" "${{VCFFILES[@]}}" )"
-
-# > STEP 3: Merge individual VCFs
-if [[ ! -f ${{PREFIX}}.merged.vcf  ]]; then
-    bcftools merge -Ov -o ${{PREFIX}}.merged.vcf ${{VCFTOOLS_ARG}}
-fi
-
-# > STEP 4: Filter vcfs according to publication Pete emailed to pro_zac
+# > STEP 1: Filter vcfs according to publication Pete emailed to pro_zac
 MISSING=0.5 ## this means >50% of individuals need to have the site
 MINQ=30 ## minimum SNP quality of 30, whatever that means
 MAC=1 ## minor allele count must be >= 1
@@ -614,12 +615,12 @@ if [[ ! -f ${{PREFIX}}.filtered.vcf  ]]; then
     mv ${{PREFIX}}.filtered.vcf.recode.vcf ${{PREFIX}}.filtered.vcf;
 fi
 
-# > STEP 5: Remove indels and keep only biallelic sites
+# > STEP 2: Remove indels and keep only biallelic sites
 if [[ ! -f ${{PREFIX}}.filtered.noindels.vcf  ]]; then
     bcftools view --max-alleles 2 --exclude-types indels -Ov -o ${{PREFIX}}.filtered.noindels.vcf ${{PREFIX}}.filtered.vcf
 fi
 
-# > STEP 6: More custom filtering
+# > STEP 3: More custom filtering
 POPMISSING=0.5 ## remove a site if each population does not have at least this percentage of called genotypes
 SAMPLEDP=3 ## set a site to be ambiguous if it does not have at least this much DP
 if [[ ! -f ${{PREFIX}}.final.vcf  ]]; then
@@ -629,6 +630,8 @@ fi
     prefix=argsContainer.prefix,
     workingDir=argsContainer.workingDir,
     prevJobs=argsContainer.prevJobs,
+    waitingLine="#PBS -W depend=afterok:{0}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
+        else "",
     
     walltime=argsContainer.walltime,
     mem=argsContainer.mem,
@@ -642,13 +645,68 @@ fi
     with open(argsContainer.outputFileName, "w") as fileOut:
         fileOut.write(scriptText)
 
+# Step skipping checks
+def check_if_step_complete(filesDir, fileSet):
+    '''
+    Parameters:
+        filesDir -- a string indicating the location wherein output
+                    files should exist if the job has already run successfully
+                    previously
+        fileSet -- a set containing strings indicating the file names which
+                   should be present in filesDir if this step completed successfully
+    Returns:
+        isComplete -- a boolean indicating whether this step has already run successfully
+                      (True) or if we need to run it for the first time / resume the job
+                      (False).
+    '''
+    foundNum = 0
+    for file in os.listdir(filesDir):
+        if file in fileSet:
+            foundNum += 1
+    
+    return foundNum == len(fileSet)
+
+def check_if_vcf_prep_complete(filesDir, vcfFile):
+    '''
+    Parameters:
+        filesDir -- a string indicating the location wherein output
+                    files should exist if the job has already run successfully
+                    previously
+        vcfFile -- a string indicating the full location of the VCF file that has
+                   been chunked as part of prep
+    Returns:
+        isComplete -- a boolean indicating whether this step has already run successfully
+                      (True) or if we need to run it for the first time / resume the job
+                      (False).
+    '''
+    # Run BCFtools to get the VCF contigs
+    bcfProcess = subprocess.Popen(f"bcftools index -s {vcfFile} | cut -f 1", stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    stdout, stderr = bcfProcess.communicate()
+    stdout, stderr = stdout.decode(), stderr.decode()
+    if stderr != "":
+        raise Exception(f"bcftools index died with stderr == {stderr}")
+    
+    # Parse BCFtools output to get the set of contigs and expected files
+    contigSet = set(stdout.rstrip("\n").split("\n"))
+    fileSet = set([ f"{c}.vcf.gz.csi" for c in contigSet ]).union(
+        set([ f"{c}.vcf.gz.tbi" for c in contigSet ])
+    )
+    
+    # See if all the files exist
+    foundNum = 0
+    for file in os.listdir(filesDir):
+        if file in fileSet:
+            foundNum += 1
+    
+    return foundNum == len(fileSet)
+
 def main():
     # User input
     usage = """%(prog)s automates the two-round Freebayes prediction process whereby
     per-sample variants are called, with the merged variants VCF used for a second
     calling procedure to obtain reference allele calls in all samples.
     
-    Note: It's expected that vcftools, bcftools, and vt are locatable in your
+    Note: It's expected that samtools, vcftools, bcftools, vt, and tabix are locatable in your
     system PATH. This script will attempt to verify that before running.
     """
     # Required (file locations)
@@ -702,7 +760,7 @@ def main():
     validate_args(args)
     
     # Validate that PATH programs are locatable
-    validate_programs_locatable(["vcftools", "bcftools", "vt"])
+    validate_programs_locatable(["samtools", "vcftools", "bcftools", "vt", "tabix"])
     
     # Validate that metadata matches BAM files
     sampleSet = validate_metadata_against_bams(args.bamDirectory, args.bamSuffix, args.metadataFile)
@@ -723,54 +781,63 @@ def main():
     os.makedirs(round1Dir, exist_ok=True)
     
     # Format and qsub freebayes
-    fbRound1ScriptName = os.path.join(round1Dir, "run_freebayes_r1.sh")
-    make_freebayes_r1_script(Container({
-        "prefix": args.prefix,
-        "workingDir": round1Dir,
-        "prevJobs": None,
-        "numJobs": len(sampleSet),
-        "walltime": params.freebayes_r1_time,
-        "mem": params.freebayes_r1_mem,
-        "cpus": params.freebayes_r1_cpu,
-        "modules": modules,
-        "freebayes": args.freebayesExe,
-        "genome": args.genomeFile,
-        "bamDir": args.bamDirectory,
-        "suffix": args.bamSuffix,
-        "outputFileName": fbRound1ScriptName
-    }))
-    fbRound1JobID = qsub(fbRound1ScriptName)
+    if not check_if_step_complete(round1Dir, set([ s + ".vcf" for s in sampleSet ])):
+        fbRound1ScriptName = os.path.join(round1Dir, "run_freebayes_r1.sh")
+        make_freebayes_r1_script(Container({
+            "prefix": args.prefix,
+            "workingDir": round1Dir,
+            "prevJobs": None,
+            "numJobs": len(sampleSet),
+            "walltime": params.freebayes_r1_time,
+            "mem": params.freebayes_r1_mem,
+            "cpus": params.freebayes_r1_cpu,
+            "modules": modules,
+            "freebayes": args.freebayesExe,
+            "genome": args.genomeFile,
+            "bamDir": args.bamDirectory,
+            "suffix": args.bamSuffix,
+            "outputFileName": fbRound1ScriptName
+        }))
+        fbRound1JobID = qsub(fbRound1ScriptName)
+    else:
+        fbRound1JobID = None
     
     # Format and qsub normalisation
-    normRound1ScriptName = os.path.join(round1Dir, "run_normalise_r1.sh")
-    make_normalisation_script(Container({
-        "prefix": "r1_" + args.prefix,
-        "workingDir": round1Dir,
-        "numJobs": len(sampleSet),
-        "prevJobs": fbRound1JobID,
-        "walltime": params.normalise_r1_time,
-        "mem": params.normalise_r1_mem,
-        "cpus": params.normalise_r1_cpu,
-        "genome": args.genomeFile,
-        "bamDir": args.bamDirectory,
-        "suffix": args.bamSuffix,
-        "outputFileName": normRound1ScriptName,
-    }))
-    normRound1JobID = qsub(normRound1ScriptName)
+    if not check_if_step_complete(round1Dir, set([ s + ".decomposed.vcf.gz" for s in sampleSet ])):
+        normRound1ScriptName = os.path.join(round1Dir, "run_normalise_r1.sh")
+        make_normalisation_script(Container({
+            "prefix": "r1_" + args.prefix,
+            "workingDir": round1Dir,
+            "numJobs": len(sampleSet),
+            "prevJobs": fbRound1JobID,
+            "walltime": params.normalise_r1_time,
+            "mem": params.normalise_r1_mem,
+            "cpus": params.normalise_r1_cpu,
+            "genome": args.genomeFile,
+            "bamDir": args.bamDirectory,
+            "suffix": args.bamSuffix,
+            "outputFileName": normRound1ScriptName,
+        }))
+        normRound1JobID = qsub(normRound1ScriptName)
+    else:
+        normRound1JobID = None
     
     # Format and qsub merging
-    mergeRound1ScriptName = os.path.join(round1Dir, "run_merge_r1.sh")
-    make_merge_script(Container({
-        "prefix": args.prefix,
-        "workingDir": round1Dir,
-        "prevJobs": normRound1JobID,
-        "walltime": params.merge_time,
-        "mem": params.merge_mem,
-        "cpus": params.merge_cpu,
-        "varScriptDir": args.varScriptDir,
-        "outputFileName": mergeRound1ScriptName
-    }))
-    mergeRound1JobID = qsub(mergeRound1ScriptName)
+    if not check_if_step_complete(round1Dir, set([ f"{args.prefix}.merged.vcf.gz.csi", f"{args.prefix}.merged.vcf.gz.tbi" ])):
+        mergeRound1ScriptName = os.path.join(round1Dir, "run_merge_r1.sh")
+        make_merge_script(Container({
+            "prefix": args.prefix,
+            "workingDir": round1Dir,
+            "prevJobs": normRound1JobID,
+            "walltime": params.merge_time,
+            "mem": params.merge_mem,
+            "cpus": params.merge_cpu,
+            "varScriptDir": args.varScriptDir,
+            "outputFileName": mergeRound1ScriptName
+        }))
+        mergeRound1JobID = qsub(mergeRound1ScriptName)
+    else:
+        mergeRound1JobID = None
     
     #### PREP ROUND ####
     
@@ -779,18 +846,21 @@ def main():
     os.makedirs(prepDir, exist_ok=True)
     
     # Split VCF by contig
-    vcfSplitScriptName = os.path.join(prepDir, "run_vcf_split.sh")
-    make_vcf_split_script(Container({
-        "prefix": args.prefix,
-        "workingDir": prepDir,
-        "prevJobs": mergeRound1JobID,
-        "walltime": params.split_time,
-        "mem": params.split_mem,
-        "cpus": params.split_cpu,
-        "vcfDir": round1Dir,
-        "outputFileName": vcfSplitScriptName
-    }))
-    vcfSplitJobID = qsub(vcfSplitScriptName)
+    if not check_if_vcf_prep_complete(prepDir, os.path.join(round1Dir, f"${args.prefix}.merged.vcf.gz")):
+        vcfSplitScriptName = os.path.join(prepDir, "run_vcf_split.sh")
+        make_vcf_split_script(Container({
+            "prefix": args.prefix,
+            "workingDir": prepDir,
+            "prevJobs": mergeRound1JobID,
+            "walltime": params.split_time,
+            "mem": params.split_mem,
+            "cpus": params.split_cpu,
+            "vcfDir": round1Dir,
+            "outputFileName": vcfSplitScriptName
+        }))
+        vcfSplitJobID = qsub(vcfSplitScriptName)
+    else:
+        vcfSplitJobID = None
     
     #### ROUND 2 ####
     
@@ -814,6 +884,7 @@ def main():
         "bamDir": args.bamDirectory,
         "vcfDir": prepDir,
         "suffix": args.bamSuffix,
+        "varScriptDir": args.varScriptDir,
         "outputFileName": fbRound2ScriptName
     }))
     fbRound2JobID = qsub(fbRound2ScriptName)
