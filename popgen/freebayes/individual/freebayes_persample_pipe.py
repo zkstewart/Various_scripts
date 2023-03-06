@@ -393,7 +393,8 @@ fi
 """.format(
     prefix=argsContainer.prefix,
     workingDir=argsContainer.workingDir,
-    prevJobs=argsContainer.prevJobs,
+    waitingLine="#PBS -W depend=afterok:{0}".format(argsContainer.prevJobs) if argsContainer.prevJobs != None
+        else "",
     
     walltime=argsContainer.walltime,
     mem=argsContainer.mem,
@@ -413,7 +414,7 @@ def make_vcf_split_script(argsContainer):
 #PBS -l walltime={walltime}
 #PBS -l mem={mem}
 #PBS -l ncpus={cpus}
-#PBS -W depend=afterok:{prevJobs}
+{waitingLine}
 
 cd {workingDir}
 
@@ -510,7 +511,7 @@ cd ${{PREFIX}}
 # > STEP 6: Run freebayes per contig with BAM data being streamed in
 for VCF in ${{VCFDIR}}/*${{VCFSUFFIX}}; do
     CONTIG=$(basename ${{VCF}} ${{VCFSUFFIX}});
-    if [[ ! -f ${{CONTIG}}.vcf ]]; then
+    if [[ ! -f ${{CONTIG}}.vcf.gz ]]; then
         # >> 6.1: Generate BAM file for input
         samtools view -b -h ${{INPUTFILE}} ${{CONTIG}} > ${{CONTIG}}.bam;
         # >> 6.2: Continue processing only if BAM contains alignments
@@ -527,7 +528,7 @@ for VCF in ${{VCFDIR}}/*${{VCFSUFFIX}}; do
     fi
 done
 
-# > STEP 7: Merge per contig VCF outputs together
+# > STEP 7: Concatenate per contig VCF outputs together
 # >> 7.1: Get a list of all VCFs in this directory
 declare -a VCFFILES
 i=0
@@ -540,12 +541,12 @@ done
 SEPARATOR=" "
 VCFTOOLS_ARG="$( printf "${{SEPARATOR}}%s" "${{VCFFILES[@]}}" )"
 
-# >> 7.3: Merge individual VCFs
+# >> 7.3: Concatenate individual VCFs
 if [[ ! -f ${{PREFIX}}.vcf  ]]; then
-    bcftools merge -Ov -o ${{PREFIX}}.vcf ${{VCFTOOLS_ARG}}
+    bcftools concat -Ov -o ${{PREFIX}}.vcf ${{VCFTOOLS_ARG}}
 fi
 
-# > STEP 8: Make the merged VCF accessible outside of this working directory
+# > STEP 8: Make the concatenated VCF accessible outside of this working directory
 cd ..
 if [[ ! -L ${{PREFIX}}.vcf  ]]; then
     ln -s ${{PREFIX}}/${{PREFIX}}.vcf .;
@@ -869,56 +870,65 @@ def main():
     os.makedirs(round2Dir, exist_ok=True)
     
     # Format and qsub freebayes
-    fbRound2ScriptName = os.path.join(round2Dir, "run_freebayes_r2.sh")
-    make_freebayes_r2_script(Container({
-        "prefix": args.prefix,
-        "workingDir": round2Dir,
-        "numJobs": len(sampleSet),
-        "prevJobs": vcfSplitJobID,
-        "walltime": params.freebayes_r2_time,
-        "mem": params.freebayes_r2_mem,
-        "cpus": params.freebayes_r2_cpu,
-        "modules": modules,
-        "freebayes": args.freebayesExe,
-        "genome": args.genomeFile,
-        "bamDir": args.bamDirectory,
-        "vcfDir": prepDir,
-        "suffix": args.bamSuffix,
-        "varScriptDir": args.varScriptDir,
-        "outputFileName": fbRound2ScriptName
-    }))
-    fbRound2JobID = qsub(fbRound2ScriptName)
+    if not check_if_step_complete(round2Dir, set([ s + ".vcf" for s in sampleSet ])):
+        fbRound2ScriptName = os.path.join(round2Dir, "run_freebayes_r2.sh")
+        make_freebayes_r2_script(Container({
+            "prefix": args.prefix,
+            "workingDir": round2Dir,
+            "numJobs": len(sampleSet),
+            "prevJobs": vcfSplitJobID,
+            "walltime": params.freebayes_r2_time,
+            "mem": params.freebayes_r2_mem,
+            "cpus": params.freebayes_r2_cpu,
+            "modules": modules,
+            "freebayes": args.freebayesExe,
+            "genome": args.genomeFile,
+            "bamDir": args.bamDirectory,
+            "vcfDir": prepDir,
+            "suffix": args.bamSuffix,
+            "varScriptDir": args.varScriptDir,
+            "outputFileName": fbRound2ScriptName
+        }))
+        fbRound2JobID = qsub(fbRound2ScriptName)
+    else:
+        fbRound2JobID = None
     
     # Format and qsub normalisation
-    normRound2ScriptName = os.path.join(round2Dir, "run_normalise_r2.sh")
-    make_normalisation_script(Container({
-        "prefix": "r2_" + args.prefix,
-        "workingDir": round2Dir,
-        "numJobs": len(sampleSet),
-        "prevJobs": fbRound2JobID,
-        "walltime": params.normalise_r2_time,
-        "mem": params.normalise_r2_mem,
-        "cpus": params.normalise_r2_cpu,
-        "genome": args.genomeFile,
-        "bamDir": args.bamDirectory,
-        "suffix": args.bamSuffix,
-        "outputFileName": normRound2ScriptName,
-    }))
-    normRound2JobID = qsub(normRound2ScriptName)
+    if not check_if_step_complete(round2Dir, set([ s + ".decomposed.vcf.gz" for s in sampleSet ])):
+        normRound2ScriptName = os.path.join(round2Dir, "run_normalise_r2.sh")
+        make_normalisation_script(Container({
+            "prefix": "r2_" + args.prefix,
+            "workingDir": round2Dir,
+            "numJobs": len(sampleSet),
+            "prevJobs": fbRound2JobID,
+            "walltime": params.normalise_r2_time,
+            "mem": params.normalise_r2_mem,
+            "cpus": params.normalise_r2_cpu,
+            "genome": args.genomeFile,
+            "bamDir": args.bamDirectory,
+            "suffix": args.bamSuffix,
+            "outputFileName": normRound2ScriptName,
+        }))
+        normRound2JobID = qsub(normRound2ScriptName)
+    else:
+        normRound2JobID = None
     
     # Format and qsub merging
-    mergeRound2ScriptName = os.path.join(round2Dir, "run_merge_r2.sh")
-    make_merge_script(Container({
-        "prefix": args.prefix,
-        "workingDir": round2Dir,
-        "prevJobs": normRound2JobID,
-        "walltime": params.merge_time,
-        "mem": params.merge_mem,
-        "cpus": params.merge_cpu,
-        "varScriptDir": args.varScriptDir,
-        "outputFileName": mergeRound2ScriptName
-    }))
-    mergeRound2JobID = qsub(mergeRound2ScriptName)
+    if not check_if_step_complete(round2Dir, set([ f"{args.prefix}.merged.vcf.gz.csi", f"{args.prefix}.merged.vcf.gz.tbi" ])):
+        mergeRound2ScriptName = os.path.join(round2Dir, "run_merge_r2.sh")
+        make_merge_script(Container({
+            "prefix": args.prefix,
+            "workingDir": round2Dir,
+            "prevJobs": normRound2JobID,
+            "walltime": params.merge_time,
+            "mem": params.merge_mem,
+            "cpus": params.merge_cpu,
+            "varScriptDir": args.varScriptDir,
+            "outputFileName": mergeRound2ScriptName
+        }))
+        mergeRound2JobID = qsub(mergeRound2ScriptName)
+    else:
+        mergeRound2JobID = None
     
     # Format and qsub filtering
     filterScriptName = os.path.join(round2Dir, "run_filter.sh")
