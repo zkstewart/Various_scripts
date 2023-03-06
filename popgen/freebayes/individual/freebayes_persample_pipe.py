@@ -846,7 +846,7 @@ def main():
     os.makedirs(prepDir, exist_ok=True)
     
     # Split VCF by contig
-    if not check_if_vcf_prep_complete(prepDir, os.path.join(round1Dir, f"${args.prefix}.merged.vcf.gz")):
+    if not check_if_vcf_prep_complete(prepDir, os.path.join(round1Dir, f"{args.prefix}.merged.vcf.gz")):
         vcfSplitScriptName = os.path.join(prepDir, "run_vcf_split.sh")
         make_vcf_split_script(Container({
             "prefix": args.prefix,
