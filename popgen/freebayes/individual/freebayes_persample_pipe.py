@@ -612,7 +612,7 @@ MAC=1 ## minor allele count must be >= 1
 MINDEPTH=3 ## minimum depth of 3 for a genotype call
 MAF=0.05 ## minor allele frequency greater than or equal to 0.05
 if [[ ! -f ${{PREFIX}}.filtered.vcf  ]]; then
-    vcftools --vcf ${{PREFIX}}.merged.vcf --max-missing ${{MISSING}} --mac ${{MAC}} --minQ ${{MINQ}} --min-meanDP ${{MINDEPTH}} --remove-filtered-all --recode --recode-INFO-all --maf ${{MAF}} --out ${{PREFIX}}.filtered.vcf;
+    vcftools --gzvcf ${{PREFIX}}.merged.vcf.gz --max-missing ${{MISSING}} --mac ${{MAC}} --minQ ${{MINQ}} --min-meanDP ${{MINDEPTH}} --remove-filtered-all --recode --recode-INFO-all --maf ${{MAF}} --out ${{PREFIX}}.filtered.vcf;
     mv ${{PREFIX}}.filtered.vcf.recode.vcf ${{PREFIX}}.filtered.vcf;
 fi
 
