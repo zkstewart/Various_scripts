@@ -110,7 +110,13 @@ def write_reheader_file(amFile, contigSet, reheaderFile):
     # End program if something is desperately wrong
     if len(foundContigs) == 0:
         print("ERROR: Somehow, we found NO @SQ lines?!?")
-        print("Something must be very wrong with your file, and I don't know how.")
+        
+        if len(contigSet) == 0:
+            print("This is likely because contigSet is empty.")
+            print("In other words, your BAM file itself is probably empty!")
+        else:
+            print("Something must be very wrong with your file, and I don't know how.")
+        
         print("Program will exit now to prevent erroneous behaviour.")
         quit()
     
