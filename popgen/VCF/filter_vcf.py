@@ -238,6 +238,9 @@ def main():
     
     The population file is assumed to be tab-separated into two columns
     i.e., sample_name : population_ID.
+    
+    To understand --mpp, follow the logic of: small number == strict, large
+    number == relaxed.
     """
     p = argparse.ArgumentParser(description=usage)
     ## Required
@@ -258,7 +261,7 @@ def main():
                    default=[])
     p.add_argument("--mpp", dest="missingPerPopulation", type=float,
                    required=False,
-                   help="""This number is the minimum proportion of samples per population
+                   help="""This number is the proportion of samples per population
                    where ambiguity will be tolerated before dropping the site; default=0.5
                    (range 0 -> 1)""",
                    default=0.5)

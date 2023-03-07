@@ -707,8 +707,11 @@ def main():
     per-sample variants are called, with the merged variants VCF used for a second
     calling procedure to obtain reference allele calls in all samples.
     
-    Note: It's expected that samtools, vcftools, bcftools, vt, and tabix are locatable in your
+    Note 1: It's expected that samtools, vcftools, bcftools, vt, and tabix are locatable in your
     system PATH. This script will attempt to verify that before running.
+    
+    Note 2: The metadata file should correspond to the read group identifiers for your
+    samples.
     """
     # Required (file locations)
     p = argparse.ArgumentParser(description=usage)
