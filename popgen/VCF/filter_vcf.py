@@ -290,6 +290,14 @@ def main():
     samplesNotFound = set(vcf.samples).difference(pops.keys())
     for sampleID in samplesNotFound:
         vcf.del_sample(sampleID)
+        print(f"Warning: {sampleID} deleted from VCF since it's not found in the metadata file")
+    
+    # Validate that we haven't obliterated our VCF
+    if len(vcf.samples) == 0:
+        print("ERROR: After deleting samples not found in the metadata, no samples remain!")
+        print("This likely means that your metadata file doesn't match the VCF")
+        print("Program will end now since no data remains in the VCF")
+        quit()
     
     # Modify VCF by per-sample DP to set sample as ambiguous if its DP is too low
     filter_vcf_by_sample_dp(vcf, args.sampleDP)
