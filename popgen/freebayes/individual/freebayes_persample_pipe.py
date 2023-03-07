@@ -117,19 +117,19 @@ class Parameters:
         self.set_params(size)
     
     def set_params(self, size):
-        self.freebayes_r1_time = ["04:00:00", "12:00:00", "72:00:00"][self.VALID_SIZES.index(size)]
-        self.freebayes_r1_mem = ["10G", "15G", "20G"][self.VALID_SIZES.index(size)]
+        self.freebayes_r1_time = ["04:00:00", "12:00:00", "400:00:00"][self.VALID_SIZES.index(size)]
+        self.freebayes_r1_mem = ["10G", "15G", "30G"][self.VALID_SIZES.index(size)]
         self.freebayes_r1_cpu = "1"
         
-        self.freebayes_r2_time = ["08:00:00", "24:00:00", "90:00:00"][self.VALID_SIZES.index(size)]
-        self.freebayes_r2_mem = ["20G", "25G", "30G"][self.VALID_SIZES.index(size)]
+        self.freebayes_r2_time = ["08:00:00", "24:00:00", "400:00:00"][self.VALID_SIZES.index(size)]
+        self.freebayes_r2_mem = ["20G", "25G", "40G"][self.VALID_SIZES.index(size)]
         self.freebayes_r2_cpu = "1"
         
-        self.normalise_r1_time = ["04:00:00", "08:00:00", "12:00:00"][self.VALID_SIZES.index(size)]
+        self.normalise_r1_time = ["04:00:00", "08:00:00", "48:00:00"][self.VALID_SIZES.index(size)]
         self.normalise_r1_mem = "10G"
         self.normalise_r1_cpu = "1"
         
-        self.normalise_r2_time = ["08:00:00", "24:00:00", "48:00:00"][self.VALID_SIZES.index(size)]
+        self.normalise_r2_time = ["08:00:00", "24:00:00", "90:00:00"][self.VALID_SIZES.index(size)]
         self.normalise_r2_mem = ["10G", "15G", "20G"][self.VALID_SIZES.index(size)]
         self.normalise_r2_cpu = "1"
         
@@ -137,12 +137,12 @@ class Parameters:
         self.merge_mem = ["10G", "25G", "40G"][self.VALID_SIZES.index(size)]
         self.merge_cpu = "1"
         
-        self.filter_time = ["04:00:00", "08:00:00", "24:00:00"][self.VALID_SIZES.index(size)]
+        self.filter_time = ["04:00:00", "08:00:00", "48:00:00"][self.VALID_SIZES.index(size)]
         self.filter_mem = ["70G", "150G", "250G"][self.VALID_SIZES.index(size)]
         self.filter_cpu = "1"
         
-        self.split_time = "04:00:00"
-        self.split_mem = "10G"
+        self.split_time = ["04:00:00", "08:00:00", "48:00:00"][self.VALID_SIZES.index(size)]
+        self.split_mem = "20G"
         self.split_cpu = "1"
 
 # Script running and creation functions
