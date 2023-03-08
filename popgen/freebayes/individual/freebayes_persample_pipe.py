@@ -130,7 +130,7 @@ def validate_metadata_against_bams(bamDirectory, bamSuffix, metadataFile):
                 print(sampleID)
         quit()
     
-    return metadataSet
+    return bamSet
 
 # Parameter handling containers
 class Container:
@@ -802,7 +802,7 @@ def main():
     validate_programs_locatable(["samtools", "vcftools", "bcftools", "vt", "tabix"])
     
     # Validate that metadata matches BAM files
-    sampleSet = validate_metadata_against_bams(args.bamDirectory, args.bamSuffix, args.metadataFile)
+    bamSet = validate_metadata_against_bams(args.bamDirectory, args.bamSuffix, args.metadataFile)
     
     # Get our parameters
     params = Parameters(args.size)
@@ -820,13 +820,13 @@ def main():
     os.makedirs(round1Dir, exist_ok=True)
     
     # Format and qsub freebayes
-    if not check_if_step_complete(round1Dir, set([ s + ".vcf" for s in sampleSet ])):
+    if not check_if_step_complete(round1Dir, set([ s + ".vcf" for s in bamSet ])):
         fbRound1ScriptName = os.path.join(round1Dir, "run_freebayes_r1.sh")
         make_freebayes_r1_script(Container({
             "prefix": args.prefix,
             "workingDir": round1Dir,
             "prevJobs": None,
-            "numJobs": len(sampleSet),
+            "numJobs": len(bamSet),
             "walltime": params.freebayes_r1_time,
             "mem": params.freebayes_r1_mem,
             "cpus": params.freebayes_r1_cpu,
@@ -842,12 +842,12 @@ def main():
         fbRound1JobID = None
     
     # Format and qsub normalisation
-    if not check_if_step_complete(round1Dir, set([ s + ".decomposed.vcf.gz" for s in sampleSet ])):
+    if not check_if_step_complete(round1Dir, set([ s + ".decomposed.vcf.gz" for s in bamSet ])):
         normRound1ScriptName = os.path.join(round1Dir, "run_normalise_r1.sh")
         make_normalisation_script(Container({
             "prefix": "r1_" + args.prefix,
             "workingDir": round1Dir,
-            "numJobs": len(sampleSet),
+            "numJobs": len(bamSet),
             "prevJobs": fbRound1JobID,
             "walltime": params.normalise_r1_time,
             "mem": params.normalise_r1_mem,
@@ -908,12 +908,12 @@ def main():
     os.makedirs(round2Dir, exist_ok=True)
     
     # Format and qsub freebayes
-    if not check_if_step_complete(round2Dir, set([ s + ".vcf" for s in sampleSet ])):
+    if not check_if_step_complete(round2Dir, set([ s + ".vcf" for s in bamSet ])):
         fbRound2ScriptName = os.path.join(round2Dir, "run_freebayes_r2.sh")
         make_freebayes_r2_script(Container({
             "prefix": args.prefix,
             "workingDir": round2Dir,
-            "numJobs": len(sampleSet),
+            "numJobs": len(bamSet),
             "prevJobs": vcfSplitJobID,
             "walltime": params.freebayes_r2_time,
             "mem": params.freebayes_r2_mem,
@@ -932,12 +932,12 @@ def main():
         fbRound2JobID = None
     
     # Format and qsub normalisation
-    if not check_if_step_complete(round2Dir, set([ s + ".decomposed.vcf.gz" for s in sampleSet ])):
+    if not check_if_step_complete(round2Dir, set([ s + ".decomposed.vcf.gz" for s in bamSet ])):
         normRound2ScriptName = os.path.join(round2Dir, "run_normalise_r2.sh")
         make_normalisation_script(Container({
             "prefix": "r2_" + args.prefix,
             "workingDir": round2Dir,
-            "numJobs": len(sampleSet),
+            "numJobs": len(bamSet),
             "prevJobs": fbRound2JobID,
             "walltime": params.normalise_r2_time,
             "mem": params.normalise_r2_mem,
