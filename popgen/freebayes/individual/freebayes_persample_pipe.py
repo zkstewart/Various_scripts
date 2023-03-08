@@ -6,7 +6,7 @@
 # The need to automate this arises from a bug present in Freebayes
 # which complicates things greatly.
 
-import os, argparse, shutil, subprocess
+import os, argparse, shutil, subprocess, re
 
 # Define validation functions
 def validate_args(args):
@@ -69,6 +69,8 @@ def validate_metadata_against_bams(bamDirectory, bamSuffix, metadataFile):
         sampleIDs -- a set which provides the sample IDs for this analysis.
                      Useful for knowing how many subjobs to use with batch submission!
     '''
+    readgroupRegex = re.compile(r"bwa mem -R @RG.+?SM:(.+?)\tPL:")
+    
     # Parse metadata file
     metadataSet = set()
     with open(metadataFile, "r") as fileIn:
@@ -86,15 +88,44 @@ def validate_metadata_against_bams(bamDirectory, bamSuffix, metadataFile):
         if file.endswith(bamSuffix):
             bamSet.add(file.split(bamSuffix)[0])
     
+    # Parse BAM read groups
+    readgroupSet = set()
+    for file in os.listdir(bamDirectory):
+        if file.endswith(bamSuffix):
+            # Get header from BAM file
+            samtoolsProcess = subprocess.Popen(f"samtools view -H {file}", stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            stdout, stderr = samtoolsProcess.communicate()
+            stdout, stderr = stdout.decode(), stderr.decode()
+            if stderr != "":
+                raise Exception(f"samtools view -H died with stderr == {stderr}")
+            
+            # Parse read group identifier
+            try:
+                readgroup = readgroupRegex.search(stdout).group(1)
+                readgroupSet.add(readgroup)
+            except:
+                print("ERROR: Read group parsing failed!")
+                print(f"For debugging, the samtools header == {stdout}")
+                print("Program will exit now")
+                quit()
+    
     # Compare sets and end program if needed
-    if metadataSet != bamSet:
+    if metadataSet.difference(bamSet.union(readgroupSet)) != set():
         print("Metadata and BAM directories do not match up!")
         print("# Samples in metadata not found in BAM directory:")
         for sampleID in metadataSet:
             if not sampleID in bamSet:
                 print(sampleID)
+        print("# Samples in metadata not found in BAM readgroups:")
+        for sampleID in metadataSet:
+            if not sampleID in readgroupSet:
+                print(sampleID)
         print("# Samples in BAM directory not found in metadata:")
         for sampleID in bamSet:
+            if not sampleID in metadataSet:
+                print(sampleID)
+        print("# Samples in BAM readgroups not found in metadata:")
+        for sampleID in readgroupSet:
             if not sampleID in metadataSet:
                 print(sampleID)
         quit()
