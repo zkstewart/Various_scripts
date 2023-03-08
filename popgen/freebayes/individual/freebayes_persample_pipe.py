@@ -69,7 +69,7 @@ def validate_metadata_against_bams(bamDirectory, bamSuffix, metadataFile):
         sampleIDs -- a set which provides the sample IDs for this analysis.
                      Useful for knowing how many subjobs to use with batch submission!
     '''
-    readgroupRegex = re.compile(r"bwa mem -R @RG.+?SM:(.+?)\tPL:")
+    readgroupRegex = re.compile(r"bwa mem -R @RG.+?SM:(.+?)\\tPL:")
     
     # Parse metadata file
     metadataSet = set()
