@@ -711,6 +711,10 @@ def check_if_vcf_prep_complete(filesDir, vcfFile):
                       (True) or if we need to run it for the first time / resume the job
                       (False).
     '''
+    # Skip checking if the file does not exist
+    if not os.path.isfile(vcfFile):
+        return False
+    
     # Run BCFtools to get the VCF contigs
     bcfProcess = subprocess.Popen(f"bcftools index -s {vcfFile} | cut -f 1", stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
     stdout, stderr = bcfProcess.communicate()
