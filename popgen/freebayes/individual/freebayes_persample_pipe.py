@@ -409,11 +409,11 @@ done
 
 # > STEP 2: Get our input files argument
 SEPARATOR=" "
-VCFTOOLS_ARG="$( printf "${{SEPARATOR}}%s" "${{VCFFILES[@]}}" )"
+BCFTOOLS_ARG="$( printf "${{SEPARATOR}}%s" "${{VCFFILES[@]}}" )"
 
 # > STEP 3: Merge individual VCFs
 if [[ ! -f ${{PREFIX}}.merged.vcf.gz  ]]; then
-    bcftools merge -Oz -o ${{PREFIX}}.merged.vcf.gz ${{VCFTOOLS_ARG}}
+    bcftools merge -Oz -o ${{PREFIX}}.merged.vcf.gz ${{BCFTOOLS_ARG}}
 fi
 
 # > STEP 4: Index VCF
@@ -570,11 +570,11 @@ done
 
 # >> 7.2: Get our input files argument
 SEPARATOR=" "
-VCFTOOLS_ARG="$( printf "${{SEPARATOR}}%s" "${{VCFFILES[@]}}" )"
+BCFTOOLS_ARG="$( printf "${{SEPARATOR}}%s" "${{VCFFILES[@]}}" )"
 
 # >> 7.3: Concatenate individual VCFs
 if [[ ! -f ${{PREFIX}}.vcf  ]]; then
-    bcftools concat -Ov -o ${{PREFIX}}.vcf ${{VCFTOOLS_ARG}}
+    bcftools concat -Ov -o ${{PREFIX}}.vcf ${{BCFTOOLS_ARG}}
 fi
 
 # > STEP 8: Make the concatenated VCF accessible outside of this working directory
