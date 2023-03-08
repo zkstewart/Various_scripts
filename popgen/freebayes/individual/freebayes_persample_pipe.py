@@ -93,7 +93,7 @@ def validate_metadata_against_bams(bamDirectory, bamSuffix, metadataFile):
     for file in os.listdir(bamDirectory):
         if file.endswith(bamSuffix):
             # Get header from BAM file
-            samtoolsProcess = subprocess.Popen(f"samtools view -H {file}", stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            samtoolsProcess = subprocess.Popen(f"samtools view -H {os.path.join(bamDirectory, file)}", stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
             stdout, stderr = samtoolsProcess.communicate()
             stdout, stderr = stdout.decode(), stderr.decode()
             if stderr != "":
