@@ -68,6 +68,7 @@ def parse_vcf(vcfFile):
                 vcfDict[chrom][pos] = {
                     "REF": ref,
                     "ALT": alt,
+                    "QUAL": qual
                 }
                 
                 # Parse sample details according to FORMAT 
@@ -103,7 +104,7 @@ def _derive_sample_keys(dictKeys):
     Returns:
         sampleIDs -- a list containing just the keys representing sample IDs
     '''
-    return [ key for key in dictKeys if not key in ["REF", "ALT"]]
+    return [ key for key in dictKeys if not key in ["REF", "ALT", "QUAL"]]
 
 def impute_DP(vcfDictValue, info, dpFieldExists, adFieldExists):
     '''
@@ -254,12 +255,12 @@ def main():
     with open(args.outputFileName, "w") as fileOut:
         # Write header
         if args.defaultHeader:
-            fileOut.write("CHROM\tPOS\tREF\tALT\t{0}\t{1}\n".format(
+            fileOut.write("CHROM\tPOS\tREF\tALT\tQUAL\t{0}\t{1}\n".format(
                 "\t".join([f"bulk1.{field}" for field in fieldsThatExist]),
                 "\t".join([f"bulk2.{field}" for field in fieldsThatExist]),
             ))
         else:
-            fileOut.write("CHROM\tPOS\tREF\tALT\t{0}\t{1}\n".format(
+            fileOut.write("CHROM\tPOS\tREF\tALT\tQUAL\t{0}\t{1}\n".format(
                 "\t".join([f"{args.bulk1Column}.{field}" for field in fieldsThatExist]),
                 "\t".join([f"{args.bulk2Column}.{field}" for field in fieldsThatExist]),
             ))
@@ -284,11 +285,12 @@ def main():
                 )
                 
                 # Write line
-                line = "{chrom}\t{pos}\t{ref}\t{alt}\t{b1Values}\t{b2Values}\n".format(
+                line = "{chrom}\t{pos}\t{ref}\t{alt}\t{qual}\t{b1Values}\t{b2Values}\n".format(
                     chrom=chrom,
                     pos=pos,
                     ref=posDict["REF"],
                     alt=posDict["ALT"],
+                    qual=posDict["QUAL"],
                     b1Values="\t".join([posDict[args.bulk1Column][field] for field in fieldsThatExist]),
                     b2Values="\t".join([posDict[args.bulk2Column][field] for field in fieldsThatExist])
                 )
