@@ -1,7 +1,8 @@
 #! python3
-# convert_bulked_vcf_to_qtlseqr_format.py
-# Script to produce a re-formatted output amenable to loading in
-# to the QTLseqr package.
+# bulked_VariantsToTable.py
+# Script which emulates GATK's VariantsToTable function, but with
+# imputation of missing fields so as to be more appropriate for the
+# QTLseqr package, or for PyBSASeq if that's actually working.
 
 import os, argparse
 
@@ -9,12 +10,12 @@ import os, argparse
 def validate_args(args):
     # Validate input file location
     if not os.path.isfile(args.vcf):
-        print('I am unable to locate the VCF file (' + args.vcf + ')')
+        print(f'I am unable to locate the VCF file ({args.vcf})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Handle file overwrites
     if os.path.isfile(args.outputFileName):
-        print(args.outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
+        print(f'"{args.outputFileName}" already exists. Delete/move/rename this file and run the program again.')
         quit()
 
 def parse_vcf(vcfFile):
@@ -56,40 +57,153 @@ def parse_vcf(vcfFile):
                 firstLine = False
             # Handle content lines
             else:
+                # Extract relevant details from line
                 chrom, pos, id, ref, alt, \
                     qual, filter, info, format = sl[0:9]
+                sampleFormat = format.split(":")
+                sampleData = sl[9:]
+                
+                # Set up data storage structure
                 vcfDict.setdefault(chrom, {})
                 vcfDict[chrom][pos] = {
                     "REF": ref,
                     "ALT": alt,
                 }
                 
-                # Parse DP from info in case imputing is required below
-                if "DP=" in info:
-                    infoDP = [x.split("=")[1] for x in info.split(";") if x.startswith("DP=")][0]
-                else:
-                    infoDP = None
-                
                 # Parse sample details according to FORMAT 
                 for i in range(len(sampleIDs)):
-                    sampleFormat = format.split(":")
-                    sampleDetails = sl[9+i].split(":")
+                    sampleDetails = sampleData[i].split(":")
                     
+                    # Set up sample dict for this VCF row
                     sampleDict = {}
                     for x in range(len(sampleFormat)):
                         sampleDict[sampleFormat[x]] = sampleDetails[x]
                     
-                    # Store result
+                    # Index it in the overall dictionary
                     vcfDict[chrom][pos][sampleIDs[i]] = sampleDict # sampleIDs[i] == sampleName
                 
-                # Roughly impute DP per sample if not already existing (and if it's even possible)
-                if "DP" not in sampleDict and infoDP != None and "AD" in sampleDict: # most recently used sampleDict is fine
-                    sampleADs = [vcfDict[chrom][pos][id]["AD"] for id in sampleIDs]
-                    adsRatio = [sum(map(int, ad.split(","))) / int(infoDP) for ad in sampleADs]
-                    dpsImpute = [int(adR*int(infoDP)) for adR in adsRatio]
-                    for i in range(len(sampleIDs)):
-                        vcfDict[chrom][pos][sampleIDs[i]]["DP"] = str(dpsImpute[i])
+                # Impute DP if required
+                impute_DP(vcfDict[chrom][pos], info, "DP" in sampleFormat, "AD" in sampleFormat)
+                
+                # Impute PL if required
+                impute_PL(vcfDict[chrom][pos], "PL" in sampleFormat, "GL" in sampleFormat)
+                
+                # Impute GQ if required
+                impute_GQ(vcfDict[chrom][pos], "GQ" in sampleFormat, "PL" in sampleDict) # most recent sampleDict may have been imputed
+                
     return vcfDict
+
+def _derive_sample_keys(dictKeys):
+    '''
+    Helper function for getting keys out of the VCF dictionary.
+    
+    Parameters:
+        dictKeys -- a dict_keys() object which should have REF, ALT keys
+                    removed
+    Returns:
+        sampleIDs -- a list containing just the keys representing sample IDs
+    '''
+    return [ key for key in dictKeys if not key in ["REF", "ALT"]]
+
+def impute_DP(vcfDictValue, info, dpFieldExists, adFieldExists):
+    '''
+    Parameters:
+        vcfDictValue -- a dictionary indexed under the vcfDict of parse_vcf(),
+                        which should correspond to vcfDict[chrom][pos] where
+                        chrom == a string of the chromosome/contig the variant
+                        is located at, and pos == a string of a digit indicating
+                        where the variant resides.
+        info -- a string corresponding to the 8th column of a VCF file.
+                It should have a structure akin to "DP=285;VDB=0;MQ=60;...".
+        dpFieldExists -- a boolean indicating whether we can expect to find
+                         the DP field in this VCF entry.
+        adFieldExists -- as above, but for the AD field.
+    '''
+    # Exit out of function if there's no need to impute DP; it already exists!
+    if dpFieldExists:
+        return
+    
+    # Exit out of function if AD field doesn't exist; impossible to impute!
+    if not adFieldExists:
+        return
+    
+    # Roughly impute DP per sample if it's possible
+    if "DP=" in info:
+        infoDP = [x.split("=")[1] for x in info.split(";") if x.startswith("DP=")][0]
+        sampleIDs = _derive_sample_keys(vcfDictValue.keys())
+        
+        sampleADs = [vcfDictValue[id]["AD"] for id in sampleIDs]
+        adsRatio = [sum(map(int, ad.split(","))) / int(infoDP) for ad in sampleADs]
+        dpsImpute = [int(adR*int(infoDP)) for adR in adsRatio]
+        
+        for i in range(len(sampleIDs)):
+            vcfDictValue[sampleIDs[i]]["DP"] = str(dpsImpute[i])
+    
+    # If DP is not provided over the entry VCF row, there's nothing we can do
+    else:
+        return
+
+def impute_PL(vcfDictValue, plFieldExists, glFieldExists):
+    '''
+    Parameters:
+        vcfDictValue -- a dictionary indexed under the vcfDict of parse_vcf(),
+                        which should correspond to vcfDict[chrom][pos] where
+                        chrom == a string of the chromosome/contig the variant
+                        is located at, and pos == a string of a digit indicating
+                        where the variant resides.
+        plFieldExists -- a boolean indicating whether we can expect to find
+                         the PL field in this VCF entry.
+        glFieldExists -- as above, but for the GL field.
+    '''
+    # Exit out of function if there's no need to impute PL; it already exists!
+    if plFieldExists:
+        return
+    
+    # Exit out of function if GL field doesn't exist; impossible to impute!
+    if not glFieldExists:
+        return
+    
+    # Impute PL for each sample
+    for sampleID in _derive_sample_keys(vcfDictValue.keys()):
+        # First, grab the GL values as floats
+        glValues = list(map(float, vcfDictValue[sampleID]["GL"].split(",")))
+        
+        # Transform it to PL values
+        plValues = [str(int(abs(-gl*10))) for gl in glValues] # must use int!
+        
+        # Store the PL values
+        vcfDictValue[sampleID]["PL"] = plValues
+
+def impute_GQ(vcfDictValue, gqFieldExists, plFieldExists):
+    '''
+    Parameters:
+        vcfDictValue -- a dictionary indexed under the vcfDict of parse_vcf(),
+                        which should correspond to vcfDict[chrom][pos] where
+                        chrom == a string of the chromosome/contig the variant
+                        is located at, and pos == a string of a digit indicating
+                        where the variant resides.
+        gqFieldExists -- a boolean indicating whether we can expect to find
+                         the GQ field in this VCF entry.
+        plFieldExists -- as above, but for the PL field.
+    '''
+    # Exit out of function if there's no need to impute GQ; it already exists!
+    if gqFieldExists:
+        return
+    
+    # Exit out of function if PL field doesn't exist; impossible to impute!
+    if not plFieldExists:
+        return
+    
+    # Impute GQ for each sample
+    for sampleID in _derive_sample_keys(vcfDictValue.keys()):
+        # First, grab the PL values as integers
+        plValues = list(map(int, vcfDictValue[sampleID]["PL"].split(",")))
+        
+        # Sort it from lowest to highest
+        plValues.sort()
+        
+        # Store the second lowest value; that's the GQ
+        vcfDictValue[sampleID]["GQ"] = str(plValues[1])
 
 def main():
     # User input
@@ -97,6 +211,7 @@ def main():
     2 sample columns for the bulked progeny. It will reformat this so that QTLseqr can load
     it in.
     """
+    ## Required
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-i", dest="vcf",
                    required=True,
@@ -110,6 +225,14 @@ def main():
     p.add_argument("-b2", dest="bulk2Column",
                    required=True,
                    help="Specify the column name for bulk 2")
+    ## Optional
+    p.add_argument("--defaultHeader", dest="defaultHeader",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally indicate if you'd prefer the header to be
+                   written out as bulk1.GT, bulk2.GT, etc, regardless of whatever
+                   your bulk columns are""",
+                   default=False)
     args = p.parse_args()
     validate_args(args)
     
@@ -129,23 +252,36 @@ def main():
     
     # Write new output
     with open(args.outputFileName, "w") as fileOut:
-        fileOut.write("CHROM\tPOS\tREF\tALT\t{0}\t{1}\n".format(
-            "\t".join([f"{args.bulk1Column}.{field}" for field in fieldsThatExist]),
-            "\t".join([f"{args.bulk2Column}.{field}" for field in fieldsThatExist]),
-        ))
+        # Write header
+        if args.defaultHeader:
+            fileOut.write("CHROM\tPOS\tREF\tALT\t{0}\t{1}\n".format(
+                "\t".join([f"bulk1.{field}" for field in fieldsThatExist]),
+                "\t".join([f"bulk2.{field}" for field in fieldsThatExist]),
+            ))
+        else:
+            fileOut.write("CHROM\tPOS\tREF\tALT\t{0}\t{1}\n".format(
+                "\t".join([f"{args.bulk1Column}.{field}" for field in fieldsThatExist]),
+                "\t".join([f"{args.bulk2Column}.{field}" for field in fieldsThatExist]),
+            ))
+        
+        # Write content lines
         for chrom, chromDict in vcfDict.items():
             for pos, posDict in chromDict.items():
-                # Update GT
                 ref_alts = [posDict["REF"], *posDict["ALT"].split(",")]
-                posDict[args.bulk1Column]["GT"] = posDict[args.bulk1Column]["GT"].replace(".", "0")
-                posDict[args.bulk2Column]["GT"] = posDict[args.bulk2Column]["GT"].replace(".", "0")
                 
-                posDict[args.bulk1Column]["GT"] = "/".join([
-                    ref_alts[int(gtNum)] for gtNum in posDict[args.bulk1Column]["GT"].split("/")
-                ])
-                posDict[args.bulk2Column]["GT"] = "/".join([
-                    ref_alts[int(gtNum)] for gtNum in posDict[args.bulk2Column]["GT"].split("/")
-                ])
+                # Handle GT depending on whether the value exists or not
+                posDict[args.bulk1Column]["GT"] = "/".join(
+                    [
+                        ref_alts[int(gtNum)] if gtNum != "." else "."
+                            for gtNum in posDict[args.bulk1Column]["GT"].split("/")
+                    ]
+                )
+                posDict[args.bulk2Column]["GT"] = "/".join(
+                    [
+                        ref_alts[int(gtNum)] if gtNum != "." else "."
+                            for gtNum in posDict[args.bulk2Column]["GT"].split("/")
+                    ]
+                )
                 
                 # Write line
                 line = "{chrom}\t{pos}\t{ref}\t{alt}\t{b1Values}\t{b2Values}\n".format(
