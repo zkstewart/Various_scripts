@@ -114,6 +114,7 @@ def get_genotypes_from_vcf(vcfFile, snpPositions=None, imputeMissing=True):
                     genotype = genotype.replace(".", "0")
                 else:
                     if "." in genotype:
+                        ongoingCount += 1
                         continue
                 
                 # Parse and store genotype
