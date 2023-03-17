@@ -134,7 +134,7 @@ class VCF:
         adIndex = self.variants[chrom][pos]["FORMAT"].index("AD")
         
         sampleADs = [
-            self.variants[chrom][pos][id].split(":")[adIndex]
+            self.variants[chrom][pos][id][adIndex]
                 for id in self.samples
         ]
         
