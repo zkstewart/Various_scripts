@@ -155,18 +155,30 @@ def get_vcf_lines_of_outliers(vcfFile, verifDict, metadataDict, outliers):
                     # Store result in allele dict
                     for allele in sampleAlleles:
                         alleleDict[samplePop][int(allele)] += 1
-
+                
                 # Check to see if this lines up with the verif file
                 verifAlleles = verifDict[verifCounter]
                 
-                if all([ set(verifAlleles[pop]) == set(alleleDict[pop])
-                            for pop in pops        
-                ]):
+                if all(
+                    [
+                    set(verifAlleles[pop]) == set(alleleDict[pop])
+                    for pop in pops
+                    ]
+                ):
                     if verifCounter in outliers:
                         linesToWrite.add(vcfCounter) 
                     verifCounter += 1
             
                 vcfCounter += 1
+    
+    # Check that everything worked correctly
+    if len(outliers) == len(linesToWrite):
+        print(f"Successfully located all {len(outliers)} outlier SNPs from your VCF")
+    else:
+        print("ERROR: Failed to locate all SNPs! This probably means your metadata is wrong!")
+        print("Program will exit now to prevent creating an erroneous output file.")
+        quit()
+    
     return linesToWrite
 
 def main():
