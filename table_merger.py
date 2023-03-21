@@ -96,9 +96,9 @@ def validate_primary_keys(dfA, aKey, dfB, bKey):
     '''
     # Check that the primary key columns exist
     assert aKey in dfA, \
-        f"'{aKey}' not found as a column in file A!"
+        f"aKey value '{aKey}' not found as a column in file A!"
     assert bKey in dfB, \
-        f"'{bKey}' not found as a column in file B!"
+        f"bKey value '{bKey}' not found as a column in file B!"
     
     # Check that columns are unique
     assert len(set(dfA[aKey])) == len(dfA[aKey]), \
@@ -135,19 +135,37 @@ def carry_columns_from_A_to_B(dfA, aKey, dfB, bKey, carryColumns, howToMerge):
     # Validate carryColumns values
     for column in carryColumns:
         assert column in dfA, \
-            f"'{column}' not found as a column in file A!"
+            f"carryColumn value '{column}' not found as a column in file A!"
+        assert column not in dfB, \
+            f"carryColumn value '{column}' already exists as a column in file B! Carrying it over would replace it!"
     
     # Validate howToMerge value
     assert howToMerge in ["right", "inner"], \
         f"'{howToMerge}' not supported as table merging method"
     
+    # Validate that bKey value is not redundantly shared by file A
+    """If we're not merging by a shared common primary key, we have to assume
+    the primary key from file B is not also in file A. If that's the case, we cannot
+    rename the key below to prevent redundant column introduction. Also, we'd risk
+    overwriting columns. At the end of the day this shouldn't happen if someone has a
+    logically structured file..."""
+    if bKey != aKey:
+        assert bKey not in dfA, \
+            f"'{bKey}' is already a column in file A, but we're not using it as the primary key? I can't handle this, sorry."
+    
+    # Set dfA key column to be identical to bKey value
+    "This means we don't need to worry about a redundant aKey column being carried over, too"
+    dfA.rename(columns = {aKey:bKey}, inplace=True)
+    
+    # Subset dfA to just primary key + columns to carry over
+    dfA = dfA[[bKey] + carryColumns] # use bKey here since aKey doesn't exist anymore
+    
     # Merge dataframes together
     """Have to logically flip left to right here since dfB (our right file)
-    behave as the left file when we directly merge into it like this with pandas"""
+    behaves as the left file when we directly merge into it like this with pandas"""
     dfMerged = dfB.merge(
-        dfA[[aKey] + carryColumns], # subset to just primary key + columns to carry over
-        left_on=aKey,
-        right_on=bKey,
+        dfA,
+        on=bKey, # both tables have the same key header values now, no need for left_on or right_on
         how="left" if howToMerge == "right" else howToMerge
     )
     
