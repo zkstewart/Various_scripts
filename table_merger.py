@@ -19,6 +19,14 @@ def validate_args(args):
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Validate output file location
+    VALID_OUTPUT_SUFFIXES = ["csv", "tsv", "xlsx"]
+    fileSuffix = args.outputFileName.split(".")[-1].lower()
+    if not fileSuffix in VALID_OUTPUT_SUFFIXES:
+        print(f"'{fileSuffix}' suffix is not recognised as a valid output file format")
+        print("Your -o file name should end in .csv, .tsv, or .xlsx")
+        print("Fix this up and try again.")
+        quit()
+    
     if os.path.isfile(args.outputFileName):
         print(f'File already exists at output location ({args.outputFileName})')
         print('Make sure you specify a unique file name and try again.')
@@ -36,8 +44,6 @@ def load_pd_df_from_file(tableFile, format):
                   which tells us how to read the tableFile
     Returns
         df -- a Pandas dataframe containing the loaded data
-        format -- the file format which the file was loaded in from;
-                  possible values are ["csv", "tsv", "xlsx"]
     '''
     assert format in ["csv", "tsv", "xlsx", "guess"], \
         f"Format '{format}' is not recognised as a valid argument!"
@@ -79,20 +85,26 @@ def load_pd_df_from_file(tableFile, format):
     elif format == "xlsx":
         df = pd.read_excel(open(tableFile, "rb"), sheet_name=0)
     
-    return df, format
+    return df
 
 def validate_primary_keys(dfA, aKey, dfB, bKey):
     '''
     Parameters:
-        dfA -- a Pandas dataframe representing file A
-        aKey -- a column header in file A
+        dfA -- a Pandas dataframe representing file A.
+        aKey -- a column header in file A.
         (likewise for B values)
     '''
-    # Check that the columns exist
+    # Check that the primary key columns exist
     assert aKey in dfA, \
         f"'{aKey}' not found as a column in file A!"
     assert bKey in dfB, \
         f"'{bKey}' not found as a column in file B!"
+    
+    # Check that columns are unique
+    assert len(set(dfA[aKey])) == len(dfA[aKey]), \
+        f"File A's '{aKey}' column does not contain unique values!"
+    assert len(set(dfB[bKey])) == len(dfB[bKey]), \
+        f"File A's '{bKey}' column does not contain unique values!"
     
     # Check that columns have overlapping keys
     keyIntersection = set(dfA[aKey]).intersection(dfB[bKey])
@@ -105,12 +117,20 @@ def validate_primary_keys(dfA, aKey, dfB, bKey):
 def carry_columns_from_A_to_B(dfA, aKey, dfB, bKey, carryColumns, howToMerge):
     '''
     Parameters:
-        dfA -- a Pandas dataframe representing file A
-        aKey -- a column header in file A
+        dfA -- a Pandas dataframe representing file A.
+        aKey -- a column header in file A.
         (likewise for B values)
         carryColumns -- a list containing strings relating to column headings
-                        in dfA
-        howToMerge -- a string in the list of ["right", "inner"]
+                        in dfA.
+        howToMerge -- a string in the list of ["right", "inner"] controlling how
+                      dfA should be merged into dfB; these values correspond to
+                      SQL-like merging methods, such that "right" indicates a
+                      concatenation of values into dfB (blanks allowed),
+                      whereas "inner" means only shared primary key rows will
+                      be output (no blanks allowed).
+    Returns:
+        dfMerged -- a Pandas dataframe with carryColumns from dfA merged into
+                    dfB.
     '''
     # Validate carryColumns values
     for column in carryColumns:
@@ -121,11 +141,15 @@ def carry_columns_from_A_to_B(dfA, aKey, dfB, bKey, carryColumns, howToMerge):
     assert howToMerge in ["right", "inner"], \
         f"'{howToMerge}' not supported as table merging method"
     
-    # Subset dfA to just the primary key and columns to carry over
-    dfA = dfA.loc[:, dfA.columns.isin([aKey, *carryColumns])]
-    
     # Merge dataframes together
-    dfMerged = pd.merge(dfA, dfB, left_on=aKey, right_on=bKey, how=howToMerge)
+    """Have to logically flip left to right here since dfB (our right file)
+    behave as the left file when we directly merge into it like this with pandas"""
+    dfMerged = dfB.merge(
+        dfA[[aKey] + carryColumns], # subset to just primary key + columns to carry over
+        left_on=aKey,
+        right_on=bKey,
+        how="left" if howToMerge == "right" else howToMerge
+    )
     
     return dfMerged
 
@@ -134,12 +158,13 @@ def main():
     # User input
     usage = """%(prog)s reads in two table files and merges them together in a SQL-like
     fashion. To do so, you must specify "primary key" columns from
-    each file which contain shared values. 
+    each file which contain shared values. Importantly, these columns are expected to
+    have unique values.
     
-    Any values in file B which do not have
-    a corresponding value in file A will have blank values indicated.
+    Any values in file B which do not have a corresponding key in file A will have
+    blank values input; the --blanks argument controls what these blanks look like.
     
-    Note 1: this script will write the output in the same format as fileB.
+    Note 1: this script will write the output in the format indicated by the -o argument.
     Note 2: if loading in an Excel file, it's assumed to be the FIRST worksheet.
     """
     p = argparse.ArgumentParser(description=usage)
@@ -153,7 +178,7 @@ def main():
                    help="Target file to receive values from file A")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
-                   help="""Output file name representing file B with values
+                   help="""Output file name representing file B with columns
                    carried over from A""")
     ## Required behaviour parameters
     p.add_argument("--carryColumns", dest="carryColumns", nargs="+",
@@ -175,6 +200,15 @@ def main():
                    help="""Optionally, control what value you want when there are blank
                    values (default == '.')""",
                    default=".")
+    p.add_argument("--howToMerge", dest="howToMerge",
+                   required=False,
+                   choices=["right", "inner"],
+                   help="""Optionally indicate how the files should be merged together;
+                   default == 'right' which means values from file A will be merged into
+                   file B, with non-hits in B having blank values. Specifying 'inner' means
+                   only the intersection of the two files (i.e., shared aKey and bKey values)
+                   will be output""",
+                   default="right")
     p.add_argument("--aFormat", dest="aFormat",
                    required=False,
                    choices=["guess", "tsv", "csv", "excel"],
@@ -189,21 +223,13 @@ def main():
                    of file B (default == 'guess'); specify this argument if default behaviour
                    provides errors""",
                    default="guess")
-    p.add_argument("--howToMerge", dest="howToMerge",
-                   required=False,
-                   choices=["right", "inner"],
-                   help="""Optionally indicate how the files should be merged together;
-                   default == 'right' which means values from file A will be merged into
-                   file B, with non-hits in B having blank values. Specifying 'inner' means
-                   only the intersection of the two files (based on aKey and bKey) will be output""",
-                   default="right")
     
     args = p.parse_args()
     validate_args(args)
     
     # Load in table files
-    dfA, formatA = load_pd_df_from_file(args.fileA, args.aFormat)
-    dfB, formatB = load_pd_df_from_file(args.fileB, args.bFormat)
+    dfA = load_pd_df_from_file(args.fileA, args.aFormat)
+    dfB = load_pd_df_from_file(args.fileB, args.bFormat)
     
     # Validate primary keys
     validate_primary_keys(dfA, args.aKey, dfB, args.bKey)
@@ -211,17 +237,15 @@ def main():
     # Merge tables
     dfMerged = carry_columns_from_A_to_B(dfA, args.aKey, dfB, args.bKey, args.carryColumns, args.howToMerge)
     
-    ## TBD:
-    # 1) With right join, make sure table is ordered the same as the original fileB
-    # 2) Make sure the columns from fileA are the right-most in the output file
-    
     # Write output file
-    if formatB == "csv":
+    fileSuffix = args.outputFileName.split(".")[-1].lower() # already validated in validate_args()
+    
+    if fileSuffix == "csv":
         dfMerged.to_csv(args.outputFileName, sep=",", index=False, na_rep=args.blanks)
-    elif formatB == "tsv":
+    elif fileSuffix == "tsv":
         dfMerged.to_csv(args.outputFileName, sep="\t", index=False, na_rep=args.blanks)
-    elif formatB == "xlsx":
-        dfMerged.to_excel(args.outputFileName, sep=",", index=False, na_rep=args.blanks)
+    elif fileSuffix == "xlsx":
+        dfMerged.to_excel(args.outputFileName, index=False, na_rep=args.blanks)
     
     print("Program completed successfully!")
 
