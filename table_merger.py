@@ -104,7 +104,7 @@ def validate_primary_keys(dfA, aKey, dfB, bKey):
     assert len(set(dfA[aKey])) == len(dfA[aKey]), \
         f"File A's '{aKey}' column does not contain unique values!"
     assert len(set(dfB[bKey])) == len(dfB[bKey]), \
-        f"File A's '{bKey}' column does not contain unique values!"
+        f"File B's '{bKey}' column does not contain unique values!"
     
     # Check that columns have overlapping keys
     keyIntersection = set(dfA[aKey]).intersection(dfB[bKey])
