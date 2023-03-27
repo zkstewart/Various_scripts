@@ -3,10 +3,63 @@
 # Contains various Classes to perform manipulations involving
 # FASTA sequences and MSAs.
 
-import os, inspect
+import os, inspect, sys, hashlib, time, random
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
 from copy import deepcopy
+
+sys.path.append(os.path.dirname(__file__))
+import ZS_Utility
+
+class Conversion:
+    '''
+    Class encapsulating statics that are used for converting between
+    string, FastASeq, and FASTA object.
+    '''
+    @staticmethod
+    def get_filename_for_input_sequences(inObject):
+        '''
+        Method for use when boiling down one of the three data types (FASTA, FastASeq, and string)
+        into a string representing a FASTA file name.
+        
+        If it's already a string, this does nothing. Otherwise, it will make sure a file exists
+        with the FASTA data contents.
+        
+        Parameters:
+            inObject -- a value that is expected to be a string, FastASeq, or FASTA object.
+        Returns:
+            fileName -- a string indicating the file name representing the contents of the
+                        inObject value. If it was already a string, this will be the same.
+                        Otherwise, it will be a file name containing the contents of the
+                        FASTA or FastASeq object.
+            isTemporary -- a Boolean indicating whether the returned fileName has been
+                           created by this method (True) or if it was already existing
+                           (False, i.e., inObject was already a string)
+        '''
+        # Get a hash for temporary file creation
+        hashForTmp = inObject if isinstance(inObject, str) \
+                     else inObject.fileOrder[0][0] if (type(inObject).__name__ == "ZS_SeqIO.FASTA" or type(inObject).__name__ == "FASTA") and inObject.fileOrder != [] \
+                     else str(inObject) if (type(inObject).__name__ == "ZS_SeqIO.FASTA" or type(inObject).__name__ == "FASTA") and inObject.fileOrder == []  \
+                     else inObject.id
+        tmpHash = hashlib.sha256(bytes(hashForTmp + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        
+        # If inObject is a FastASeq, make it a FASTA object
+        if type(inObject).__name__ == "FastASeq" or type(inObject).__name__ == "ZS_SeqIO.FastASeq":
+            tmpFastaName = ZS_Utility.tmp_file_name_gen("inObject_fasta_tmp" + tmpHash[0:20], "fasta")
+            with open(tmpFastaName, "w") as fileOut:
+                fileOut.write(">{0}\n{1}\n".format(inObject.id, inObject.seq))
+            inObject = FASTA(tmpFastaName)
+            os.unlink(tmpFastaName)
+        
+        # If inObject is a FASTA, make it into a file
+        isTemporary = False
+        if type(inObject).__name__ == "FASTA" or type(inObject).__name__ == "ZS_SeqIO.FASTA":
+            tmpinObjectName = ZS_Utility.tmp_file_name_gen("blast_tmp" + tmpHash[0:20], "fasta")
+            inObject.write(tmpinObjectName)
+            inObject = tmpinObjectName # after this point, inObject will be a string indicating a FASTA file name
+            isTemporary = True # if we set this, inObject was not originally a string
+        
+        return inObject, isTemporary
 
 class FastASeq:
     '''

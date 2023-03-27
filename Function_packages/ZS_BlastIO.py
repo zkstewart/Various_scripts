@@ -4,25 +4,11 @@
 # using ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects, as well
 # as for parsing outfmt6 results.
 
-import os, sys, subprocess, hashlib, time, random, codecs
+import os, sys, subprocess, hashlib, time, random
 
 sys.path.append(os.path.dirname(__file__))
-from ZS_SeqIO import FASTA
-
-def get_codec(fileName):
-    try:
-        f = codecs.open(fileName, encoding='utf-8', errors='strict')
-        for line in f:
-            pass
-        return "utf-8"
-    except:
-        try:
-            f = codecs.open(fileName, encoding='utf-16', errors='strict')
-            for line in f:
-                pass
-            return "utf-16"
-        except UnicodeDecodeError:
-            print(f"BlastIO class can't tell what codec '{fileName}' is!!")
+import ZS_Utility
+from ZS_SeqIO import FASTA, Conversion
 
 class BLAST:
     '''
@@ -218,8 +204,8 @@ class BLAST:
                                this will instead return None.
         '''
         # Get file names for query and target after data type coercion
-        q, qIsTemporary = self._get_filename_for_query_or_target(self.query)
-        t, tIsTemporary = self._get_filename_for_query_or_target(self.target)
+        q, qIsTemporary = Conversion.get_filename_for_input_sequences(self.query)
+        t, tIsTemporary = Conversion.get_filename_for_input_sequences(self.target)
         
         # Make sure target file is ready for BLAST
         if not self.blastdb_exists(t):
@@ -229,7 +215,7 @@ class BLAST:
         tmpHash = hashlib.sha256(bytes(q + t + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         
         # Run BLAST
-        tmpResultName = self._tmp_file_name_gen("{0}.vs.{1}_{2}".format(os.path.basename(q).rsplit(".", maxsplit=1)[0], os.path.basename(t).rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "outfmt6")
+        tmpResultName = ZS_Utility.tmp_file_name_gen("{0}.vs.{1}_{2}".format(os.path.basename(q).rsplit(".", maxsplit=1)[0], os.path.basename(t).rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "outfmt6")
         self.blast(q, t, tmpResultName)
         
         # Parse BLAST results
@@ -258,71 +244,6 @@ class BLAST:
         # Or just return results
         else:
             return blastDict, tmpResultName
-    
-    def _get_filename_for_query_or_target(self, qt):
-        '''
-        Hidden method for use when boiling down one of the three data types (FASTA, FastASeq, and string)
-        into a string representing the query file name.
-        
-        If it's already a string, this does nothing. Otherwise, it will make sure a file exists
-        with the FASTA data contents for use by BLAST.
-        
-        Parameters:
-            qt -- the value of .query or .target, provided to this method. We won't
-                  call this from self since this method (to reduce code repetition)
-                  needs to work for both.
-        Returns:
-            qt -- a string indicating the file name for the input value of qt. If it was
-                  already a string, this will be the same. Otherwise, it will be a file
-                  name containing the contents of the FASTA or FastASeq object.
-            isTemporary -- a Boolean indicating whether the returned qt value has been
-                           created by this method as a temporary file (True) or if it was
-                           already existing (False, i.e., qt was already a string)
-        '''
-        # Get a hash for temporary file creation
-        hashForTmp = qt if isinstance(qt, str) \
-                       else qt.fileOrder[0][0] if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder != [] \
-                       else str(qt) if (type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA") and qt.fileOrder == []  \
-                       else qt.id
-        tmpHash = hashlib.sha256(bytes(hashForTmp + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-        
-        # If qt is a FastASeq, make it a FASTA object
-        if type(qt).__name__ == "FastASeq" or type(qt).__name__ == "ZS_SeqIO.FastASeq":
-            tmpFastaName = self._tmp_file_name_gen("qt_fasta_tmp" + tmpHash[0:20], "fasta")
-            with open(tmpFastaName, "w") as fileOut:
-                fileOut.write(">{0}\n{1}\n".format(qt.id, qt.seq))
-            qt = FASTA(tmpFastaName)
-            os.unlink(tmpFastaName)
-        
-        # If qt is a FASTA, make it into a file
-        isTemporary = False
-        if type(qt).__name__ == "FASTA" or type(qt).__name__ == "ZS_SeqIO.FASTA":
-            tmpQtName = self._tmp_file_name_gen("blast_tmp" + tmpHash[0:20], "fasta")
-            qt.write(tmpQtName)
-            qt = tmpQtName # after this point, qt will be a string indicating a FASTA file name
-            isTemporary = True # if we set this, qt was not originally a string
-        
-        return qt, isTemporary
-    
-    def _tmp_file_name_gen(self, prefix, suffix):
-        '''
-        Hidden function for use by this Class when creating temporary files.
-        Params:
-            prefix -- a string for a file prefix e.g., "tmp"
-            suffix -- a string for a file suffix e.g., "fasta". Note that we don't
-                      use a "." in this, since it's inserted between prefix and suffix
-                      automatically.
-        Returns:
-            tmpName -- a string for a file name which does not exist in the current dir.
-        '''
-        ongoingCount = 1
-        while True:
-            if not os.path.isfile("{0}.{1}".format(prefix, suffix)):
-                return "{0}.{1}".format(prefix, suffix)
-            elif os.path.isfile("{0}.{1}.{2}".format(prefix, ongoingCount, suffix)):
-                ongoingCount += 1
-            else:
-                return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 class BLAST_Results:
     '''
@@ -401,7 +322,7 @@ class BLAST_Results:
         '''
         blastDict = {}
         
-        with open(self.file, "r", encoding=get_codec(self.file)) as fileIn:
+        with open(self.file, "r", encoding=ZS_Utility.get_codec(self.file)) as fileIn:
             for line in fileIn:
                 # Extract details
                 sl = line.rstrip("\r\n").split('\t')
