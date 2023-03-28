@@ -9,77 +9,13 @@ from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
 sys.path.append(os.path.dirname(__file__))
-from ZS_SeqIO import FASTA, FastASeq
+from ZS_SeqIO import FASTA, FastASeq, Conversion
 from ZS_GFF3IO import Feature, GFF3
+from ZS_Utility import convert_windows_to_wsl_path, tmp_file_name_gen
 
 import parasail
 if platform.system() != 'Windows':
     from skbio.alignment import StripedSmithWaterman
-
-##############################
-
-def _tmp_file_name_gen(prefix, suffix):
-    '''
-    Hidden function for use by Class methods.
-    Params:
-        prefix -- a string for a file prefix e.g., "tmp"
-        suffix -- a string for a file suffix e.g., "fasta". Note that we don't
-                    use a "." in this, since it's inserted between prefix and suffix
-                    automatically.
-    Returns:
-        tmpName -- a string for a file name which does not exist in the current dir.
-    '''
-    ongoingCount = 1
-    while True:
-        if not os.path.isfile("{0}.{1}".format(prefix, suffix)):
-            return "{0}.{1}".format(prefix, suffix)
-        elif os.path.isfile("{0}.{1}.{2}".format(prefix, ongoingCount, suffix)):
-            ongoingCount += 1
-        else:
-            return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
-
-def _get_hash_for_query_or_target(qt, randomHash=True, maxLength=20):
-    '''
-    Hidden function for use when boiling down one of the three data types (FASTA, FastASeq,
-    and string) into a string representing the file name [note: without creating the file].
-    
-    The function can be guaranteed to produce a truly random hash, or produce something
-    consistent. Randomness is good for truly temporary files; consistency can be useful
-    for dealing with files that might persist.
-    
-    Parameters:
-        randomHash -- a boolean indicating whether we want the hash to be consistent when
-                      qt is the same (True), or produce truly randomised results always (False)
-        maxLength -- an integer for the maximum length of the hash string you want returned
-    '''
-    assert isinstance(randomHash, bool), \
-        "randomHash value must be True or False"
-    assert isinstance(maxLength, int) and maxLength > 0, \
-        "maxLength must be an integer greater than zero"
-    
-    # Get a string for hash building
-    if isinstance(qt, str):
-        strForHash = qt
-    elif type(qt).__name__ == "ZS_SeqIO.FASTA" or type(qt).__name__ == "FASTA":
-        strForHash = ""
-        for FastASeq_obj in qt:
-            strForHash += FastASeq_obj.id
-            strForHash += FastASeq_obj.seq[0:1000]
-            strForHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
-    elif type(qt).__name__ == "ZS_SeqIO.FastASeq" or type(qt).__name__ == "FastASeq":
-        strForHash = qt.id + qt.seq[0:1000]
-    else:
-        raise ValueError("_get_hash_for_query_or_target can't handle the given object type")
-    
-    # Get the hash in a randomised or non-randomised way
-    if randomHash is True:
-        tmpHash = hashlib.sha256(bytes(strForHash + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-    else:
-        tmpHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
-    
-    return tmpHash[0:maxLength]
-
-##############################
 
 def _get_fasta_string_or_FASTA_object(value):
     '''
@@ -130,12 +66,12 @@ def _get_filename_for_FASTA_object(FASTA_obj, useExistingFile=True):
     assert isinstance(useExistingFile, bool), \
         "useExistingFile value must be True or False"
     
-    tmpHash = _get_hash_for_query_or_target(FASTA_obj, randomHash=False, maxLength=20)
+    tmpHash = Conversion.get_hash_for_input_sequences(FASTA_obj, randomHash=False, maxLength=20)
     
     if useExistingFile is True:
         return f"alignIO_tmp_{tmpHash}.fasta"
     else:
-        return _tmp_file_name_gen("alignIO_tmp_" + tmpHash, "fasta")
+        return tmp_file_name_gen("alignIO_tmp_" + tmpHash, "fasta")
 
 def _create_file_from_FASTA_object(FASTA_obj, useExistingFile=True):
     '''
@@ -196,7 +132,7 @@ def _get_file_for_query_or_target(qt, randomHash=True):
         "randomHash value must be True or False"
     
     # Get a hash for temporary file creation
-    tmpHash = _get_hash_for_query_or_target(qt, randomHash)
+    tmpHash = Conversion.get_hash_for_input_sequences(qt, randomHash)
     
     # Get qt as a string (if it's a file already) or a FASTA object (if it's not a file already)
     qt = _get_fasta_string_or_FASTA_object(qt)
@@ -204,50 +140,12 @@ def _get_file_for_query_or_target(qt, randomHash=True):
     # If qt is a FASTA, make it into a file
     isTemporary = False
     if type(qt).__name__ == "FASTA" or type(qt).__name__ == "ZS_SeqIO.FASTA":
-        tmpQtName = _tmp_file_name_gen("alignIO_tmp_" + tmpHash[0:20], "fasta")
+        tmpQtName = tmp_file_name_gen("alignIO_tmp_" + tmpHash[0:20], "fasta")
         qt.write(tmpQtName)
         qt = tmpQtName # after this point, qt will be a string indicating a FASTA file name
         isTemporary = True # if we set this, qt was not originally a string
     
     return qt, isTemporary
-
-##############################
-
-def convert_windows_to_wsl_path(windowsPath):
-    '''
-    Utility function of AlignIO.
-    
-    Provides simple functionality to infer the WSL path from
-    a windows path, provided as a string.
-    
-    Parameters:
-        windowsPath -- a string indicating the full path to a file
-                        or directory of interest; this MUST include
-                        the root character e.g., 'D:\\' or 'C:\\'
-    Returns:
-        wslPath -- a string indicating the inferred full path to the
-                    given file or directory using WSL formatting
-    '''
-    # Check that the path is something we can work with
-    driveRegex = re.compile(r"^([A-Za-z]{1}):\\")
-    assert driveRegex.match(windowsPath) != None, \
-        f"'{windowsPath}' is not recognised as a full, root drive inclusive path"
-    
-    # assert os.path.exists(windowsPath), \
-    #     f"'{windowsPath}' is not recognised as an existing path"
-    "We don't actually need this in this function; sometimes the file shouldn't exist yet"
-    
-    # If it is, convert it
-    driveLetter = driveRegex.match(windowsPath).group(1)
-    wslPath = "/{0}".format("/".join(
-        [
-            "mnt",
-            driveLetter.lower(),
-            *windowsPath.split("\\")[1:]
-        ]
-    ))
-    
-    return wslPath
 
 ##############################
 
@@ -334,7 +232,7 @@ class MAFFT:
                 
         # Create temporary file
         tmpHash = hashlib.sha256(bytes(str(FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-        tmpFileName = _tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
+        tmpFileName = tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
         FASTA_obj.write(tmpFileName)
         
         # Run
@@ -550,13 +448,13 @@ class MAFFT:
         # Create temporary files
         tmpHash = hashlib.sha256(bytes(str(aligned_FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         
-        tmpAlignedFileName = _tmp_file_name_gen("mafft_aligned_tmp" + tmpHash[0:20], "fasta")
+        tmpAlignedFileName = tmp_file_name_gen("mafft_aligned_tmp" + tmpHash[0:20], "fasta")
         aligned_FASTA_obj.write(tmpAlignedFileName, asAligned=True, withDescription=True)
         
-        tmpAddedFileName = _tmp_file_name_gen("mafft_added_tmp" + tmpHash[0:20], "fasta")
+        tmpAddedFileName = tmp_file_name_gen("mafft_added_tmp" + tmpHash[0:20], "fasta")
         add_FASTA_obj.write(tmpAddedFileName, withDescription=True)
         
-        tmpOutputFileName = _tmp_file_name_gen("mafft_output_tmp" + tmpHash[0:20], "fasta")
+        tmpOutputFileName = tmp_file_name_gen("mafft_output_tmp" + tmpHash[0:20], "fasta")
         
         # Format command for running
         cmd = "{0} --thread {1} --add \"{2}\" \"{3}\" > \"{4}\"".format(
@@ -1345,8 +1243,8 @@ class GMAP:
             self.gmap_build()
         
         # Get temporary results file name
-        tmpHash = _get_hash_for_query_or_target(self._queryFile + self._targetFile, randomHash=True, maxLength=20)
-        tmpResultsName = _tmp_file_name_gen(f"alignIO_tmp_" + tmpHash, "gff3")
+        tmpHash = Conversion.get_hash_for_input_sequences(self._queryFile + self._targetFile, randomHash=True, maxLength=20)
+        tmpResultsName = tmp_file_name_gen(f"alignIO_tmp_" + tmpHash, "gff3")
         
         # Get cmds and run
         cmds = self._format_search_cmd()

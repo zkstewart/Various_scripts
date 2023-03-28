@@ -13,8 +13,10 @@ import ZS_Utility
 
 class Conversion:
     '''
-    Class encapsulating statics that are used for converting between
-    string, FastASeq, and FASTA object.
+    Class encapsulating statics that are used for handling objects that might be
+    a string, FastASeq, or FASTA object. Sometimes the goal is to convert between
+    these types, and other times the Conversion class just facilitates agnostic
+    handling of these types.
     '''
     @staticmethod
     def get_filename_for_input_sequences(inObject):
@@ -37,15 +39,11 @@ class Conversion:
                            (False, i.e., inObject was already a string)
         '''
         # Get a hash for temporary file creation
-        hashForTmp = inObject if isinstance(inObject, str) \
-                     else inObject.fileOrder[0][0] if (type(inObject).__name__ == "ZS_SeqIO.FASTA" or type(inObject).__name__ == "FASTA") and inObject.fileOrder != [] \
-                     else str(inObject) if (type(inObject).__name__ == "ZS_SeqIO.FASTA" or type(inObject).__name__ == "FASTA") and inObject.fileOrder == []  \
-                     else inObject.id
-        tmpHash = hashlib.sha256(bytes(hashForTmp + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        tmpHash = Conversion.get_hash_for_input_sequences(inObject)
         
         # If inObject is a FastASeq, make it a FASTA object
         if type(inObject).__name__ == "FastASeq" or type(inObject).__name__ == "ZS_SeqIO.FastASeq":
-            tmpFastaName = ZS_Utility.tmp_file_name_gen("inObject_fasta_tmp" + tmpHash[0:20], "fasta")
+            tmpFastaName = ZS_Utility.tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
             with open(tmpFastaName, "w") as fileOut:
                 fileOut.write(">{0}\n{1}\n".format(inObject.id, inObject.seq))
             inObject = FASTA(tmpFastaName)
@@ -54,12 +52,52 @@ class Conversion:
         # If inObject is a FASTA, make it into a file
         isTemporary = False
         if type(inObject).__name__ == "FASTA" or type(inObject).__name__ == "ZS_SeqIO.FASTA":
-            tmpinObjectName = ZS_Utility.tmp_file_name_gen("blast_tmp" + tmpHash[0:20], "fasta")
+            tmpinObjectName = ZS_Utility.tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
             inObject.write(tmpinObjectName)
             inObject = tmpinObjectName # after this point, inObject will be a string indicating a FASTA file name
             isTemporary = True # if we set this, inObject was not originally a string
         
         return inObject, isTemporary
+    
+    @staticmethod
+    def get_hash_for_input_sequences(inObject, randomHash=True, maxLength=20):
+        '''
+        The function can be guaranteed to produce a truly random hash, or produce something
+        consistent. Randomness is good for truly temporary files; consistency can be useful
+        for dealing with files that might persist.
+        
+        Parameters:
+            inObject -- a FASTA, FastASeq, or string pointing to an existing FASTA format file
+            randomHash -- a boolean indicating whether we want the hash to be consistent when
+                        qt is the same (True), or produce truly randomised results always (False)
+            maxLength -- an integer for the maximum length of the hash string you want returned
+        '''
+        assert isinstance(randomHash, bool), \
+            "randomHash value must be True or False"
+        assert isinstance(maxLength, int) and maxLength > 0, \
+            "maxLength must be an integer greater than zero"
+        
+        # Get a string for hash building
+        if isinstance(inObject, str):
+            strForHash = inObject
+        elif type(inObject).__name__ == "ZS_SeqIO.FASTA" or type(inObject).__name__ == "FASTA":
+            strForHash = ""
+            for FastASeq_obj in inObject:
+                strForHash += FastASeq_obj.id
+                strForHash += FastASeq_obj.seq[0:1000]
+                strForHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
+        elif type(inObject).__name__ == "ZS_SeqIO.FastASeq" or type(inObject).__name__ == "FastASeq":
+            strForHash = inObject.id + inObject.seq[0:1000]
+        else:
+            raise ValueError("get_hash_for_input_sequences can't handle the given object type")
+        
+        # Get the hash in a randomised or non-randomised way
+        if randomHash is True:
+            tmpHash = hashlib.sha256(bytes(strForHash + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        else:
+            tmpHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
+        
+        return tmpHash[0:maxLength]
 
 class FastASeq:
     '''
