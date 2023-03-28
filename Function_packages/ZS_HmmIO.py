@@ -4,9 +4,10 @@
 # HMMs and FASTA files using HMMER
 
 import os, subprocess, inspect, sys, hashlib, time, random
-sys.path.append(os.path.dirname(__file__))
 
+sys.path.append(os.path.dirname(__file__))
 from ZS_SeqIO import FASTA
+from ZS_Utility import tmp_file_name_gen
 from domtblout_handling import hmmer_parse, nhmmer_parse # Make these available to things loading HmmIO
 
 class HMM:
@@ -110,7 +111,7 @@ class HMM:
         fileName = self.FASTA # If not self.FASTA_is_obj, then this remains our default value
         if self.FASTA_is_obj:
             tmpHash = hashlib.sha256(bytes(str(hmmName) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-            fileName = self._tmp_file_name_gen("hmmbuild_tmp" + tmpHash[0:20], "fasta") # Overwrite the default fileName here
+            fileName = tmp_file_name_gen("hmmbuild_tmp" + tmpHash[0:20], "fasta") # Overwrite the default fileName here
             self.FASTA.write(fileName, withAlt = self.useAlts, asAligned = True) # Always write asAligned since it should be an MSA
         
         # Run hmmbuild & hmmpress
@@ -198,26 +199,6 @@ class HMM:
             raise Exception(inspect.cleandoc("""
                             hmmpress error text below\n{0}\nProgram crashed when processing {1}
                             """.format(str(hmmerr.decode("utf-8")), hmmFile)))
-    
-    def _tmp_file_name_gen(self, prefix, suffix):
-        '''
-        Hidden function for use by Class methods.
-        Params:
-            prefix -- a string for a file prefix e.g., "tmp"
-            suffix -- a string for a file suffix e.g., "fasta". Note that we don't
-                      use a "." in this, since it's inserted between prefix and suffix
-                      automatically.
-        Returns:
-            tmpName -- a string for a file name which does not exist in the current dir.
-        '''
-        ongoingCount = 1
-        while True:
-            if not os.path.isfile("{0}.{1}".format(prefix, suffix)):
-                return "{0}.{1}".format(prefix, suffix)
-            elif os.path.isfile("{0}.{1}.{2}".format(prefix, ongoingCount, suffix)):
-                ongoingCount += 1
-            else:
-                return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 class HMMER:
     '''
@@ -347,7 +328,7 @@ class HMMER:
         fileName = self.FASTA # If not self.FASTA_is_obj, then this remains our default value
         if self.FASTA_is_obj:
             tmpHash = hashlib.sha256(bytes(str(self.FASTA.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-            fileName = self._tmp_file_name_gen("hmmsearch_tmp" + tmpHash[0:20], "fasta") # Overwrite the default fileName here
+            fileName = tmp_file_name_gen("hmmsearch_tmp" + tmpHash[0:20], "fasta") # Overwrite the default fileName here
             self.FASTA.write(fileName, withAlt = self.useAlts, asAligned = False) # As a target file we don't need gaps
         
         # Run hmmsearch
@@ -409,26 +390,6 @@ class HMMER:
             raise Exception(inspect.cleandoc("""
                             hmmsearch error text below\n{0}\nProgram crashed when processing {1}
                             """.format(str(hmmerr.decode("utf-8")), hmmFile)))
-    
-    def _tmp_file_name_gen(self, prefix, suffix):
-        '''
-        Hidden function for use by Class methods.
-        Params:
-            prefix -- a string for a file prefix e.g., "tmp"
-            suffix -- a string for a file suffix e.g., "fasta". Note that we don't
-                      use a "." in this, since it's inserted between prefix and suffix
-                      automatically.
-        Returns:
-            tmpName -- a string for a file name which does not exist in the current dir.
-        '''
-        ongoingCount = 1
-        while True:
-            if not os.path.isfile("{0}.{1}".format(prefix, suffix)):
-                return "{0}.{1}".format(prefix, suffix)
-            elif os.path.isfile("{0}.{1}.{2}".format(prefix, ongoingCount, suffix)):
-                ongoingCount += 1
-            else:
-                return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 if __name__ == "__main__":
     pass

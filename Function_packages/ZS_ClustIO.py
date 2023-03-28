@@ -6,7 +6,8 @@
 import os, sys, subprocess, hashlib, time, random, shutil
 
 sys.path.append(os.path.dirname(__file__))
-from ZS_SeqIO import FASTA
+from ZS_SeqIO import FASTA, Conversion
+from ZS_Utility import tmp_file_name_gen
 
 class CDHIT:
     '''
@@ -251,13 +252,13 @@ class CDHIT:
         assert os.path.isdir(workingDir), "workingDir must already exist, or just leave it as default to write to current working directory"
         
         # Get file names for query and target after data type coercion
-        f, fIsTemporary = self._get_filename_for_fasta()
+        f, fIsTemporary = Conversion.get_filename_for_input_sequences()
         
         # Get hash for temporary file creation
         tmpHash = hashlib.sha256(bytes(f + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         
         # Run CD-HIT
-        tmpResultName = self._tmp_file_name_gen("cdhit_result_tmp" + tmpHash[0:20], "fasta")
+        tmpResultName = tmp_file_name_gen("cdhit_result_tmp" + tmpHash[0:20], "fasta")
         self.cdhit(f, workingDir, tmpResultName) # "." for working directory being the current one
         
         # Parse CD-HIT results
@@ -275,69 +276,6 @@ class CDHIT:
         # Or just return results
         else:
             return result_FASTA_obj, tmpResultName
-    
-    def _get_filename_for_fasta(self):
-        '''
-        Hidden method for use when boiling down one of the three data types (FASTA, FastASeq, and string)
-        into a string representing the fasta file name.
-        
-        If it's already a string, this does nothing. Otherwise, it will make sure a file exists
-        with the FASTA data contents for use by CD-HIT.
-        
-        Returns:
-            fasta -- a string indicating the file name for the .fasta value. If it is
-                     already a string, this will be the same. Otherwise, it will be a file
-                     name containing the contents of the FASTA or FastASeq object.
-            isTemporary -- a Boolean indicating whether the returned value has been
-                           created by this method as a temporary file (True) or if it was
-                           already existing (False, i.e., .fasta was already a string)
-        '''
-        
-        f = self.fasta
-        
-        # Get a hash for temporary file creation
-        hashForTmp = f if isinstance(f, str) \
-                     else f.fileOrder[0][0] if type(f).__name__ == "ZS_SeqIO.FASTA" or type(f).__name__ == "FASTA" \
-                     else f.id
-        tmpHash = hashlib.sha256(bytes(hashForTmp + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-        
-        # If f is a FastASeq, get it as a FASTA object
-        if type(f).__name__ == "FastASeq" or type(f).__name__ == "ZS_SeqIO.FastASeq":
-            tmpFastaName = self._tmp_file_name_gen("f_fasta_tmp" + tmpHash[0:20], "fasta")
-            with open(tmpFastaName, "w") as fileOut:
-                fileOut.write(">{0}\n{1}\n".format(f.id, f.seq))
-            f = FASTA(tmpFastaName)
-            os.unlink(tmpFastaName)
-        
-        # If f is a FASTA, make it into a file
-        isTemporary = False
-        if type(f).__name__ == "FASTA" or type(f).__name__ == "ZS_SeqIO.FASTA":
-            tmpFName = self._tmp_file_name_gen("cdhit_tmp" + tmpHash[0:20], "fasta")
-            f.write(tmpFName)
-            f = tmpFName # after this point, f will be a string indicating a FASTA file name
-            isTemporary = True # if we set this, f was not originally a string
-        
-        return f, isTemporary
-    
-    def _tmp_file_name_gen(self, prefix, suffix):
-        '''
-        Hidden function for use by this Class when creating temporary files.
-        Params:
-            prefix -- a string for a file prefix e.g., "tmp"
-            suffix -- a string for a file suffix e.g., "fasta". Note that we don't
-                      use a "." in this, since it's inserted between prefix and suffix
-                      automatically.
-        Returns:
-            tmpName -- a string for a file name which does not exist in the current dir.
-        '''
-        ongoingCount = 1
-        while True:
-            if not os.path.isfile("{0}.{1}".format(prefix, suffix)):
-                return "{0}.{1}".format(prefix, suffix)
-            elif os.path.isfile("{0}.{1}.{2}".format(prefix, ongoingCount, suffix)):
-                ongoingCount += 1
-            else:
-                return "{0}.{1}.{2}".format(prefix, ongoingCount, suffix)
 
 if __name__ == "__main__":
     pass
