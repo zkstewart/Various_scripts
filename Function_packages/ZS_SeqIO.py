@@ -3,7 +3,7 @@
 # Contains various Classes to perform manipulations involving
 # FASTA sequences and MSAs.
 
-import os, inspect, sys, hashlib, time, random
+import os, inspect, sys, hashlib, time, random, re
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
 from copy import deepcopy
@@ -19,13 +19,61 @@ class Conversion:
     handling of these types.
     '''
     @staticmethod
-    def get_filename_for_input_sequences(inObject):
+    def _intermediate_conversion(inObject):
+        '''
+        Hidden function of the Conversion class to reduce code repetition in
+        get_FASTA_for_input_sequences() and get_filename_for_input_sequences()
+        which perform similar intermediate steps, differing only in output format.
+        
+        Perform a validation that strings which aren't existing files must look like
+        valid nucleotide or protein sequence. That means any letter, -, and * symbols
+        are accepted; anything else will fail.
+        
+        Parameters:
+            inObject -- a value that is expected to be a string, FastASeq, or FASTA object.
+        Returns:
+            inObject -- a string indicating the file name of an existing FASTA file, OR
+                        a ZS_SeqIO.FASTA object.
+            tmpHash -- a randomised string 20 characters long to prevent file name collision
+                       on any file writes.
+        '''
+        # Get a hash for temporary file creation
+        tmpHash = Conversion.get_hash_for_input_sequences(inObject)
+        
+        # If value is a string but not pointing to an existing file, make it a FastASeq object
+        if isinstance(inObject, str) and not os.path.isfile(inObject):
+            # Perform a basic validation that the string could be a nucleotide or protein
+            if re.match(r"^[A-Za-z\-\*]+$", inObject) == None:
+                errorMessage = f"'{inObject[0:200] if len(inObject) > 200 else inObject}' " + \
+                    "is not an existing file nor does it look like a protein or nucleotide " + \
+                    "sequence! Conversion class cannot handle this object."
+                raise ValueError(errorMessage)
+            
+            # Gives a lame ID string, but if you're making a FASTA file this way you mustn't care about that anyway
+            inObject = FastASeq("tmpID", inObject)
+        
+        # If inObject is a FastASeq, make it a FASTA object
+        if type(inObject).__name__ == "FastASeq" or type(inObject).__name__ == "ZS_SeqIO.FastASeq":
+            tmpFASTA = FASTA(None) # create an empty FASTA object
+            tmpFASTA.add(inObject) # populate it with our FastASeq value
+            inObject = tmpFASTA # set inObject to the new value
+        
+        # If inObject was not a supported type, error out now
+        if not isinstance(inObject, str):
+            raise TypeError("Input type was not a string, FastASeq, or FASTA!")
+        
+        return inObject, tmpHash
+    
+    @staticmethod
+    def get_FASTA_for_input_sequences(inObject):
         '''
         Method for use when boiling down one of the three data types (FASTA, FastASeq, and string)
-        into a string representing a FASTA file name.
+        into a FASTA object.
         
-        If it's already a string, this does nothing. Otherwise, it will make sure a file exists
-        with the FASTA data contents.
+        If it's already a string pointing to an existing file, this simply loads it in. If it's
+        a string of a nucleotide or protein sequence, it will interpret it into a FastASeq first.
+        
+        Ultimately, it will return you a FASTA object regardless of input type.
         
         Parameters:
             inObject -- a value that is expected to be a string, FastASeq, or FASTA object.
@@ -38,22 +86,47 @@ class Conversion:
                            created by this method (True) or if it was already existing
                            (False, i.e., inObject was already a string)
         '''
-        # Get a hash for temporary file creation
-        tmpHash = Conversion.get_hash_for_input_sequences(inObject)
+        # Convert input object into a FASTA, or keep it as a file location string
+        inObject, _ = Conversion._intermediate_conversion(inObject) # can throw away the tmpHash return
         
-        # If inObject is a FastASeq, make it a FASTA object
-        if type(inObject).__name__ == "FastASeq" or type(inObject).__name__ == "ZS_SeqIO.FastASeq":
-            tmpFastaName = ZS_Utility.tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
-            with open(tmpFastaName, "w") as fileOut:
-                fileOut.write(">{0}\n{1}\n".format(inObject.id, inObject.seq))
-            inObject = FASTA(tmpFastaName)
-            os.unlink(tmpFastaName)
+        # If inObject was a file location string, load it in here
+        if isinstance(inObject, str): # if this remained a string value, the file is validated to exist
+            inObject = FASTA(inObject)
         
-        # If inObject is a FASTA, make it into a file
+        return inObject
+    
+    @staticmethod
+    def get_filename_for_input_sequences(inObject):
+        '''
+        Method for use when boiling down one of the three data types (FASTA, FastASeq, and string)
+        into a string representing a FASTA file name.
+        
+        If it's already a string pointing to an existing file, this does nothing. If it's a
+        string of a nucleotide or protein sequence, it will interpret it into a FastASeq first.
+        
+        Ultimately, it will make sure a file exists with the FASTA data contents, returning
+        that file location as a string.
+        
+        Parameters:
+            inObject -- a value that is expected to be a string, FastASeq, or FASTA object.
+        Returns:
+            fileName -- a string indicating the file name representing the contents of the
+                        inObject value. If it was already a string, this will be the same.
+                        Otherwise, it will be a file name containing the contents of the
+                        FASTA or FastASeq object.
+            isTemporary -- a Boolean indicating whether the returned fileName has been
+                           created by this method (True) or if it was already existing
+                           (False, i.e., inObject was already a string)
+        '''
+        # Convert input object into a FASTA, or keep it as a file location string
+        inObject, tmpHash = Conversion._intermediate_conversion(inObject)
+        
+        # If inObject is a ZS_SeqIO.FASTA, make it into a file
         isTemporary = False
         if type(inObject).__name__ == "FASTA" or type(inObject).__name__ == "ZS_SeqIO.FASTA":
             tmpinObjectName = ZS_Utility.tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
             inObject.write(tmpinObjectName)
+            
             inObject = tmpinObjectName # after this point, inObject will be a string indicating a FASTA file name
             isTemporary = True # if we set this, inObject was not originally a string
         

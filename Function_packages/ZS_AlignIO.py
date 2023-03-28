@@ -9,7 +9,7 @@ from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
 sys.path.append(os.path.dirname(__file__))
-from ZS_SeqIO import FASTA, FastASeq, Conversion
+from ZS_SeqIO import FASTA, Conversion
 from ZS_GFF3IO import Feature, GFF3
 from ZS_Utility import convert_windows_to_wsl_path, tmp_file_name_gen
 
@@ -17,64 +17,11 @@ import parasail
 if platform.system() != 'Windows':
     from skbio.alignment import StripedSmithWaterman
 
-def _get_fasta_string_or_FASTA_object(value):
-    '''
-    Hidden function for use when boiling down one of the three data types (FASTA, FastASeq,
-    and string) into a FASTA object.
-    
-    If it's already a string for a file, this does nothing. Otherwise, it'll make sure
-    that you're handling a FASTA object.
-    
-    Parameters:
-        value -- the value of a query or target FASTA, in either 1) string format pointing
-                    a file path, 2) a string representation of a nucleotide or protein, 
-                    3) FastASeq format, or 4) FASTA format.
-    Returns:
-        value -- the value of a query or target FASTA, in either 1) string format pointing
-                    a file path, or 2) FASTA format.
-    '''
-    # If value is a string...
-    if isinstance(value, str):
-        # ... and already a file, return it now
-        if os.path.isfile(value):
-            return value
-        
-        # ... or not a file, make it a FastASeq object
-        value = FastASeq("tmpID", value)
-    
-    # If value is now or was already a FastASeq object, make it a FASTA object
-    if hasattr(value, "isFastASeq") and value.isFastASeq is True:
-        tmpFASTA = FASTA(None)
-        tmpFASTA.add(value)
-        value = tmpFASTA
-    
-    # If value is now or was already a FASTA object, validate and return it
-    if hasattr(value, "isFASTA") and value.isFASTA is True:
-        return value
-    else:
-        raise TypeError("value type was not a string, FastASeq, or FASTA!")
-
-def _get_filename_for_FASTA_object(FASTA_obj, useExistingFile=True):
-    '''
-    Parameters:
-        useExistingFile -- a boolean indicating whether an existing file with the
-                            expected file name hash should be used as-is, or if we
-                            should create a new file instead.
-    '''
-    assert hasattr(FASTA_obj, "isFASTA") and FASTA_obj.isFASTA is True, \
-        "Value provided to _get_filename_for_FASTA_object is not actually a FASTA object"
-    assert isinstance(useExistingFile, bool), \
-        "useExistingFile value must be True or False"
-    
-    tmpHash = Conversion.get_hash_for_input_sequences(FASTA_obj, randomHash=False, maxLength=20)
-    
-    if useExistingFile is True:
-        return f"alignIO_tmp_{tmpHash}.fasta"
-    else:
-        return tmp_file_name_gen("alignIO_tmp_" + tmpHash, "fasta")
-
 def _create_file_from_FASTA_object(FASTA_obj, useExistingFile=True):
     '''
+    Hidden helper function for the ZS_AlignIO package. It performs actions specific to
+    this module, so I won't move it to ZS_Utility or ZS_SeqIO.Conversion.
+    
     Parameters:
         useExistingFile -- a boolean indicating whether an existing file with the
                             expected file name hash should be used as-is, or if we
@@ -89,8 +36,14 @@ def _create_file_from_FASTA_object(FASTA_obj, useExistingFile=True):
     assert isinstance(useExistingFile, bool), \
         "useExistingFile value must be True or False"
     
+    # Get hash string for file creation
+    tmpHash = Conversion.get_hash_for_input_sequences(FASTA_obj, randomHash=False, maxLength=20)
+    
     # Get our expected file name
-    fastaFileName = _get_filename_for_FASTA_object(FASTA_obj, useExistingFile)
+    if useExistingFile is True:
+        fastaFileName = f"alignIO_tmp_{tmpHash}.fasta"
+    else:
+        fastaFileName = tmp_file_name_gen("alignIO_tmp_" + tmpHash, "fasta")
     
     # If file already exists, just return that file name
     "If the file exists, that means it already exists, AND that useExistingFile is True"
@@ -101,51 +54,6 @@ def _create_file_from_FASTA_object(FASTA_obj, useExistingFile=True):
     "If the file does not exist, that means the file wasn't already there OR useExistingFile is False"
     FASTA_obj.write(fastaFileName)
     return fastaFileName, True # file was created
-
-def _get_file_for_query_or_target(qt, randomHash=True):
-    '''
-    Hidden function for use when boiling down one of the three data types (FASTA, FastASeq,
-    and string) into a string representing an actually existing file name.
-    
-    If it's already a string for a file, this does nothing. Otherwise, it will make sure
-    a file exists with the FASTA data contents.
-    
-    The function can be guaranteed to produce a truly random hash, or produce something
-    consistent. Randomness is good for truly temporary files; consistency can be useful
-    for dealing with files that might persist.
-    
-    Parameters:
-        qt -- the value of a query or target FASTA, in either 1) string format pointing
-                a file path, 2) a string representation of a nucleotide or protein, 
-                3) FastASeq format, or 4) FASTA format.
-        randomHash -- a boolean to indicate whether we want the hash to be random each
-                        time (default; True) or if we want it to be consistent (False)
-    Returns:
-        qt -- a string indicating the file name for the input value of qt. If it was
-                already a string, this will be the same. Otherwise, it will be a file
-                name containing the contents of the FASTA or FastASeq object.
-        isTemporary -- a Boolean indicating whether the returned qt value has been
-                        created by this method as a temporary file (True) or if it was
-                        already existing (False) i.e., qt was already a string file path
-    '''
-    assert isinstance(randomHash, bool), \
-        "randomHash value must be True or False"
-    
-    # Get a hash for temporary file creation
-    tmpHash = Conversion.get_hash_for_input_sequences(qt, randomHash)
-    
-    # Get qt as a string (if it's a file already) or a FASTA object (if it's not a file already)
-    qt = _get_fasta_string_or_FASTA_object(qt)
-    
-    # If qt is a FASTA, make it into a file
-    isTemporary = False
-    if type(qt).__name__ == "FASTA" or type(qt).__name__ == "ZS_SeqIO.FASTA":
-        tmpQtName = tmp_file_name_gen("alignIO_tmp_" + tmpHash[0:20], "fasta")
-        qt.write(tmpQtName)
-        qt = tmpQtName # after this point, qt will be a string indicating a FASTA file name
-        isTemporary = True # if we set this, qt was not originally a string
-    
-    return qt, isTemporary
 
 ##############################
 
@@ -718,8 +626,8 @@ class Exonerate:
         Hidden helper function for getting a list amenable to subprocess.run()
         that sets all relevant cmd tags depending on this object's properties.
         It expects that the query and target files have already been subjected
-        to ._get_file_for_query_or_target(), and their return values are
-        to be given to this function.
+        to Conversion.get_filename_for_input_sequences(), and their return values
+        are to be given to this function.
         
         Parameters:
             queryFile -- a string pointing to a FASTA file that exists
@@ -762,8 +670,8 @@ class Exonerate:
                         all sequence matches reported by exonerate
         '''
         # Get file names for query and target after data type coercion
-        q, qIsTemporary = _get_file_for_query_or_target(self.query)
-        t, tIsTemporary = _get_file_for_query_or_target(self.target)
+        q, qIsTemporary = Conversion.get_filename_for_input_sequences(self.query)
+        t, tIsTemporary = Conversion.get_filename_for_input_sequences(self.target)
         
         # Run exonerate
         cmds = self._format_exonerate_cmd(q, t)
@@ -984,7 +892,7 @@ class GMAP:
             "Query value type not handled by GMAP class"
         
         # Derive an existing file string, or non-existing file FASTA
-        tmpQuery = _get_fasta_string_or_FASTA_object(value)
+        tmpQuery, _ = Conversion._intermediate_conversion(value) # throw away tmpHash return
         
         # If it's an existing file string, store it as-is and mark it as non-temporary
         if isinstance(tmpQuery, str): # if this is True, os.path.isfile(tmpQuery) is implicitly also True
@@ -1008,7 +916,7 @@ class GMAP:
             "Query value type not handled by GMAP class"
         
         # Derive an existing file string, or non-existing file FASTA
-        tmpTarget = _get_fasta_string_or_FASTA_object(value)
+        tmpTarget, _ = Conversion._intermediate_conversion(value) # throw away tmpHash return
         
         # If it's an existing file string, store it as-is and mark it as non-temporary
         if isinstance(tmpTarget, str): # if this is True, os.path.isfile(tmpTarget) is implicitly also True
