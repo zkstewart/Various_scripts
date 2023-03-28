@@ -54,7 +54,8 @@ def main():
                    choices=["euk", "eukarya", "gram+", "gram-", "arch", "other"],
                    help="""Optionally, specify which organism type to search for
                    (default == "euk"; make sure to use the right term for your
-                   version of signalP)""")
+                   version of signalP)""",
+                   default="euk")
     
     args = p.parse_args()
     validate_args(args)
