@@ -7,4 +7,6 @@ from .ZS_GFF3IO import GFF3, Feature, LinesGFF3
 from .ZS_HmmIO import HMM, HMMER
 from .ZS_Indel import FastASeqAlignmentFrames, IndelPredictor
 from .ZS_ORF import FastASeqFrames, MSA_ORF, ORF
-from .ZS_SeqIO import *
+from .ZS_SeqIO import Conversion, FastASeq, FASTA
+from .ZS_Utility import *
+from .ZS_SignalPIO import SignalP

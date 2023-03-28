@@ -40,7 +40,7 @@ def get_codec(fileName):
         except UnicodeDecodeError:
             print(f"Can't tell what codec '{fileName}' is!!")
 
-def base_subprocess_cmd(signalpExe):
+def base_subprocess_cmd(exe):
     '''
     Helper function to begin formatting a cmd list for use with subprocess
     that saves a bit of code repetition and handles platform dependence of
@@ -48,9 +48,9 @@ def base_subprocess_cmd(signalpExe):
     execute. Saves a bit of code repetion is all.
     '''
     if platform.system() == "Windows":
-        cmd = ["wsl", "~", "-e", convert_windows_to_wsl_path(signalpExe)]
+        cmd = ["wsl", "~", "-e", convert_windows_to_wsl_path(exe)]
     else:
-        cmd = [signalpExe]
+        cmd = [exe]
     return cmd
 
 def convert_windows_to_wsl_path(windowsPath):
@@ -66,6 +66,9 @@ def convert_windows_to_wsl_path(windowsPath):
         wslPath -- a string indicating the inferred full path to the
                     given file or directory using WSL formatting
     '''
+    # Get abspath if not already done
+    windowsPath = os.path.abspath(windowsPath)
+    
     # Check that the path is something we can work with
     driveRegex = re.compile(r"^([A-Za-z]{1}):\\")
     assert driveRegex.match(windowsPath) != None, \
