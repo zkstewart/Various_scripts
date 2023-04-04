@@ -5,7 +5,7 @@
 
 # Import necessary packages
 import os, argparse, sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) # 3 dirs up is where we find dependencies
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_GFF3IO
 
 # Define script-level functions

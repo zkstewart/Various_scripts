@@ -8,7 +8,7 @@ import os, sys, inspect, random, math
 from copy import deepcopy
 import numpy as np
 
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_BlastIO, ZS_SeqIO
 from ZS_AlignIO import SSW
 

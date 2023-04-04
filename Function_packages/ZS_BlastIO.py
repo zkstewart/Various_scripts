@@ -6,7 +6,7 @@
 
 import os, sys, subprocess, hashlib, time, random
 
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_Utility
 from ZS_SeqIO import FASTA, Conversion
 

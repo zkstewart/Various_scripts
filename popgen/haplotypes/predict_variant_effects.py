@@ -6,8 +6,8 @@
 
 import os, argparse, sys
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find windows
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) # 3 dirs up is where we find GFF3IO
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find windows
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find GFF3IO
 from windows import snp_proximity_report
 from Function_packages import ZS_GFF3IO, ZS_SeqIO
 

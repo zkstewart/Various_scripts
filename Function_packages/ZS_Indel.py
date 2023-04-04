@@ -7,7 +7,7 @@ import os, sys, re
 import numpy as np
 from copy import deepcopy
 
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_AlignIO import SSW
 from ZS_ORF import peakdet, _merge_coords_list, plummetdet
 

@@ -8,7 +8,7 @@ import os, argparse, sys
 import matplotlib.pyplot as plt
 import numpy as np
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_GFF3IO, ZS_BAMIO
 
 def validate_args(args):

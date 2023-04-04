@@ -7,7 +7,7 @@
 import os, argparse, sys, hashlib, pickle
 from copy import deepcopy
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Function_packages import ZS_GFF3IO, ZS_SeqIO, ZS_AlignIO
 
 START_CODONS_POS = ["ATG"] #, "CTG", "TTG"]

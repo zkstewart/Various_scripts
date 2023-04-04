@@ -8,7 +8,7 @@ from pathlib import Path
 from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_SeqIO import FASTA, Conversion
 from ZS_GFF3IO import Feature, GFF3
 from ZS_Utility import convert_windows_to_wsl_path, tmp_file_name_gen

@@ -5,7 +5,7 @@
 
 import os, argparse, sys
 
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Function_packages import ZS_SignalPIO
 
 # Define functions

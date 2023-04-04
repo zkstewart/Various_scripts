@@ -5,7 +5,7 @@
 
 import os, subprocess, inspect, sys, hashlib, time, random
 
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_SeqIO import FASTA
 from ZS_Utility import tmp_file_name_gen
 from domtblout_handling import hmmer_parse, nhmmer_parse # Make these available to things loading HmmIO

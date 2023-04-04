@@ -5,7 +5,7 @@
 
 import os, sys, subprocess, platform, shutil
 
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_SeqIO import Conversion
 import ZS_Utility
 

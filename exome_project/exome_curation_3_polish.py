@@ -11,7 +11,7 @@ from collections import Counter
 from copy import deepcopy
 from itertools import repeat
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_ORF, ZS_Indel
 
 def validate_args(args):

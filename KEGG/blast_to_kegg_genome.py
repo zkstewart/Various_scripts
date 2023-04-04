@@ -6,7 +6,7 @@
 # to the one in question.
 
 import sys, argparse, os, requests, re, pickle
-sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_BlastIO
 
 API_PICKLE_FILE = ".kegg_api_data.pkl" # global this for convenience

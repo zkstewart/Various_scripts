@@ -9,13 +9,13 @@ from copy import deepcopy
 from goatools import obo_parser
 
 # Load ZS_IO Class code
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))) # 4 dirs up is where we find Function_packages
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))) # 4 dirs up is where we find Function_packages
 from Function_packages import ZS_GFF3IO, ZS_SeqIO
 
 # Load functions from other scripts
 from add_qtl_info_to_proximity_reports import parse_scanone_file, parse_scantwo_file
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) # 3 dirs up is where we find windows
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find windows
 import windows # pulls relevant functions from snp_proximity_report.py
 import haplotypes
 

@@ -8,7 +8,7 @@ from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
 from copy import deepcopy
 
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_Utility
 
 class Conversion:

@@ -7,7 +7,7 @@ import sys, argparse, os
 import concurrent.futures
 from itertools import repeat
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))) # 3 dirs up is where we find dependencies
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO
 
 def validate_args(args):

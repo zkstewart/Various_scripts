@@ -5,7 +5,7 @@
 # of Matthew Phillips and Andrew Baker (et. al.'s) group.
 
 import sys, argparse, os, platform
-sys.path.append(os.path.dirname(os.path.dirname(__file__))) # 2 dirs up is where we find dependencies
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_AlignIO
 
 def validate_args(args):
