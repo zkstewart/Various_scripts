@@ -99,9 +99,39 @@ class BAM(bs.AlignmentFile):
             (4, "read unmapped")
         ]
         
-        # Figure out if this has already been computed and picked
+        # Figure out if this has already been computed and pickled
         pickleFileName = "{0}.cov.pkl".format(self.fileLocation)
         pickleExists = os.path.isfile(pickleFileName)
+        
+        # If the pickle does exist, load it and store it in this object
+        if pickleExists:
+            gff3Hash, self.coverage = pickle.load(open(pickleFileName, "rb"))
+            
+            # Check that existence of a GFF3 hasn't changed
+            '''It's possible the user has run this previously without a GFF3, realised
+            the results aren't what they intended, and wants to re-run the program giving
+            a GFF3 input. The pickle would already exist and hence we'd load it back in
+            and provide the same erroneous result. This check here will ensure that that
+            does't happen. It could still be a problem if a DIFFERENT GFF3 is being provided
+            on a re-run, but it gets complicated'''
+            thisGff3Hash = hash(gff3Obj) if gff3Obj != None else None
+            if thisGff3Hash != gff3Hash:
+                print(
+                    "Warning: GFF3 input to compute_coverage() has changed compared to last" +
+                    f" time it was run on '{self.fileLocation}'; to handle this, I'm going" +
+                    f" to delete the pickle file at '{pickleFileName}' and perform" +
+                    " coverage computation again. The pickle file will be regenerated" + 
+                    " with values corresponding to the change in the GFF3 input."
+                )
+                os.unlink(pickleFileName)
+                pickleExists = False # set this flag so we enter into the code block below
+            # If it hasn't changed, we don't need to do anything
+            else:
+                print(
+                    "Detected that BAM compute_coverage() does not need to be performed" +
+                    f" again since '{pickleFileName}' already exists and I do not believe" +
+                    " the GFF3 parameter has changed."
+                )
         
         # If it does not, compute it now
         if not pickleExists:
@@ -148,8 +178,12 @@ class BAM(bs.AlignmentFile):
                 for geneFeature in gff3Obj.types["gene"]:
                     contig = geneFeature.contig
                     cdsFeatures = [feature for feature in geneFeature.retrieve_all_children() if feature.type == "CDS"]
+                    
+                    # Skip processing this feature if it's problematic or non-coding
                     assert contig in self.coverage, \
-                        "'{0}' contig is missing from original BAM alignment; GFF3 doesn't match?".format(contig)
+                        f"'{contig}' contig is missing from original BAM alignment; GFF3 doesn't match?"
+                    if len(cdsFeatures) == 0:
+                        continue
                     
                     # Figure out the exon coordinates for this gene
                     "This will work on an open-shut algorithm, where when all opens are shut, the exon has ended"
@@ -181,10 +215,8 @@ class BAM(bs.AlignmentFile):
                 self.coverage = geneCoverage
             
             # Store as pickle
-            pickle.dump(self.coverage, open(pickleFileName, "wb"))
-        # If it does exist, load it and store it in this object
-        else:
-            self.coverage = pickle.load(open(pickleFileName, "rb"))
+            gff3Hash = hash(gff3Obj) if gff3Obj != None else None
+            pickle.dump([gff3Hash, self.coverage], open(pickleFileName, "wb"))
     
     def summarise_coverage_into_histogram(self, binPctSize=10, gff3Obj=None, mappingDict=None):
         '''

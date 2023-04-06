@@ -3,7 +3,7 @@
 # Contains the GFF3 class and its associated Feature
 # Class. Can be used for (memory-heavy) GFF3 file parsing
 
-import re, sys, os
+import re, sys, os, hashlib
 import pandas as pd
 from collections import OrderedDict
 from ncls import NCLS
@@ -295,9 +295,32 @@ class GFF3:
                 longestMrna = [mrnaFeature, mrnaLen]
         return longestMrna[0]
     
-    def parse_gff3(self, strictParse=True):
+    def parse_gff3(self, strictParse=True, fullWarning=False):
+        '''
+        Parameters:
+            strictParse -- a boolean indicating whether this function should
+                           die if the GFF3 doesn't meet strict format standards,
+                           or if failing annotation values should simply be skipped
+            fullWarning -- a boolean indicating whether every single warning should
+                           be printed, or just the first 10.
+        '''
+        # Set up warning handling system
+        warningContainer = { # this dict acts like a JSON for data storage
+            "warningCount": 0,
+            "warningLimit": 10,
+            "hasHandledWarnings": False
+        }
+        def _handle_warning_message(warningContainer, message):
+            if fullWarning == True or warningContainer["warningCount"] < warningContainer["warningLimit"]:
+                print(message)
+                warningContainer["warningCount"] += 1
+            if warningContainer["hasHandledWarnings"] == False and warningContainer["warningCount"] == warningContainer["warningLimit"]:
+                print("Further warning messages will be suppressed.")
+                warningContainer["hasHandledWarnings"] = True
+        
         # Gene object loop
         lineCount = 0
+        warningCount = 0
         with open(self.fileLocation, 'r') as fileIn:
             for line in fileIn:
                 lineCount += 1
@@ -315,11 +338,11 @@ class GFF3:
                 except:
                     if strictParse == True:
                         raise ValueError(
-                            f"Line #{lineCount} (\"{line}\") does not meet GFF3 standards; parsing failed"
+                            f"Error: Line #{lineCount} (\"{line}\") does not meet GFF3 standards; parsing failed"
                         )
                     else:
-                        print(
-                            f"Line #{lineCount} (\"{line}\") does not meet GFF3 standards;" +
+                        _handle_warning_message(warningContainer,
+                            f"Warning: Line #{lineCount} (\"{line}\") does not meet GFF3 standards;" +
                             " strict parsing is disabled, so we'll just continue and hope for the best"
                         )
                         continue
@@ -348,14 +371,14 @@ class GFF3:
                     # End parsing if duplicate ID is found (strictParse is True)
                     if strictParse == True:
                         assert featureID not in self.features, \
-                            "'{0}' feature occurs twice indicating poorly formatted file; \
-                            for debugging, line #{1} == {2}; parsing will stop now".format(featureID, lineCount, line)
+                            (f"Error: '{featureID}' feature occurs twice indicating poorly formatted file;" + 
+                            f" for debugging, line #{lineCount} == {line}; parsing will stop now")
                     # Skip parsing if duplicate ID is found (strictParse is False)
                     else:
                         if featureID in self.features:
-                            print(
-                                "'{0}' feature occurs more than once indicating poorly formatted file; \
-                                strict parsing is disabled, so we will just continue and hope for the best".format(featureID)
+                            _handle_warning_message(warningContainer,
+                                f"Warning: '{featureID}' feature occurs more than once indicating poorly formatted file;"+
+                                " strict parsing is disabled, so we will just continue and hope for the best"
                             )
                             continue
                     
@@ -386,29 +409,31 @@ class GFF3:
                         except:
                             if featureType.lower() != "cds":
                                 raise AttributeError(
-                                    "'{0}' feature lacks an ID attribute and hence cannot be indexed; \
-                                    for debugging, line #{1} == {2}; parsing will stop now".format(featureType, lineCount, line)
+                                    f"Error: '{featureType}' feature lacks an ID attribute and hence cannot be indexed;" +
+                                    f" for debugging, line #{lineCount} == {line}; parsing will stop now"
                                 )
                             else:
-                                featureID = "{0}.cds".format(parentID)
+                                featureID = f"{parentID}.cds"
                         
                         # End parsing if parent doesn't exist (strictParse is True)
                         if strictParse == True:
                             assert parentID in self.features, \
-                                "'{0}' feature points to a non-existing parent '{1}' at the time of parsing; \
-                                for debugging, line #{2} == {3}; parsing will stop now".format(featureID, parentID, lineCount, line)
+                                (f"Error: '{featureID}' feature points to a non-existing parent '{parentID}' at the time of parsing;" + 
+                                f" for debugging, line #{lineCount} == {line}; parsing will stop now")
                         else:
                             if parentID not in self.features:
-                                print("'{0}' feature points to a non-existing parent '{1}' at the time of parsing; ".format(featureID, parentID) + 
-                                "strict parsing is disabled, so we will just continue and hope for the best")
+                                _handle_warning_message(warningContainer,
+                                    f"Warning: '{featureID}' feature points to a non-existing parent '{parentID}' at the time of parsing;" + 
+                                    " strict parsing is disabled, so we will just continue and hope for the best"
+                                )
                                 continue
                         
                         # End parsing if duplicate ID is found
                         "strictParse won't negate this problem since it's simply unacceptable!"
                         if featureType.lower() != "cds": # CDS features are the ONLY feature allowed to have non-unique IDs
                             assert self.features[parentID].retrieve_child(featureID) == None, \
-                                "'{0}' feature is associated to a parent '{1}' more than once; \
-                                for debugging, line #{2} == {3}; parsing will stop now".format(featureID, parentID, lineCount, line)
+                                (f"Error: '{featureID}' feature is associated to a parent '{parentID}' more than once;" + 
+                                f" for debugging, line #{lineCount} == {line}; parsing will stop now")
                         
                         # Create feature and populate it with details
                         feature = Feature()
@@ -1003,6 +1028,21 @@ class GFF3:
             len(self.contigs),
             ";".join(["num_{0}={1}".format(key, len(self.types[key])) for key in self.types.keys()])
         )
+    
+    def __hash__(self):
+        '''
+        This hashing function assumes the file name for the GFF3 is identical,
+        which should be a reasonable assumption in most cases. It otherwise doesn't
+        care where the GFF3 is located, so long as its contents remain identical
+        which is checked by referring to its .types values.
+        '''
+        hashString = "<GFF3 object;file='{0}';num_contigs={1};{2}>".format(
+            os.path.basename(self.fileLocation),
+            len(self.contigs),
+            ";".join(["num_{0}={1}".format(key, len(self.types[key])) for key in self.types.keys()])
+        )
+        hash = int(hashlib.md5(hashString.encode("utf-8")).hexdigest(), 16)
+        return hash
 
 class LinesGFF3(GFF3):
     '''
