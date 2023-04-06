@@ -280,7 +280,7 @@ class BAM(bs.AlignmentFile):
             new_coverage_histogram = {}
             for contig, coverage in self.coverage_histogram.items():
                 if contig not in mappingDict:
-                    print("'{0}' contig from BAM is not in the mapping file; summarise_coverage_into_histogram() is dropping this".format(contig))
+                    print(f"'{contig}' contig from BAM is not in the mapping file; summarise_coverage_into_histogram() is dropping this")
                     continue
                 
                 new_coverage_histogram.setdefault(mappingDict[contig], np.zeros(coverage.size))
@@ -291,12 +291,12 @@ class BAM(bs.AlignmentFile):
         if gff3Obj != None:
             for contig, coverage in self.coverage_histogram.items():
                 assert contig in gff3Obj, \
-                    "'{0}' contig not found in GFF3; summarise_coverage_into_histogram() failed!".format(contig)
+                    f"'{contig}' gene not found in GFF3; summarise_coverage_into_histogram() failed!"
                 
                 try:
                     strand = gff3Obj[contig].strand
                 except:
-                    "'{0}' contig in GFF3 does not have a strand field; summarise_coverage_into_histogram() failed!".format(contig)
+                    f"'{contig}' gene in GFF3 does not have a strand field; summarise_coverage_into_histogram() failed!"
                 
                 if strand == "-":
                     self.coverage_histogram[contig] = coverage[::-1]

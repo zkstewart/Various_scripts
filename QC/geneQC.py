@@ -27,6 +27,39 @@ def validate_args(args):
             print('I am unable to locate the input ID mapping file (' + args.mappingFile + ')')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
+    # Handle program behaviour parameters
+    if args.bamType != None:
+        if args.isChromosomes != False:
+            print("When specifying --bamType, you should not specify --isChromosomes")
+            quit()
+        if args.needsFlip != False:
+            print("When specifying --bamType, you should not specify --needsFlip")
+            quit()
+        
+        # Set isChromosomes and needsFlip depending on the input type
+        if args.bamType == "genome":
+            args.isChromosomes = True
+            args.needsFlip = True
+        elif args.bamType == "rna":
+            args.needsFlip = True
+        elif args.bamType == "mrna":
+            pass
+    
+    # Make sure the GFF3 argument is set (if relevant)
+    if (args.isChromosomes != False or args.needsFlip != False) and args.gff3File == None:
+        print("You've specified either --isChromosomes or --needsFlip, but haven't given a GFF3 file")
+        print("These behaviours require a GFF3 to work; fix this and try again.")
+        quit()
+    
+    # Make sure the GFF3 argument is NOT set (if relevant)
+    if args.bamType == "mrna" and args.gff3File != None:
+        print("You've specified --bamType as mrna, and have given a GFF3 file as input")
+        print(
+            "This behaviour does not require a GFF3 input. Out of an abundance of caution," +
+            " I'm going to stop here so you can double check what you want this program to do."
+        )
+        quit()
+    
     # Handle file output
     if os.path.isdir(args.outputDirectory):
         print('The specified output directory already exists. This program will attempt to resume an existing run where possible.')
@@ -95,27 +128,61 @@ def write_genebody_coverage(bamObj, perGeneFileName, summarisedFileName):
 
 def main():
     usage = """%(prog)s receives a BAM file in addition to possibly two more files,
-    and performs some post-alignment QC checks of the BAM file. These include 1)
-    a genebody coverage calculation, and 2) ... forthcoming?
+    and performs some post-alignment QC checks of the BAM file. At this time, only
+    genebody coverage calculation is performed.
+    
+    For the --bamType parameter, "genome" should be used if your reads are mapped
+    directly against the genome; this sets --isChromosomes and --needsFlip, and requires
+    a GFF3 input.
+    
+    "mrna" should be used if your reads are aligned to mRNA models which means that
+    each sequence is in the 5' to 3' orientation; this omits both --isChromosomes and
+    --needsFlip, and does NOT require a GFF3 input.
+    
+    "rna" should be used instead when the sequences which were mapped against are
+    in the genomic strand's orientation, rather than in the reading orientation of
+    the ORF (i.e., 5' -> 3'); this sets --needsFlip, and requires a GFF3 input.
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-b", dest="bamFile", required=True,
-                help="Specify the location of the input BAM file")
-    p.add_argument("-o", dest="outputDirectory", required=True,
-                help="Output directory where QC files will be written")
+    p.add_argument("-b", dest="bamFile",
+                   required=True,
+                   help="Specify the location of the input BAM file")
+    p.add_argument("-o", dest="outputDirectory",
+                   required=True,
+                   help="Output directory where QC files will be written")
     # Opts
-    p.add_argument("-g", dest="gff3File", required=False,
-                help="Optionally, specify the location of the GFF3 with gene annotations")
-    p.add_argument("-m", dest="mappingFile", required=False,
-                help="Optionally, specify a TSV file mapping BAM IDs (left) to GFF3 IDs (right)")
-    p.add_argument("--isChromosomes", dest="isChromosomes", action="store_true",
-                help="""If your reads were aligned to the genome, specify this flag to
-                extract reads that overlap predicted gene regions in the GFF3""")
-    p.add_argument("--needsFlip", dest="needsFlip", action="store_true",
-                help="""If your reads were aligned to RNA models which are not
-                necessarily all in the 5'->3' orientation, specify this flag so we
-                can check the GFF3 and perform flipping of the counts""")
+    p.add_argument("-g", "--gff3", dest="gff3File",
+                   required=False,
+                   help="Optionally, specify the location of the GFF3 with gene annotations")
+    p.add_argument("-m", "--mapping", dest="mappingFile",
+                   required=False,
+                   help="""Optionally, specify a TSV file mapping BAM contig IDs (left) to
+                   GFF3 contig IDs (right) if these are not identical for some reason""")
+    p.add_argument("--bamType", dest="bamType",
+                   required=False,
+                   choices=["genome", "mrna", "rna"],
+                   help="""Rather than setting the below two parameters yourself,
+                   indicate what type of BAM file you are working with to have those
+                   parameters picked for you""",
+                   default=None)
+    p.add_argument("--isChromosomes", dest="isChromosomes",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, if your reads were aligned to the genome,
+                   specify this flag to extract reads that overlap predicted gene
+                   regions in the GFF3""",
+                   default=False)
+    p.add_argument("--needsFlip", dest="needsFlip",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally if you aligned to the genome OR your reads
+                   were aligned to RNA models which are in an orientation dictated
+                   by the genomic strand (and not all in the 5'->3' orientation),
+                   specify this flag so we can check the GFF3 and perform flipping
+                   of the counts""",
+                   default=False)
+    
     args = p.parse_args()
     validate_args(args)
     
