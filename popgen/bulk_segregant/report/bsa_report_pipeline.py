@@ -12,9 +12,6 @@ from goatools import obo_parser
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))) # 4 dirs up is where we find Function_packages
 from Function_packages import ZS_GFF3IO, ZS_SeqIO
 
-# Load functions from other scripts
-from add_qtl_info_to_proximity_reports import parse_scanone_file, parse_scantwo_file
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find windows
 import windows # pulls relevant functions from snp_proximity_report.py
 import haplotypes
@@ -115,6 +112,110 @@ def parse_pops_metadata(metadataFile):
                 metadataDict.setdefault(pop, set())
                 metadataDict[pop].add(sample)
     return metadataDict
+
+
+def parse_scanone_file(scanoneFile, pvalueFilter=0.05, lodFilter=10.0):
+    '''
+    Expects a TSV format produced by me (ZKS) from R/qtl. The file has a single
+    header row with split by tab looking like:
+    
+    ["", "chr", "pos", "lod", "pval"]
+    
+    The first column itself is formatted like:
+    
+        S{chr}_{bp}
+    
+    Where {chr} == the value in the next column over, and {bp} is the numeric position
+    in the chromosome measured in basepairs.
+    
+    If the file hasn't had a P-value filter enforced, this function will do that here.
+    
+    Parameters:
+        scanoneFile -- a string indicating the file location of the scanone output
+                       from R/qtl.
+        pvalueFilter -- a float indicating the P-value significance to enforce.
+    Returns:
+        scanoneDict -- a dictionary with structure like:
+            {
+                "chr1": [bp1, bp2] # bp == nucleotide bp as int value
+            }
+    '''
+    scanoneDict = {}
+    
+    firstLine = True
+    with open(scanoneFile, "r") as fileIn:
+        for line in fileIn:
+            if firstLine == True:
+                firstLine = False
+                continue
+            else:
+                # Get relevant information from this line
+                chr_bp, chr, pos, lod, pval = line.rstrip("\r\n ").split("\t")
+                bp = int(chr_bp.split("_")[-1])
+                lod = float(lod)
+                pval = float(pval)
+                
+                # Skip if pval or lod don't pass cutoffs
+                if pval > pvalueFilter or lod < lodFilter:
+                    continue
+                
+                # Store results otherwise
+                scanoneDict.setdefault(chr, [])
+                scanoneDict[chr].append(bp)
+    
+    return scanoneDict
+
+def parse_scantwo_file(scantwoFile, pvalueFilter=0.05, lodFilter=10.0):
+    '''
+    Expects a TSV format produced by me (ZKS) from R/qtl. The file has a single
+    header row with split by tab looking like:
+    
+    ["", "chr1", "chr2", "pos1f", "pos2f", "lod.full", "pval", ... "chr1_pos", "chr2_pos"]
+    (intervening columns don't matter to us)
+    
+    If the file hasn't had a P-value filter enforced, this function will do that here.
+    
+    Parameters:
+        scantwoFile -- a string indicating the file location of the scantwo output
+                       from R/qtl.
+        pvalueFilter -- a float indicating the P-value significance to enforce.
+    Returns:
+        scantwoDict -- a dictionary with structure like:
+            {
+                n: [ # == integer indexing this pair of QTL values
+                    "chr1", "pos1", "chr2", "pos2"
+                ],
+                ...
+            }
+    '''
+    scantwoDict = {}
+    
+    firstLine = True
+    ongoingCount = 0
+    with open(scantwoFile, "r") as fileIn:
+        for line in fileIn:
+            if firstLine == True:
+                firstLine = False
+                continue
+            else:
+                # Get relevant information from this line
+                sl = line.rstrip("\r\n ").split("\t")
+                chr1, chr2, lod, pval, pos1, pos2 = sl[1], sl[2], sl[5], sl[6], sl[-2], sl[-1]
+                pos1, pos2 = int(pos1), int(pos2)
+                lod = float(lod)
+                pval = float(pval)
+                
+                # Skip if pval or lod don't pass cutoffs
+                if pval > pvalueFilter or lod < lodFilter:
+                    continue
+                
+                # Store results otherwise
+                scantwoDict[ongoingCount] = [
+                    chr1, pos1, chr2, pos2
+                ]
+                ongoingCount += 1
+    
+    return scantwoDict
 
 def get_snp_positions_from_indexlike(snpFile, snpColumns):
     '''
