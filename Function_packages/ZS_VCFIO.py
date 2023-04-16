@@ -109,7 +109,7 @@ class VCF:
                     # If DP is listed in info but not per-sample, impute it now
                     infoDP = VCF.parse_info(info.split(";"), "DP")
                     if infoDP != None and "DP" not in self.variants[chrom][pos]["FORMAT"] and "AD" in self.variants[chrom][pos]["FORMAT"]:
-                        self.variants[chrom][pos]["FORMAT"] += ":DP"
+                        self.variants[chrom][pos]["FORMAT"].append("DP")
                         self._impute_dp(chrom, pos, infoDP)
     
     @staticmethod
@@ -149,7 +149,7 @@ class VCF:
         ]
         
         for i in range(len(self.samples)):
-            self.variants[chrom][pos][self.samples[i]] += f":{str(dpsImpute[i])}"
+            self.variants[chrom][pos][self.samples[i]].append(str(dpsImpute[i]))
     
     def del_variant(self, contig, pos):
         '''
