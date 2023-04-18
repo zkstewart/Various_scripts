@@ -5,8 +5,9 @@
 # handle a bug in the cflib script which is impeding
 # the progress of my own projects.
 
-import os, argparse
+import os, argparse, gzip
 from Bio import SeqIO
+from contextlib import contextmanager
 
 # Define functions
 def validate_args(args):
@@ -25,10 +26,23 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
+@contextmanager
+def open_vcf_file(filename):
+    if filename.endswith(".gz"):
+        with gzip.open(filename) as f:
+            yield f
+    else:
+        with open(filename) as f:
+            yield f
+
 def vcf_parse_as_genotypeDict(vcfFile):
     genotypeDict = {}
-    with open(vcfFile, "r") as fileIn:
+    with open_vcf_file(vcfFile) as fileIn:
         for line in fileIn:
+            # Handle gzip'd lines
+            if isinstance(line, bytes):
+                line = line.decode("utf-8")
+            
             l = line.rstrip("\r\n").split("\t")
             
             # Handle header lines
