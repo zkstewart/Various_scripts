@@ -29,7 +29,7 @@ def validate_args(args):
 @contextmanager
 def open_vcf_file(filename):
     if filename.endswith(".gz"):
-        with gzip.open(filename) as f:
+        with gzip.open(filename, "rt") as f:
             yield f
     else:
         with open(filename) as f:
@@ -39,10 +39,6 @@ def vcf_parse_as_genotypeDict(vcfFile):
     genotypeDict = {}
     with open_vcf_file(vcfFile) as fileIn:
         for line in fileIn:
-            # Handle gzip'd lines
-            if isinstance(line, bytes):
-                line = line.decode("utf-8")
-            
             l = line.rstrip("\r\n").split("\t")
             
             # Handle header lines
