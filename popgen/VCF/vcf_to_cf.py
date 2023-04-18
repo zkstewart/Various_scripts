@@ -57,6 +57,14 @@ def vcf_parse_as_genotypeDict(vcfFile):
             ref = l[3]
             alt = l[4]
             
+            # Skip multiallelic variants
+            if "," in alt or "." in alt:
+                continue
+            
+            # Skip indels
+            if len(ref) != len(alt):
+                continue
+            
             # Determine which field position we're extracting to get our genotype
             fieldsDescription = l[8]
             if ":" not in fieldsDescription:
@@ -168,7 +176,8 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName,
 def main():
     # User input
     usage = """%(prog)s reads in a VCF and genome FASTA file to produce
-    a cflib-specification .cf file for use with IQ-Tree.
+    a cflib-specification .cf file for use with IQ-Tree. It will
+    skip multiallelic and indel calls by default when generating the output file.
     """
     p = argparse.ArgumentParser(description=usage)
     ## Required
