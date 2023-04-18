@@ -1,8 +1,13 @@
 #! python3
+# snpDensityPlot.py
+# Script to create visualisations of SNP density
+# for assessing hypotheses of SNP distribution
+# across chromosomes.
 
-import os, argparse, math
+import os, argparse, math, gzip
 import matplotlib.pyplot as plt
 from scipy.ndimage.filters import gaussian_filter1d
+from contextlib import contextmanager
 
 def validate_args(args):
     # Validate input data locations
@@ -22,10 +27,19 @@ def validate_args(args):
         print('The specified output directory already exists. This program will attempt to resume an existing run where possible.')
         print('This program will not allowing overwriting. If you want to re-do an analysis, stop now and fix this issue.')
 
+@contextmanager
+def open_vcf_file(filename):
+    if filename.endswith(".gz"):
+        with gzip.open(filename, "rt") as f:
+            yield f
+    else:
+        with open(filename) as f:
+            yield f
+
 def get_vcf_density(vcfFile, windowSize=100000):
     densityDict = {}
     lengthsDict = {}
-    with open(vcfFile, "r") as fileIn:
+    with open_vcf_file(vcfFile) as fileIn:
         for line in fileIn:
             sl = line.rstrip("\r\n ").split("\t")
             # Parse out contig lengths
