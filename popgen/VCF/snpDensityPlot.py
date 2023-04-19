@@ -16,6 +16,10 @@ def validate_args(args):
         print(f'I am unable to locate the input VCF file ({args.vcfFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if not os.path.isfile(args.genomeFasta):
+        print(f'I am unable to locate the input genome FASTA file ({args.genomeFasta})')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
     # Handle numeric parameters
     if args.windowSize < 1:
         print("windowSize must be a positive integer")
