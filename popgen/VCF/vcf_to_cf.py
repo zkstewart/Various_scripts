@@ -79,13 +79,19 @@ def vcf_parse_as_genotypeDict(vcfFile):
                 genotypes.append(genotype)
             
             # Store in dictionary
-            if chrom not in genotypeDict:
-                genotypeDict[chrom] = {}
+            genotypeDict.setdefault(chrom, {})
             genotypeDict[chrom][pos] = [ref, alt, genotypes]
             
     return genotypeDict, samples
 
-def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName, onlySNPs):
+def count_genome_length(records):
+    nsites = 0
+    for record in records:
+        seq = str(record.seq).upper()
+        nsites += sum([ 1 for nuc in seq if nuc != "N" ])
+    return nsites
+
+def genotypeDict_to_cf(genotypeDict, samplesList, genomeFile, outputFileName, onlySNPs):
     '''
     cf format is like:
         A, C, G, T
@@ -94,8 +100,16 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName,
     Where if no SNP is present, and the ref allele is T, you get:
         0, 0, 0, 2
     '''
+    # Count number of nucleotides in genomeFile
+    genomeRecords = SeqIO.parse(open(genomeFile, 'r'), "fasta")
+    nsites = count_genome_length(genomeRecords)
+    
+    # Load genome records back in for parsing
+    genomeRecords = SeqIO.parse(open(genomeFile, 'r'), "fasta")
+    
     with open(outputFileName, "w") as fileOut:
         # Write header to file
+        fileOut.write("COUNTSFILE NPOP {0} NSITES {1}\n".format(len(samplesList), nsites))
         fileOut.write("CHROM POS {0}\n".format(" ".join(samplesList)))
         
         # Write everything else
@@ -159,7 +173,7 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, outputFileName,
                                     print("Program must exit to prevent erroneous behaviour")
                                     quit()
                             cfGenotypes.append(str(newGenotype).replace("[", "").replace("]", "").replace(" ", ""))
-                    
+                
                 # Write line to file
                 if onlySNPs == False or isSNP == True:
                     outLine = "{0} {1} {2}\n".format(chrom, ongoingCount, " ".join(cfGenotypes))
@@ -191,14 +205,11 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
-    # Load in genome FASTA
-    genomeRecords = SeqIO.parse(open(args.genomeFile, 'r'), "fasta")
-    
     # Parse VCF as genotypes dictionary
     genotypeDict, samplesList = vcf_parse_as_genotypeDict(args.vcfFile)
     
-    # Produce .cf file
-    genotypeDict_to_cf(genotypeDict, samplesList, genomeRecords, args.outputFileName, args.onlySNPs)
+    # Produce CF file
+    genotypeDict_to_cf(genotypeDict, samplesList, args.genomeFile, args.outputFileName, args.onlySNPs)
 
 if __name__ == "__main__":
     main()
