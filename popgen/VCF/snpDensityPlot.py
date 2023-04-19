@@ -56,7 +56,7 @@ def get_vcf_density(vcfFile, windowSize=100000):
                     for windowChunk in range(math.ceil(lengthsDict[contigID] / windowSize))
                     ]
                 )
-                windowChunkIndex = math.ceil(int(position) / windowSize)
+                windowChunkIndex = math.floor(int(position) / windowSize)
                 densityDict[contigID][windowChunkIndex] += 1
     return densityDict, lengthsDict
 
