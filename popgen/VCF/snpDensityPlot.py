@@ -6,6 +6,7 @@
 
 import os, argparse, math, gzip
 import matplotlib.pyplot as plt
+from Bio import SeqIO
 from scipy.ndimage.filters import gaussian_filter1d
 from contextlib import contextmanager
 
@@ -36,18 +37,26 @@ def open_vcf_file(filename):
         with open(filename) as f:
             yield f
 
-def get_vcf_density(vcfFile, windowSize=100000):
+def get_vcf_density(vcfFile, lengthsDict, windowSize=100000):
+    '''
+    Parameters:
+        vcfFile -- a string pointing to the VCF file containing SNP annotation
+        lengthsDict -- a dictionary with structure like:
+                       {
+                           'contig1': intLength1,
+                           'contig2': intLength2,
+                           ...
+                       }
+        windowSize -- an integer value indicating what size to bin genes in
+    '''
     densityDict = {}
-    lengthsDict = {}
     with open_vcf_file(vcfFile) as fileIn:
         for line in fileIn:
             sl = line.rstrip("\r\n ").split("\t")
             # Parse out contig lengths
             if line.startswith("#"):
                 if "contig=" in line:
-                    contigID = line.split(",length=")[0].split("ID=")[1]
-                    contigLength = line.split(",length=")[1].rstrip("\r\n> ")
-                    lengthsDict[contigID] = int(contigLength)
+                    contigID = line.split("ID=")[1].split(",length=")[0].rstrip(">")
             # Handle content lines
             elif len(sl) >= 10:
                 contigID, position = sl[0:2]
@@ -58,7 +67,7 @@ def get_vcf_density(vcfFile, windowSize=100000):
                 )
                 windowChunkIndex = math.floor(int(position) / windowSize)
                 densityDict[contigID][windowChunkIndex] += 1
-    return densityDict, lengthsDict
+    return densityDict
 
 def normalise_density(densityList):
     '''
@@ -80,6 +89,9 @@ def main():
     p.add_argument("-v", dest="vcfFile",
                    required=True,
                    help="Specify the location of the input VCF file")
+    p.add_argument("-f", dest="genomeFasta",
+                   required=True,
+                   help="Specify the location of the genome FASTA file")
     p.add_argument("-o", dest="outputDirectory",
                    required=True,
                    help="Output directory where plot files will be written")
@@ -102,8 +114,12 @@ def main():
     validate_args(args)
     os.makedirs(args.outputDirectory, exist_ok=True)
     
+    # Get contig lengths from genome FASTA
+    genomeRecords = SeqIO.parse(open(args.genomeFasta, 'r'), "fasta")
+    lengthsDict = { record.id:len(record) for record in genomeRecords }   
+    
     # Tally SNPs over windows per contig
-    densityDict, lengthsDict = get_vcf_density(args.vcfFile, args.windowSize)
+    densityDict = get_vcf_density(args.vcfFile, lengthsDict, args.windowSize)
     
     # Create plot per contig
     numContigsProcessed = 0
