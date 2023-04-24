@@ -211,5 +211,7 @@ def main():
     # Produce CF file
     genotypeDict_to_cf(genotypeDict, samplesList, args.genomeFile, args.outputFileName, args.onlySNPs)
 
+    print("Program finished successfully!")
+
 if __name__ == "__main__":
     main()

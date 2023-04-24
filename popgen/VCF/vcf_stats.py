@@ -138,6 +138,8 @@ def main():
                 str(sampleStatsDict["called"]), str(pctCalled),
                 str(sampleStatsDict["missed"]), str(pctMissed)
             ])))
+    
+    print("Program finished successfully!")
 
 if __name__ == "__main__":
     main()
