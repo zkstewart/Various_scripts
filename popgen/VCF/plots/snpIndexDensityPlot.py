@@ -4,7 +4,7 @@
 # statistic density for assessing hypotheses of SNP
 # selection across chromosomes.
 
-import os, argparse, math, gzip, sys
+import os, argparse, math, gzip, sys, pickle
 import matplotlib.pyplot as plt
 from Bio import SeqIO
 from scipy.ndimage.filters import gaussian_filter1d
@@ -243,13 +243,13 @@ def main():
                    type=int,
                    required=False,
                    help="""Optionally, specify the minimum size of contigs which
-                   should have plots created for (default=1000000)"; this value
-                   must exceed window_size by at least 2x""",
-                   default=1000000)
+                   should have plots created for (default=200000)"; this value
+                   must exceed --window_size by at least 2x""",
+                   default=200000)
     p.add_argument("--smoothing", dest="smoothingSigma",
                    type=float,
                    required=False,
-                   help="""Optionally, specify how much smoothing should be applied
+                   help="""TURNED OFF: Optionally, specify how much smoothing should be applied
                    to the plot; should be float value >= 0.0 (default=1.0)""",
                    default=1.0)
     
@@ -265,7 +265,14 @@ def main():
     lengthsDict = { record.id:len(record) for record in genomeRecords }   
     
     # Tally SNPs over windows per contig
-    densityDict = get_vcf_snpindex_density(args.vcfFile, lengthsDict, metadataDict, args.windowSize)
+    pickleFile = args.vcfFile + "_index.pkl"
+    if os.path.isfile(pickleFile):
+        with open(pickleFile, "rb") as pickleIn:
+            densityDict = pickle.load(pickleIn)
+    else:
+        densityDict = get_vcf_snpindex_density(args.vcfFile, lengthsDict, metadataDict, args.windowSize)
+        with open(pickleFile, "wb") as pickleOut:
+            pickle.dump(densityDict, pickleOut)
     
     # Create plot per contig
     numContigsProcessed = 0
@@ -290,7 +297,9 @@ def main():
             densityList = densityDict[contigID]
             
             # Smooth the curve for better visualisation
-            smoothedDensityList = gaussian_filter1d(densityList, sigma=args.smoothingSigma)
+            "Smoothing is a mistake for this kind of analysis"
+            # smoothedDensityList = gaussian_filter1d(densityList, sigma=args.smoothingSigma)
+            smoothedDensityList = densityList
             
             # Configure plot
             kbpWindowSize = round(args.windowSize / 1000, 2)

@@ -174,6 +174,7 @@ def main():
             
             # Save output file
             plt.savefig(fileOut)
+            plt.close()
             numContigsPlotted += 1
     
     # Raise relevant warnings
