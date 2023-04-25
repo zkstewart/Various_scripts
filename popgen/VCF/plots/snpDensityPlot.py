@@ -57,12 +57,8 @@ def get_vcf_density(vcfFile, lengthsDict, windowSize=100000):
     with open_vcf_file(vcfFile) as fileIn:
         for line in fileIn:
             sl = line.rstrip("\r\n ").split("\t")
-            # Parse out contig lengths
-            if line.startswith("#"):
-                if "contig=" in line:
-                    contigID = line.split("ID=")[1].split(",length=")[0].rstrip(">")
             # Handle content lines
-            elif len(sl) >= 10:
+            if len(sl) >= 10:
                 contigID, position = sl[0:2]
                 densityDict.setdefault(contigID,
                     [ 0
@@ -152,11 +148,12 @@ def main():
             smoothedDensityList = gaussian_filter1d(normalisedDensityList, sigma=1)
             
             # Configure plot
+            kbpWindowSize = round(args.windowSize / 1000, 2)
             fig = plt.figure(figsize=(10,6))
             ax = plt.axes()
             
-            ax.set_xlabel("Chromosomal position (100 kbp windows)", fontweight="bold")
-            ax.set_ylabel("Min-max normalised SNP number per window", fontweight="bold")
+            ax.set_xlabel(f"Chromosomal position ({kbpWindowSize} kbp windows)", fontweight="bold")
+            ax.set_ylabel("SNP-index-like value per window", fontweight="bold")
             ax.set_title(f"{contigID} SNP density plot", fontweight="bold")
             
             ax.plot(smoothedDensityList)
