@@ -100,13 +100,16 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeFile, outputFileName, on
     Where if no SNP is present, and the ref allele is T, you get:
         0, 0, 0, 2
     '''
-    # Count number of nucleotides in genomeFile
-    genomeRecords = SeqIO.parse(open(genomeFile, 'r'), "fasta")
-    nsites = count_genome_length(genomeRecords)
+    # Calculate nsites for use in COUNTSFILE header format
+    if onlySNPs:
+        genomeRecords = SeqIO.parse(open(genomeFile, 'r'), "fasta")
+        nsites = count_genome_length(genomeRecords)
+    else:
+        nsites = sum([ 1 for chrom in genotypeDict for pos in genotypeDict[chrom] ])
     
-    # Load genome records back in for parsing
+    # Load genome records in for parsing
     genomeRecords = SeqIO.parse(open(genomeFile, 'r'), "fasta")
-    
+        
     with open(outputFileName, "w") as fileOut:
         # Write header to file
         fileOut.write("COUNTSFILE NPOP {0} NSITES {1}\n".format(len(samplesList), nsites))
