@@ -4,7 +4,7 @@
 # statistic density for assessing hypotheses of SNP
 # selection across chromosomes.
 
-import os, argparse, math, gzip, sys, statistics
+import os, argparse, math, gzip, sys
 import matplotlib.pyplot as plt
 from Bio import SeqIO
 from scipy.ndimage.filters import gaussian_filter1d
@@ -34,6 +34,9 @@ def validate_args(args):
         quit()
     if args.minimumContigSize < (args.windowSize * 2):
         print("minimumContigSize must be at least 2x the window size")
+        quit()
+    if args.smoothingSigma < 0:
+        print("smoothingSigma must be a float greater than or equal to zero")
         quit()
     # Handle file output
     if os.path.isdir(args.outputDirectory):
@@ -95,22 +98,27 @@ def get_vcf_snpindex_density(vcfFile, lengthsDict, metadataDict, windowSize=1000
                 windowChunkIndex = math.floor(int(pos) / windowSize)
                 
                 # Add SNP-index
-                indexDict.setdefault(chrom,
-                    [ []
-                    for windowChunk in range(math.ceil(lengthsDict[chrom] / windowSize))
-                    ]
+                indexDict.setdefault(chrom, {
+                    "indices": [ 0
+                        for windowChunk in range(math.ceil(lengthsDict[chrom] / windowSize))
+                    ],
+                    "counts": [ 0
+                        for windowChunk in range(math.ceil(lengthsDict[chrom] / windowSize))
+                    ],
+                    }
                 )
-                indexDict[chrom][windowChunkIndex].append(snpIndex)
+                indexDict[chrom]["indices"][windowChunkIndex] += snpIndex
+                indexDict[chrom]["counts"][windowChunkIndex] += 1
     
     # Average the SNP-index per window
     densityDict = {}
     for chrom in indexDict.keys():
         densityDict.setdefault(chrom, [])
-        for i in range(len(indexDict[chrom])):
+        for windowChunkIndex in range(len(indexDict[chrom]["indices"])):
             try:
-                average = statistics.mean(indexDict[chrom][i])
+                average = indexDict[chrom]["indices"][windowChunkIndex] / indexDict[chrom]["counts"][windowChunkIndex]
             except:
-                average = 0
+                average = 0.0
             densityDict[chrom].append(average)
       
     return densityDict
@@ -139,37 +147,29 @@ def snp_index_from_vcf_line(sl, samples, metadataDict):
                         }
     '''
     # Parse out relevant details from this line
-    chrom, pos, id, ref, alt, qual, filter, \
-        info, format = sl[0:9]
-    format = format.split(":")
+    format = sl[8].split(":")
     
-    # Store sample details in compact format
-    varDict = { samples[i]: {} for i in range(len(samples)) }
-    for i in range(len(samples)):
-        sampleDetails = sl[9+i].split(":")
-        varDict[samples[i]] = {
-            format[x]: sampleDetails[x] for x in range(len(format))
-        }
+    # Extract sample genotype values
+    gtIndex = format.index("GT")
+    gtDict = { samples[i]: sl[9+i].split(":")[gtIndex] for i in range(len(samples)) } # sl[9+i].split(":") gives the sample data in FORMAT layout
     
     # Get genotypes excluding blanks
-    gts = set([ v["GT"] for k,v in varDict.items() if v["GT"] != r"./." ])
-    alleles = set([ allele for gt in gts for allele in gt.split("/") ])
-    
-    # Handle identical allele compositions
-    "If there's only one genotype, we know the ratio == 0.0; stop here to prevent bugs"
-    if len(gts) == 1:
+    gts = set([ v for v in gtDict.values() if v != r"./." ])
+    if len(gts) == 1: # if there's only 1 GT, we always have a difference ratio of 0
         return 0.0
     
-    # Set up for data storage for allele counts
+    # Set up data storage for allele counts
+    alleles = set([ allele for gt in gts for allele in gt.split("/") ])
+    
     alleleDict = {}
     for pop in metadataDict.keys():
         alleleDict[pop] = { allele:0 for allele in alleles }
     
     # Tally alleles for each population
     anyFound = False
-    for key, value in varDict.items():
+    for key, value in gtDict.items():
         # Skip if GT is blank
-        if value["GT"] == r"./.":
+        if value == r"./.":
             continue
         
         # Figure out what population this sample belongs to
@@ -181,7 +181,7 @@ def snp_index_from_vcf_line(sl, samples, metadataDict):
         pop = pop[0]
         
         # Figure out and store this genotype
-        for allele in value["GT"].split("/"):
+        for allele in value.split("/"):
             alleleDict[pop][allele] += 1
     
     if anyFound == False:
@@ -246,6 +246,12 @@ def main():
                    should have plots created for (default=1000000)"; this value
                    must exceed window_size by at least 2x""",
                    default=1000000)
+    p.add_argument("--smoothing", dest="smoothingSigma",
+                   type=float,
+                   required=False,
+                   help="""Optionally, specify how much smoothing should be applied
+                   to the plot; should be float value >= 0.0 (default=1.0)""",
+                   default=1.0)
     
     args = p.parse_args()
     validate_args(args)
@@ -284,15 +290,16 @@ def main():
             densityList = densityDict[contigID]
             
             # Smooth the curve for better visualisation
-            smoothedDensityList = gaussian_filter1d(densityList, sigma=1)
+            smoothedDensityList = gaussian_filter1d(densityList, sigma=args.smoothingSigma)
             
             # Configure plot
+            kbpWindowSize = round(args.windowSize / 1000, 2)
             fig = plt.figure(figsize=(10,6))
             ax = plt.axes()
             
-            ax.set_xlabel("Chromosomal position (100 kbp windows)", fontweight="bold")
-            ax.set_ylabel("Min-max normalised SNP number per window", fontweight="bold")
-            ax.set_title(f"{contigID} SNP density plot", fontweight="bold")
+            ax.set_xlabel(f"Chromosomal position ({kbpWindowSize} kbp windows)", fontweight="bold")
+            ax.set_ylabel("Mean SNP-index-like value per window", fontweight="bold")
+            ax.set_title(f"{contigID} SNP-index plot", fontweight="bold")
             
             ax.plot(smoothedDensityList)
             

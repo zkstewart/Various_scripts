@@ -27,6 +27,9 @@ def validate_args(args):
     if args.minimumContigSize < (args.windowSize * 2):
         print("minimumContigSize must be at least 2x the window size")
         quit()
+    if args.smoothingSigma < 0:
+        print("smoothingSigma must be a float greater than or equal to zero")
+        quit()
     # Handle file output
     if os.path.isdir(args.outputDirectory):
         print('The specified output directory already exists. This program will attempt to resume an existing run where possible.')
@@ -57,6 +60,11 @@ def get_vcf_density(vcfFile, lengthsDict, windowSize=100000):
     with open_vcf_file(vcfFile) as fileIn:
         for line in fileIn:
             sl = line.rstrip("\r\n ").split("\t")
+            
+            # Handle header lines
+            if line.startswith("#"):
+                continue
+            
             # Handle content lines
             if len(sl) >= 10:
                 contigID, position = sl[0:2]
@@ -109,6 +117,12 @@ def main():
                    should have plots created for (default=1000000)"; this value
                    must exceed window_size by at least 2x""",
                    default=1000000)
+    p.add_argument("--smoothing", dest="smoothingSigma",
+                   type=float,
+                   required=False,
+                   help="""Optionally, specify how much smoothing should be applied
+                   to the plot; should be float value >= 0.0 (default=1.0)""",
+                   default=1.0)
     
     args = p.parse_args()
     validate_args(args)
@@ -145,7 +159,7 @@ def main():
             normalisedDensityList = normalise_density(densityList)
             
             # Smooth the curve for better visualisation
-            smoothedDensityList = gaussian_filter1d(normalisedDensityList, sigma=1)
+            smoothedDensityList = gaussian_filter1d(normalisedDensityList, sigma=args.smoothingSigma)
             
             # Configure plot
             kbpWindowSize = round(args.windowSize / 1000, 2)
@@ -153,7 +167,7 @@ def main():
             ax = plt.axes()
             
             ax.set_xlabel(f"Chromosomal position ({kbpWindowSize} kbp windows)", fontweight="bold")
-            ax.set_ylabel("SNP-index-like value per window", fontweight="bold")
+            ax.set_ylabel("Min-max normalised SNP number per window", fontweight="bold")
             ax.set_title(f"{contigID} SNP density plot", fontweight="bold")
             
             ax.plot(smoothedDensityList)
