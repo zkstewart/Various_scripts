@@ -29,7 +29,13 @@ replacedGOs = {"GO:0000453": "GO:0006364", "GO:0031224": "GO:0016020",
                'GO:0005779': 'GO:0005778', 'GO:0032592': 'GO:0031966',
                'GO:0098573': 'GO:0031966', 'GO:0031231': 'GO:0005778',
                'GO:0055065': 'GO:0030003', 'GO:0018196': 'GO:0018193',
-               'GO:0006471': 'GO:1990404', 'GO:0008022': 'GO:0005515'}
+               'GO:0006471': 'GO:1990404', 'GO:0008022': 'GO:0005515',
+               'GO:0071458': 'GO:0098554', 'GO:0031304': 'GO:0005743',
+               'GO:0071556': 'GO:0098553', 'GO:0140323': 'GO:0022853',
+               'GO:0015299': 'GO:0015078', 'GO:0015298': 'GO:0022853',
+               'GO:0044728': 'GO:0006304', 'GO:0031226': 'GO:0005886',
+               'GO:0046658': 'GO:0005886', 'GO:0031305': 'GO:0005743',
+               'GO:0005451': 'GO:0022890'}
 
 # Define functions
 def validate_args(args):
@@ -507,10 +513,10 @@ def format_difference_ratio(snpGtFormat):
     
     # See if we have any multiallelic variant
     genotypes = set(GT_REGEX.findall(b1)).union(set(GT_REGEX.findall(b2)))
-    alleles = set([ a for gt in genotypes for a in gt.split("/") ])
+    alleles = sorted(list(set([ a for gt in genotypes for a in gt.split("/") ]))) # sort should be fine if single digit
     thisAlleles = {
-        "b1": [0 for _ in range(len(alleles))],
-        "b2": [0 for _ in range(len(alleles))]
+        "b1": [0 for allele in alleles],
+        "b2": [0 for allele in alleles]
     }
     
     # Handle identical allele compositions
@@ -533,14 +539,16 @@ def format_difference_ratio(snpGtFormat):
             b1xAllele = b1xAllele.split(": ")[-1]
             gt, count = b1xAllele.split("=")
             for gtValue in gt.split("/"):
-                thisAlleles["b1"][int(gtValue)] += int(count)
+                alleleIndex = alleles.index(gtValue)
+                thisAlleles["b1"][alleleIndex] += int(count)
         
         # Tally for bulk 2
         for b2xAllele in b2x.split(","):
             b2xAllele = b2xAllele.split(": ")[-1]
             gt, count = b2xAllele.split("=")
             for gtValue in gt.split("/"):
-                thisAlleles["b2"][int(gtValue)] += int(count)
+                alleleIndex = alleles.index(gtValue)
+                thisAlleles["b2"][alleleIndex] += int(count)
     
     # Calculate the proportions of each allele for this locus
     b1Sum = sum(thisAlleles["b1"])
