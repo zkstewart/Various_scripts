@@ -4,7 +4,8 @@
 # predicting the effect of variants upon
 # gene CDS.
 
-import os, argparse, sys
+import os, argparse, sys, gzip
+from contextlib import contextmanager
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find windows
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find GFF3IO
@@ -27,6 +28,15 @@ def validate_args(args):
         print(f'File already exists at output location ({args.outputFileName})')
         print('Make sure you specify a unique file name and try again.')
         quit()
+
+@contextmanager
+def open_vcf_file(filename):
+    if filename.endswith(".gz"):
+        with gzip.open(filename, "rt") as f:
+            yield f
+    else:
+        with open(filename) as f:
+            yield f
 
 def get_genotypes_from_vcf(vcfFile, snpPositions=None, imputeMissing=True):
     '''
@@ -67,7 +77,7 @@ def get_genotypes_from_vcf(vcfFile, snpPositions=None, imputeMissing=True):
                         }
     '''
     snpGenotypes = {}
-    with open(vcfFile, "r") as fileIn:
+    with open_vcf_file(vcfFile) as fileIn:
         for line in fileIn:
             l = line.rstrip("\r\n").replace('"', '').split("\t") # replace quotations may help with Excel files
             

@@ -5,7 +5,8 @@
 # and filtering a VCF in a performant but high-memory
 # use way.
 
-import re, os, codecs
+import os, codecs, gzip
+from contextlib import contextmanager
 
 def get_codec(fileName):
     try:
@@ -21,6 +22,15 @@ def get_codec(fileName):
             return "utf-16"
         except UnicodeDecodeError:
             print(f"VCF class can't tell what codec '{fileName}' is!!")
+
+@contextmanager
+def open_vcf_file(filename):
+    if filename.endswith(".gz"):
+        with gzip.open(filename, "rt") as f:
+            yield f
+    else:
+        with open(filename, "r", encoding=get_codec(filename)) as f:
+            yield f
 
 class VCF:
     def __init__(self, file_location):
@@ -60,7 +70,7 @@ class VCF:
                         }
         '''
         beforeContigComments = True
-        with open(self.fileLocation, "r", encoding=get_codec(self.fileLocation)) as fileIn:
+        with open_vcf_file(self.fileLocation) as fileIn:
             for line in fileIn:
                 l = line.rstrip("\r\n ")
                 sl = l.split("\t")
