@@ -168,10 +168,6 @@ def snp_index_from_vcf_line(sl, samples, metadataDict):
     # Tally alleles for each population
     anyFound = False
     for key, value in gtDict.items():
-        # Skip if GT is blank
-        if value == r"./.":
-            continue
-        
         # Figure out what population this sample belongs to
         pop = [ k for k,v in metadataDict.items() if key in v ]
         if len(pop) != 1:
@@ -179,6 +175,10 @@ def snp_index_from_vcf_line(sl, samples, metadataDict):
         else:
             anyFound = True
         pop = pop[0]
+        
+        # Skip if GT is blank
+        if value == r"./.":
+            continue
         
         # Figure out and store this genotype
         for allele in value.split("/"):
@@ -205,7 +205,7 @@ def snp_index_from_vcf_line(sl, samples, metadataDict):
     # Derive our difference ratio value
     proportionCommon = sum([
         min(alleleProportions["bulk1"][str(allele)], alleleProportions["bulk2"][str(allele)])
-        for allele in range(len(alleleProportions["bulk1"].keys()))
+        for allele in alleleProportions["bulk1"].keys()
     ])
     differenceRatio = 1 - proportionCommon
     
