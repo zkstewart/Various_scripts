@@ -156,18 +156,28 @@ def linear_model_from_vcf_line(sl, samples, metadataDict):
     
     # Get genotypes excluding blanks
     gts = set([ v for v in gtDict.values() if v != r"./." ])
-    if len(gts) == 1: # if there's only 1 GT, we can't perform any correlation analysis
-        return 0.0
+    if len(gts) < 2: # if there's zero or one GT, we can't perform any correlation analysis
+        return 0.0 # by skipping zero GT, we skip variants where all samples are blank
     
     # Order genotypes homozygote 0/0 -> heterozygote 0/1 -> homozygote 1/1
     gts = sorted(list(gts), key = lambda x: ZYGOTE_ORDER.index(x))
     gtPhenoDict = { gt: [] for gt in gts } # set up storage area
     
     # Store phenotype values under their respective genotype
+    foundMeta = False
     for sampleID, phenoValue in metadataDict.items():
-        sampleGT = gtDict[sampleID]
-        if sampleGT in gtPhenoDict:
-            gtPhenoDict[sampleGT].append(phenoValue)
+        if sampleID in gtDict: # skips metadata values not found in the VCF
+            foundMeta = True
+            sampleGT = gtDict[sampleID]
+            if sampleGT in gtPhenoDict: # skips blanks
+                gtPhenoDict[sampleGT].append(phenoValue)
+    
+    # Raise error if necessary
+    if foundMeta == False:
+        print("ERROR: Your metadata file doesn't match your VCF")
+        print("In other words, we failed to find ANY samples from your metadata file in the VCF")
+        print("This is an irreconcilable error and we must exit out now...")
+        quit()
     
     # Formulate values as X and Y axis numpy arrays
     x = np.array(
