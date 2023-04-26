@@ -265,7 +265,7 @@ def main():
     lengthsDict = { record.id:len(record) for record in genomeRecords }   
     
     # Tally SNPs over windows per contig
-    pickleFile = args.vcfFile + "_index.pkl"
+    pickleFile = args.vcfFile + "_indexDensity.pkl"
     if os.path.isfile(pickleFile):
         with open(pickleFile, "rb") as pickleIn:
             densityDict = pickle.load(pickleIn)
