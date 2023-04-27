@@ -3,7 +3,8 @@
 # Script to enable easy filtering of the qtlseq.vcf file so as to
 # only contain the SNPs identified in the snp_index.p##.tsv file.
 
-import os, argparse
+import os, argparse, gzip
+from contextlib import contextmanager
 
 # Define functions
 def validate_args(args):
@@ -20,6 +21,15 @@ def validate_args(args):
     if os.path.isfile(args.outputFileName):
         print(args.outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
         quit()
+
+@contextmanager
+def open_vcf_file(filename):
+    if filename.endswith(".gz"):
+        with gzip.open(filename, "rt") as f:
+            yield f
+    else:
+        with open(filename) as f:
+            yield f
 
 def parse_qtlseq_snp_index_file_to_set(snpIndexFile):
     '''
@@ -73,7 +83,7 @@ def main():
     snpIndexSet = parse_qtlseq_snp_index_file_to_set(args.snpIndexFile)
     
     # Write new VCF file
-    with open(args.vcf, "r") as fileIn, open(args.outputFileName, "w") as fileOut:
+    with open_vcf_file(args.vcf) as fileIn, open(args.outputFileName, "w") as fileOut:
         for line in fileIn:
             # Handle comment lines
             if line.startswith("##"):
