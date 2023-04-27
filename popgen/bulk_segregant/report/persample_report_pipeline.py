@@ -7,7 +7,6 @@
 
 # Load normal/pip packages
 import os, argparse, sys, re
-from copy import deepcopy
 from goatools import obo_parser
 
 # Load ZS_IO Class code

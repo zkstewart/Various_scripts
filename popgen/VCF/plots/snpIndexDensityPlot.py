@@ -7,7 +7,7 @@
 import os, argparse, math, gzip, sys, pickle
 import matplotlib.pyplot as plt
 from Bio import SeqIO
-from scipy.ndimage.filters import gaussian_filter1d
+#from scipy.ndimage.filters import gaussian_filter1d
 from contextlib import contextmanager
 
 # Load functions from other scripts
