@@ -101,7 +101,7 @@ def genotypeDict_to_cf(genotypeDict, samplesList, genomeFile, outputFileName, on
         0, 0, 0, 2
     '''
     # Calculate nsites for use in COUNTSFILE header format
-    if onlySNPs:
+    if not onlySNPs:
         genomeRecords = SeqIO.parse(open(genomeFile, 'r'), "fasta")
         nsites = count_genome_length(genomeRecords)
     else:
