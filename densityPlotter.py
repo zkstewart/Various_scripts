@@ -7,7 +7,7 @@
 import os, argparse, math
 import matplotlib.pyplot as plt
 import pandas as pd
-from scipy.stats import zscore, hmean
+from scipy.stats import zscore
 from Bio import SeqIO
 
 def validate_args(args):
@@ -156,6 +156,26 @@ def normalise_density(densityList):
     return normalisedDensityList
 
 def plot_density(densityDicts, inputFiles, outputFileName, contigID, windowSize, yAxisText):
+    '''
+    Decides how to handle the plotting depending on the type of input data.
+    Basically a Pythonic method overload.
+    '''
+    # Check if we're trying to plot multiple lines
+    for key, value in densityDicts.items():
+        if isinstance(value, dict):
+            plot_density_multiple(densityDicts, inputFiles, outputFileName, contigID, windowSize, yAxisText)
+        else:
+            plot_density_single(densityDicts, outputFileName, contigID, windowSize, yAxisText)
+        
+        break # we only iterate to grab the value, we need to exit out after the above runs
+
+def plot_density_multiple(densityDicts, inputFiles, outputFileName, contigID, windowSize, yAxisText):
+    # Skip if we found nothing on this contig
+    if not any([ contigID in densityDicts[i] for i in densityDicts.keys() ]):
+        print(f"WARNING: '{contigID}' is in your genome file exceeding the minimum size but " +
+            "has nothing associated with it; skipping...")
+        return
+    
     # Configure plot
     kbpWindowSize = round(windowSize / 1000, 2)
     fig = plt.figure(figsize=(10,6))
@@ -186,57 +206,43 @@ def plot_density(densityDicts, inputFiles, outputFileName, contigID, windowSize,
     plt.savefig(outputFileName)
     plt.close()
 
-def average_normalise_dicts(inputDicts, statisticsAvg):
-    normDicts = {}
-    for i in inputDicts:
-        normDicts[i] = {"dictType": inputDicts[i]["dictType"]}
-        for contig in inputDicts[i]:
-            if contig == "dictType":
-                continue
-            
-            normDicts[i][contig] = [
-                inputDicts[i][contig][x] - statisticsAvg[contig][x]
-                for x in range(len(statisticsAvg[contig]))
-            ]
-    return normDicts
-
-def custom_normalise_dict(statisticsDicts, statisticsContigs, occurrenceDicts, occurrenceContigs):
+def plot_density_single(densityDict, outputFileName, contigID, windowSize, yAxisText):
     '''
-    This function is just being kept around as a legacy in case I want to
-    rip code back out of it again.
+    Parameters:
+        densityDict -- a dictionary with structure like:
+                       {
+                           'contigID1': [ float1, float2, ... ],
+                           'contigID2': [ ... ],
+                           ...
+                       }
     '''
-    statisticsAvg = {}
-    for contig, numWindows in statisticsContigs.items():
-        avg = [ [0, 0] for _ in range(numWindows) ] # [sum, numberSummed]
-        for i in statisticsDicts:
-            if contig in statisticsDicts[i]:
-                for x in range(len(statisticsDicts[i][contig])):
-                    avg[x][0] += statisticsDicts[i][contig][x]
-                    avg[x][1] += 1
-        statisticsAvg[contig] = [ a[0] / a[1] for a in avg ]
+    # Exit function if plotting is not possible
+    if contigID not in densityDict:
+        return
     
-    occurrenceAvg = {}
-    for contig, numWindows in occurrenceContigs.items():
-        avg = [ [0, 0] for _ in range(numWindows) ] # [sum, numberSummed]
-        for i in occurrenceDicts:
-            if contig in occurrenceDicts[i]:
-                for x in range(len(occurrenceDicts[i][contig])):
-                    avg[x][0] += occurrenceDicts[i][contig][x]
-                    avg[x][1] += 1
-        occurrenceAvg[contig] = [ a[0] / a[1] for a in avg ]
+    # Configure plot
+    kbpWindowSize = round(windowSize / 1000, 2)
+    fig = plt.figure(figsize=(10,6))
     
-    # Create average-normalised dicts
-    if len(statisticsDicts) > 1:
-        normStatisticsDicts = average_normalise_dicts(statisticsDicts, statisticsAvg)
+    ax = plt.axes()
+    ax.set_xlabel(f"Chromosomal position ({kbpWindowSize} kbp windows)", fontweight="bold")
+    ax.set_ylabel(yAxisText, fontweight="bold")
+    ax.set_title(f"{contigID} density plot", fontweight="bold")
+    
+    # Plot density values
+    densityList = densityDict[contigID]
+        
+    if densityDict["dictType"] == "statistic":
+        normalisedDensityList = densityList
     else:
-        normStatisticsDicts = statisticsDicts
+        normalisedDensityList = normalise_density(densityList)
     
-    if len(occurrenceDicts) > 1:
-        normOccurrenceDicts = average_normalise_dicts(occurrenceDicts, statisticsAvg)
-    else:
-        normOccurrenceDicts = occurrenceDicts
+    # Plot the line
+    ax.plot(normalisedDensityList)
     
-    return None
+    # Save output file
+    plt.savefig(outputFileName)
+    plt.close()
 
 def normalise_dict(dicts, contigs, normFunction=zscore):
     '''
@@ -277,7 +283,7 @@ def normalise_dict(dicts, contigs, normFunction=zscore):
                 outDict[index][contigID] = df.loc[[index]].values.flatten().tolist()
     return outDict
 
-def average_dict(dicts, contigs):
+def average_dict(dicts, contigs, dictType):
     '''
     Parameters:
         dicts -- a dictionary with structure like:
@@ -294,7 +300,7 @@ def average_dict(dicts, contigs):
                      ...
                  }
     '''
-    outDict = {}
+    outDict = {"dictType": dictType}
     
     # Make a pandas df per contig
     for contigID, numWindows in contigs.items():
@@ -309,11 +315,8 @@ def average_dict(dicts, contigs):
         # Average
         averages = list(df.mean())
         
-        # Convert back into a dict with the original format
-        for index, indexDict in dicts.items():
-            outDict.setdefault(index, {"dictType": indexDict["dictType"]})
-            if contigID in dicts[index]:
-                outDict[index][contigID] = averages
+        # Convert back into a dict with flattened structure
+        outDict[contigID] = averages
     return outDict
 
 def main():
@@ -385,16 +388,8 @@ def main():
     statisticsContigs = { contig:len(statisticsDicts[i][contig]) for i in statisticsDicts for contig in statisticsDicts[i] if contig != "dictType" }
     occurrenceContigs = { contig:len(occurrenceDicts[i][contig]) for i in occurrenceDicts for contig in occurrenceDicts[i] if contig != "dictType" }
     
-    # Normalise with Z-score
-    if len(statisticsDicts) > 1:
-        normStatisticsDicts = normalise_dict(statisticsDicts, statisticsContigs, hmean)
-    else:
-        normStatisticsDicts = statisticsDicts
-    
-    if len(occurrenceDicts) > 1:
-        normOccurrenceDicts = normalise_dict(occurrenceDicts, occurrenceContigs)
-    else:
-        normOccurrenceDicts = occurrenceDicts
+    normStatisticsDicts = average_dict(statisticsDicts, statisticsContigs, "statistic")
+    normOccurrenceDicts = average_dict(occurrenceDicts, occurrenceContigs, "occurrence")
     
     # Create plot per contig
     numContigsProcessed = 0
@@ -402,12 +397,6 @@ def main():
     for contigID, length in lengthsDict.items():
         if length >= args.minimumContigSize:
             numContigsProcessed += 1
-            
-            # Skip if we found nothing on this contig
-            if not any([ contigID in densityDicts[i] for i in densityDicts.keys() ]):
-                print(f"WARNING: '{contigID}' is in your genome file exceeding the minimum size but " +
-                    "has nothing associated with it; skipping...")
-                continue
             
             # Plot statistics
             statFileOut = os.path.join(args.outputDirectory, f"{contigID}_statistic.png")
