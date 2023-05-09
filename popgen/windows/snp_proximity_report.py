@@ -5,7 +5,7 @@
 
 import os, argparse, math, sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find dependencies
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))) # 4 dirs up is where we find dependencies
 from Function_packages import ZS_GFF3IO
 
 # Define functions
