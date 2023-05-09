@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.stats import zscore
 from Bio import SeqIO
+from scipy.ndimage.filters import gaussian_filter1d
 
 def validate_args(args):
     # Validate input data locations
@@ -31,6 +32,9 @@ def validate_args(args):
         quit()
     if args.minimumContigSize < (args.windowSize * 2):
         print("minimumContigSize must be at least 2x the window size")
+        quit()
+    if args.smoothingSigma < 0:
+        print("smoothingSigma must be a float greater than or equal to zero")
         quit()
     # Handle headers format
     if args.headers == None:
@@ -155,7 +159,7 @@ def normalise_density(densityList):
     normalisedDensityList = [ (x - minValue) / (maxValue - minValue) for x in densityList ]
     return normalisedDensityList
 
-def plot_density(densityDicts, inputFiles, outputFileName, contigID, windowSize, yAxisText):
+def plot_density(densityDicts, inputFiles, outputFileName, contigID, windowSize, yAxisText, smoothingSigma):
     '''
     Decides how to handle the plotting depending on the type of input data.
     Basically a Pythonic method overload.
@@ -163,13 +167,13 @@ def plot_density(densityDicts, inputFiles, outputFileName, contigID, windowSize,
     # Check if we're trying to plot multiple lines
     for key, value in densityDicts.items():
         if isinstance(value, dict):
-            plot_density_multiple(densityDicts, inputFiles, outputFileName, contigID, windowSize, yAxisText)
+            plot_density_multiple(densityDicts, inputFiles, outputFileName, contigID, windowSize, yAxisText, smoothingSigma)
         else:
-            plot_density_single(densityDicts, outputFileName, contigID, windowSize, yAxisText)
+            plot_density_single(densityDicts, outputFileName, contigID, windowSize, yAxisText, smoothingSigma)
         
         break # we only iterate to grab the value, we need to exit out after the above runs
 
-def plot_density_multiple(densityDicts, inputFiles, outputFileName, contigID, windowSize, yAxisText):
+def plot_density_multiple(densityDicts, inputFiles, outputFileName, contigID, windowSize, yAxisText, smoothingSigma):
     # Skip if we found nothing on this contig
     if not any([ contigID in densityDicts[i] for i in densityDicts.keys() ]):
         print(f"WARNING: '{contigID}' is in your genome file exceeding the minimum size but " +
@@ -192,7 +196,10 @@ def plot_density_multiple(densityDicts, inputFiles, outputFileName, contigID, wi
         except:
             continue
         
-        # Normalise data if necessary
+        # Normalise and smooth density values
+        if smoothingSigma > 0:
+            densityList = gaussian_filter1d(densityList, sigma=smoothingSigma)
+        
         if densityDicts[i]["dictType"] == "statistic":
             normalisedDensityList = densityList
         else:
@@ -206,7 +213,7 @@ def plot_density_multiple(densityDicts, inputFiles, outputFileName, contigID, wi
     plt.savefig(outputFileName)
     plt.close()
 
-def plot_density_single(densityDict, outputFileName, contigID, windowSize, yAxisText):
+def plot_density_single(densityDict, outputFileName, contigID, windowSize, yAxisText, smoothingSigma):
     '''
     Parameters:
         densityDict -- a dictionary with structure like:
@@ -229,9 +236,11 @@ def plot_density_single(densityDict, outputFileName, contigID, windowSize, yAxis
     ax.set_ylabel(yAxisText, fontweight="bold")
     ax.set_title(f"{contigID} density plot", fontweight="bold")
     
-    # Plot density values
+    # Normalise and smooth density values
     densityList = densityDict[contigID]
-        
+    if smoothingSigma > 0:
+        densityList = gaussian_filter1d(densityList, sigma=smoothingSigma)
+    
     if densityDict["dictType"] == "statistic":
         normalisedDensityList = densityList
     else:
@@ -313,7 +322,7 @@ def average_dict(dicts, contigs, dictType):
         df = pd.DataFrame(dfList, index=indices, columns=[f"bin{i}" for i in range(numWindows)])
         
         # Average
-        averages = list(df.mean())
+        averages = list(df.median())
         
         # Convert back into a dict with flattened structure
         outDict[contigID] = averages
@@ -359,6 +368,12 @@ def main():
                    should have plots created for (default=1000000)"; this value
                    must exceed window_size by at least 2x""",
                    default=1000000)
+    p.add_argument("--smoothing", dest="smoothingSigma",
+                   type=float,
+                   required=False,
+                   help="""Optionally, specify how much smoothing should be applied
+                   to the plot; should be float value >= 0.0 (default=0.0)""",
+                   default=0.0)
     # File parsing opts
     p.add_argument("--headers", dest="headers",
                    nargs="+",
@@ -406,7 +421,7 @@ def main():
                 plot_density(
                     normStatisticsDicts, args.inputFiles,
                     statFileOut, contigID, args.windowSize,
-                    "Averaged statistic per window")
+                    "Averaged statistic per window", args.smoothingSigma)
             
             # Plot occurrence
             occurrenceFileOut = os.path.join(args.outputDirectory, f"{contigID}_occurrence.png")
@@ -416,7 +431,7 @@ def main():
                 plot_density(
                     normOccurrenceDicts, args.inputFiles,
                     occurrenceFileOut, contigID, args.windowSize,
-                    "Min-max normalised number per window")
+                    "Min-max normalised number per window", args.smoothingSigma)
             
             numContigsPlotted += 1
     
