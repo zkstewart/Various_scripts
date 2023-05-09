@@ -6,6 +6,8 @@
 
 import os, argparse, math
 import matplotlib.pyplot as plt
+import pandas as pd
+from scipy.stats import zscore, hmean
 from Bio import SeqIO
 
 def validate_args(args):
@@ -198,6 +200,122 @@ def average_normalise_dicts(inputDicts, statisticsAvg):
             ]
     return normDicts
 
+def custom_normalise_dict(statisticsDicts, statisticsContigs, occurrenceDicts, occurrenceContigs):
+    '''
+    This function is just being kept around as a legacy in case I want to
+    rip code back out of it again.
+    '''
+    statisticsAvg = {}
+    for contig, numWindows in statisticsContigs.items():
+        avg = [ [0, 0] for _ in range(numWindows) ] # [sum, numberSummed]
+        for i in statisticsDicts:
+            if contig in statisticsDicts[i]:
+                for x in range(len(statisticsDicts[i][contig])):
+                    avg[x][0] += statisticsDicts[i][contig][x]
+                    avg[x][1] += 1
+        statisticsAvg[contig] = [ a[0] / a[1] for a in avg ]
+    
+    occurrenceAvg = {}
+    for contig, numWindows in occurrenceContigs.items():
+        avg = [ [0, 0] for _ in range(numWindows) ] # [sum, numberSummed]
+        for i in occurrenceDicts:
+            if contig in occurrenceDicts[i]:
+                for x in range(len(occurrenceDicts[i][contig])):
+                    avg[x][0] += occurrenceDicts[i][contig][x]
+                    avg[x][1] += 1
+        occurrenceAvg[contig] = [ a[0] / a[1] for a in avg ]
+    
+    # Create average-normalised dicts
+    if len(statisticsDicts) > 1:
+        normStatisticsDicts = average_normalise_dicts(statisticsDicts, statisticsAvg)
+    else:
+        normStatisticsDicts = statisticsDicts
+    
+    if len(occurrenceDicts) > 1:
+        normOccurrenceDicts = average_normalise_dicts(occurrenceDicts, statisticsAvg)
+    else:
+        normOccurrenceDicts = occurrenceDicts
+    
+    return None
+
+def normalise_dict(dicts, contigs, normFunction=zscore):
+    '''
+    Parameters:
+        dicts -- a dictionary with structure like:
+                 {
+                     index1: {
+                         'dictType': 'statistic' OR 'occurrence',
+                         'contig1': [ float1, float2, ... ],
+                         'contig2': [ ... ],
+                         ...
+                     },
+                     index2: {
+                         ...
+                     },
+                     ...
+                 }
+    '''
+    outDict = {}
+    
+    # Make a pandas df per contig
+    for contigID, numWindows in contigs.items():
+        dfList = []
+        indices = []
+        for index, indexDict in dicts.items():
+            if contigID in indexDict:
+                dfList.append(indexDict[contigID])
+                indices.append(index)
+        df = pd.DataFrame(dfList, index=indices, columns=[f"bin{i}" for i in range(numWindows)])
+        
+        # Normalise
+        df = df.apply(normFunction, axis=0)
+        
+        # Convert back into a dict with the original format
+        for index, indexDict in dicts.items():
+            outDict.setdefault(index, {"dictType": indexDict["dictType"]})
+            if contigID in dicts[index]:
+                outDict[index][contigID] = df.loc[[index]].values.flatten().tolist()
+    return outDict
+
+def average_dict(dicts, contigs):
+    '''
+    Parameters:
+        dicts -- a dictionary with structure like:
+                 {
+                     index1: {
+                         'dictType': 'statistic' OR 'occurrence',
+                         'contig1': [ float1, float2, ... ],
+                         'contig2': [ ... ],
+                         ...
+                     },
+                     index2: {
+                         ...
+                     },
+                     ...
+                 }
+    '''
+    outDict = {}
+    
+    # Make a pandas df per contig
+    for contigID, numWindows in contigs.items():
+        dfList = []
+        indices = []
+        for index, indexDict in dicts.items():
+            if contigID in indexDict:
+                dfList.append(indexDict[contigID])
+                indices.append(index)
+        df = pd.DataFrame(dfList, index=indices, columns=[f"bin{i}" for i in range(numWindows)])
+        
+        # Average
+        averages = list(df.mean())
+        
+        # Convert back into a dict with the original format
+        for index, indexDict in dicts.items():
+            outDict.setdefault(index, {"dictType": indexDict["dictType"]})
+            if contigID in dicts[index]:
+                outDict[index][contigID] = averages
+    return outDict
+
 def main():
     usage = """%(prog)s receives multiple TSV files containing at least two
     columns indicating the contig ID and position in nucleotides along said
@@ -267,34 +385,14 @@ def main():
     statisticsContigs = { contig:len(statisticsDicts[i][contig]) for i in statisticsDicts for contig in statisticsDicts[i] if contig != "dictType" }
     occurrenceContigs = { contig:len(occurrenceDicts[i][contig]) for i in occurrenceDicts for contig in occurrenceDicts[i] if contig != "dictType" }
     
-    statisticsAvg = {}
-    for contig, numWindows in statisticsContigs.items():
-        avg = [ [0, 0] for _ in range(numWindows) ] # [sum, numberSummed]
-        for i in statisticsDicts:
-            if contig in statisticsDicts[i]:
-                for x in range(len(statisticsDicts[i][contig])):
-                    avg[x][0] += statisticsDicts[i][contig][x]
-                    avg[x][1] += 1
-        statisticsAvg[contig] = [ a[0] / a[1] for a in avg ]
-    
-    occurrenceAvg = {}
-    for contig, numWindows in occurrenceContigs.items():
-        avg = [ [0, 0] for _ in range(numWindows) ] # [sum, numberSummed]
-        for i in occurrenceDicts:
-            if contig in occurrenceDicts[i]:
-                for x in range(len(occurrenceDicts[i][contig])):
-                    avg[x][0] += occurrenceDicts[i][contig][x]
-                    avg[x][1] += 1
-        occurrenceAvg[contig] = [ a[0] / a[1] for a in avg ]
-    
-    # Create average-normalised dicts
+    # Normalise with Z-score
     if len(statisticsDicts) > 1:
-        normStatisticsDicts = average_normalise_dicts(statisticsDicts, statisticsAvg)
+        normStatisticsDicts = normalise_dict(statisticsDicts, statisticsContigs, hmean)
     else:
         normStatisticsDicts = statisticsDicts
     
     if len(occurrenceDicts) > 1:
-        normOccurrenceDicts = average_normalise_dicts(occurrenceDicts, statisticsAvg)
+        normOccurrenceDicts = normalise_dict(occurrenceDicts, occurrenceContigs)
     else:
         normOccurrenceDicts = occurrenceDicts
     
