@@ -5,7 +5,7 @@
 
 import os, sys, argparse
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 from Function_packages import ZS_VCFIO
 
 # Define functions
