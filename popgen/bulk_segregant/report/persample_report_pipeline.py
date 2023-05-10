@@ -34,7 +34,7 @@ replacedGOs = {"GO:0000453": "GO:0006364", "GO:0031224": "GO:0016020",
                'GO:0015299': 'GO:0015078', 'GO:0015298': 'GO:0022853',
                'GO:0044728': 'GO:0006304', 'GO:0031226': 'GO:0005886',
                'GO:0046658': 'GO:0005886', 'GO:0031305': 'GO:0005743',
-               'GO:0005451': 'GO:0022890'}
+               'GO:0005451': 'GO:0022890', 'GO:0022610': 'GO:0008150'}
 
 # Define functions
 def validate_args(args):
@@ -480,7 +480,84 @@ def format_genotypes(snpGenotypes, snpDetails, contigID, metadataDict):
     
     return snpGtFormat
 
-def format_difference_ratio(snpGtFormat):
+def calculate_difference_ratio(original_b1, original_b2):
+    GT_REGEX = re.compile(r"\d/\d")
+    
+    original_b1Alleles = original_b1.split("; ") # can be multiple SNP positions separated by "; "
+    original_b2Alleles = original_b2.split("; ")
+    
+    # Loop through each allele separately to hackily get results
+    ratios = []
+    for b1, b2 in zip(original_b1Alleles, original_b2Alleles):
+        position = b1.split(": ")[0]
+        
+        b1Alleles = [b1]
+        b2Alleles = [b2]
+        
+        # See if we have any multiallelic variant
+        genotypes = set(GT_REGEX.findall(b1)).union(set(GT_REGEX.findall(b2)))
+        alleles = sorted(list(set([ a for gt in genotypes for a in gt.split("/") ]))) # sort should be fine if single digit
+        thisAlleles = {
+            "b1": [0 for allele in alleles],
+            "b2": [0 for allele in alleles]
+        }
+        
+        # Handle identical allele compositions
+        "If everything is 0/0 or 1/1, we know the ratio == 0.0; stop here to prevent bugs"
+        if len(alleles) == 1:
+            ratios.append(f"{position}: 0.0")
+            continue
+        
+        # Tally alleles at this locus
+        for x in range(len(b1Alleles)):
+            # Get alleles at this position
+            b1x = b1Alleles[x]
+            b2x = b2Alleles[x]
+            
+            # Skip tallying if it's not possible at this locus
+            if "." in b1x or "." in b2x:
+                continue
+            
+            # Tally for bulk 1
+            for b1xAllele in b1x.split(","):
+                b1xAllele = b1xAllele.split(": ")[-1]
+                gt, count = b1xAllele.split("=")
+                for gtValue in gt.split("/"):
+                    alleleIndex = alleles.index(gtValue)
+                    thisAlleles["b1"][alleleIndex] += int(count)
+            
+            # Tally for bulk 2
+            for b2xAllele in b2x.split(","):
+                b2xAllele = b2xAllele.split(": ")[-1]
+                gt, count = b2xAllele.split("=")
+                for gtValue in gt.split("/"):
+                    alleleIndex = alleles.index(gtValue)
+                    thisAlleles["b2"][alleleIndex] += int(count)
+        
+        # Calculate the proportions of each allele for this locus
+        b1Sum = sum(thisAlleles["b1"])
+        b2Sum = sum(thisAlleles["b2"])
+        
+        if b1Sum == 0 or b2Sum == 0: # if this happens, we can't meaningfully calculate anything
+            ratios.append(f"{position}: .")
+            continue
+        
+        thisProportion = {
+            "b1": [ alleleCount / b1Sum for alleleCount in thisAlleles["b1"] ],
+            "b2": [ alleleCount / b2Sum for alleleCount in thisAlleles["b2"] ]
+        }
+        
+        # Derive our difference ratio value
+        proportionCommon = sum([
+            min(thisProportion["b1"][x], thisProportion["b2"][x])
+            for x in range(len(thisProportion["b1"]))
+        ])
+        differenceRatio = 1 - proportionCommon
+        
+        ratios.append(f"{position}: {differenceRatio}")
+    return ratios
+
+def format_difference_ratio(snpGtFormat, diffPerSnp=False):
     '''
     Parameters:
         snpGtFormat -- a list with three values, with structure like:
@@ -494,6 +571,8 @@ def format_difference_ratio(snpGtFormat):
                        The snpPosition is a numeric value. All present genotypes
                        and their tallies are presented as shown above with comma
                        separation.
+        diffPerSnp -- a boolean indicating whether the difference ratio should
+                      be shown per-SNP (True) or as a summed value per-locus (False)
     Returns:
         differenceRatio -- a string representing a ratio from 0->1, where 1 indicates
                            entirely different allele composition, and 0 indicates
@@ -501,74 +580,22 @@ def format_difference_ratio(snpGtFormat):
                            gives us interesting regions, and close to 0 should be
                            ignored when doing a BSA-like inspection.
     '''
-    GT_REGEX = re.compile(r"\d/\d")
-    
     # Extract relevant bits of data from snpGtFormat
     b1 = snpGtFormat[1] # we don't care about the parent for this index
     b2 = snpGtFormat[2]
     
-    b1Alleles = b1.split("; ") # can be multiple SNP positions separated by "; "
-    b2Alleles = b2.split("; ")
+    ratios = calculate_difference_ratio(b1, b2)
     
-    # See if we have any multiallelic variant
-    genotypes = set(GT_REGEX.findall(b1)).union(set(GT_REGEX.findall(b2)))
-    alleles = sorted(list(set([ a for gt in genotypes for a in gt.split("/") ]))) # sort should be fine if single digit
-    thisAlleles = {
-        "b1": [0 for allele in alleles],
-        "b2": [0 for allele in alleles]
-    }
-    
-    # Handle identical allele compositions
-    "If everything is 0/0 or 1/1, we know the ratio == 0.0; stop here to prevent bugs"
-    if len(alleles) == 1:
-        return "0.0"
-    
-    # Tally alleles at this locus
-    for x in range(len(b1Alleles)):
-        # Get alleles at this position
-        b1x = b1Alleles[x]
-        b2x = b2Alleles[x]
-        
-        # Skip tallying if it's not possible at this locus
-        if "." in b1x or "." in b2x:
-            continue
-        
-        # Tally for bulk 1
-        for b1xAllele in b1x.split(","):
-            b1xAllele = b1xAllele.split(": ")[-1]
-            gt, count = b1xAllele.split("=")
-            for gtValue in gt.split("/"):
-                alleleIndex = alleles.index(gtValue)
-                thisAlleles["b1"][alleleIndex] += int(count)
-        
-        # Tally for bulk 2
-        for b2xAllele in b2x.split(","):
-            b2xAllele = b2xAllele.split(": ")[-1]
-            gt, count = b2xAllele.split("=")
-            for gtValue in gt.split("/"):
-                alleleIndex = alleles.index(gtValue)
-                thisAlleles["b2"][alleleIndex] += int(count)
-    
-    # Calculate the proportions of each allele for this locus
-    b1Sum = sum(thisAlleles["b1"])
-    b2Sum = sum(thisAlleles["b2"])
-    
-    if b1Sum == 0 or b2Sum == 0: # if this happens, we can't meaningfully calculate anything
-        return "."
-    
-    thisProportion = {
-        "b1": [ alleleCount / b1Sum for alleleCount in thisAlleles["b1"] ],
-        "b2": [ alleleCount / b2Sum for alleleCount in thisAlleles["b2"] ]
-    }
-    
-    # Derive our difference ratio value
-    proportionCommon = sum([
-        min(thisProportion["b1"][x], thisProportion["b2"][x])
-        for x in range(len(thisProportion["b1"]))
-    ])
-    differenceRatio = 1 - proportionCommon
-    
-    return str(differenceRatio)
+    if diffPerSnp == True:
+        return "; ".join(ratios)
+    else:
+        NUM_REGEX = re.compile(r"\d\.\d+")
+        numbers = NUM_REGEX.findall(" ".join(ratios))
+        try:
+            totalRatio = sum(map(float, numbers)) / len(numbers)
+        except:
+            totalRatio = "."
+        return totalRatio
 
 def main():
     # User input
@@ -612,6 +639,14 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Specify the output file name")
+    # Optional
+    p.add_argument("--diff_per_snp", dest="diffPerSnp",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, specify this flag to output SNP-index-like
+                   values for each SNP rather than summing them into a single per-locus
+                   value""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -678,7 +713,7 @@ def main():
             snpGtFormat = format_genotypes(snpGenotypes, snpDetails, snpDict["contig"], metadataDict)
             
             # Calculate difference ratio
-            differenceRatio = format_difference_ratio(snpGtFormat)
+            differenceRatio = format_difference_ratio(snpGtFormat, args.diffPerSnp)
             
             # Format output line
             outputLine = "{contig}\t{geneID}\t{mrnaID}\t{strand}\t{coords}\t{geneName}\
