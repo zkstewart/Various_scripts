@@ -6,7 +6,7 @@
 import os, argparse, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Function_packages import ZS_SignalPIO
+from Function_packages import ZS_SignalPIO, ZS_SeqIO
 
 # Define functions
 def validate_args(args):
@@ -19,6 +19,10 @@ def validate_args(args):
     if not os.path.isfile(args.signalpExe):
         print(f'I am unable to locate the SignalP exe file ({args.signalpExe})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
+    # Validate numeric parameters
+    if args.threads < 1:
+        print("threads must be a positive integer")
         quit()
     # Validate output file location
     if os.path.isfile(args.outputFileName):
@@ -56,9 +60,26 @@ def main():
                    (default == "euk"; make sure to use the right term for your
                    version of signalP)""",
                    default="euk")
+    p.add_argument("--threads", dest="threads",
+                   required=False,
+                   type=int,
+                   help="""Specify how many threads to operate with; default == 1""",
+                   default=1)
     
     args = p.parse_args()
     validate_args(args)
+    
+    # Handle chunking for multithreading
+    if args.threads > 1:
+        FASTA_obj = ZS_SeqIO.FASTA(args.fastaFile)
+        
+        tmpFilePrefix = ZS_SeqIO.Conversion.get_hash_for_input_sequences(FASTA_obj)
+        outputLocation = os.path.dirname(args.outputFileName)
+        outputFilePrefix = os.path.join(outputLocation, tmpFilePrefix)
+        
+        FASTA_obj.write_as_chunks(outputFilePrefix, args.threads)
+    else:
+        fastaFiles = [args.fastaFile]
     
     # Create and configure signalP handler object
     sigp = ZS_SignalPIO.SignalP(args.fastaFile, args.signalpExe)
