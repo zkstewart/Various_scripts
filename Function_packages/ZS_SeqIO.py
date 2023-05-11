@@ -1415,6 +1415,9 @@ class FASTA:
             asAligned -- a Boolean indicating whether the raw sequences or aligned sequences
                          including gap characters should be output. An error will be raised
                          if .isAligned == False or if any sequences lack a .gap_seq value.
+        Returns:
+            outputFileNames -- a list indicating the names and full locations of any files
+                               created by this method
         '''
         # Validate behavioural parameters
         self._validate_write_params(withAlt, withDescription, asAligned, withConsensus=False)
@@ -1427,7 +1430,7 @@ class FASTA:
         
         chunkNames = []
         for i in range(0, numChunks):
-            chunkName = f"{outputFilePrefix}_chunk{i+1}.fasta"
+            chunkName = os.path.abspath(f"{outputFilePrefix}_chunk{i+1}.fasta")
             if os.path.isfile(chunkName):
                 raise Exception("{0} already exists; can't write chunked output file".format(chunkName))
             chunkNames.append(chunkName)
@@ -1446,6 +1449,8 @@ class FASTA:
                     ongoingCount += 1
                     if ongoingCount in chunkPoints: # if this happens, we go back to the for loop and make a new file
                         break
+        
+        return chunkNames
     
     @property
     def ids(self):
