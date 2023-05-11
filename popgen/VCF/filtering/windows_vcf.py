@@ -3,10 +3,8 @@
 # Script to subset a VCF to just the variants within provided
 # window region(s).
 
-import os, sys, argparse, re
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-from Function_packages import ZS_VCFIO
+import os, argparse, re, gzip
+from contextlib import contextmanager
 
 WINDOW_REGEX = re.compile(r"^(.+?):(\d+?)-(\d+)$")
 
@@ -28,6 +26,15 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
+@contextmanager
+def open_vcf_file(filename):
+    if filename.endswith(".gz"):
+        with gzip.open(filename, "rt") as f:
+            yield f
+    else:
+        with open(filename) as f:
+            yield f
+
 def filter_vcf_by_windows(vcf, windowsDict):
     '''
     Filter to remove variants from a ZS_VCFIO.VCF object which are
@@ -48,6 +55,8 @@ def filter_vcf_by_windows(vcf, windowsDict):
                            ...
                        }
     '''
+    
+    
     posDrop = {}
     contigDrop = []
     for contigID, contigDict in vcf.items():
@@ -104,9 +113,6 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
-    # Parse VCF file
-    vcf = ZS_VCFIO.VCF(args.vcfFile)
-    
     # Parse windows argument into dictionary structure
     windowsDict = {}
     for window in args.windows:
@@ -114,19 +120,44 @@ def main():
         windowsDict.setdefault(chrom, [])
         windowsDict[chrom].append([int(start), int(end)])
     
-    # Filter VCF by window ranges
-    filter_vcf_by_windows(vcf, windowsDict)
+    # Filter VCF by window ranges to output file
+    outputLines = 0
+    with open_vcf_file(args.vcfFile) as fileIn, open(args.outputFileName, "w") as fileOut:
+        for line in fileIn:
+            # Handle header rows
+            if line.startswith("#CHROM"): # insert this header comment just before the #CHROM line
+                headerComment = f"##windows_vcf.py windows={args.windows}"
+                fileOut.write(f"{headerComment}\n")
+            if line.startswith("#"):
+                fileOut.write(line)
+            
+            # Handle content rows:
+            else:
+                sl = line.rstrip("\r\n").split("\t")
+                contigID, pos = sl[0:2]
+                pos = int(pos)
+                
+                # Fail if contig not in a window
+                if not contigID in windowsDict:
+                    continue
+                
+                # Check if this position is in a window
+                isInWindow = any([
+                    pos >= start and pos <= end
+                    for start, end in windowsDict[contigID]
+                ])
+                
+                # Write to output if it is
+                if isInWindow:
+                    fileOut.write(line)
+                    outputLines += 1
     
     # Write filtered output (if relevant)
-    if len(vcf) == 0:
+    if outputLines == 0:
         print("In the process of filtering this VCF, we ended up with 0 SNPs remaining!")
         print("You should check to make sure your parameters make sense...")
-        print("(Since there's no SNPs left, there's nothing to write to an output file)")
-    else:
-        vcf.comments["footer"].append("##windows_vcf {0}".format(
-            f"windows={args.windows}"
-        ))
-        vcf.write_vcf(args.outputFileName)
+        print("(Since there's no SNPs left, I'm going to clean up the empty header file now)")
+        os.unlink(args.outputFileName)
     
     print("Program completed successfully!")
 
