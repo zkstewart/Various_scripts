@@ -178,6 +178,8 @@ class SignalP:
             sigpIsValid -- a boolean; True if signalP is validated, False otherwise
             errorMessage -- a string indicating what went wrong if validation failed
         '''
+        EXPECTED_STRINGS = ["usage", "version"]
+        
         # Check that executable file exists
         if not os.path.isfile(signalpExe):
             return False, f"'{signalpExe}' doesn't exist!"
@@ -187,7 +189,9 @@ class SignalP:
         
         run_sigp = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
         sigpout, sigperr = run_sigp.communicate()
-        if "usage" not in sigpout.decode("utf-8").lower() and "usage" not in sigperr.decode("utf-8").lower():
+        out, err = sigpout.decode("utf-8").lower(), sigperr.decode("utf-8").lower()
+        
+        if not any([eStr in out or eStr in err for eStr in EXPECTED_STRINGS]):
             "Different SignalP versions output on stdout or stderr which is stupid"
             return False, sigperr.decode("utf-8")
         else:
@@ -216,11 +220,12 @@ class SignalP:
         sigpout, sigperr = run_sigp.communicate()
         
         if "-version" in sigperr.decode("utf-8").lower():
-            cmd = ZS_Utility.base_subprocess_cmd(signalpExe) + ["--version"] # cmd for version 5 or 6
+            "Need to have it as a plain string to work??"
+            cmd = ZS_Utility.base_subprocess_cmd(signalpExe)[0] + " --version" # cmd for version 5 or 6
         else:
-            cmd = ZS_Utility.base_subprocess_cmd(signalpExe) + ["-V"] # cmd for version 4
+            cmd = ZS_Utility.base_subprocess_cmd(signalpExe)[0] + " -V" # cmd for version 4
         
-        # Get version stdout
+        # Get version stdout        
         run_version = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
         versionout, versionerr = run_version.communicate()
         if versionerr.decode("utf-8") != "":
@@ -259,6 +264,7 @@ class SignalP:
         '''
         # Get query as a FASTA file
         fastaQuery, isTemporary = Conversion.get_filename_for_input_sequences(self.query)
+        fastaQuery = os.path.abspath(fastaQuery) # need abspath for later
         
         # Get tmp dir (2 dirs back)
         if platform.system() == "Windows":
@@ -283,7 +289,7 @@ class SignalP:
                 "-f", "short",
                 "-n", f'{sigp4TmpFile}',
                 f'{ZS_Utility.convert_windows_to_wsl_path(fastaQuery)}' if platform.system() == "Windows"
-                    else self.targetFile
+                    else fastaQuery
             ]
         elif self.version == 5:
             # cd into the SignalP bin dir before doing anything else
@@ -303,11 +309,11 @@ class SignalP:
                 f"./{os.path.basename(self.signalpExe)}",
                 "-org", self.organism,
                 "-format", "short",
-                "-gff3", "-stdout",
+                "-gff3",
                 "-prefix", prefixHash,
                 "-tmp", tmpDir,
                 "-fasta", f'{ZS_Utility.convert_windows_to_wsl_path(fastaQuery)}' 
-                    if platform.system() == "Windows" else self.targetFile
+                    if platform.system() == "Windows" else fastaQuery
             ]
         elif self.version == 6:
             # Make a tmp dir just for signalP 6
@@ -321,11 +327,11 @@ class SignalP:
                 "--output_dir", f'{ZS_Utility.convert_windows_to_wsl_path(sigp6TmpDir)}' 
                     if platform.system() == "Windows" else sigp6TmpDir,
                 "-fasta", f'{ZS_Utility.convert_windows_to_wsl_path(fastaQuery)}' 
-                    if platform.system() == "Windows" else self.targetFile
+                    if platform.system() == "Windows" else fastaQuery
             ]
         
         # Run signalP with the formatted cmd
-        run_sigp = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        run_sigp = subprocess.Popen(" ".join(cmd), shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         sigpout, sigperr = run_sigp.communicate()
         if sigperr.decode("utf-8") != '':
             raise Exception('SignalP error text below\n' + sigperr.decode("utf-8"))
@@ -349,7 +355,9 @@ class SignalP:
             raise NotImplementedError("Sigp4 not handled yet, sorry!")
             os.unlink(sigp4TmpFile)
         elif self.version == 5 and self.clean == True:
+            summaryFile = os.path.join(os.path.dirname(self.signalpExe), prefixHash + "_summary.signalp5")
             os.unlink(sigpGff3)
+            os.unlink(summaryFile) # signalp5 also creates an extra summary file; we need to clean it, too
         elif self.version == 6 and self.clean == True:
             shutil.rmtree(sigp6TmpDir)
         

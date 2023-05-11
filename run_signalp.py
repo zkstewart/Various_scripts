@@ -4,6 +4,7 @@
 # on it for signal peptide predictions
 
 import os, argparse, sys
+from threading import Thread
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from Function_packages import ZS_SignalPIO, ZS_SeqIO
@@ -29,6 +30,37 @@ def validate_args(args):
         print(f'File already exists at output location ({args.outputFileName})')
         print('Make sure you specify a unique file name and try again.')
         quit()
+
+class SignalPThread(Thread):
+    '''
+    This provides a modified Thread which allows for the output of signalP
+    to be stored locally within this object. Necessary since we can't otherwise
+    get return values from threads.
+    '''
+    def __init__(self, fastaFile, signalpExe, organism):
+        Thread.__init__(self)
+        
+        self.fastaFile = fastaFile
+        self.signalpExe = signalpExe
+        self.organism = organism
+        self.output = None
+    
+    def run(self):
+        # Create and configure signalP handler object
+        sigp = ZS_SignalPIO.SignalP(self.fastaFile, self.signalpExe)
+        sigp.organism = self.organism
+        sigp.clean = True
+        
+        # Run prediction
+        self.output = sigp.signalp()
+
+def merge_dictionaries(dict1, dict2):
+    '''
+    This function assumes the two dictionaries have no keys in common. If
+    there is, whatever is in dict1 will be kept.
+    '''
+    dict1.update(dict2)
+    return dict1
 
 ## Main
 def main():
@@ -71,23 +103,37 @@ def main():
     
     # Handle chunking for multithreading
     if args.threads > 1:
+        # Parse in FASTA as a ZS_SeqIO.FASTA object
         FASTA_obj = ZS_SeqIO.FASTA(args.fastaFile)
         
-        tmpFilePrefix = ZS_SeqIO.Conversion.get_hash_for_input_sequences(FASTA_obj)
+        # Generate temporary file prefix
         outputLocation = os.path.dirname(args.outputFileName)
+        tmpFilePrefix = ZS_SeqIO.Conversion.get_hash_for_input_sequences(FASTA_obj)
         outputFilePrefix = os.path.join(outputLocation, tmpFilePrefix)
         
-        FASTA_obj.write_as_chunks(outputFilePrefix, args.threads)
+        # Chunk FASTA into separate files for multi-threading
+        fastaFiles = FASTA_obj.write_as_chunks(outputFilePrefix, args.threads)
     else:
+        # Use file as-is with a single thread
         fastaFiles = [args.fastaFile]
     
-    # Create and configure signalP handler object
-    sigp = ZS_SignalPIO.SignalP(args.fastaFile, args.signalpExe)
-    sigp.organism = args.organism
+    # Run SignalP in multiple threads
+    processing = []
+    for i in range(args.threads):
+        fastaFile = fastaFiles[i]
+        workerThread = SignalPThread(fastaFile, args.signalpExe, args.organism)
+        processing.append(workerThread)
+        workerThread.start()
     
-    # Run prediction
-    sigpResultsDict = sigp.signalp()
-    
+    # Gather results
+    sigpResultsDict = {}
+    for workerThread in processing:
+        # Wait for thread to end ...
+        workerThread.join()
+                
+        # ... then merge dictionary outputs together
+        sigpResultsDict.update(workerThread.output)
+            
     # Create output file
     with open(args.outputFileName, "w") as fileOut:
         # Write header
@@ -96,6 +142,11 @@ def main():
         for seqid, coords in sigpResultsDict.items():
             start, end = coords
             fileOut.write(f"{seqid}\t{start}\t{end}\n")
+    
+    # Clean up chunked FASTA files if necessary
+    if args.threads > 1:
+        for fastaFile in fastaFiles:
+            os.unlink(fastaFile)
     
     print("Program completed successfully!")
 
