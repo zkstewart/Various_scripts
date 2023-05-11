@@ -3,7 +3,7 @@
 # Contains various Classes to perform manipulations involving
 # FASTA sequences and MSAs.
 
-import os, inspect, sys, hashlib, time, random, re
+import os, inspect, sys, hashlib, time, random, re, math
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
 from copy import deepcopy
@@ -658,6 +658,71 @@ class FASTA:
         # Helpful flag for checking data type
         self.isFASTA = True
     
+    @staticmethod
+    def get_chunking_points(numberToChunk, chunks, isNumOfChunks=True):
+        '''
+        This is a general purpose function to take in a number of "things"
+        that you want to chunk, and find out how to chunk them evenly.
+        
+        The resulting list should be interpreted as the 0-based indices where
+        a new chunk should form. You should check for this index at the start
+        of a loop, and form a new file if your index == the value in this list.
+        
+        Also, this uses "allocated chunking" such that it will try to keep
+        the number of things per chunk approximately equal. Even if you specify
+        X number of things per chunk, it might be more optimal to have X-1 in each
+        chunk so as to make sure the last chunk doesn't contain a single thing.
+        This might not be what you want, but usually, allocated chunking leads to
+        more optimal code (e.g., a major use of this function would be for
+        parallel processing of the chunks).
+        
+        Params:
+            numberToChunk -- an integer value, possibly derived from a list length as example.
+            chunks -- an integer value for the desired number of chunks OR the number of
+                      sequences to contain within each chunk, determined by
+            isNumOfChunks -- a boolean indicating whether you want the number to be the number
+                             of chunks (True), or the number of sequences within each chunk (False)
+        '''
+        assert isinstance(numberToChunk, int)
+        assert isinstance(chunks, int)
+        if numberToChunk < chunks:
+            raise Exception(f"Chunking only valid if chunkSize <= chunks i.e., {chunks} <= {numberToChunk}")
+        
+        # Derive how many chunks we want to split the file into
+        if isNumOfChunks:
+            numChunks = chunks
+        else:
+            numChunks = math.ceil(numberToChunk / chunks)
+        
+        rawNum = numberToChunk / numChunks # This line is more relevant in the multithreading code I took this from, but it's okay to just leave it.
+        numRoundedUp = round((rawNum % 1) * numChunks, 0) # By taking the decimal place and multiplying it by the num of chunks, we can figure out how many chunks need to be rounded up
+        
+        # Store positions at which to start a new chunk
+        chunkPoints = []
+        ongoingCount = 0
+        for i in range(numChunks):
+            
+            # Determine where chunks begin in 0-based indexing
+            if i < numRoundedUp: # decide if the number of sequences in this chunk should be rounded up
+                point = math.ceil(rawNum) + ongoingCount # Round up the rawNum, and also add our ongoingCount which corresponds to the number of things already put into a chunk
+                
+                # Prevent chunking beyond the last index where a chunk should start
+                if point >= numberToChunk: # Without this check, if we have more chunks than things to chunk, we can end up with "extra" numbers in the list (e.g., [1, 2, 3, 4, 5, 6, 6, 6, 6, 6]).
+                    break  # This doesn't actually affect program function, but for aesthetic reasons and for clarity of how this function works, I prevent this from occurring.
+                
+                chunkPoints.append(point)
+                ongoingCount += math.ceil(rawNum)
+            else:
+                point = math.floor(rawNum) + ongoingCount # Round down the rawNum since we've already accounted for any extra uneven numbers
+                
+                if point >= numberToChunk:
+                    break
+                
+                chunkPoints.append(point)
+                ongoingCount += math.floor(rawNum)
+        
+        return chunkPoints
+    
     def add(self, fasta, isAligned=False):
         '''
         This method will read in the fastaFile and add the sequences vertically into
@@ -1259,26 +1324,9 @@ class FASTA:
         else:
             return sum(shared) / len(shared)
     
-    def write(self, outputFileName, withAlt=False, withDescription=False, asAligned=False, withConsensus=False):
+    def _validate_write_params(self, withAlt, withDescription, asAligned, withConsensus):
         '''
-        Writes the FASTA object out to a file in appropriate FASTA formatting. Various
-        method params allow the customisation of how the file is produced.
-        
-        Params:
-            outputFileName -- a string indicating the file location to write to. This file
-                              must not exist or an error will be raised.
-            withAlt -- a Boolean indicating whether sequences should be labelled with their
-                       ID value or with the alternative IDs provided. An error will be raised
-                       if no alternative IDs exist.
-            withDescription -- a Boolean indicating whether sequences should be labelled with
-                               their ID value or with the full description name. An error will
-                               be raised if you specify this and withAlt simultaneously.
-            asAligned -- a Boolean indicating whether the raw sequences or aligned sequences
-                         including gap characters should be output. An error will be raised
-                         if .isAligned == False or if any sequences lack a .gap_seq value.
-            withConsensus -- a Boolean indicating whether the output file should be inclusive
-                             of an additional sequence at the top with ">consensus" ID and the
-                             generated consensus sequence as its value.
+        Hidden function for code that needs to be called by write() and write_as_chunks().
         '''
         # Validate alternative ID validity and possibility
         assert isinstance(withAlt, bool)
@@ -1309,12 +1357,36 @@ class FASTA:
         if withConsensus:
             if self.consensus == None:
                 raise Exception("FASTA object doesn't have a consensus sequence; cant write withConsensus")
+    
+    def write(self, outputFileName, withAlt=False, withDescription=False, asAligned=False, withConsensus=False):
+        '''
+        Writes the FASTA object out to a file in appropriate FASTA formatting. Various
+        method params allow the customisation of how the file is produced.
+        
+        Params:
+            outputFileName -- a string indicating the file location to write to. This file
+                              must not exist or an error will be raised.
+            withAlt -- a Boolean indicating whether sequences should be labelled with their
+                       ID value or with the alternative IDs provided. An error will be raised
+                       if no alternative IDs exist.
+            withDescription -- a Boolean indicating whether sequences should be labelled with
+                               their ID value or with the full description name. An error will
+                               be raised if you specify this and withAlt simultaneously.
+            asAligned -- a Boolean indicating whether the raw sequences or aligned sequences
+                         including gap characters should be output. An error will be raised
+                         if .isAligned == False or if any sequences lack a .gap_seq value.
+            withConsensus -- a Boolean indicating whether the output file should be inclusive
+                             of an additional sequence at the top with ">consensus" ID and the
+                             generated consensus sequence as its value.
+        '''
+        # Validate behavioural parameters
+        self._validate_write_params(withAlt, withDescription, asAligned, withConsensus)
         
         # Validate output value types and file non-existence
         assert isinstance(outputFileName, str)
         if os.path.isfile(outputFileName):
             raise Exception("{0} already exists; can't write output file".format(outputFileName))
-
+        
         # Actually write the output file
         with open(outputFileName, "w") as fileOut:
             if withConsensus:
@@ -1322,6 +1394,58 @@ class FASTA:
             for FastASeq_obj in self.seqs:
                 s = FastASeq_obj.get_str(withAlt=withAlt, withGap=asAligned, withDescription=withDescription)
                 fileOut.write("{0}\n".format(s))
+    
+    def write_as_chunks(self, outputFilePrefix, numChunks, withAlt=False, withDescription=False, asAligned=False):
+        '''
+        Writes the FASTA object out as multiple chunks to the indicated file prefix. Each
+        prefix will be followed by the "_chunk#.fasta" suffix; for simplicity's purpose,
+        we will not avoid file conflicts and instead raise an error if a file overwrite
+        would be necessary to execute this method.
+        
+        Params:
+            outputFileName -- a string indicating the file location to write to. This file
+                              must not exist or an error will be raised.
+            numChunks -- an integer 
+            withAlt -- a Boolean indicating whether sequences should be labelled with their
+                       ID value or with the alternative IDs provided. An error will be raised
+                       if no alternative IDs exist.
+            withDescription -- a Boolean indicating whether sequences should be labelled with
+                               their ID value or with the full description name. An error will
+                               be raised if you specify this and withAlt simultaneously.
+            asAligned -- a Boolean indicating whether the raw sequences or aligned sequences
+                         including gap characters should be output. An error will be raised
+                         if .isAligned == False or if any sequences lack a .gap_seq value.
+        '''
+        # Validate behavioural parameters
+        self._validate_write_params(withAlt, withDescription, asAligned, withConsensus=False)
+        
+        # Find out the indices to chunk this at to write the desired number of chunks
+        chunkPoints = FASTA.get_chunking_points(len(self), numChunks)
+        
+        # Validate output value types and file non-existence
+        assert isinstance(outputFilePrefix, str)
+        
+        chunkNames = []
+        for i in range(0, numChunks):
+            chunkName = f"{outputFilePrefix}_chunk{i+1}.fasta"
+            if os.path.isfile(chunkName):
+                raise Exception("{0} already exists; can't write chunked output file".format(chunkName))
+            chunkNames.append(chunkName)
+        
+        # Actually write the output files
+        FastASeq_objs = iter(self.seqs) # lets us iterate out of sync with file creation
+        ongoingCount = 0
+        for i in range(0, len(chunkPoints) + 1): # len(chunkPoints) + 1 gives us the actual number of output files
+            chunkName = chunkNames[i]
+            with open(chunkName, "w") as fileOut:
+                for FastASeq_obj in FastASeq_objs:
+                    s = FastASeq_obj.get_str(withAlt=withAlt, withGap=asAligned, withDescription=withDescription)
+                    fileOut.write("{0}\n".format(s))
+                    
+                    # Loop control
+                    ongoingCount += 1
+                    if ongoingCount in chunkPoints: # if this happens, we go back to the for loop and make a new file
+                        break
     
     @property
     def ids(self):
@@ -1380,6 +1504,35 @@ class FASTA:
             len(self.seqs), self.consensus, self.isAligned,
             str(self.fileOrder) if len(str(self.fileOrder)) < 200 else "{0} ... {1}".format(str(self.fileOrder)[0:100], str(self.fileOrder)[-100:])
         )
+
+class SeqIO_Tests:
+    def __init__(self):
+        self.run_chunk_tests()
+    
+    def run_chunk_tests():
+        chunkPoints = FASTA.get_chunking_points(5, 2, isNumOfChunks=True)
+        assert chunkPoints == [3] # 5 is the end of file, won't cause a new chunk
+        
+        chunkPoints = FASTA.get_chunking_points(5, 2, isNumOfChunks=False)
+        assert chunkPoints == [2,4] # this gives us 3 chunks, 2 seqs in first, 1 in last
+        
+        chunkPoints = FASTA.get_chunking_points(5, 3, isNumOfChunks=True)
+        assert chunkPoints == [2,4] # also gives us 3 chunks
+        
+        chunkPoints = FASTA.get_chunking_points(5, 3, isNumOfChunks=False)
+        assert chunkPoints == [3] # gives 2 chunks, 3 seqs in first, 2 in last
+        
+        chunkPoints = FASTA.get_chunking_points(5, 4, isNumOfChunks=True)
+        assert chunkPoints == [2, 3, 4] # gives us 4 chunks, 2 seqs in first, 1 in remaining
+        
+        chunkPoints = FASTA.get_chunking_points(5, 4, isNumOfChunks=False)
+        assert chunkPoints == [3] # gives us 3 chunks, 3 seqs in first, 2 in remaining
+        
+        chunkPoints = FASTA.get_chunking_points(5, 5, isNumOfChunks=True)
+        assert chunkPoints == [1, 2, 3, 4] # gives us 5 chunks, 1 seq in each
+        
+        chunkPoints = FASTA.get_chunking_points(5, 5, isNumOfChunks=False)
+        assert chunkPoints == [] # gives us 1 chunk with no index for forming a new one
 
 if __name__ == "__main__":
     pass
