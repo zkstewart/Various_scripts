@@ -186,11 +186,9 @@ class SignalP:
         
         # Check that executable file returns default help message
         cmd = ZS_Utility.base_subprocess_cmd(signalpExe) + ["-h"]
-        
-        run_sigp = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        run_sigp = subprocess.Popen(" ".join(cmd), shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
         sigpout, sigperr = run_sigp.communicate()
         out, err = sigpout.decode("utf-8").lower(), sigperr.decode("utf-8").lower()
-        
         if not any([eStr in out or eStr in err for eStr in EXPECTED_STRINGS]):
             "Different SignalP versions output on stdout or stderr which is stupid"
             return False, sigperr.decode("utf-8")
@@ -216,17 +214,17 @@ class SignalP:
         
         # Check which instruction we need to obtain version
         cmd = ZS_Utility.base_subprocess_cmd(signalpExe) + ["-h"]
-        run_sigp = subprocess.Popen(cmd, shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        run_sigp = subprocess.Popen(" ".join(cmd), shell = True, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         sigpout, sigperr = run_sigp.communicate()
         
         if "-version" in sigperr.decode("utf-8").lower():
             "Need to have it as a plain string to work??"
-            cmd = ZS_Utility.base_subprocess_cmd(signalpExe)[0] + " --version" # cmd for version 5 or 6
+            cmd = ZS_Utility.base_subprocess_cmd(signalpExe) + ["--version"] # cmd for version 5 or 6
         else:
-            cmd = ZS_Utility.base_subprocess_cmd(signalpExe)[0] + " -V" # cmd for version 4
+            cmd = ZS_Utility.base_subprocess_cmd(signalpExe) + ["-V"] # cmd for version 4
         
-        # Get version stdout        
-        run_version = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        # Get version stdout
+        run_version = subprocess.Popen(" ".join(cmd), shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
         versionout, versionerr = run_version.communicate()
         if versionerr.decode("utf-8") != "":
             raise Exception("get_signalP_version ran into unexpected failure with stderr of {0}".format(
@@ -236,7 +234,7 @@ class SignalP:
         
         # Extract version from stdout
         if "signalp 4" in versionMessage:
-            raise NotImplementedError("Unfortunately, I can't make SignalP 4 run on Windows so it's not handled yet")
+            raise NotImplementedError("SignalP 4 refuses to work properly; hence, not implemented. Sorry.")
             return 4
         elif "signalp version 5" in versionMessage:
             return 5
