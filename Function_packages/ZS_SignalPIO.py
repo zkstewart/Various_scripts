@@ -247,12 +247,16 @@ class SignalP:
                 versionMessage
             ))
     
-    def signalp(self):
+    def signalp(self, withScore=False):
         '''
         Performs the signalP operation.
         
         This method does not use .query because it may be in the FASTA or
         FastASeq object type, rather than a string which we require here.
+        
+        Parameters:
+            withScore -- a bool indicating whether the score of the signal peptide
+                         prediction should be returned (True) or not (False)
         
         KNOWN ERRORS:
             - Segmentation faults in WSL for signalP 4; I tried to make it compatible
@@ -343,7 +347,7 @@ class SignalP:
         elif self.version == 6:
             sigpGff3 = os.path.join(sigp6TmpDir, "output.gff3")
         
-        self.results = SignalP.parse_sigp_gff3(sigpGff3) # store for safe keeping
+        self.results = SignalP.parse_sigp_gff3(sigpGff3, withScore) # store for safe keeping
         
         # Clean up output and temporary files
         if isTemporary:
@@ -362,11 +366,13 @@ class SignalP:
         return self.results # return for calling function
     
     @staticmethod
-    def parse_sigp_gff3(sigpGff3):
+    def parse_sigp_gff3(sigpGff3, withScore=False):
         '''
         Parameters:
             sigpGff3 -- a string indicating the location of a GFF3 produced by
                         signalP
+            withScore -- a bool indicating whether the score of the signal peptide
+                         prediction should be returned (True) or not (False)
         Returns:
             sigpDict -- a dictionary with structure like:
                         {
@@ -383,7 +389,10 @@ class SignalP:
                 else:
                     seqid, sigpVersion, predictionType, \
                         start, end, score, _, _, _ = line.rstrip("\r\n ").split("\t")
-                    sigpDict[seqid] = [int(start), int(end)]
+                    if withScore:
+                        pass
+                    else:
+                        sigpDict[seqid] = [int(start), int(end), float(score)]
         return sigpDict
     
     def __str__(self):
