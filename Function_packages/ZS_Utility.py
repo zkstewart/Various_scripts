@@ -103,9 +103,6 @@ def convert_wsl_to_windows_path(wslPath):
         windowsPath -- a string indicating the inferred full path to the
                        given file or directory using windows formatting
     '''
-    "D:\Bioinformatics\Protein_analysis\signalp-4.1\signalp"
-    wslPath = "/mnt/d/Bioinformatics/Protein_analysis/signalp-4.1/signalp"
-    
     # Check that the path is something we can work with
     driveRegex = re.compile(r"/mnt/(\w)/")
     assert driveRegex.match(wslPath) != None, \
