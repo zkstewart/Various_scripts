@@ -90,5 +90,34 @@ def convert_windows_to_wsl_path(windowsPath):
     
     return wslPath
 
+def convert_wsl_to_windows_path(wslPath):
+    '''    
+    Provides simple functionality to infer the WSL path from
+    a windows path, provided as a string.
+    
+    Parameters:
+        wslPath -- a string indicating the WSL path to a file
+                   or directory of interest; this MUST include
+                   the mnt directory e.g., "/mnt/d"
+    Returns:
+        windowsPath -- a string indicating the inferred full path to the
+                       given file or directory using windows formatting
+    '''
+    "D:\Bioinformatics\Protein_analysis\signalp-4.1\signalp"
+    wslPath = "/mnt/d/Bioinformatics/Protein_analysis/signalp-4.1/signalp"
+    
+    # Check that the path is something we can work with
+    driveRegex = re.compile(r"/mnt/(\w)/")
+    assert driveRegex.match(wslPath) != None, \
+        f"'{wslPath}' is not recognised as a properly formatted WSL path"
+    
+    # If it is, convert it
+    driveLetter = driveRegex.match(wslPath).group(1)
+    windowsPath = "{0}:\\{1}".format(driveLetter.upper(),
+                               "\\".join(wslPath.split("/")[3:])
+                               )
+    
+    return windowsPath
+
 if __name__ == "__main__":
     pass
