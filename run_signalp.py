@@ -37,17 +37,18 @@ class SignalPThread(Thread):
     to be stored locally within this object. Necessary since we can't otherwise
     get return values from threads.
     '''
-    def __init__(self, fastaFile, signalpExe, organism):
+    def __init__(self, fastaFile, signalpExe, organism, cygwinDir=None):
         Thread.__init__(self)
         
         self.fastaFile = fastaFile
         self.signalpExe = signalpExe
         self.organism = organism
+        self.cygwinDir = cygwinDir
         self.output = None
     
     def run(self):
         # Create and configure signalP handler object
-        sigp = ZS_SignalPIO.SignalP(self.fastaFile, self.signalpExe)
+        sigp = ZS_SignalPIO.SignalP(self.fastaFile, self.signalpExe, self.cygwinDir)
         sigp.organism = self.organism
         sigp.clean = True
         
@@ -97,6 +98,11 @@ def main():
                    type=int,
                    help="""Specify how many threads to operate with; default == 1""",
                    default=1)
+    p.add_argument("--cygwinDir", dest="cygwinDir",
+                   required=False,
+                   help="""If you intend on running signalP 4 on Windows, you must provide
+                   this value; WSL does not work, hence we must run it through Cygwin""",
+                   default=None)
     
     args = p.parse_args()
     validate_args(args)
@@ -121,7 +127,7 @@ def main():
     processing = []
     for i in range(args.threads):
         fastaFile = fastaFiles[i]
-        workerThread = SignalPThread(fastaFile, args.signalpExe, args.organism)
+        workerThread = SignalPThread(fastaFile, args.signalpExe, args.organism, args.cygwinDir)
         processing.append(workerThread)
         workerThread.start()
     
@@ -133,7 +139,7 @@ def main():
                 
         # ... then merge dictionary outputs together
         sigpResultsDict.update(workerThread.output)
-            
+    
     # Create output file
     with open(args.outputFileName, "w") as fileOut:
         # Write header
