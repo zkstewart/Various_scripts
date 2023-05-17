@@ -440,8 +440,7 @@ class SignalP:
                 "-f", "short",
                 "-n", f'{sigp4TmpFile}',
                 f'{ZS_Utility.convert_windows_to_wsl_path(fastaQuery)}'
-                    if platform.system() == "Windows" and self.version != 4
-                    else fastaQuery
+                    if platform.system() == "Windows" else fastaQuery
             ]
         elif self.version == 5:
             # cd into the SignalP bin dir before doing anything else
