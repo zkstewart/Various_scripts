@@ -243,7 +243,7 @@ class Feature:
         return "<{0}>".format(";".join(reprPairs))
 
 class GFF3:
-    def __init__(self, file_location, strict_parse=True):
+    def __init__(self, file_location, strict_parse=True, slimIndex=False):
         self.fileLocation = file_location
         self.features = OrderedDict()
         self.types = {}
@@ -255,7 +255,7 @@ class GFF3:
         self._nclsIndex = None
         
         self.isGFF3 = True
-        self.parse_gff3(strictParse=strict_parse)
+        self.parse_gff3(strictParse=strict_parse, slimIndex=False)
     
     @staticmethod
     def make_feature_case_appropriate(featureType):
