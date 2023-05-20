@@ -295,7 +295,7 @@ class GFF3:
                 longestMrna = [mrnaFeature, mrnaLen]
         return longestMrna[0]
     
-    def parse_gff3(self, strictParse=True, fullWarning=False):
+    def parse_gff3(self, strictParse=True, fullWarning=False, slimIndex=False):
         '''
         Parameters:
             strictParse -- a boolean indicating whether this function should
@@ -303,6 +303,9 @@ class GFF3:
                            or if failing annotation values should simply be skipped
             fullWarning -- a boolean indicating whether every single warning should
                            be printed, or just the first 10.
+            slim -- a boolean indicating whether the GFF3 indexed should be fully
+                    featured (slimIndex == False) or if a slim index should be created
+                    with minimal features detailed (slimIndex == True)
         '''
         # Set up warning handling system
         warningContainer = { # this dict acts like a JSON for data storage
@@ -318,9 +321,28 @@ class GFF3:
                 print("Further warning messages will be suppressed.")
                 warningContainer["hasHandledWarnings"] = True
         
+        # Setup for slim parsing functionality
+        def _format_attributes(attributes, slimIndex):
+            SLIM_ATTRIBUTES = ["id", "parent"]
+            
+            splitAttributes = []
+            for a in attributes.split("="):
+                if ";" in a:
+                    splitAttributes += a.rsplit(";", maxsplit=1)
+                else:
+                    splitAttributes.append(a)
+            
+            if not slimIndex:
+                attributesDict = {splitAttributes[i]: splitAttributes[i+1] for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2)}
+            else:
+                attributesDict = {
+                    splitAttributes[i]: splitAttributes[i+1]
+                    for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2)
+                    if splitAttributes[i].lower() in SLIM_ATTRIBUTES
+                }
+        
         # Gene object loop
         lineCount = 0
-        warningCount = 0
         with open(self.fileLocation, 'r') as fileIn:
             for line in fileIn:
                 lineCount += 1
@@ -347,15 +369,8 @@ class GFF3:
                         )
                         continue
                 
-                splitAttributes = []
-                for a in attributes.split("="):
-                    if ";" in a:
-                        splitAttributes += a.rsplit(";", maxsplit=1)
-                    else:
-                        splitAttributes.append(a)
-                attributesDict = {splitAttributes[i]: splitAttributes[i+1] for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2)}
-                
-                self.contigs.add(contig)
+                # Format attributes dictionary
+                attributesDict = _format_attributes(attributes, slimIndex)
                 
                 # Ensure case conformity
                 featureType = GFF3.make_feature_case_appropriate(featureType)
@@ -363,6 +378,7 @@ class GFF3:
                 # Skip un-indexable features
                 if 'ID' not in attributesDict and featureType.lower() != "cds": # see the human genome GFF3 biological_region values for why this is necessary
                     continue
+                self.contigs.add(contig) # we can index this contig now that we've skipped un-indexable features
                 
                 # Handle parent-level features
                 if 'Parent' not in attributesDict: # If no Parent field this should BE the parent
@@ -385,11 +401,18 @@ class GFF3:
                     # Create feature and populate it with details
                     feature = Feature()
                     feature.add_attributes(attributesDict)
-                    feature.add_attributes({
-                        "contig": contig, "source": source, "type": featureType,
-                        "start": int(start), "end": int(end), "coords": [int(start), int(end)],
-                        "score": score, "strand": strand, "frame": frame
-                    })
+                    if not slimIndex:
+                        feature.add_attributes({
+                            "contig": contig, "source": source, "type": featureType,
+                            "start": int(start), "end": int(end), "coords": [int(start), int(end)],
+                            "score": score, "strand": strand, "frame": frame
+                        })
+                    else:
+                        feature.add_attributes({
+                            "contig": contig, "type": featureType,
+                            "start": int(start), "end": int(end),
+                            "strand": strand
+                        })
                     
                     # Index feature
                     self.features[featureID] = feature
@@ -438,11 +461,18 @@ class GFF3:
                         # Create feature and populate it with details
                         feature = Feature()
                         feature.add_attributes(attributesDict)
-                        feature.add_attributes({
-                            "contig": contig, "source": source, "type": featureType,
-                            "start": int(start), "end": int(end), "coords": [int(start), int(end)],
-                            "score": score, "strand": strand, "frame": frame
-                        })
+                        if not slimIndex:
+                            feature.add_attributes({
+                                "contig": contig, "source": source, "type": featureType,
+                                "start": int(start), "end": int(end), "coords": [int(start), int(end)],
+                                "score": score, "strand": strand, "frame": frame
+                            })
+                        else:
+                            feature.add_attributes({
+                                "contig": contig, "type": featureType,
+                                "start": int(start), "end": int(end),
+                                "strand": strand
+                            })
                         
                         # Index feature
                         if featureType.lower() != "cds": # since CDS features aren't guaranteed to have unique IDs, there's no point indexing them
