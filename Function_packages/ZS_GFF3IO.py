@@ -255,7 +255,7 @@ class GFF3:
         self._nclsIndex = None
         
         self.isGFF3 = True
-        self.parse_gff3(strict_parse=strict_parse, slim_index=False)
+        self.parse_gff3(strict_parse=strict_parse, slim_index)
     
     @staticmethod
     def make_feature_case_appropriate(featureType):
