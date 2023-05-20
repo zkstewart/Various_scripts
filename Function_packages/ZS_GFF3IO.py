@@ -255,7 +255,7 @@ class GFF3:
         self._nclsIndex = None
         
         self.isGFF3 = True
-        self.parse_gff3(strict_parse=strict_parse, slim_index=False)
+        self.parse_gff3(strict_parse=strict_parse, slim_index=slim_index)
     
     @staticmethod
     def make_feature_case_appropriate(featureType):
@@ -375,6 +375,22 @@ class GFF3:
                 
                 # Ensure case conformity
                 featureType = GFF3.make_feature_case_appropriate(featureType)
+                
+                # Fix GFF3s which did not give exons an ID
+                "I'm looking at you banana genome hub. You shouldn't do this."
+                if 'ID' not in attributesDict and featureType.lower() == "exon":
+                    parentID = attributesDict["Parent"].split(',')
+                    assert len(parentID) == 1, \
+                        ("I tried to fix missing exon IDs but found a sequence with >1 parent ", +
+                         "i.e., {0}".format(attributesDict["Parent"]))
+                    parentID = parentID[0]
+                    
+                    parentFeature = self.features[parentID]
+                    try:
+                        numExons = len(parentFeature.exon)
+                    except:
+                        numExons = 0
+                    attributesDict["ID"] = f"{parentID}.exon{numExons+1}"
                 
                 # Skip un-indexable features
                 if 'ID' not in attributesDict and featureType.lower() != "cds": # see the human genome GFF3 biological_region values for why this is necessary
