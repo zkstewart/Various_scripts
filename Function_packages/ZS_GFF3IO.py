@@ -243,7 +243,7 @@ class Feature:
         return "<{0}>".format(";".join(reprPairs))
 
 class GFF3:
-    def __init__(self, file_location, strict_parse=True, slimIndex=False):
+    def __init__(self, file_location, strict_parse=True, slim_index=False):
         self.fileLocation = file_location
         self.features = OrderedDict()
         self.types = {}
@@ -255,7 +255,7 @@ class GFF3:
         self._nclsIndex = None
         
         self.isGFF3 = True
-        self.parse_gff3(strictParse=strict_parse, slimIndex=False)
+        self.parse_gff3(strict_parse=strict_parse, slim_index=False)
     
     @staticmethod
     def make_feature_case_appropriate(featureType):
@@ -295,17 +295,17 @@ class GFF3:
                 longestMrna = [mrnaFeature, mrnaLen]
         return longestMrna[0]
     
-    def parse_gff3(self, strictParse=True, fullWarning=False, slimIndex=False):
+    def parse_gff3(self, strict_parse=True, full_warning=False, slim_index=False):
         '''
         Parameters:
-            strictParse -- a boolean indicating whether this function should
-                           die if the GFF3 doesn't meet strict format standards,
-                           or if failing annotation values should simply be skipped
-            fullWarning -- a boolean indicating whether every single warning should
-                           be printed, or just the first 10.
-            slim -- a boolean indicating whether the GFF3 indexed should be fully
-                    featured (slimIndex == False) or if a slim index should be created
-                    with minimal features detailed (slimIndex == True)
+            strict_parse -- a boolean indicating whether this function should
+                            die if the GFF3 doesn't meet strict format standards,
+                            or if failing annotation values should simply be skipped
+            full_warning -- a boolean indicating whether every single warning should
+                            be printed, or just the first 10.
+            slim_index -- a boolean indicating whether the GFF3 indexed should be fully
+                          featured (slim_index == False) or if a slim index should be created
+                          with minimal features detailed (slim_index == True)
         '''
         # Set up warning handling system
         warningContainer = { # this dict acts like a JSON for data storage
@@ -314,7 +314,7 @@ class GFF3:
             "hasHandledWarnings": False
         }
         def _handle_warning_message(warningContainer, message):
-            if fullWarning == True or warningContainer["warningCount"] < warningContainer["warningLimit"]:
+            if full_warning == True or warningContainer["warningCount"] < warningContainer["warningLimit"]:
                 print(message)
                 warningContainer["warningCount"] += 1
             if warningContainer["hasHandledWarnings"] == False and warningContainer["warningCount"] == warningContainer["warningLimit"]:
@@ -322,7 +322,7 @@ class GFF3:
                 warningContainer["hasHandledWarnings"] = True
         
         # Setup for slim parsing functionality
-        def _format_attributes(attributes, slimIndex):
+        def _format_attributes(attributes, slim_index):
             SLIM_ATTRIBUTES = ["id", "parent"]
             
             splitAttributes = []
@@ -332,7 +332,7 @@ class GFF3:
                 else:
                     splitAttributes.append(a)
             
-            if not slimIndex:
+            if not slim_index:
                 attributesDict = {splitAttributes[i]: splitAttributes[i+1] for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2)}
             else:
                 attributesDict = {
@@ -340,6 +340,7 @@ class GFF3:
                     for i in range(0, len(splitAttributes)-(len(splitAttributes)%2), 2)
                     if splitAttributes[i].lower() in SLIM_ATTRIBUTES
                 }
+            return attributesDict
         
         # Gene object loop
         lineCount = 0
@@ -358,7 +359,7 @@ class GFF3:
                         score, strand, frame, attributes \
                         = line.rstrip('\t\n').split('\t')
                 except:
-                    if strictParse == True:
+                    if strict_parse == True:
                         raise ValueError(
                             f"Error: Line #{lineCount} (\"{line}\") does not meet GFF3 standards; parsing failed"
                         )
@@ -370,7 +371,7 @@ class GFF3:
                         continue
                 
                 # Format attributes dictionary
-                attributesDict = _format_attributes(attributes, slimIndex)
+                attributesDict = _format_attributes(attributes, slim_index)
                 
                 # Ensure case conformity
                 featureType = GFF3.make_feature_case_appropriate(featureType)
@@ -384,12 +385,12 @@ class GFF3:
                 if 'Parent' not in attributesDict: # If no Parent field this should BE the parent
                     featureID = attributesDict["ID"]
                     
-                    # End parsing if duplicate ID is found (strictParse is True)
-                    if strictParse == True:
+                    # End parsing if duplicate ID is found (strict_parse is True)
+                    if strict_parse == True:
                         assert featureID not in self.features, \
                             (f"Error: '{featureID}' feature occurs twice indicating poorly formatted file;" + 
                             f" for debugging, line #{lineCount} == {line}; parsing will stop now")
-                    # Skip parsing if duplicate ID is found (strictParse is False)
+                    # Skip parsing if duplicate ID is found (strict_parse is False)
                     else:
                         if featureID in self.features:
                             _handle_warning_message(warningContainer,
@@ -401,7 +402,7 @@ class GFF3:
                     # Create feature and populate it with details
                     feature = Feature()
                     feature.add_attributes(attributesDict)
-                    if not slimIndex:
+                    if not slim_index:
                         feature.add_attributes({
                             "contig": contig, "source": source, "type": featureType,
                             "start": int(start), "end": int(end), "coords": [int(start), int(end)],
@@ -438,8 +439,8 @@ class GFF3:
                             else:
                                 featureID = f"{parentID}.cds"
                         
-                        # End parsing if parent doesn't exist (strictParse is True)
-                        if strictParse == True:
+                        # End parsing if parent doesn't exist (strict_parse is True)
+                        if strict_parse == True:
                             assert parentID in self.features, \
                                 (f"Error: '{featureID}' feature points to a non-existing parent '{parentID}' at the time of parsing;" + 
                                 f" for debugging, line #{lineCount} == {line}; parsing will stop now")
@@ -452,7 +453,7 @@ class GFF3:
                                 continue
                         
                         # End parsing if duplicate ID is found
-                        "strictParse won't negate this problem since it's simply unacceptable!"
+                        "strict_parse won't negate this problem since it's simply unacceptable!"
                         if featureType.lower() != "cds": # CDS features are the ONLY feature allowed to have non-unique IDs
                             assert self.features[parentID].retrieve_child(featureID) == None, \
                                 (f"Error: '{featureID}' feature is associated to a parent '{parentID}' more than once;" + 
@@ -461,7 +462,7 @@ class GFF3:
                         # Create feature and populate it with details
                         feature = Feature()
                         feature.add_attributes(attributesDict)
-                        if not slimIndex:
+                        if not slim_index:
                             feature.add_attributes({
                                 "contig": contig, "source": source, "type": featureType,
                                 "start": int(start), "end": int(end), "coords": [int(start), int(end)],
