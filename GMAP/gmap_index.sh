@@ -13,4 +13,4 @@ GENFILE=telmatactis_HGAP.arr4.pil2.fasta
 #####
 
 # > STEP 1: Format GMAP database
-gmap_build -D ${GENDIR} -T ${GENDIR} -d ${GENFILE}.gmap ${GENDIR}/${GENFILE}
+gmap_build -D ${GENDIR} -d ${GENFILE}.gmap ${GENDIR}/${GENFILE}

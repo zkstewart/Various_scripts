@@ -36,7 +36,7 @@ PREFIX=${TXFILE}_n${NUMPATHS}_gmap
 # > STEP 2: Run GMAP aligner
 gmap -D ${GENDIR} -d ${GENFILE}.gmap \
     -f ${F} -n ${NUMPATHS} -x ${X} \
-	-B 5 -t ${CPUS} \
-	--max-intronlength-middle=${INTRONMIDDLE} \
-	--max-intronlength-ends=${INTRONENDS} \
-	${QDIR}/${QFILE} > ${PREFIX}.gff3
+    -B 5 -t ${CPUS} \
+    --max-intronlength-middle=${INTRONMIDDLE} \
+    --max-intronlength-ends=${INTRONENDS} \
+    ${QDIR}/${QFILE} > ${PREFIX}.gff3
