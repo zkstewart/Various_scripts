@@ -53,13 +53,19 @@ class Conversion:
             inObject = FastASeq("tmpID", inObject)
         
         # If inObject is a FastASeq, make it a FASTA object
-        if type(inObject).__name__ == "FastASeq" or type(inObject).__name__ == "ZS_SeqIO.FastASeq":
+        if hasattr(inObject, "isFastASeq") and inObject.isFastASeq is True:
             tmpFASTA = FASTA(None) # create an empty FASTA object
             tmpFASTA.add(inObject) # populate it with our FastASeq value
             inObject = tmpFASTA # set inObject to the new value
         
+        # If inObject is a FASTA, do nothing
+        if hasattr(inObject, "isFASTA") and inObject.isFASTA is True:
+            pass
+        
         # If inObject was not a supported type, error out now
-        if not isinstance(inObject, str):
+        elif not isinstance(inObject, str):
+            print(inObject.__dict__)
+            print(type(inObject).__name__)
             raise TypeError("Input type was not a string, FastASeq, or FASTA!")
         
         return inObject, tmpHash
@@ -123,7 +129,7 @@ class Conversion:
         
         # If inObject is a ZS_SeqIO.FASTA, make it into a file
         isTemporary = False
-        if type(inObject).__name__ == "FASTA" or type(inObject).__name__ == "ZS_SeqIO.FASTA":
+        if hasattr(inObject, "isFASTA") and inObject.isFASTA is True:
             tmpinObjectName = ZS_Utility.tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
             inObject.write(tmpinObjectName)
             
@@ -153,13 +159,13 @@ class Conversion:
         # Get a string for hash building
         if isinstance(inObject, str):
             strForHash = inObject
-        elif type(inObject).__name__ == "ZS_SeqIO.FASTA" or type(inObject).__name__ == "FASTA":
+        elif hasattr(inObject, "isFASTA") and inObject.isFASTA is True:
             strForHash = ""
             for FastASeq_obj in inObject:
                 strForHash += FastASeq_obj.id
                 strForHash += FastASeq_obj.seq[0:1000]
                 strForHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
-        elif type(inObject).__name__ == "ZS_SeqIO.FastASeq" or type(inObject).__name__ == "FastASeq":
+        elif hasattr(inObject, "isFastASeq") and inObject.isFastASeq is True:
             strForHash = inObject.id + inObject.seq[0:1000]
         else:
             raise ValueError("get_hash_for_input_sequences can't handle the given object type")
@@ -884,8 +890,7 @@ class FASTA:
             FastASeq_obj -- a ZS_SeqIO FastASeq object.
         '''
         # Validate value type and file existence
-        #assert isinstance(FastASeq_obj, FastASeq) # Fails, lame
-        assert type(FastASeq_obj).__name__ == "FastASeq" or type(FastASeq_obj).__name__ == "ZS_SeqIO.FastASeq"
+        assert hasattr(FastASeq_obj, "isFastASeq") and FastASeq_obj.isFastASeq is True
         assert isinstance(index, int)
         
         self.seqs.insert(index, FastASeq_obj)
