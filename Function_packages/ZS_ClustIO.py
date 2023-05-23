@@ -56,16 +56,25 @@ class CDHIT:
         self.molecule = "nucleotide" if molecule.lower() in ["n", "nucl", "nucleotide"] else "protein"
         
         # Set default attributes
-        self.identity = 0.9
-        self.word_length = 5 if self.molecule == "protein" else 8
+        self.identity = 0.9 # implicitly sets self.word_length
         self.local = False
         self.shorter_cov_pct = 0.0
         self.longer_cov_pct = 0.0
         self.mem = 1000 # 1GB by default
         self.threads = 1
         self.clean = True
+        self.description_length = 0
+        
+        # Results storage values
+        self.resultFasta = None
+        self.resultClusters = None
     
-    def set_identity(self, num):
+    @property
+    def identity(self):
+        return self._identity
+    
+    @identity.setter
+    def identity(self, num):
         '''
         Relates to the -c parameter for CD-HIT. Controls the sequence identity
         threshold for clustering sequences together. This method also controls
@@ -79,7 +88,7 @@ class CDHIT:
         if not 0<=num<=1:
             raise Exception("Identity (-c) must be between 0 and 1 (inclusive)")
         
-        self.identity = num
+        self._identity = num
         
         # Set word length intelligently, depending on molecule type
         if self.molecule == "nucleotide":
@@ -104,6 +113,105 @@ class CDHIT:
                 self.word_length = 3
             else:
                 self.word_length = 2 # assuming this is also okay
+    
+    @property
+    def word_length(self):
+        return self._word_length
+    
+    @word_length.setter
+    def word_length(self, num):
+        '''
+        Relates to the -n parameter for CD-HIT. Controls algorithmic behaviour
+        of CD-HIT, and should be set to a value according to the identity parameter.
+        
+        Usually, you should allow the identity setter to automatically specify the
+        word length, but this setter allows you to override that behaviour.
+        
+        Parameters:
+            num -- should be a valid integer that is minimally bounded at 1 and
+                   maximally bounded at 11.
+        '''
+        assert isinstance(num, int)
+        if not (1 <= num <= 11):
+            raise Exception("word length (-n) must be in the range of 1 to 11 (inclusive)")
+        
+        self._word_length = num
+    
+    @property
+    def mem(self):
+        return self._mem
+    
+    @mem.setter
+    def mem(self, num):
+        '''
+        Relates to the -M parameter for CD-HIT. Controls how much memory is allowed
+        to be used by the algorithm. Number is in megabytes.
+        
+        Parameters:
+            num -- should be a valid integer that is minimally bounded at 100.
+        '''
+        assert isinstance(num, int)
+        if not num >= 100:
+            raise Exception("mem (-M) must be at least 100 megabytes")
+        
+        self._mem = num
+    
+    @property
+    def threads(self):
+        return self._threads
+    
+    @threads.setter
+    def threads(self, num):
+        '''
+        Relates to the -T parameter for CD-HIT. Controls how many threads CD-HIT
+        will use.
+        
+        0 means it will use as many threads as there are CPU cores.
+        
+        Parameters:
+            num -- should be a valid integer that is minimally bounded at 0.
+        '''
+        assert isinstance(num, int)
+        if not num >= 0:
+            raise Exception("threads (-T) must be greater than or equal to 0")
+        
+        self._threads = num
+    
+    @property
+    def clean(self):
+        return self._clean
+    
+    @clean.setter
+    def clean(self, value):
+        '''
+        This method allows the clean attribute to be set, which controls
+        whether CD-HIT output files are kept or not.
+        
+        Parameters:
+            clean -- a Boolean of True or False
+        '''
+        assert isinstance(value, bool)
+        
+        self._clean = value
+    
+    @property
+    def description_length(self):
+        return self._description_length
+    
+    @description_length.setter
+    def description_length(self, num):
+        '''
+        Relates to the -d parameter for CD-HIT. Controls the presentation of
+        the output cluster file.
+        
+        Parameters:
+            num -- should be a valid integer that is minimally bounded at 0.
+        '''
+        assert isinstance(num, int)
+        if not num >= 0:
+            raise Exception("description length (-d) must be >= 0")
+        
+        self._description_length = num
     
     def set_local(self):
         '''
@@ -137,7 +245,7 @@ class CDHIT:
             num -- should be a valid float in the range of 0 to 1 (inclusive)
         '''
         assert isinstance(num, float)
-        if not 0<=num<=1:
+        if not (0<=num<=1):
             raise Exception("shorter_cov_pct (-aS) must be between 0 and 1 (inclusive)")
         
         self.shorter_cov_pct = num
@@ -156,52 +264,10 @@ class CDHIT:
             num -- should be a valid float in the range of 0 to 1 (inclusive)
         '''
         assert isinstance(num, float)
-        if not 0<=num<=1:
+        if not (0<=num<=1):
             raise Exception("longer_cov_pct (-aL) must be between 0 and 1 (inclusive)")
         
         self.longer_cov_pct = num
-    
-    def set_mem(self, num):
-        '''
-        Relates to the -M parameter for CD-HIT. Controls how much memory is allowed
-        to be used by the algorithm. Number is in megabytes.
-        
-        Parameters:
-            num -- should be a valid integer that is minimally bounded at 100.
-        '''
-        assert isinstance(num, int)
-        if not 100<=num:
-            raise Exception("mem (-M) must be at least 100 megabytes")
-        
-        self.mem = num
-    
-    def set_threads(self, num):
-        '''
-        Relates to the -T parameter for CD-HIT. Controls how many threads CD-HIT
-        will use.
-        
-        0.0 means it will use as many threads as there are CPU cores.
-        
-        Parameters:
-            num -- should be a valid integer that is minimally bounded at 0.
-        '''
-        assert isinstance(num, int)
-        if not 0<=num:
-            raise Exception("threads (-T) must be greater than or equal to 0")
-        
-        self.threads = num
-    
-    def set_clean(self, clean):
-        '''
-        This method allows the clean attribute to be set, which controls
-        whether CD-HIT output files are kept or not.
-        
-        Parameters:
-            clean -- a Boolean of True or False
-        '''
-        assert isinstance(clean, bool)
-        
-        self.clean = clean
 
     def cdhit(self, fasta, outputDir, outputFasta):
         '''
@@ -221,21 +287,59 @@ class CDHIT:
         
         assert os.path.isfile(fasta), "fasta file does not exist"
         assert os.path.isdir(outputDir), "output directory does not exist"
-        assert os.path.basename(outputFasta) == outputFasta, "output fasta file needs to be just the file name; its location is specified in the outputDir method parameter"
-        assert not os.path.isfile(os.path.join(outputDir, outputFasta)), "\"{0}\" already exists; cdhit method won't overwrite it".format(os.path.join(outputDir, outputFasta))
+        assert os.path.basename(outputFasta) == outputFasta, \
+            "output fasta file needs to be just the file name; its location is specified in the outputDir method parameter"
+        assert not os.path.isfile(os.path.join(outputDir, outputFasta)), \
+            f"'{os.path.join(outputDir, outputFasta)}' already exists; cdhit method won't overwrite it"
         
         if self.molecule == "nucleotide":
             program = os.path.join(self.cdhitDir if self.cdhitDir != None else "", 'cd-hit-est')
         else:
             program = os.path.join(self.cdhitDir if self.cdhitDir != None else "", 'cd-hit')
         
-        cmd = f"{program} -i {fasta} -o {os.path.join(outputDir, outputFasta)} -c {self.identity} -n {self.word_length} -G {0 if self.local else 1} -aS {self.shorter_cov_pct} -aL {self.longer_cov_pct} -M {self.mem} -T {self.threads}"
+        cmd = (f"{program} -i {fasta} -o {os.path.join(outputDir, outputFasta)} " + 
+               f"-c {self.identity} -n {self.word_length} -G {0 if self.local else 1} " + 
+               f"-aS {self.shorter_cov_pct} -aL {self.longer_cov_pct} -M {self.mem} " +
+               f"-T {self.threads} -d {self.description_length}")
         run_cdhit = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
         cdout, cderr = run_cdhit.communicate()
         if cderr.decode("utf-8") != '':
             raise Exception('CD-HIT Error text below' + str(cderr.decode("utf-8")))
     
-    def get_cdhit_results(self, workingDir="."):
+    @staticmethod
+    def parse_clstr_file(clstrFile):
+        '''
+        For this to be effective, you should make sure CD-HIT was run with -d 0
+        so as to give the sequence ID in a format expected here.
+        
+        Parameters:
+            clstrFile -- a string pointing to the location of a CD-HIT output cluster
+                         file.
+        Returns:
+            clstrDict -- a dictionary with structure like:
+                         {
+                             0: [seqid1, seqid2, ...],
+                             1: [ ... ],
+                             ...
+                         }
+        '''
+        clstrDict = {}
+        with open(clstrFile, "r") as fileIn:
+            for line in fileIn:
+                sl = line.rstrip("\r\n ").split()
+                
+                # Handle cluster ID lines
+                if line.startswith(">"):
+                    thisCluster = int(sl[1])
+                    clstrDict[thisCluster] = []
+                
+                # Handle content lines
+                else:
+                    seqID = sl[2].strip(">.")
+                    clstrDict[thisCluster].append(seqID)
+        return clstrDict
+    
+    def get_cdhit_results(self, workingDir=".", returnClusters=False):
         '''
         This function pipelines the process of obtaining CD-HIT results. Intermediate files are
         deleted automatically, and hence this function will only result in the return of the
@@ -243,22 +347,24 @@ class CDHIT:
         
         Parameters:
             workingDir -- a string indicating the location to write CD-HIT results to.
+            returnClusters
         Returns:
             FASTA_obj -- a ZS_SeqIO.FASTA object of the clustered CD-HIT results.
             cdhitResultFile -- a string indicating the file name of the results file. If self.clean is True,
                                this will instead return None.
         '''
         
-        assert os.path.isdir(workingDir), "workingDir must already exist, or just leave it as default to write to current working directory"
+        assert os.path.isdir(workingDir), \
+            "workingDir must already exist, or just leave it as default to write to current working directory"
         
-        # Get file names for query and target after data type coercion
-        f, fIsTemporary = Conversion.get_filename_for_input_sequences()
+        # Get file name after data type coercion
+        f, fIsTemporary = Conversion.get_filename_for_input_sequences(self.fasta)
         
         # Get hash for temporary file creation
-        tmpHash = hashlib.sha256(bytes(f + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        tmpHash = Conversion.get_hash_for_input_sequences(f)
         
         # Run CD-HIT
-        tmpResultName = tmp_file_name_gen("cdhit_result_tmp" + tmpHash[0:20], "fasta")
+        tmpResultName = tmp_file_name_gen("cdhit_result_tmp" + tmpHash, "fasta")
         self.cdhit(f, workingDir, tmpResultName) # "." for working directory being the current one
         
         # Parse CD-HIT results
@@ -268,14 +374,24 @@ class CDHIT:
         if fIsTemporary:
             os.unlink(f)
         
-        # Clean up results and return (if relevant)
+        # Parse clstr file if desired
+        if returnClusters == True:
+            clstrDict = CDHIT.parse_clstr_file(tmpResultName + ".clstr")
+        else:
+            clstrDict = None
+        
+        # Store results
+        self.resultFasta = result_FASTA_obj
+        self.resultClusters = clstrDict
+        
+        # Clean up results (if relevant) and return the output file name
         if self.clean:
             os.unlink(tmpResultName)
             os.unlink(tmpResultName + ".clstr")
-            return result_FASTA_obj, None
+            return None
         # Or just return results
         else:
-            return result_FASTA_obj, tmpResultName
+            return tmpResultName
 
 if __name__ == "__main__":
     pass
