@@ -339,7 +339,7 @@ class CDHIT:
                     clstrDict[thisCluster].append(seqID)
         return clstrDict
     
-    def get_cdhit_results(self, workingDir=".", returnClusters=False):
+    def get_cdhit_results(self, workingDir=".", returnFASTA=True, returnClusters=False):
         '''
         This function pipelines the process of obtaining CD-HIT results. Intermediate files are
         deleted automatically, and hence this function will only result in the return of the
@@ -347,15 +347,27 @@ class CDHIT:
         
         Parameters:
             workingDir -- a string indicating the location to write CD-HIT results to.
-            returnClusters
+            returnFASTA -- a boolean indicating whether we should parse the output FASTA
+                           file at the end of this, storing its value in .resultFasta as
+                           a ZS_SeqIO.FASTA object.
+            returnClusters -- a boolean indicating whether we should parse the .clstr
+                              file at the end of this, storing its value in .resultClusters
+                              as a dictionary.
         Returns:
             FASTA_obj -- a ZS_SeqIO.FASTA object of the clustered CD-HIT results.
             cdhitResultFile -- a string indicating the file name of the results file. If self.clean is True,
                                this will instead return None.
         '''
-        
         assert os.path.isdir(workingDir), \
             "workingDir must already exist, or just leave it as default to write to current working directory"
+        
+        # Validate that running this function will result in some sort of output
+        if self.clean == True:
+            if returnFASTA == False and returnClusters == False:
+                raise ValueError(("get_cdhit_results will not return you anything " +
+                                  "at the end of running, since .clean is set to True " +
+                                  "and you set both returnFASTA and returnClusters to False. " +
+                                  "Since there's no point running, I'm not going to."))
         
         # Get file name after data type coercion
         f, fIsTemporary = Conversion.get_filename_for_input_sequences(self.fasta)
@@ -367,8 +379,11 @@ class CDHIT:
         tmpResultName = tmp_file_name_gen("cdhit_result_tmp" + tmpHash, "fasta")
         self.cdhit(f, workingDir, tmpResultName) # "." for working directory being the current one
         
-        # Parse CD-HIT results
-        result_FASTA_obj = FASTA(tmpResultName)
+        # Parse CD-HIT results if desired
+        if returnFASTA == True:
+            result_FASTA_obj = FASTA(tmpResultName)
+        else:
+            result_FASTA_obj = None
         
         # Clean up f temporary file
         if fIsTemporary:
@@ -392,6 +407,16 @@ class CDHIT:
         # Or just return results
         else:
             return tmpResultName
+    
+    def __repr__(self):
+        return (
+            f"<CDHIT object;identity={self.identity};local={self.local};" +
+            f"shorter_cov_pct={self.shorter_cov_pct};longer_cov_pct={self.longer_cov_pct};" +
+            f"mem={self.mem};threads={self.threads};clean={self.clean};" +
+            f"description_length={self.description_length};" +
+            f"resultFASTA contains data={'NO' if self.resultFasta == None else 'YES'};" +
+            f"resultClusters contains data={'NO' if self.resultClusters == None else 'YES'}"
+        )
 
 if __name__ == "__main__":
     pass
