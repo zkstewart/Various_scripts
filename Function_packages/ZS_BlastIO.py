@@ -219,7 +219,10 @@ class BLAST:
         self.blast(q, t, tmpResultName)
         
         # Parse BLAST results
-        blastDict = BLAST_Results(tmpResultName).results # have to do this to support existing code
+        blastResults = BLAST_Results(tmpResultName)
+        blastResults.evalue = self.evalue
+        blastResults.parse_blast_hit_coords()
+        blastDict = blastResults.results
         
         # Clean up q and t temporary files
         if qIsTemporary:
@@ -269,9 +272,6 @@ class BLAST_Results:
         # Set default property values
         self.evalue = 1e-5
         self.num_hits = -1
-        
-        # Do main Class action of parsing an outfmt6 file
-        self.parse_blast_hit_coords()
         
         # Also set helper attribute
         self.isBLAST_Results = True
@@ -351,7 +351,7 @@ class BLAST_Results:
             value.sort(key = lambda x: (x[6], x[7])) # sort by evalue and bitscore
             for v in value:
                 del v[7] # drop the bitscore since we don't need it after sorting
-            
+        
         # Enforce num_hits threshold
         if self.num_hits != -1:
             for key in blastDict.keys():
