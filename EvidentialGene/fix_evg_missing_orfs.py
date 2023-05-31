@@ -30,7 +30,7 @@ def validate_args(args):
     args.outputPrefix = args.outputPrefix.rstrip("._ ")
     args.outputFileNames = []
     for suffix in [".aa", ".cds", ".fixed_ids"]:
-        outFileName = os.path.join(args.outputPrefix, suffix)
+        outFileName = args.outputPrefix + suffix
         if os.path.isfile(outFileName):
             print(f'File already exists at output location ({outFileName})')
             print('Make sure you specify a unique file name and try again.')
@@ -89,7 +89,7 @@ def main():
             if ("utrorf" in record.id and baseID not in seqIDs) or baseID not in transIDs:
                 missingIDs.add(baseID)
     
-    print(f"Note: Identified {missingIDs} missing sequences.")
+    print(f"Note: Identified {len(missingIDs)} missing sequences.")
     
     # Create new .aa and .cds files containing the missing ORFs from the dropset
     suffixes = [".aa", ".cds"]
