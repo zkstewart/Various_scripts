@@ -31,7 +31,7 @@ def validate_args(args):
     args.outputFileNames = []
     for suffix in [".aa", ".cds", ".fixed_ids"]:
         outFileName = os.path.join(args.outputPrefix, suffix)
-        if os.path.isfile(args.outFileName):
+        if os.path.isfile(outFileName):
             print(f'File already exists at output location ({outFileName})')
             print('Make sure you specify a unique file name and try again.')
             quit()
@@ -41,7 +41,8 @@ def validate_args(args):
 def main():
     # User input
     usage = """%(prog)s reads in the output files of EvidentialGene and locates any
-    instances where a
+    instances where a sequence indicated in your .fasta files are missing from the 
+    .aa and .cds files.
     """
     p = argparse.ArgumentParser(description=usage)
     # Required
