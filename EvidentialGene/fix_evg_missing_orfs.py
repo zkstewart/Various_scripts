@@ -102,7 +102,7 @@ def main():
             if f.endswith(suffix)
         ]
         assert len(dropsetFile) == 1, \
-            print(f"Could not locate the dropset '{suffix}' file!")
+            "Could not locate the dropset '{suffix}' file!"
         dropsetFile = dropsetFile[0]
         
         # Load it in and write a revised output file containing any missing sequences
