@@ -288,6 +288,38 @@ def blast_besthitoutfmt6(blastFile, fastaFile):
                 outList.append(value)
         return outList
 
+def blast_onlybestoutfmt6(blastFile):
+        # Set up
+        from itertools import groupby
+        grouper = lambda x: x.split('\t')[0]
+        # Main function
+        outList = []
+        with open(blastFile) as fileIn:
+                for key, value in groupby(fileIn, grouper):
+                        bestHit = []
+                        for entry in value:     # We do this process in case the file isn't sorted; this is the case for MMseqs2
+                                sl = entry.rstrip('\r\n').split('\t')
+                                if bestHit == []:
+                                        bestHit = sl
+                                else:
+                                        # Check E-value
+                                        if float(sl[10]) < float(bestHit[10]):
+                                                bestHit = sl
+                                        # If E-value is equivalent, check bit score
+                                        elif float(sl[10]) == float(bestHit[10]):
+                                                if float(sl[11]) > float(bestHit[11]):
+                                                        bestHit = sl
+                                                # If bit score is equivalent, check alignment length
+                                                elif float(sl[11]) == float(bestHit[11]):
+                                                        if int(sl[3]) > int(bestHit[3]):
+                                                                bestHit = sl
+                                                '''This is arbitrary, if E-value and bit score are identical, then the possible scenarios are
+                                                that one hit is longer with lower identity, and the other hit is shorter with higher identity.
+                                                I'm inclined to think that the first hit is better than the second if E-value/bit score are equivalent'''
+                        # Store value in output list
+                        outList.append('\t'.join(bestHit))
+        return outList
+
 def blast_gene2accession_info(blastFile, gene2accessionFile, gene_infoFile):
         ## HARD-CODED FIXES FOR PROGRAM USE 19-07-21
         idPairs = {
@@ -419,6 +451,10 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
         if args.detailedHelp:
                 import textwrap
                 ## No input
+                onlybestoutfmt6 = '''
+                The _onlybestoutfmt6_ function accepts only the BLAST input. It will output
+                a BLAST-tab file with only the best hit for each query sequence displayed.
+                '''
                 ## Number input
                 hitcount = '''
                 The _hitcount_ function accepts a number input. This number should
@@ -574,7 +610,7 @@ and 5) enact the function below.
 # Function list - update as new ones are added
 stringFunctions = ['hitids', 'fastahitretrieveremove', 'fastahitfastaout', 'gene2accession_info']
 numberFunctions = ['hitcount', 'hitids', 'fastahitretrieveremove']
-basicFunctions = []
+basicFunctions = ['onlybestoutfmt6']
 fastaFunctions = ['fastahitretrieveremove', 'fastahitfastaout', 'besthitid', 'besthitoutfmt6', 'gene2accession_info']
 functionList = []
 for fList in [stringFunctions + numberFunctions + basicFunctions + fastaFunctions]:     # Need more elaborate process since there can be duplicates in string and number lists
@@ -615,7 +651,8 @@ listOutName, fastaOutName, args.outputFileName = validate_args(args, stringFunct
 outList = []    # Blank lists so we can determine what needs to be output
 outFasta = []
 ## No input functions
-
+if args.function == 'onlybestoutfmt6':
+        outList = blast_onlybestoutfmt6(args.blastFileName)
 ## String functions
 ## String functions - w/ FASTA input
 if args.function == 'fastahitretrieveremove':
