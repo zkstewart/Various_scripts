@@ -243,7 +243,9 @@ def main():
     if args.blastFile == None:
         blastDict, _ = blaster.get_blast_results() # throw away the blastFileName return since it will be None
     else:
-        blastDict = ZS_BlastIO.BLAST_Results(args.blastFile).results
+        blastResults = ZS_BlastIO.BLAST_Results(args.blastFile)
+        blastResults.parse_blast_hit_coords()
+        blastDict = blastResults.results
     
     # Query KEGG API for mapping information
     proteinMapDict = download_ncbi_protein_to_kegg_gene_map(args.keggID)
