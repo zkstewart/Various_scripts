@@ -71,7 +71,7 @@ def main():
     
     with open(args.output, "w") as fileOut:
         # Write header to file
-        fileOut.write("filename\tnum_ns\ttotal_len\n")
+        fileOut.write("filename\tnum_ns\ttotal_len\tn_pct\n")
         
         # Iterate through FQ files
         for fqFile in fastqFiles:
@@ -92,9 +92,10 @@ def main():
                     # Store relevant info
                     nchar += seq.count("n")
                     total += len(seq)
+            nPct = nchar / total
             
             # Print and write to file
-            fqDetails = f"{os.path.basename(fqFile)}\t{nchar}\t{total}"
+            fqDetails = f"{os.path.basename(fqFile)}\t{nchar}\t{total}\t{nPct}"
             print(fqDetails)
             fileOut.write(f"{fqDetails}\n")
     
