@@ -35,7 +35,7 @@ def gc_fa_file(faFile):
     with open_gz_file(faFile) as fileIn:
         for line in fileIn:
             if not line.startswith(">"):
-                l = line.rstrip("\r\n ".lower())
+                l = line.rstrip("\r\n ").lower()
                 gcchar += (l.count("g") + l.count("c"))
                 total += len(l)
     
