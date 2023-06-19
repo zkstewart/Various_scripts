@@ -35,8 +35,9 @@ def gc_fa_file(faFile):
     with open_gz_file(faFile) as fileIn:
         for line in fileIn:
             if not line.startswith(">"):
-                gcchar += (line.count("g") + line.count("c"))
-                total += len(line.rstrip("\r\n "))
+                l = line.rstrip("\r\n ".lower())
+                gcchar += (l.count("g") + l.count("c"))
+                total += len(l)
     
     return gcchar, total
 
@@ -50,7 +51,7 @@ def gc_fq_file(fqFile):
             if len(seqID) == 0: # exit condition if we reach EOF
                 break
             
-            seq = fileIn.readline().strip("\r\n ").lower()
+            seq = fileIn.readline().rstrip("\r\n ").lower()
             qualID = fileIn.readline()
             qual = fileIn.readline()
             assert seqID.startswith("@"), \
