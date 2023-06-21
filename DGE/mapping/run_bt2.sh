@@ -25,9 +25,6 @@ SUFFIX=P.trimmed.fq
 # >> SETUP: Specify computational resources
 CPUS=4
 
-# >> SETUP: Specify output prefix
-OUTPREFIX=leena
-
 ## MANUAL SETUP END
 
 ## RUN PROGRAM
@@ -49,8 +46,9 @@ mkdir -p ${BASENAME}
 cd ${BASENAME}
 
 # STEP 4: Run mapping procedure for each sample
-${BT2DIR}/bowtie2-build --threads ${CPUS} \
+${BT2DIR}/bowtie2 --threads ${CPUS} \
 	--sensitive \
 	-x ${FASTADIR}/${FASTAFILE} \
 	-1 ${PREFIX}1${SUFFIX} \
-	-2 ${PREFIX}2${SUFFIX}
+	-2 ${PREFIX}2${SUFFIX} \
+	-S ${BASENAME}.sam
