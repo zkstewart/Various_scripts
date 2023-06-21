@@ -3,42 +3,12 @@
 # Implemented as a bamnostic.AlignmentFile Class with extra
 # functions added for my own purposes.
 
-import os, pickle, math
+import os, pickle
 import bamnostic as bs
 import numpy as np
 import pandas as pd
 
-def get_chunking_points(numberToChunk, chunkSize):
-    '''
-    This is a general purpose function to take in a number of "things"
-    that you want to chunk, and find out how to chunk them evenly.
-    
-    Params:
-        numberToChunk -- an integer value, possibly derived from a list length as example.
-        chunkSize -- an integer value for the desired number of things per chunk.
-    '''
-    assert isinstance(numberToChunk, int)
-    assert isinstance(chunkSize, int)
-    if numberToChunk <= chunkSize:
-        raise Exception("Chunking only valid if chunkSize is smaller than numberToChunk")
-    
-    numChunks = int(numberToChunk / chunkSize)
-    rawNum = numberToChunk / numChunks # This line is more relevant in the multithreading code I took this from, but it's okay to just leave it.
-    numRoundedUp = round((rawNum % 1) * numChunks, 0) # By taking the decimal place and multiplying it by the num of chunks, we can figure out how many chunks need to be rounded up
-    
-    chunkPoints = []
-    ongoingCount = 0
-    for i in range(numChunks):
-        if i+1 <= numRoundedUp: # ngl I don't remember why this is needed; I'm borrowing this code from something I wrote a while back
-            chunkPoints.append(math.ceil(rawNum) + ongoingCount) # Round up the rawNum, and also add our ongoingCount which corresponds to the number of things already put into a chunk
-            ongoingCount += math.ceil(rawNum)
-        else:
-            chunkPoints.append(math.floor(rawNum) + ongoingCount)
-            ongoingCount += math.floor(rawNum)
-        if ongoingCount >= numberToChunk: # Without this check, if we have more chunks than things to chunk, we can end up with "extra" numbers in the list (e.g., [1, 2, 3, 4, 5, 6, 6, 6, 6, 6]).
-            break  # This doesn't actually affect program function, but for aesthetic reasons and for clarity of how this function works, I prevent this from occurring.
-    
-    return chunkPoints
+from ZS_SeqIO import FASTA
 
 class BAM(bs.AlignmentFile):
     def __init__(self, file_location):
@@ -260,13 +230,13 @@ class BAM(bs.AlignmentFile):
                 "binPctSize must be a value less than 100 that cleanly divides 100"
         except:
             "binPctSize must be a float or integer value"
+        numBins = int(100 / binPctSize) # number of actual bins we'll be using
         
         self.coverage_histogram = {}
         for contig, coverage in self.coverage.items():
             # Figure out the histogram bin boundaries
             contigLength = len(coverage)
-            binSize = int(contigLength / binPctSize)
-            binBoundaries = get_chunking_points(contigLength, binSize)
+            binBoundaries = FASTA.get_chunking_points(contigLength, numBins, isNumOfChunks=True) + [contigLength]
             
             # Summarise coverage per bin
             self.coverage_histogram[contig] = np.zeros(len(binBoundaries))
