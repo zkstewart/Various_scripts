@@ -28,14 +28,11 @@ INTRONENDS=100000 # max allowed length of first or last intron
 # Specify computational parameters
 CPUS=12
 
-# Specify the output prefix
-PREFIX=telmatactis
-
 #####
 
 
 # > STEP 1: Automatically generate output prefix
-PREFIX=${TXFILE}_n${NUMPATHS}_gmap
+PREFIX=${QFILE}_n${NUMPATHS}_gmap
 
 # > STEP 2: Run GMAP aligner
 gmap -D ${GENDIR} -d ${GENFILE}.gmap \
