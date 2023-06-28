@@ -6,6 +6,8 @@
 
 cd $PBS_O_WORKDIR
 
+#####
+
 # Specify the location of the genome FASTA
 ## Note: Indexing is assumed to have happened, and the .gmap index is located at GENDIR
 GENDIR=/home/stewarz2/telmatactis
@@ -26,6 +28,8 @@ INTRONENDS=100000 # max allowed length of first or last intron
 # Specify computational parameters
 CPUS=12
 
+# Specify the output prefix
+PREFIX=telmatactis
 
 #####
 
