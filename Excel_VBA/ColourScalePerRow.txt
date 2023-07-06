@@ -1,0 +1,52 @@
+Sub ApplyCF()
+    Dim UpperColour As Long, MeanColour As Long, LowerColour As Long
+    Dim StartRow As Long, EndRow As Long, CurrentRow As Long
+    Dim StartColumn As Long, EndColumn As Long
+    Dim Target As Range
+
+    ' ******  Adjust as required  ******
+    UpperColour = RGB(248, 105, 107) ' off red
+    MeanColour = RGB(255, 255, 255) ' vbWhite
+    LowerColour = RGB(90, 138, 198) ' off blue
+
+    StartRow = 2
+    EndRow = 1093
+
+    StartColumn = 4
+    EndColumn = 20
+    ' **********************************
+
+    For CurrentRow = StartRow To EndRow
+        ' The Target range spans from the start column to the end column on iterative rows.
+        Set Target = Range(Cells(CurrentRow, StartColumn), Cells(CurrentRow, EndColumn))
+
+        ' Calculate the minimum, maximum, and mean values for the current row
+        Dim MinValue As Double, MaxValue As Double, MeanValue As Double
+        MinValue = WorksheetFunction.Min(Target)
+        MaxValue = WorksheetFunction.Max(Target)
+        MeanValue = (MaxValue + MinValue) / 2
+
+        ' Sets the conditional formatting rule for the range, Target
+        With Target
+            .FormatConditions.AddColorScale ColorScaleType:=3
+            .FormatConditions(.FormatConditions.Count).SetFirstPriority
+
+            ' Sets the colour for the lower value
+            .FormatConditions(1).ColorScaleCriteria(1).Type = xlConditionValueLowestValue
+            .FormatConditions(1).ColorScaleCriteria(1).FormatColor.Color = LowerColour
+
+            ' Sets the colour for the mean value
+            .FormatConditions(1).ColorScaleCriteria(2).Type = xlConditionValueNumber
+            .FormatConditions(1).ColorScaleCriteria(2).FormatColor.Color = MeanColour
+            .FormatConditions(1).ColorScaleCriteria(2).Value = MeanValue
+
+            ' Sets the colour for the upper value
+            .FormatConditions(1).ColorScaleCriteria(3).Type = xlConditionValueHighestValue
+            .FormatConditions(1).ColorScaleCriteria(3).FormatColor.Color = UpperColour
+        End With
+    Next
+
+    MsgBox "Complete."
+
+    Set Target = Nothing
+End Sub
