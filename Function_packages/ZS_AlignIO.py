@@ -403,16 +403,21 @@ class SSW:
     Class to encapsulate static methods used for performing alignments using SSW implementations.
     '''
     @staticmethod
-    def ssw_parasail(queryString, targetString):
+    def ssw_parasail(queryString, targetString, molecule, openPenalty=10, extendPenalty=1):
         '''
-        Special implementation of striped Smith Waterman alignment for exon liftover
-        project.
+        molecule -- a string equal to "nucleotide" or "protein"; determines which
+                        substitution matrix to use
         '''
-        # Perform SSW with parasail implementation
-        profile = parasail.profile_create_sat(targetString, parasail.blosum62)
-        alignment = parasail.sw_trace_striped_profile_sat(profile, queryString, 10, 1)
-        queryAlign = alignment.traceback.ref # this ssw implementation sees things differently than I
-        targetAlign = alignment.traceback.query
+        assert molecule in ["nucleotide", "protein"], \
+            "ssw_parasail must be told what type of molecule it is aligning!"
+        
+        alignment = parasail.sw_trace_striped_sat(queryString, targetString,
+                                                  openPenalty, extendPenalty,
+                                                  parasail.nuc44 if molecule == "nucleotide"
+                                                  else parasail.blosum62
+                                                  )
+        queryAlign = alignment.traceback.query
+        targetAlign = alignment.traceback.ref
         
         # Figure out where we're starting for the alignments
         queryStartIndex = queryString.find(queryAlign.replace('-', ''))
@@ -421,7 +426,7 @@ class SSW:
         # Make and return an object containing all our results
         result = SSW_Result(queryAlign, targetAlign, alignment.score, queryStartIndex, targetStartIndex)
         return result
-
+    
     @staticmethod
     def ssw_skbio(queryString, targetString):
         if platform.system() == 'Windows':
