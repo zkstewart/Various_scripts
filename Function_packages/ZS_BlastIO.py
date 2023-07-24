@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_Utility
-from ZS_SeqIO import FASTA, Conversion
+from ZS_SeqIO import Conversion
 
 class BLAST:
     '''
@@ -432,7 +432,7 @@ class MM_DB:
             raise Exception(("mmseqsDir does not point to an existing directory"))
         
         self._mmseqsDir = value
-        self.mmseqsExe = os.path.join(value, "mmseqs.exe") # TESTING
+        self.mmseqsExe = os.path.join(value, "mmseqs")
     
     @property
     def mmseqsExe(self):
@@ -455,6 +455,8 @@ class MM_DB:
     def tmpDir(self, value):
         assert type(value).__name__ == "str" \
             or isinstance(value, Path)
+        value = os.path.abspath(value)
+        
         if not os.path.isdir(os.path.dirname(value)):
             raise Exception((f"tmpDir's parent location ('{os.path.dirname(value)}') " +
                              "does not exist"))
@@ -480,7 +482,7 @@ class MM_DB:
         Creates a sequence DB for MMSeqs2 if it does not already exist.
         '''
         # Format command
-        dbname = f"{self.fasta}_seqDB"
+        dbname = os.path.abspath(f"{self.fasta}_seqDB")
         cmd = f'{self.mmseqsExe} createdb "{self.fasta}" "{dbname}"'
         
         # Skip if db already exists
@@ -507,7 +509,7 @@ class MM_DB:
         Indexes as sequence DB for MMSeqs2 if it has not already been done.
         '''
         # Format command
-        dbname = f"{self.fasta}_seqDB"
+        dbname = os.path.abspath(f"{self.fasta}_seqDB")
         cmd = f'{self.mmseqsExe} createindex "{dbname}" "{self.tmpDir}" --threads {self.threads}'
         
         # Skip if index already exists

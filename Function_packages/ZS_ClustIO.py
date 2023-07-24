@@ -9,7 +9,6 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_SeqIO import FASTA, Conversion
 from ZS_Utility import tmp_file_name_gen
-from ZS_BlastIO import MM_DB
 
 class CDHIT:
     '''
@@ -511,7 +510,7 @@ class MM_Clust:
         assert value in ["set-cover", "connected_component", "greedy"], \
             "clust_mode must be one of the supported Linclust algorithms"
         
-        self._clust_mode = value
+        self._clust_mode = ["set-cover", "connected_component", "greedy"].index(value)
     
     @property
     def threads(self):
@@ -532,9 +531,9 @@ class MM_Clust:
     def tmpDir(self, value):
         if value == None:
             value = self.mmDB.tmpDir
-        
         assert type(value).__name__ == "str" \
             or isinstance(value, Path)
+        value = os.path.abspath(value)
         
         if not os.path.isdir(os.path.dirname(value)):
             raise Exception((f"tmpDir's parent location ('{os.path.dirname(value)}') " +
@@ -573,7 +572,7 @@ class MM_Linclust(MM_Clust):
         self.mmDB.index()
         
         # Format command
-        dbname = f"{self.mmDB.fasta}_linclustDB"
+        dbname = os.path.abspath(f"{self.mmDB.fasta}_linclustDB")
         cmd = f'{self.mmDB.mmseqsExe} linclust "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
               f'"{self.tmpDir}" --min-seq-id {self.identity} -c {self.cov_pct} ' + \
               f'-e {self.evalue} --cluster-mode {self.clust_mode} --threads {self.threads}'
@@ -597,7 +596,7 @@ class MM_Linclust(MM_Clust):
         
         return logString
 
-class MM_Cascade:
+class MM_Cascade(MM_Clust):
     '''
     The MM_Cascade Class provides the logic for running cascaded MMSeqs2 clustering
     with an MM_DB object as input. The MMSeqs executable location and tmpDir will be pulled
@@ -617,6 +616,7 @@ class MM_Cascade:
         
         super().__init__(mmDB, evalue, identity, cov_pct,
                         clust_mode, threads, tmpDir)
+        
         self.sensitivity = sensitivity
         self.cluster_steps = cluster_steps
     
@@ -652,11 +652,11 @@ class MM_Cascade:
         self.mmDB.index()
         
         # Format command
-        dbname = f"{self.mmDB.fasta}_clustDB"
+        dbname = os.path.abspath(f"{self.mmDB.fasta}_clustDB")
         cmd = f'{self.mmDB.mmseqsExe} cluster "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
               f'"{self.tmpDir}" --min-seq-id {self.identity} -c {self.cov_pct} ' + \
               f'-e {self.evalue} --cluster-mode {self.clust_mode} -s {self.sensitivity} ' + \
-              f'-cluster-steps {self.cluster_steps} --threads {self.threads}'
+              f'--cluster-steps {self.cluster_steps} --threads {self.threads}'
         
         # Skip if db already exists
         if os.path.isfile(dbname):
