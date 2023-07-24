@@ -154,7 +154,7 @@ def main():
                    choices=["set-cover", "connected_component", "greedy"],
                    help="MMS: Specify the clustering mode; default=='set-cover'",
                    default="set-cover")
-    p.add_argument("--sensitivity", dest="coverage",
+    p.add_argument("--sensitivity", dest="sensitivity",
                    required=False,
                    choices=[1,2,3,4,5,5.7,6,7,7.5],
                    help="MMS-CASCADE: Specify the sensitivity value; default==4",
