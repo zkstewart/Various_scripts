@@ -487,7 +487,7 @@ class MM_DB:
         
         # Skip if db already exists
         if os.path.isfile(dbname):
-            logString = "# Skipping '{dbname}' DB generation..."
+            logString = f"# Skipping '{dbname}' DB generation..."
             return logString
         
         # DB generation
@@ -512,7 +512,7 @@ class MM_DB:
         # Skip if index already exists
         if MM_DB.mms2_index_exists(os.path.basename(dbname), os.path.dirname(dbname)):
             logString = f"# Skipping '{dbname}' DB indexing..."
-            return
+            return logString
         
         # Run query index
         logString = "# DB indexing with: " + cmd        
