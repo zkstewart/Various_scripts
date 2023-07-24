@@ -431,7 +431,7 @@ class MM_Clust:
     Attributes:
         mmDB (REQUIRED) -- a MM_DB object from ZS_BlastIO.
         evalue (OPTIONAL) -- a positive float with a minimum of 0.0 controlling the
-                               E-value threshold for clustering; default == 1e-3.
+                             E-value threshold for clustering; default == 1e-3.
         identity (OPTIONAL) -- a positive float in the range 0.0 -> 1.0 controlling the
                                sequence identity threshold for clustering; default == 0.9.
         cov_pct (OPTIONAL) -- a positive float in the range 0.0 -> 1.0 controlling the
@@ -551,6 +551,59 @@ class MM_Clust:
     
     def tabulate(self):
         raise NotImplementedError("Abstract method must be overridden")
+    
+    def parse_tsv(self, tabulatedFile):
+        '''
+        Parses the output of .tabulate() (aka mmseqs createtsv) and produces
+        a cluster dictionary.
+        
+        Parameters:
+            tabulatedFile -- 
+        Returns:
+            clusterDict -- a dictionary with structure like:
+                           {
+                               0: [seqid1, seqid2, ...],
+                               1: [ ... ],
+                               ...
+                           }
+        '''
+        # Format the location of relevant files
+        dbname = os.path.abspath(f"{self.mmDB.fasta}_seqDB")
+        dbHeader = os.path.abspath(f"{dbname}_h")
+        assert os.path.isfile(dbHeader), \
+            f"MM_Clust object can't find file at expected location '{dbHeader}'!"
+        
+        # Parse the db header
+        headDict = {}
+        with open(dbHeader, "r") as fileIn:
+            ongoingCount = 0
+            for line in fileIn:
+                seqID = line.strip("\x00").strip("\r\n ").split(" ")[0]
+                headDict[ongoingCount] = seqID
+                ongoingCount += 1
+        
+        # Parse the table file to a cluster dictionary
+        clusterDict = {}
+        with open(tabulatedFile, "r") as fileIn:
+            lastID = None
+            ongoingCount = -1 # first loop will iterate this to 0
+            for line in fileIn:
+                # Get details from two column TSV line
+                clusterRep, seqIndex = line.rstrip("\r\n ").split("\t")
+                seqIndex = int(seqIndex)
+                
+                # If we haven't seen this representative before, it's a new cluster
+                if not clusterRep == lastID:
+                    ongoingCount += 1
+                
+                # Store this in our dict
+                clusterDict.setdefault(ongoingCount, [])
+                clusterDict[ongoingCount].append(headDict[seqIndex])
+                
+                # Remember this line's representative for next loop
+                lastID = clusterRep
+        
+        return clusterDict
 
 class MM_Linclust(MM_Clust):
     '''
