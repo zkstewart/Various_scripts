@@ -5,6 +5,7 @@
 # as for parsing outfmt6 results.
 
 import os, sys, subprocess, hashlib, time, random
+from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_Utility
@@ -381,6 +382,163 @@ class BLAST_Results:
         return "BLAST_Results(outfmt6='{0}', queries={1}, evalue={2}, num_hits={3})".format(
             self.file, len(self), self.evalue, self.num_hits
         )
+
+class MM_DB:
+    '''
+    The MM_DB Class provides the logic for creating and handling MMSeqs2 databases.
+    
+    Attributes:
+        fasta (REQUIRED) -- a string, FASTA, or FastASeq object from the ZS_SeqIO suite.
+        mmseqsDir (REQUIRED) -- a string pointing to the location where the mmseqs executable
+                                is found.
+        tmpDir (REQUIRED) -- a string location for where MMSeqs2 should keep temp files.
+        threads (OPTIONAL) -- a positive integer for how many threads to use when indexing
+                              a database file.
+    '''
+    def __init__(self, fasta, mmseqsDir, tmpDir, threads=1):
+        self.fasta = fasta
+        self.mmseqsDir = mmseqsDir
+        self.tmpDir = tmpDir
+        self.threads = threads
+        
+        self.isMM_DB = True # flag to check object type
+    
+    @property
+    def fasta(self):
+        return self._fasta
+    
+    @fasta.setter
+    def fasta(self, value):
+        assert type(value).__name__ == "str" \
+            or type(value).__name__ == "FASTA" \
+            or type(value).__name__ == "ZS_SeqIO.FASTA" \
+            or type(value).__name__ == "FastASeq" \
+            or type(value).__name__ == "ZS_SeqIO.FastASeq"
+        if type(value).__name__ == "str" and not os.path.isfile(value):
+            raise Exception(("Fasta parameter is a string, but does not point " + 
+                            "to an existing file location"))
+        
+        self._fasta = value
+    
+    @property
+    def mmseqsDir(self):
+        return self._mmseqsDir
+    
+    @mmseqsDir.setter
+    def mmseqsDir(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isdir(value):
+            raise Exception(("mmseqsDir does not point to an existing directory"))
+        
+        self._mmseqsDir = value
+        self.mmseqsExe = os.path.join(value, "mmseqs.exe") # TESTING
+    
+    @property
+    def mmseqsExe(self):
+        return self._mmseqsExe
+    
+    @mmseqsExe.setter
+    def mmseqsExe(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isfile(value):
+            raise Exception(("mmseqsExe does not point to an existing file"))
+        
+        self._mmseqsExe = value
+    
+    @property
+    def tmpDir(self):
+        return self._tmpDir
+    
+    @tmpDir.setter
+    def tmpDir(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isdir(os.path.dirname(value)):
+            raise Exception((f"tmpDir's parent location ('{os.path.dirname(value)}') " +
+                             "does not exist"))
+        
+        if not os.path.isdir(value):
+            os.mkdir(value)
+        
+        self._tmpDir = value
+    
+    @property
+    def threads(self):
+        return self._threads
+    
+    @threads.setter
+    def threads(self, value):
+        assert isinstance(value, int)
+        assert 0 < value, "threads must be a positive integer"
+        
+        self._threads = value
+    
+    def generate(self):
+        '''
+        Creates a sequence DB for MMSeqs2 if it does not already exist.
+        '''
+        # Format command
+        dbname = f"{self.fasta}_seqDB"
+        cmd = f'{self.mmseqsExe} createdb "{self.fasta}" "{dbname}"'
+        
+        # Skip if db already exists
+        if os.path.isfile(dbname):
+            logString = "# Skipping '{dbname}' DB generation..."
+            print(logString)
+            return logString
+        
+        # DB generation
+        logString = "# DB generation with: " + cmd
+        print(logString)
+        
+        run_makedb = subprocess.Popen(cmd, shell = True,
+                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        makedbout, makedberr = run_makedb.communicate()
+        if makedberr.decode("utf-8") != '':
+            raise Exception('Make MMseqs2 query db error text below\n' +
+                            makedberr.decode("utf-8"))
+        
+        return logString
+    
+    def index(self):
+        '''
+        Indexes as sequence DB for MMSeqs2 if it has not already been done.
+        '''
+        # Format command
+        dbname = f"{self.fasta}_seqDB"
+        cmd = f'{self.mmseqsExe} createindex "{dbname}" "{self.tmpDir}" --threads {self.threads}'
+        
+        # Skip if index already exists
+        if MM_DB.mms2_index_exists(os.path.basename(dbname), os.path.dirname(dbname)):
+            logString = f"# Skipping '{dbname}' DB indexing..."
+            print(logString)
+            return
+        
+        # Run query index
+        logString = "# DB indexing with: " + cmd
+        print(logString)
+        
+        run_index = subprocess.Popen(cmd, shell = True,
+                                     stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        indexout, indexerr = run_index.communicate()
+        if indexerr.decode("utf-8") != '':
+                raise Exception('Indexing MMseqs2 query db error text below\n' + indexerr.decode("utf-8"))
+        
+        # Create output flag
+        with open(dbname + ".idxComplete", "w") as fileOut:
+            pass # create empty file
+        
+        return logString
+    
+    @staticmethod
+    def mms2_index_exists(fileNamePrefix, directory):
+        indexName = fileNamePrefix + '.idxComplete'
+        if indexName in os.listdir(directory):
+            return True
+        else:
+            return False
 
 if __name__ == "__main__":
     pass

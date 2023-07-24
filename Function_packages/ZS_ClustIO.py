@@ -3,11 +3,13 @@
 # Specifies the CDHIT Class for performing CD-HIT reduction of
 # string fasta files, ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects.
 
-import os, sys, subprocess, hashlib, time, random, shutil
+import os, sys, subprocess, shutil
+from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_SeqIO import FASTA, Conversion
 from ZS_Utility import tmp_file_name_gen
+from ZS_BlastIO import MM_DB
 
 class CDHIT:
     '''
@@ -417,6 +419,263 @@ class CDHIT:
             f"resultFASTA contains data={'NO' if self.resultFasta == None else 'YES'};" +
             f"resultClusters contains data={'NO' if self.resultClusters == None else 'YES'}"
         )
+
+class MM_Clust:
+    '''
+    The MM_Clust Class behaves as an abstract class for inheritance of basic
+    validation logic of parameters shared in common.
+    
+    Attributes:
+        mmDB (REQUIRED) -- a MM_DB object from ZS_BlastIO.
+        evalue (OPTIONAL) -- a positive float with a minimum of 0.0 controlling the
+                               E-value threshold for clustering; Linclust
+                               default == 1e-3.
+        identity (OPTIONAL) -- a positive float in the range 0.0 -> 1.0 controlling the
+                               sequence identity threshold for clustering; Linclust
+                               default == 0.9.
+        cov_pct (OPTIONAL) -- a positive float in the range 0.0 -> 1.0 controlling the
+                              amount of aligned residues in both shorter and longer
+                              sequences; Linclust default == 0.8.
+        clust_mode (OPTIONAL) -- a string in the list ["set-cover", "connected_component",
+                                 "greedy"], corresponding to modes 0, 1, and 2,3 in Linclust;
+                                 Linclust default == "set-cover", but optimal is probably
+                                 "connected_component".
+        threads (OPTIONAL) -- a positive integer for how many threads to use when running
+                              Linclust (default==1).
+        tmpDir (OPTIONAL) -- a string location for where MMSeqs2 should keep temp files;
+                             if unspecified, it will use the same location as
+                             mmDB.tmpDir.
+    '''
+    def __init__(self, mmDB, evalue=1e-3, identity=0.9,
+                 cov_pct=0.8, clust_mode="set-cover", threads=1, tmpDir=None):
+        self.mmDB = mmDB
+        self.evalue = evalue
+        self.identity = identity
+        self.cov_pct = cov_pct
+        self.clust_mode = clust_mode
+        self.threads = threads
+        self.tmpDir = tmpDir
+    
+    @property
+    def mmDB(self):
+        return self._mmDB
+    
+    @mmDB.setter
+    def mmDB(self, value):
+        assert type(value).__name__ == "MM_DB" \
+            or type(value).__name__ == "ZS_BlastIO.MM_DB" \
+            or hasattr(value, "isMM_DB") and value.isMM_DB == True
+        
+        self._mmDB = value
+    
+    @property
+    def evalue(self):
+        return self._evalue
+    
+    @evalue.setter
+    def evalue(self, value):
+        assert isinstance(value, float) or isinstance(value, int)
+        assert 0 <= value, "evalue must be >= 0"
+        
+        self._evalue = value
+    
+    @property
+    def identity(self):
+        return self._identity
+    
+    @identity.setter
+    def identity(self, value):
+        assert isinstance(value, float) or isinstance(value, int)
+        assert 0 <= value <= 1.0, "identity must be in the range of 0.0 -> 1.0 (inclusive)"
+        
+        self._identity = value
+    
+    @property
+    def cov_pct(self):
+        return self._cov_pct
+    
+    @cov_pct.setter
+    def cov_pct(self, value):
+        assert isinstance(value, float) or isinstance(value, int)
+        assert 0 <= value <= 1.0, "cov_pct must be in the range of 0.0 -> 1.0 (inclusive)"
+        
+        self._cov_pct = value
+    
+    @property
+    def clust_mode(self):
+        return self._clust_mode
+    
+    @clust_mode.setter
+    def clust_mode(self, value):
+        assert isinstance(value, str)
+        assert value in ["set-cover", "connected_component", "greedy"], \
+            "clust_mode must be one of the supported Linclust algorithms"
+        
+        self._clust_mode = value
+    
+    @property
+    def threads(self):
+        return self._threads
+    
+    @threads.setter
+    def threads(self, value):
+        assert isinstance(value, int)
+        assert 0 < value, "threads must be a positive integer"
+        
+        self._threads = value
+    
+    @property
+    def tmpDir(self):
+        return self._tmpDir
+    
+    @tmpDir.setter
+    def tmpDir(self, value):
+        if value == None:
+            value = self.mmDB.tmpDir
+        
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        
+        if not os.path.isdir(os.path.dirname(value)):
+            raise Exception((f"tmpDir's parent location ('{os.path.dirname(value)}') " +
+                            "does not exist"))
+        
+        if not os.path.isdir(value):
+            os.mkdir(value)
+        
+        self._tmpDir = value
+    
+    def cluster(self):
+        raise NotImplementedError("This is an abstract class, inherit it!")
+
+class MM_Linclust(MM_Clust):
+    '''
+    The MM_Linclust Class provides the logic for running Linclust with an MM_DB object
+    as input. The MMSeqs executable location and tmpDir will be pulled from the
+    mmDB input; a new tmpDir for running linclust can be specified if desired.
+    
+    Attributes:
+        super class attributes -- see docstring for MM_Clust.
+    '''
+    def __init__(self, mmDB, evalue=1e-3, identity=0.9,
+                 cov_pct=0.8, clust_mode="set-cover", threads=1, tmpDir=None):
+        
+        super().__init__(mmDB, evalue, identity, cov_pct,
+                        clust_mode, threads, tmpDir)
+    
+    def cluster(self):
+        '''
+        Runs the Linclust process on the given mmDB.
+        '''
+        
+        # Run DB generation & indexing if relevant
+        self.mmDB.generate()
+        self.mmDB.index()
+        
+        # Format command
+        dbname = f"{self.mmDB.fasta}_linclustDB"
+        cmd = f'{self.mmDB.mmseqsExe} linclust "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
+              f'"{self.tmpDir}" --min-seq-id {self.identity} -c {self.cov_pct} ' + \
+              f'-e {self.evalue} --cluster-mode {self.clust_mode} --threads {self.threads}'
+        
+        # Skip if db already exists
+        if os.path.isfile(dbname):
+            logString = f"# Skipping '{dbname}' linclust clustering..."
+            print(logString)
+            return logString
+        
+        # Clustering
+        logString = "# Running linclust with: " + cmd
+        print(logString)
+        
+        run_linclust = subprocess.Popen(cmd, shell = True,
+                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        linclustout, linclusterr = run_linclust.communicate()
+        if linclusterr.decode("utf-8") != '':
+            raise Exception('Linclust error text below\n' +
+                            linclusterr.decode("utf-8"))
+        
+        return logString
+
+class MM_Cascade:
+    '''
+    The MM_Cascade Class provides the logic for running cascaded MMSeqs2 clustering
+    with an MM_DB object as input. The MMSeqs executable location and tmpDir will be pulled
+    from the mmDB input; a new tmpDir for running cascaded clusering can be specified if desired.
+    
+    Attributes:
+        super class attributes -- see docstring for MM_Clust.
+        sensitivity -- a float in the list [1,2,3,4,5,5.7,6,7,7.5]; default == 4.0,
+                       but recommended to use 5.7 or 7.5.
+        cluster_steps -- an int minimally bounded at 1 for how many cascaded clustering
+                         steps to run; default == 3, recommended to keep that.
+    '''
+    def __init__(self, mmDB, evalue=1e-3, identity=0.9,
+                 cov_pct=0.8, clust_mode="set-cover",
+                 threads=1, tmpDir=None,
+                 sensitivity=4.0, cluster_steps=3):
+        
+        super().__init__(mmDB, evalue, identity, cov_pct,
+                        clust_mode, threads, tmpDir)
+        self.sensitivity = sensitivity
+        self.cluster_steps = cluster_steps
+    
+    @property
+    def sensitivity(self):
+        return self._sensitivity
+    
+    @sensitivity.setter
+    def sensitivity(self, value):
+        assert value in [1,2,3,4,5,5.7,6,7,7.5], \
+            "sensitivity must be a value in the list [1,2,3,4,5,5.7,6,7,7.5]"
+        
+        self._sensitivity = value
+    
+    @property
+    def cluster_steps(self):
+        return self._cluster_steps
+    
+    @cluster_steps.setter
+    def cluster_steps(self, value):
+        assert isinstance(value, int)
+        assert 0 < value, "cluster_steps must be a positive integer"
+        
+        self._cluster_steps = value
+    
+    def cluster(self):
+        '''
+        Runs the cascaded clustering process on the given mmDB.
+        '''
+        
+        # Run DB generation & indexing if relevant
+        self.mmDB.generate()
+        self.mmDB.index()
+        
+        # Format command
+        dbname = f"{self.mmDB.fasta}_clustDB"
+        cmd = f'{self.mmDB.mmseqsExe} cluster "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
+              f'"{self.tmpDir}" --min-seq-id {self.identity} -c {self.cov_pct} ' + \
+              f'-e {self.evalue} --cluster-mode {self.clust_mode} -s {self.sensitivity} ' + \
+              f'-cluster-steps {self.cluster_steps} --threads {self.threads}'
+        
+        # Skip if db already exists
+        if os.path.isfile(dbname):
+            logString = f"# Skipping '{dbname}' cascaded clustering..."
+            print(logString)
+            return logString
+        
+        # Clustering
+        logString = "# Running cascaded clustering with: " + cmd
+        print(logString)
+        
+        run_cluster = subprocess.Popen(cmd, shell = True,
+                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        clustout, clusterr = run_cluster.communicate()
+        if clusterr.decode("utf-8") != '':
+            raise Exception('Cascaded clustering error text below\n' +
+                            clusterr.decode("utf-8"))
+        
+        return logString
 
 if __name__ == "__main__":
     pass
