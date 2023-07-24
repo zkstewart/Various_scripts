@@ -24,41 +24,46 @@ def validate_args(args):
         quit()
     
     # Validate "MMS" parameters
-    if not os.path.isdir(args.mmseqsDir):
-        print(f'I am unable to locate the MMseqs2 directory ({args.mmseqsDir})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
-    "--tmpDir is validated by the MM_DB Class"
-    if args.evalue < 0:
-        print("evalue must be greater than or equal to 0")
-        quit()
-    if not 0 <= args.coverage <= 1.0:
-        print("coverage must be a float in the range 0.0 -> 1.0")
-        quit()
-    "--mode is controlled by argparse choices"
-    
-    # Validate "MMS-CASCADE" parameters
-    "--sensitivity is controlled by argparse choices"
-    if args.steps < 1:
-        print("steps must be greater than or equal to 1")
-        quit()
+    if args.program in ["mmseqs-cascade", "mmseqs-linclust"]:
+        if not os.path.isdir(args.mmseqsDir):
+            print(f'I am unable to locate the MMseqs2 directory ({args.mmseqsDir})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+        "--tmpDir is validated by the MM_DB Class"
+        if args.evalue < 0:
+            print("evalue must be greater than or equal to 0")
+            quit()
+        if not 0 <= args.coverage <= 1.0:
+            print("coverage must be a float in the range 0.0 -> 1.0")
+            quit()
+        "--mode is controlled by argparse choices"
+        
+        # Validate "MMS-CASCADE" parameters
+        "--sensitivity is controlled by argparse choices"
+        if args.steps < 1:
+            print("steps must be greater than or equal to 1")
+            quit()
     
     # Validate "CD" parameters
-    if not os.path.isdir(args.cdhitDir):
-        print(f'I am unable to locate the CD-HIT directory ({args.cdhitDir})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
-    "--molecule is controlled by argparse choices"
-    if args.mem < 1000:
-        print("mem must be greater than or equal to 1000")
-        quit()
-    "--align is controlled by argparse choices"
-    if not 0 <= args.shorterCov <= 1.0:
-        print("shorterCov must be a float in the range 0.0 -> 1.0")
-        quit()
-    if not 0 <= args.longerCov <= 1.0:
-        print("shorterCov must be a float in the range 0.0 -> 1.0")
-        quit()
+    if args.program == "cd-hit":
+        if not os.path.isdir(args.cdhitDir):
+            print(f'I am unable to locate the CD-HIT directory ({args.cdhitDir})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
+        "--molecule is controlled by argparse choices"
+        if args.mem < 1000:
+            print("mem must be greater than or equal to 1000")
+            quit()
+        "--align is controlled by argparse choices"
+        if not 0 <= args.shorterCov <= 1.0:
+            print("shorterCov must be a float in the range 0.0 -> 1.0")
+            quit()
+        if not 0 <= args.longerCov <= 1.0:
+            print("shorterCov must be a float in the range 0.0 -> 1.0")
+            quit()
+        if args.molecule == None:
+            print("molecule must be specified when running CD-HIT")
+            quit()
     
     # Validate output file location
     if os.path.isfile(args.outputFileName):
@@ -116,7 +121,8 @@ def main():
                    required=False,
                    type=float,
                    help="""BOTH: Specify the identity threshold for clustering;
-                   default==0.9""")
+                   default==0.9""",
+                   default=0.9)
     # Optional - MMseqs2
     p.add_argument("--mmseqs", dest="mmseqsDir",
                    required=False,
@@ -169,7 +175,8 @@ def main():
                    required=False,
                    choices=["local", "global"],
                    help="""CD: Specify whether local or global alignment should be used;
-                   default == 'global'""")
+                   default == 'global'""",
+                   default="global")
     p.add_argument("--shorter_coverage", dest="shorterCov",
                    required=False,
                    type=float,
