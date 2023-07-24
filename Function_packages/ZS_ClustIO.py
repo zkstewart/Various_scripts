@@ -437,10 +437,10 @@ class MM_Clust:
         cov_pct (OPTIONAL) -- a positive float in the range 0.0 -> 1.0 controlling the
                               amount of aligned residues in both shorter and longer
                               sequences; default == 0.8.
-        clust_mode (OPTIONAL) -- a string in the list ["set-cover", "connected_component",
+        clust_mode (OPTIONAL) -- a string in the list ["set-cover", "connected-component",
                                  "greedy"], corresponding to modes 0, 1, and 2,3;
                                  default == "set-cover", but optimal is probably
-                                 "connected_component".
+                                 "connected-component".
         threads (OPTIONAL) -- a positive integer for how many threads to use when running
                               MMseqs2 clustering (default==1).
         tmpDir (OPTIONAL) -- a string location for where MMseqs2 should keep temp files;
@@ -509,10 +509,10 @@ class MM_Clust:
     @clust_mode.setter
     def clust_mode(self, value):
         assert isinstance(value, str)
-        assert value in ["set-cover", "connected_component", "greedy"], \
+        assert value in ["set-cover", "connected-component", "greedy"], \
             "clust_mode must be one of the supported Linclust algorithms"
         
-        self._clust_mode = ["set-cover", "connected_component", "greedy"].index(value)
+        self._clust_mode = ["set-cover", "connected-component", "greedy"].index(value)
     
     @property
     def threads(self):

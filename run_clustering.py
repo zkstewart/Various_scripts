@@ -151,7 +151,7 @@ def main():
                    default=0.8)
     p.add_argument("--mode", dest="mode",
                    required=False,
-                   choices=["set-cover", "connected_component", "greedy"],
+                   choices=["set-cover", "connected-component", "greedy"],
                    help="MMS: Specify the clustering mode; default=='set-cover'",
                    default="set-cover")
     p.add_argument("--sensitivity", dest="sensitivity",
