@@ -281,6 +281,8 @@ class CDHIT:
             fasta -- a string indicating the location of a FASTA file to cluster.
             outputDir -- a string indicating the location to write the output FASTA and .clstr files to.
             outFile -- a string indicating the name for the output FASTA file. File must not already exist!
+        Returns:
+            cmd -- a string indicating the command executed for CD-HIT clustering.
         '''
         assert isinstance(fasta, str)
         assert isinstance(outputDir, str)
@@ -306,6 +308,8 @@ class CDHIT:
         cdout, cderr = run_cdhit.communicate()
         if cderr.decode("utf-8") != '':
             raise Exception('CD-HIT Error text below' + str(cderr.decode("utf-8")))
+        
+        return cmd
     
     @staticmethod
     def parse_clstr_file(clstrFile):
@@ -427,21 +431,19 @@ class MM_Clust:
     Attributes:
         mmDB (REQUIRED) -- a MM_DB object from ZS_BlastIO.
         evalue (OPTIONAL) -- a positive float with a minimum of 0.0 controlling the
-                               E-value threshold for clustering; Linclust
-                               default == 1e-3.
+                               E-value threshold for clustering; default == 1e-3.
         identity (OPTIONAL) -- a positive float in the range 0.0 -> 1.0 controlling the
-                               sequence identity threshold for clustering; Linclust
-                               default == 0.9.
+                               sequence identity threshold for clustering; default == 0.9.
         cov_pct (OPTIONAL) -- a positive float in the range 0.0 -> 1.0 controlling the
                               amount of aligned residues in both shorter and longer
-                              sequences; Linclust default == 0.8.
+                              sequences; default == 0.8.
         clust_mode (OPTIONAL) -- a string in the list ["set-cover", "connected_component",
-                                 "greedy"], corresponding to modes 0, 1, and 2,3 in Linclust;
-                                 Linclust default == "set-cover", but optimal is probably
+                                 "greedy"], corresponding to modes 0, 1, and 2,3;
+                                 default == "set-cover", but optimal is probably
                                  "connected_component".
         threads (OPTIONAL) -- a positive integer for how many threads to use when running
-                              Linclust (default==1).
-        tmpDir (OPTIONAL) -- a string location for where MMSeqs2 should keep temp files;
+                              MMseqs2 clustering (default==1).
+        tmpDir (OPTIONAL) -- a string location for where MMseqs2 should keep temp files;
                              if unspecified, it will use the same location as
                              mmDB.tmpDir.
     '''
@@ -545,12 +547,15 @@ class MM_Clust:
         self._tmpDir = value
     
     def cluster(self):
-        raise NotImplementedError("This is an abstract class, inherit it!")
+        raise NotImplementedError("Abstract method must be overridden")
+    
+    def tabulate(self):
+        raise NotImplementedError("Abstract method must be overridden")
 
 class MM_Linclust(MM_Clust):
     '''
     The MM_Linclust Class provides the logic for running Linclust with an MM_DB object
-    as input. The MMSeqs executable location and tmpDir will be pulled from the
+    as input. The MMseqs executable location and tmpDir will be pulled from the
     mmDB input; a new tmpDir for running linclust can be specified if desired.
     
     Attributes:
@@ -580,13 +585,10 @@ class MM_Linclust(MM_Clust):
         # Skip if db already exists
         if os.path.isfile(dbname):
             logString = f"# Skipping '{dbname}' linclust clustering..."
-            print(logString)
             return logString
         
         # Clustering
         logString = "# Running linclust with: " + cmd
-        print(logString)
-        
         run_linclust = subprocess.Popen(cmd, shell = True,
                                       stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         linclustout, linclusterr = run_linclust.communicate()
@@ -595,11 +597,41 @@ class MM_Linclust(MM_Clust):
                             linclusterr.decode("utf-8"))
         
         return logString
+    
+    def tabulate(self, outputFileName):
+        '''
+        Tabulates a linclust database file.
+        
+        Parameters:
+            outputFileName -- a string indicating the file name to write TSV formatted
+                              clustering results to.
+        '''
+        
+        # Format command
+        dbname = os.path.abspath(f"{self.mmDB.fasta}_linclustDB")
+        cmd = f'{self.mmDB.mmseqsExe} createtsv "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
+              f'"{outputFileName}"'
+        
+        # Skip if table already exists
+        if os.path.isfile(outputFileName):
+            logString = f"# Skipping '{outputFileName}' linclust table generation..."
+            return logString
+        
+        # Tabulation
+        logString = "# Running table generation with: " + cmd        
+        run_tabulate = subprocess.Popen(cmd, shell = True,
+                                        stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        tableout, tableerr = run_tabulate.communicate()
+        if tableerr.decode("utf-8") != '':
+            raise Exception('Linclust tabulation text below\n' +
+                            tableerr.decode("utf-8"))
+        
+        return logString
 
 class MM_Cascade(MM_Clust):
     '''
-    The MM_Cascade Class provides the logic for running cascaded MMSeqs2 clustering
-    with an MM_DB object as input. The MMSeqs executable location and tmpDir will be pulled
+    The MM_Cascade Class provides the logic for running cascaded MMseqs2 clustering
+    with an MM_DB object as input. The MMseqs executable location and tmpDir will be pulled
     from the mmDB input; a new tmpDir for running cascaded clusering can be specified if desired.
     
     Attributes:
@@ -661,19 +693,46 @@ class MM_Cascade(MM_Clust):
         # Skip if db already exists
         if os.path.isfile(dbname):
             logString = f"# Skipping '{dbname}' cascaded clustering..."
-            print(logString)
             return logString
         
         # Clustering
-        logString = "# Running cascaded clustering with: " + cmd
-        print(logString)
-        
+        logString = "# Running cascaded clustering with: " + cmd        
         run_cluster = subprocess.Popen(cmd, shell = True,
                                       stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         clustout, clusterr = run_cluster.communicate()
         if clusterr.decode("utf-8") != '':
             raise Exception('Cascaded clustering error text below\n' +
                             clusterr.decode("utf-8"))
+        
+        return logString
+    
+    def tabulate(self, outputFileName):
+        '''
+        Tabulates a cascaded database file.
+        
+        Parameters:
+            outputFileName -- a string indicating the file name to write TSV formatted
+                              clustering results to.
+        '''
+        
+        # Format command
+        dbname = os.path.abspath(f"{self.mmDB.fasta}_clustDB")
+        cmd = f'{self.mmDB.mmseqsExe} createtsv "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
+              f'"{outputFileName}"'
+        
+        # Skip if table already exists
+        if os.path.isfile(outputFileName):
+            logString = f"# Skipping '{outputFileName}' cascaded table generation..."
+            return logString
+        
+        # Tabulation
+        logString = "# Running table generation with: " + cmd        
+        run_tabulate = subprocess.Popen(cmd, shell = True,
+                                        stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        tableout, tableerr = run_tabulate.communicate()
+        if tableerr.decode("utf-8") != '':
+            raise Exception('Cascaded clustering tabulation text below\n' +
+                            tableerr.decode("utf-8"))
         
         return logString
 

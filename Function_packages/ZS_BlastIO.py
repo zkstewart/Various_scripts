@@ -488,13 +488,10 @@ class MM_DB:
         # Skip if db already exists
         if os.path.isfile(dbname):
             logString = "# Skipping '{dbname}' DB generation..."
-            print(logString)
             return logString
         
         # DB generation
         logString = "# DB generation with: " + cmd
-        print(logString)
-        
         run_makedb = subprocess.Popen(cmd, shell = True,
                                       stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         makedbout, makedberr = run_makedb.communicate()
@@ -515,13 +512,10 @@ class MM_DB:
         # Skip if index already exists
         if MM_DB.mms2_index_exists(os.path.basename(dbname), os.path.dirname(dbname)):
             logString = f"# Skipping '{dbname}' DB indexing..."
-            print(logString)
             return
         
         # Run query index
-        logString = "# DB indexing with: " + cmd
-        print(logString)
-        
+        logString = "# DB indexing with: " + cmd        
         run_index = subprocess.Popen(cmd, shell = True,
                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         indexout, indexerr = run_index.communicate()
