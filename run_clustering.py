@@ -5,7 +5,7 @@
 import argparse, os, sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from Function_packages import ZS_ClustIO
+from Function_packages import ZS_ClustIO, ZS_BlastIO
 
 # Define functions
 def validate_args(args):
@@ -25,6 +25,9 @@ def validate_args(args):
     
     # Validate "MMS" parameters
     if args.program in ["mmseqs-cascade", "mmseqs-linclust"]:
+        if args.mmseqsDir == None:
+            print(f"--mmseqs must be specified if you're using '{args.program}'")
+            quit()
         if not os.path.isdir(args.mmseqsDir):
             print(f'I am unable to locate the MMseqs2 directory ({args.mmseqsDir})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
@@ -46,6 +49,9 @@ def validate_args(args):
     
     # Validate "CD" parameters
     if args.program == "cd-hit":
+        if args.cdhitDir == None:
+            print(f"--cdhit must be specified if you're using '{args.program}'")
+            quit()
         if not os.path.isdir(args.cdhitDir):
             print(f'I am unable to locate the CD-HIT directory ({args.cdhitDir})')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
@@ -66,6 +72,7 @@ def validate_args(args):
             quit()
     
     # Validate output file location
+    args.outputFileName = os.path.abspath(args.outputFileName)
     if os.path.isfile(args.outputFileName):
         print(f'File already exists at output location ({args.outputFileName})')
         print('Make sure you specify a unique file name and try again.')
@@ -191,8 +198,9 @@ def main():
     validate_args(args)
     
     # Create log file for ongoing updates of program status
-    logName = temp_file_name_gen(os.path.join(args.outputdir, args.output + '.mms2log'))
+    logName = temp_file_name_gen(args.outputFileName + '.mms2log')
     open(logName, 'w').close()
+    print(f"# Writing logging info to '{logName}'")
     print("# Note that a current quirk of this software means that log file updates " +
           "are made AFTER the command actually finished executing. I might try " + 
           "to fix this at a later date.")
@@ -210,7 +218,7 @@ def main_mmseqs(args, logName):
     Functionally part of the main namespace. Handles the running of MMseqs2 clustering
     with linclust or cascaded clustering.
     '''
-    mmDB = ZS_ClustIO.MM_DB(args.fastaFile, args.mmseqsDir, args.tmpDir, args.threads)
+    mmDB = ZS_BlastIO.MM_DB(args.fastaFile, args.mmseqsDir, args.tmpDir, args.threads)
     
     # Generate the sequence database
     logText = mmDB.generate()
