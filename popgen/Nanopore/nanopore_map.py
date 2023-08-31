@@ -2,7 +2,7 @@
 # Script to handle Nanopore single-end read mapping via minimap2
 # It generally follows the process of https://www.mdpi.com/1422-0067/21/23/9177/htm
 
-import os, argparse, distutils.spawn
+import os, argparse, distutils.spawn, gzip
 
 # Define functions
 def validate_args(args):
@@ -23,15 +23,30 @@ def validate_args(args):
     if not os.path.isfile(args.minimap2):
         args.minimap2 = distutils.spawn.find_executable("minimap2")
     if args.minimap2 == None or not os.path.isfile(args.minimap2):
-        print('I am unable to locate the minimap2 executable file (' + args.minimap2 + ')')
+        if args.minimap2 == None:
+            print(f'I am unable to locate the minimap2 executable file')
+        else:
+            print(f'I am unable to locate the minimap2 executable file ({args.minimap2})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.nanofilt):
-        args.nanofilt = distutils.spawn.find_executable("NanoFilt")
-    if args.nanofilt == None or not os.path.isfile(args.nanofilt):
-        print('I am unable to locate the NanoFilt executable file (' + args.nanofilt + ')')
+    
+    if not os.path.isfile(args.qcProgram):
+        args.qcProgram = distutils.spawn.find_executable(args.qcProgram)
+    if args.qcProgram == None or not os.path.isfile(args.qcProgram):
+        if args.minimap2 == None:
+            print('I am unable to locate the NanoFilt / Chopper executable file')
+        else:
+            print('I am unable to locate the NanoFilt / Chopper executable file (' + args.qcProgram + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+
+def is_gz(file):
+    with gzip.open(file, 'r') as fh:
+        try:
+            fh.read(1)
+            return True
+        except OSError:
+            return False
 
 def parse_metadata_csv(metadataCsv, speciesIdCol, genotypeCols):
     header = None
@@ -47,10 +62,10 @@ def parse_metadata_csv(metadataCsv, speciesIdCol, genotypeCols):
                 header = sl
                 # Raise errors if columns don't exist
                 if speciesIdCol not in header:
-                    raise Exception("Species ID column does not exist")
+                    raise Exception(f"Species ID column '{speciesIdCol}' does not exist in header '{header}'")
                 for gCol in genotypeCols:
                     if gCol not in header:
-                        raise Exception("Genotype column(s) do not exist")
+                        raise Exception(f"Genotype column '{gCol}' do not exist in header '{header}'")
                     else:
                         # Get column index if it exists
                         genotypeIndices.append(header.index(gCol))
@@ -78,16 +93,29 @@ def process_readgroups(speciesIds, genotypes, library, unit):
 def process_fqfiles(speciesIds, fqDir, suffix=".fq.gz"):
     fqFiles=[]
     for i in range(len(speciesIds)):
-        fqFiles.append(os.path.join(fqDir, "{0}{1}".format(speciesIds[i], suffix)))
+        fqFileName = os.path.join(fqDir, "{0}{1}".format(speciesIds[i], suffix))
+        
+        if not os.path.isfile(fqFileName):
+            print(f"I expected to find the file {fqFileName}, but failed to do so!")
+            print("Either fix your metadata, or make sure the indicated file exists.")
+            quit()
+        
+        fqFiles.append(os.path.join(fqDir, fqFileName))
     return fqFiles
 
-def create_cmd_file(speciesIds, fqDir, readgroups, genomeFile, minimap2Exe, nanofiltExe, minLength, maxLength, outputFileName):
-    fqFiles = process_fqfiles(speciesIds, fqDir)
+def create_cmd_file(speciesIds, fqDir, readgroups, genomeFile, minimap2Exe,
+                    qcExe, minLength, maxLength, outputFileName, fqSuffix=".fq.gz"):
+    fqFiles = process_fqfiles(speciesIds, fqDir, fqSuffix)
     
     # Validations
     if os.path.isfile(outputFileName):
-        raise FileExistsError("File name <{0}> already exists".format(outputFileName))
-    assert len(fqFiles) == len(readgroups)
+        raise FileExistsError(f"File name '{outputFileName}' already exists!")
+    
+    if len(fqFiles) != len(readgroups):
+        print(f"The number of samples indicated in your metadata {len(readgroups)} " +
+              f"differs to the number of FQ files found {len(fqFiles)}")
+        print("Make sure these values corroborate each other, then try again.")
+        quit()
     
     # Generate the cmd file
     with open(outputFileName, "w") as fileOut:
@@ -96,9 +124,13 @@ def create_cmd_file(speciesIds, fqDir, readgroups, genomeFile, minimap2Exe, nano
             sid = speciesIds[i]
             fq = fqFiles[i]
             rg = readgroups[i]
+            isGzip = is_gz(fq)
             
             # Format a command and write to file
-            cmd = "gunzip -c {0} | {1} -l {2} --maxlength {3} | ".format(fq, nanofiltExe, minLength, maxLength)
+            if isGzip:
+                cmd = "gunzip -c {0} | {1} -l {2} --maxlength {3} | ".format(fq, qcExe, minLength, maxLength)
+            else:
+                cmd = "cat {0} | {1} -l {2} --maxlength {3} | ".format(fq, qcExe, minLength, maxLength)
             cmd += "{0} -ax map-ont {1} - > {2}.sam\n".format(minimap2Exe, genomeFile, sid)
             fileOut.write(cmd)
 
@@ -131,15 +163,15 @@ def main():
     tags for downstream popgen analysis of Nanopore reads. It will output a shell script
     amenable to batched job submission via PBS.
     
-    FASTQ files must have .fq.gz file format as input. This is non-negiotable unfortunately.
-    This script will also streamline any read filtration using Nanofilt which can be useful
-    when dealing with amplicon-based variant calling.
+    This script will also streamline any read filtration using Nanofilt or Chopper which can
+    be useful when dealing with amplicon-based variant calling.
     
     You must provide the minimap2 executable location as an input. If it's in your system's
-    PATH, then providing "-m minimap2" will suffice. The same applies to NanoFilt.
+    PATH, then providing "-m minimap2" will suffice. The same applies to NanoFilt or
+    Chopper.
     
     The species ID column should contain unique values for each sample. It should
-    also be the prefix to each .fq.gz file! The genotype columns should, when concatenated,
+    also be the prefix to each FASTQ file! The genotype columns should, when concatenated,
     render a unique value for each sample as well.
     """
     p = argparse.ArgumentParser(description=usage)
@@ -157,10 +189,10 @@ def main():
                    required=True,
                    help="""Input the full path to the minimap2 executable; if it 
                    is in your system path, just specify minimap2 here""")
-    p.add_argument("-n", dest="nanofilt",
+    p.add_argument("-qc", dest="qcProgram",
                    required=True,
-                   help="""Input the full path to the NanoFilt executable; if it
-                   is in your system path, just specify nanofilt here""")
+                   help="""Input the full path to the executable being used for QC;
+                   if it is in your system path, just specify the name here""")
     p.add_argument("-id", dest="speciesIdCol",
                    required=False,
                    help="Column name where species ID is located")
@@ -170,11 +202,11 @@ def main():
     p.add_argument("--minLength", dest="minLength",
                    type=int,
                    required=True,
-                   help="Specify a minimum read length for NanoFilt")
+                   help="Specify a minimum read length")
     p.add_argument("--maxLength", dest="maxLength",
                    type=int,
                    required=True,
-                   help="Specify a maximum read length for NanoFilt")
+                   help="Specify a maximum read length")
     ## Optional
     p.add_argument("-l", dest="library",
                    required=False,
@@ -184,6 +216,11 @@ def main():
                    required=False,
                    help="String to use for unit e.g., 'unit1' by default",
                    default="unit1")
+    p.add_argument("--fqSuffix", dest="fqSuffix",
+                   required=False,
+                   help="""Specify the file suffix which ALL your FASTQ files have
+                   e.g., '.fq.gz' by default""",
+                   default=".fq.gz")
     args = p.parse_args()
     validate_args(args)
     
@@ -195,7 +232,9 @@ def main():
     
     # Create cmd file
     cmdFileName = "cmd_nanopore_map.txt"
-    create_cmd_file(speciesIds, args.fastqDirectory, readgroups, args.fastaFile, args.minimap2, args.nanofilt, args.minLength, args.maxLength, cmdFileName)
+    create_cmd_file(speciesIds, args.fastqDirectory, readgroups,
+                    args.fastaFile, args.minimap2, args.qcProgram,
+                    args.minLength, args.maxLength, cmdFileName, args.fqSuffix)
     
     # Create shell script
     create_shell_script(cmdFileName, len(readgroups))
