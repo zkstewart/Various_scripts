@@ -128,10 +128,10 @@ def create_cmd_file(speciesIds, fqDir, readgroups, genomeFile, minimap2Exe,
             
             # Format a command and write to file
             if isGzip:
-                cmd = "gunzip -c {0} | {1} -l {2} --maxlength {3} | ".format(fq, qcExe, minLength, maxLength)
+                cmd = f"gunzip -c {fq} | {qcExe} -l {minLength} --maxlength {maxLength} 2> {sid}.qc | "
             else:
-                cmd = "cat {0} | {1} -l {2} --maxlength {3} | ".format(fq, qcExe, minLength, maxLength)
-            cmd += "{0} -ax map-ont {1} - > {2}.sam\n".format(minimap2Exe, genomeFile, sid)
+                cmd = f"cat {fq} | {qcExe} -l {minLength} --maxlength {maxLength} 2> {sid}.qc | "
+            cmd += f"{minimap2Exe} -R '{rg}' -ax map-ont {genomeFile} - > {sid}.sam\n"
             fileOut.write(cmd)
 
 def create_shell_script(cmdFile, numJobs, outputFileName="run_nanopore_map.sh"):
