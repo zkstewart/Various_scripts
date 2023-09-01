@@ -3,7 +3,7 @@
 # Script to handle Illumina read mapping via BWA-MEM.
 # It follows the process of https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4243306/
 
-import os, argparse
+import os, argparse, re
 
 # Define functions
 def validate_args(args):
@@ -81,6 +81,7 @@ def get_files_from_prefix(fastqDirectory, prefixes):
         fastqFiles -- a list of lists containing one value (if single end) or two values (if paired end)
                       for each sample
     '''
+    fileSortRegex = re.compile(r"\d+")
     numFoundWithPrefix = []
     fastqFiles = []
     
@@ -94,6 +95,9 @@ def get_files_from_prefix(fastqDirectory, prefixes):
         elif len(filesWithPrefix) > 2:
             print(f"Error: Found more than two matches in '{fastqDirectory}' for files that start with prefix '{filePrefix}'")
             quit()
+        
+        # Make sure files are ordered appropriately
+        filesWithPrefix.sort(key = lambda x: list(map(int, fileSortRegex.findall(x))))
         
         fastqFiles.append(filesWithPrefix)
         numFoundWithPrefix.append(len(filesWithPrefix))
