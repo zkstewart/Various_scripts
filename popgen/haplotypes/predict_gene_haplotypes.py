@@ -564,7 +564,7 @@ def main():
             
             ## Output 2: FASTA files
             fastaFilePrefix = os.path.join(args.outputDirectory, f"{geneID}_haplotypes")
-            refSeqID = f"{geneID}_seq{i+1} haplotypeCode={'0'*len(haplotypeFrequency[0][0])} frequency=REFERENCE"
+            refSeqID = f"{geneID}_reference haplotypeCode={'0'*len(haplotypeFrequency[0][0])} frequency=REFERENCE"
             with open(fastaFilePrefix + ".nucl.fasta", "w") as nuclFileOut, open(fastaFilePrefix + ".prot.fasta", "w") as protFileOut:
                 # Write reference sequences
                 refNuclSeq = haplotypesDict["reference_sequence"]
