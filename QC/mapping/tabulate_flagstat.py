@@ -32,7 +32,7 @@ def get_flagstats_from_files(flagstatFiles):
                           ...
                       ]
     '''
-    percentageRegex = re.compile(r"\d{1,2}\.\d{1,2}%")
+    percentageRegex = re.compile(r"\d{1,3}\.\d{1,2}%")
     
     # Setup the output table format
     statsTable=["sample\tmapped_percentage"]
