@@ -9,9 +9,8 @@
 #BiocManager::install("gdsfmt")
 #BiocManager::install("SNPRelate")
 
-#require("RColorBrewer")
+require("RColorBrewer")
 library(SNPRelate)
-library(ggplot2)
 library(ggplot2)
 library(ggrepel)
 
@@ -27,30 +26,30 @@ library(ggrepel)
 
 
 # Setup working directory
-WORK_DIR="F:/flies/chapa_2022/pca/individual"
+WORK_DIR="F:/flies/genome_based_2022/newer_data/pca"
 setwd(WORK_DIR)
 
 
 # Specify file prefix for VCF / output files
-PREFIX="c2022.final"
+PREFIX="bris_cam_newer.final"
 
 
 # Specify metadata file locations
-SAMPLEIDSFILE="F:/flies/chapa_2022/metadata/fs_sampleids.txt" # 1 column, SAMPLE_CODE format
-SPECIESFILE="F:/flies/chapa_2022/metadata/fs_species.txt" # 1 column, SP format
-ENVIRONFILE="F:/flies/chapa_2022/metadata/fs_environ.txt" # 1 column, ENV format
-SPENVFILE="F:/flies/chapa_2022/metadata/fs_spenv.txt" # 1 column, SP_ENV format
+METADATA_DIR = "F:/flies/genome_based_2022/newer_data/metadata"
+METADATA_FILE = paste0(METADATA_DIR, "/prep_metadata_concat_v2.csv") # 2 columns, SAMPLE_ID : SAMPLE_NAME format
 
 
 # Specify VCF file location
-VCFFILE=paste0("F:/flies/chapa_2022/freebayes/individual/", PREFIX, ".vcf")
+VCFDIR = "F:/flies/genome_based_2022/newer_data/mpileup"
+VCFFILE=paste0(VCFDIR, "/", PREFIX, ".vcf")
 
 
 # Load in metadata
-sample.id <- scan(SAMPLEIDSFILE, what=character())
-sp_pop_code <- scan(SPECIESFILE, what=character())
-env_pop_code <- scan(ENVIRONFILE, what=character())
-spenv_pop_code <- scan(SPENVFILE, what=character())
+metadata.table = read.table(file=METADATA_FILE, header = TRUE, sep = ",", stringsAsFactors = FALSE)
+
+
+# Add extra column
+metadata.table$code = paste0(metadata.table$genotype, "_", metadata.table$location)
 
 
 
@@ -62,9 +61,9 @@ spenv_pop_code <- scan(SPENVFILE, what=character())
 
 
 # Convert VCF to workable format
-GDSFILE="btrys06.final.gds"
-snpgdsVCF2GDS(VCFFILE, GDSFILE, method="biallelic.only")
-snpgdsSummary(GDSFILE)
+GDSFILE=paste0(PREFIX,".gds")
+#snpgdsVCF2GDS(VCFFILE, GDSFILE, method="biallelic.only")
+#snpgdsSummary(GDSFILE)
 
 
 # Load back in GDS file
@@ -92,38 +91,6 @@ pc.percent <- pca$varprop*100
 head(round(pc.percent, 2))
 
 
-# Plot PCA (species)
-tab <- data.frame(sample.id = pca$sample.id,
-                  pop = factor(sp_pop_code)[match(pca$sample.id, sample.id)],
-                  EV1 = pca$eigenvect[,1],    # the first eigenvector
-                  EV2 = pca$eigenvect[,2],    # the second eigenvector
-                  stringsAsFactors = FALSE)
-head(tab)
-plot(tab$EV2, tab$EV1, col=as.integer(tab$pop), xlab="eigenvector 2", ylab="eigenvector 1")
-legend("bottomleft", legend=levels(tab$pop), pch="o", col=1:nlevels(tab$pop))
-
-
-# Plot PCA (environ)
-tab <- data.frame(sample.id = pca$sample.id,
-                  pop = factor(env_pop_code)[match(pca$sample.id, sample.id)],
-                  EV1 = pca$eigenvect[,1],    # the first eigenvector
-                  EV2 = pca$eigenvect[,2],    # the second eigenvector
-                  stringsAsFactors = FALSE)
-head(tab)
-plot(tab$EV2, tab$EV1, col=as.integer(tab$pop), xlab="eigenvector 2", ylab="eigenvector 1")
-legend("bottomleft", legend=levels(tab$pop), pch="o", col=1:nlevels(tab$pop))
-
-
-# Plot PCA (sp_env)
-tab <- data.frame(sample.id = pca$sample.id,
-                  pop = factor(spenv_pop_code)[match(pca$sample.id, sample.id)],
-                  EV1 = pca$eigenvect[,1],    # the first eigenvector
-                  EV2 = pca$eigenvect[,2],    # the second eigenvector
-                  stringsAsFactors = FALSE)
-head(tab)
-plot(tab$EV2, tab$EV1, col=as.integer(tab$pop), xlab="eigenvector 2", ylab="eigenvector 1")
-legend("bottomleft", legend=levels(tab$pop), pch="o", col=1:nlevels(tab$pop))
-
 
 ###########################################################################
 ##                                                                       ##
@@ -134,7 +101,9 @@ legend("bottomleft", legend=levels(tab$pop), pch="o", col=1:nlevels(tab$pop))
 
 # Tabulate data
 tab <- data.frame(sample.id = pca$sample.id,
-                  pop = factor(sp_pop_code)[match(pca$sample.id, sample.id)],
+                  species = metadata.table[match(pca$sample.id, metadata.table$code), ]$genotype,
+                  location = metadata.table[match(pca$sample.id, metadata.table$code), ]$location,
+                  treatment = metadata.table[match(pca$sample.id, metadata.table$code), ]$treatment,
                   EV1 = pca$eigenvect[,1],    # the first eigenvector
                   EV2 = pca$eigenvect[,2],    # the second eigenvector
                   stringsAsFactors = FALSE)
@@ -142,10 +111,10 @@ tab <- data.frame(sample.id = pca$sample.id,
 
 # Write plot to PDF
 PLOT_FILENAME=paste0(PREFIX, "_pca.raw.pdf")
-pdf(PLOT_FILENAME, width = 6, height = 5)
+pdf(PLOT_FILENAME, width = 8, height = 7)
 
-ggplot(tab, aes(x = EV1, y = EV2, color = pop)) + ## Manual modification may be necessary
-  geom_point(size = 3, alpha=0.5) + ggtitle("PCA - species") +
+ggplot(tab, aes(x = EV1, y = EV2, color = location, shape = treatment)) + ## Manual modification may be necessary
+  geom_point(size = 3, alpha=0.6) + ggtitle("PCA - species") +
   labs(x=paste("EV1 (", toString(pca$eigenval[[1]]), "%)", sep=""), y=paste("EV2 (", toString(pca$eigenval[[2]]), "%)", sep="")) +
   theme_bw()
 
@@ -154,10 +123,10 @@ dev.off()
 
 # Write plot with outlier points labelled
 OUTLIER_PLOT_FILENAME=paste0(PREFIX, "_pca.labelled.pdf")
-pdf(OUTLIER_PLOT_FILENAME, width = 6, height = 5)
+pdf(OUTLIER_PLOT_FILENAME, width = 8, height = 7)
 
-ggplot(tab, aes(x = EV1, y = EV2, color = pop)) + ## Manual modification may be necessary
-  geom_point(size = 3, alpha=0.5) + ggtitle("PCA - species") +
+ggplot(tab, aes(x = EV1, y = EV2, color = location, shape = treatment)) + ## Manual modification may be necessary
+  geom_point(size = 3, alpha=0.6) + ggtitle("PCA - species") +
   labs(x=paste("EV1 (", toString(pca$eigenval[[1]]), "%)", sep=""), y=paste("EV2 (", toString(pca$eigenval[[2]]), "%)", sep="")) +
   theme_bw() +
   geom_text_repel(aes(label = sample.id), size = 4)
