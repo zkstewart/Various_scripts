@@ -66,60 +66,34 @@ def group_reads_across_lanes(forwardReads, reverseReads, laneRegex):
                              ]
         reverseReadGroups -- likewise with forwardReadGroups, but with the reverse
                              reads; can be None if handling single end reads
-    '''    
-    # Handle forward reads from pairs or single reads
-    forwardReadGroups = []
-    for readFile in forwardReads:
-        readFileBase = os.path.basename(readFile)
-        assert laneRegex.search(readFileBase) != None, \
-            f"Lane identifier not found in '{readFileBase}'; can't handle this"
-        
-        readFileNoLane = laneRegex.sub("", readFileBase)
-        
-        groupToAddTo = None
-        for i in range(len(forwardReadGroups)):
-            readGroup = forwardReadGroups[i]
-            for groupFile in readGroup:
-                groupFileBase = os.path.basename(groupFile)
-                groupFileNoLane = laneRegex.sub("", groupFileBase)
-                
-                if readFileNoLane == groupFileNoLane:
-                    assert groupToAddTo == None, \
-                        f"Found multiple groups I could add {readFileNoLane} into; can't handle this"
-                    groupToAddTo = i
-        
-        if groupToAddTo == None:
-            forwardReadGroups.append([readFile])
-        else:
-            forwardReadGroups[groupToAddTo].append(readFile)
-    
-    # Handle reverse reads from pairs(if applicable)
-    if reverseReads != None:
-        "This code is just copy pasted from the forward part; cbf sub functionalising it"
-        reverseReadGroups = []
-        for readFile in reverseReads:
+    '''
+    def _group_reads(readsList, laneRegex):
+        # Handle forward reads from pairs or single reads
+        readGroups = []
+        for readFile in readsList:
             readFileBase = os.path.basename(readFile)
             assert laneRegex.search(readFileBase) != None, \
                 f"Lane identifier not found in '{readFileBase}'; can't handle this"
             
             readFileNoLane = laneRegex.sub("", readFileBase)
             
-            groupToAddTo = None
-            for i in range(len(reverseReadGroups)):
-                readGroup = reverseReadGroups[i]
-                for groupFile in readGroup:
-                    groupFileBase = os.path.basename(groupFile)
-                    groupFileNoLane = laneRegex.sub("", groupFileBase)
-                    
-                    if readFileNoLane == groupFileNoLane:
-                        assert groupToAddTo == None, \
-                            f"Found multiple groups I could add {readFileNoLane} into; can't handle this"
-                        groupToAddTo = i
-            
-            if groupToAddTo == None:
-                reverseReadGroups.append([readFile])
-            else:
-                reverseReadGroups[groupToAddTo].append(readFile)
+            foundGroup = False
+            for readGroup in readGroups:
+                groupIdentifier, group = readGroup
+                if readFileNoLane == groupIdentifier:
+                    group.append(readFile)
+                    foundGroup = True
+                    break
+            if foundGroup == False:
+                readGroups.append([readFileNoLane, [readFile]])
+        return [ group for groupIdentifier, group in readGroups ]
+    
+    # Get forward reads group
+    forwardReadGroups = _group_reads(forwardReads, laneRegex)
+    
+    # Handle reverse reads from pairs(if applicable)
+    if reverseReads != None:
+        reverseReadGroups = _group_reads(reverseReads, laneRegex)
     else:
         reverseReadGroups = None
     
@@ -132,11 +106,10 @@ def main():
     qsubbed to concatenate the FASTQs into a single forward/reverse file
     per sample.
     
-    Some notes: laneIdentifier by default is "L00", which means we can expect
-    files from different lanes to have values like "L001" and "L002" for example.
+    Some notes: laneIdentifier by default is "_L00", which means we can expect
+    files from different lanes to have values like "_L001" and "_L002" for example.
     Otherwise, these file names should have no differences.
     """
-    
     # Reqs
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-d", dest="readsDir",
@@ -158,8 +131,10 @@ def main():
                    default=False)
     p.add_argument("--laneIdentifier", dest="laneIdentifier",
                    required=False,
-                   help="Optionally specify how we tell lanes apart (default==\"L00\")",
-                   default="L00")
+                   help="""Optionally specify how we tell lanes apart (default==\"_L00\");
+                   it is assumed this value will be followed by a single digit that identifies
+                   the lane""",
+                   default="_L00")
     
     args = p.parse_args()
     validate_args(args)
