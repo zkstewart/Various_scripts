@@ -213,7 +213,7 @@ def main():
     script = f'''#!/bin/bash -l
 #PBS -N prep_reads
 #PBS -l walltime=120:00:00
-#PBS -l mem=5G
+#PBS -l mem=25G
 #PBS -l ncpus=1
 
 cd $PBS_O_WORKDIR
