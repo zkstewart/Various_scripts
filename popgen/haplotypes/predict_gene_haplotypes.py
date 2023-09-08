@@ -189,7 +189,7 @@ def get_genotyped_snps_for_genes(gff3Obj, snpGenotypes):
                     if snpLocation == "CDS":
                         geneSnpDict.setdefault(geneID, {})
                         geneSnpDict[geneID][pos] = genotypesDict
-        
+    
     return geneSnpDict
 
 def get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, minSnps=0):
@@ -270,11 +270,11 @@ def get_haplotype_sequences(gff3Obj, genomeFASTA_obj, geneSnpDict, minSnps=0):
                 haploCodeDict[sampleID][1].append(genotype[1])
         
         # Get just the unique haplotypes so we can avoid redundant sequence extraction
-        uniqueHaplotypes = set()
-        for genotypes in haploCodeDict.values():
-            uniqueHaplotypes.add(tuple(genotypes[0]))
-            uniqueHaplotypes.add(tuple(genotypes[1]))
-        uniqueHaplotypes = list(uniqueHaplotypes)
+        uniqueHaplotypes = list(set(
+            tuple(subgenotype)
+            for genotype in haploCodeDict.values()
+            for subgenotype in genotype
+        ))
         
         # Extract haplotype sequences for all unique haplotypes
         haplotypeSequences = []
@@ -363,7 +363,8 @@ def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict):
         ongoingCount += cdsFeature.end - cdsFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
     return newSnpDict
 
-def edit_reference_to_haplotype_sequence(referenceSeq, haplotype, orderedPositions, snpDict, strand):
+def edit_reference_to_haplotype_sequence(referenceSeq, haplotype, orderedPositions,
+                                         snpDict, strand, VALIDATE_STRICT=False):
     '''
     This function will take in a reference nucleotide sequence, typically representing
     a CDS for a gene in either +ve or -ve strand, and generates the haplotype version
@@ -381,12 +382,21 @@ def edit_reference_to_haplotype_sequence(referenceSeq, haplotype, orderedPositio
                        pos2: { ... },
                        ...
                    }
+        strand -- a string equal to "+" or "-" indicating the strandedness of this gene
+        VALIDATE_STRICT -- a boolean indicating whether sequence validation should occur;
+                           this was useful during testing and development but it causes issues
+                           for things that are very hard to validate (i.e., the changes this
+                           code make are correct, but nested variants can mess with it).
     Returns:
         editedSeq -- an edited version of the input referenceSeq with all variations made
     '''
     for i in range(len(haplotype)-1, -1, -1): # iterate backwards through positions and variants
         pos = orderedPositions[i]
         variant = haplotype[i]
+        
+        # Skip if variant is reference type
+        if variant == 0:
+            continue
         
         # Get strand-appropriate alleles
         if strand == "+":
@@ -398,12 +408,14 @@ def edit_reference_to_haplotype_sequence(referenceSeq, haplotype, orderedPositio
         
         # Validate that our position is correct and edit the sequence
         if strand == "+":
-            assert referenceSeq[pos:pos+len(refAllele)].upper() == refAllele.upper(), \
-                "Zac, you need to fix your +ve haplotype positioning code!"
+            if VALIDATE_STRICT:
+                assert referenceSeq[pos:pos+len(refAllele)].upper() == refAllele.upper(), \
+                    "Zac, you need to fix your +ve haplotype positioning code!"
             referenceSeq = referenceSeq[:pos] + varAllele + referenceSeq[pos+len(refAllele):]
         else:
-            assert referenceSeq[pos-len(refAllele)+1:pos+1].upper() == refAllele.upper(), \
-                "Zac, you need to fix your -ve haplotype positioning code!"
+            if VALIDATE_STRICT:
+                assert referenceSeq[pos-len(refAllele)+1:pos+1].upper() == refAllele.upper(), \
+                    "Zac, you need to fix your -ve haplotype positioning code!"
             referenceSeq = referenceSeq[:pos-len(refAllele)+1] + varAllele + referenceSeq[pos+1:]
     
     editedSeq = referenceSeq # just for clarity since this sequence is a new, modified object
@@ -515,10 +527,10 @@ def main():
         for geneID, haplotypesDict in haploSeqDict.items():
             ## Output 1: Tabulation file
             # Calculate haplotype frequencies
-            haplotypeCount = {"".join(map(str, genotype)):0 for genotype in list(map(list, haplotypesDict["haplotype_sequences"].keys()))}
+            haplotypeCount = {genotype:0 for genotype in haplotypesDict["haplotype_sequences"].keys()}
             for genotypes in haplotypesDict["sample_haplotypes"].values():
                 for gt in genotypes:
-                    haplotypeCount["".join(map(str, gt))] += 1
+                    haplotypeCount[tuple(gt)] += 1
             haplotypeFrequency = [[gt, count / sum(haplotypeCount.values())] for gt, count in haplotypeCount.items()]
             haplotypeFrequency.sort(key = lambda x: -x[1])
             
@@ -526,10 +538,10 @@ def main():
             haplotypeSampleAssoc = {gtPair[0]: [] for gtPair in haplotypeFrequency}
             for sampleID, genotypes in haplotypesDict["sample_haplotypes"].items():
                 if genotypes[0] == genotypes[1]:
-                    haplotypeSampleAssoc["".join(map(str, genotypes[0]))].append(f"{sampleID}_(2/2)")
+                    haplotypeSampleAssoc[tuple(genotypes[0])].append(f"{sampleID}_(2/2)")
                 else:
                     for gt in genotypes:
-                        haplotypeSampleAssoc["".join(map(str, gt))].append(f"{sampleID}_(1/2)")
+                        haplotypeSampleAssoc[tuple(gt)].append(f"{sampleID}_(1/2)")
             
             # Write gene rows
             for i in range(len(haplotypeFrequency)):
@@ -542,14 +554,14 @@ def main():
                     row.append("")
                 
                 # Add details to row
-                row.append(f"H{haplotypeFrequency[i][0]}")
+                row.append(f"H{'.'.join(map(str, haplotypeFrequency[i][0]))}")
                 row.append(str(haplotypeFrequency[i][1]))
                 row.append(", ".join(sorted(haplotypeSampleAssoc[haplotypeFrequency[i][0]])))
                 
                 # Figure out if any relevant changes have occurred
                 modIsIdentical, internalStopAddition, finalStopRemoval = \
                     sequence_function_alteration_inference(haplotypesDict["reference_sequence"],
-                        haplotypesDict["haplotype_sequences"][tuple(map(int,tuple(haplotypeFrequency[i][0])))]) # good god
+                        haplotypesDict["haplotype_sequences"][haplotypeFrequency[i][0]])
                 if modIsIdentical:
                     row.append("no_change")
                 elif internalStopAddition:
@@ -563,8 +575,10 @@ def main():
                 fileOut.write("\t".join(row) + "\n")
             
             ## Output 2: FASTA files
+            refHaploCode = ".".join(['0']*len(haplotypeFrequency[0][0]))
+            
             fastaFilePrefix = os.path.join(args.outputDirectory, f"{geneID}_haplotypes")
-            refSeqID = f"{geneID}_reference haplotypeCode={'0'*len(haplotypeFrequency[0][0])} frequency=REFERENCE"
+            refSeqID = f"{geneID}_reference haplotypeCode={refHaploCode} frequency=REFERENCE"
             with open(fastaFilePrefix + ".nucl.fasta", "w") as nuclFileOut, open(fastaFilePrefix + ".prot.fasta", "w") as protFileOut:
                 # Write reference sequences
                 refNuclSeq = haplotypesDict["reference_sequence"]
@@ -578,7 +592,7 @@ def main():
                     code, frequency = haplotypeFrequency[i]
                     seqID = f"{geneID}_seq{i+1} haplotypeCode={code} frequency={frequency}"
                     
-                    nuclSeq = haplotypesDict["haplotype_sequences"][tuple(map(int,tuple(code)))]
+                    nuclSeq = haplotypesDict["haplotype_sequences"][code]
                     protSeq, _, _ = ZS_SeqIO.FastASeq("id", nuclSeq).get_translation(findBestFrame=False, strand=1, frame=0)
                     
                     nuclFileOut.write(f">{seqID}\n{nuclSeq}\n")
