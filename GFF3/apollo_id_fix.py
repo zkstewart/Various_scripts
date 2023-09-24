@@ -103,7 +103,7 @@ if len(artifactFeatures) > 0:
         
         attributes = f"ID={artifactID};Name=apollo_{artifactID};" + \
                 f"justification={artifactFeature.justification};date_creation={artifactFeature.date_creation}"
-        if artifactFeature.type == "insertion_artifact":
+        if hasattr(artifactFeature, "residues"):
             attributes += f";residues={artifactFeature.residues}"
         
         artifactLine = "\t".join(map(str, [
