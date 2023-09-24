@@ -99,15 +99,18 @@ if len(artifactFeatures) > 0:
     contigCount = {}
     for artifactFeature in artifactFeatures:
         contigCount.setdefault(geneFeature.contig, 1)
-        
         artifactID = f"{artifactFeature.contig}_artifact_{contigCount[artifactFeature.contig]}"
+        
+        attributes = f"ID={artifactID};Name=apollo_{artifactID};" + \
+                f"justification={artifactFeature.justification};date_creation={artifactFeature.date_creation}"
+        if artifactFeature.type == "insertion_artifact":
+            attributes += f";residues={artifactFeature.residues}"
+        
         artifactLine = "\t".join(map(str, [
             artifactFeature.contig, artifactFeature.source, artifactFeature.type,
             artifactFeature.start, artifactFeature.end, artifactFeature.strand,
             artifactFeature.score, artifactFeature.frame,
-            
-            f"ID={artifactID};Name=apollo_{artifactID};" + \
-                f"justification={artifactFeature.justification};date_creation={artifactFeature.date_creation}"
+            attributes
         ]))
         outputLines.append(artifactLine)
         contigCount[geneFeature.contig] += 1
