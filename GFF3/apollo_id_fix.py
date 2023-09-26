@@ -29,8 +29,8 @@ for geneFeature in gff3Object.types["gene"]:
     # Create line for gene-level feature
     geneLine = "\t".join(map(str, [
         geneFeature.contig, geneFeature.source, geneFeature.type,
-        geneFeature.start, geneFeature.end, geneFeature.strand,
-        geneFeature.score, geneFeature.frame,
+        geneFeature.start, geneFeature.end, geneFeature.score,
+        geneFeature.strand, geneFeature.frame,
         f"ID={geneID};Name=apollo_{geneID};date_creation={geneFeature.date_creation}"
     ]))
     outputLines.append(geneLine)
@@ -42,21 +42,29 @@ for geneFeature in gff3Object.types["gene"]:
         mrnaID = f"{geneID}.mrna{mrnaCount}" # geneID carries over
         mrnaLine = "\t".join(map(str, [
             mrnaFeature.contig, mrnaFeature.source, mrnaFeature.type,
-            mrnaFeature.start, mrnaFeature.end, mrnaFeature.strand,
-            mrnaFeature.score, mrnaFeature.frame,
+            mrnaFeature.start, mrnaFeature.end, mrnaFeature.score,
+            mrnaFeature.strand, mrnaFeature.frame,
             f"ID={mrnaID};Parent={geneID};Name=apollo_{mrnaID};date_creation={mrnaFeature.date_creation}"
         ]))
         outputLines.append(mrnaLine)
         mrnaCount += 1
         
+        # Sort child features appropriately
+        if geneFeature.strand == "+":
+            exonFeatures = sorted(mrnaFeature.exon, key = lambda x: (x.start, x.end))
+            cdsFeatures = sorted(mrnaFeature.CDS, key = lambda x: (x.start, x.end))
+        else:
+            exonFeatures = sorted(mrnaFeature.exon, key = lambda x: (-x.end, -x.start))
+            cdsFeatures = sorted(mrnaFeature.CDS, key = lambda x: (-x.end, -x.start))
+        
         # Create lines for exon-level feature
         exonCount = 1
-        for exonFeature in mrnaFeature.exon:
+        for exonFeature in exonFeatures:
             exonID = f"{mrnaID}.exon{exonCount}"
             exonLine = "\t".join(map(str, [
                 exonFeature.contig, exonFeature.source, exonFeature.type,
-                exonFeature.start, exonFeature.end, exonFeature.strand,
-                exonFeature.score, exonFeature.frame,
+                exonFeature.start, exonFeature.end, exonFeature.score, 
+                exonFeature.strand, exonFeature.frame,
                 f"ID={exonID};Parent={mrnaID};Name=apollo_{exonID}"
             ]))
             outputLines.append(exonLine)
@@ -64,12 +72,12 @@ for geneFeature in gff3Object.types["gene"]:
         
         # Create lines for CDS-level feature
         cdsCount = 1
-        for cdsFeature in mrnaFeature.CDS:
+        for cdsFeature in cdsFeatures:
             cdsID = f"{mrnaID}.cds{cdsCount}"
             cdsLine = "\t".join(map(str, [
                 cdsFeature.contig, cdsFeature.source, cdsFeature.type,
-                cdsFeature.start, cdsFeature.end, cdsFeature.strand,
-                cdsFeature.score, cdsFeature.frame,
+                cdsFeature.start, cdsFeature.end, cdsFeature.score,
+                cdsFeature.strand, cdsFeature.frame,
                 f"ID={cdsID};Parent={mrnaID};Name=apollo_{cdsID}"
             ]))
             outputLines.append(cdsLine)
@@ -108,8 +116,8 @@ if len(artifactFeatures) > 0:
         
         artifactLine = "\t".join(map(str, [
             artifactFeature.contig, artifactFeature.source, artifactFeature.type,
-            artifactFeature.start, artifactFeature.end, artifactFeature.strand,
-            artifactFeature.score, artifactFeature.frame,
+            artifactFeature.start, artifactFeature.end, artifactFeature.score,
+            artifactFeature.strand, artifactFeature.frame,
             attributes
         ]))
         outputLines.append(artifactLine)
