@@ -128,7 +128,7 @@ def create_cmd_file(fastqFiles, speciesIds, readgroups, genomeFile, bwa, outputF
             fq = " ".join(fastqFiles[i]) # join in case it's paired end
             rg = readgroups[i]
             
-            fileOut.write("{bwa} mem -t {cpus} -R '{rg}' -p {genomeFile} {fq} > {sampleID}.sam\n".format(
+            fileOut.write("{bwa} mem -t {cpus} -R '{rg}' {genomeFile} {fq} > {sampleID}.sam\n".format(
                 bwa=bwa,
                 cpus=cpus,
                 rg=rg,
