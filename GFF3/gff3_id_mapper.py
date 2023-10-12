@@ -4,8 +4,7 @@
 # allow flexible logic for mapping features to one or more
 # attribute values.
 
-import os, argparse, re, sys
-from collections import OrderedDict
+import os, argparse, sys, urllib.parse
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Function_packages import ZS_GFF3IO
@@ -81,7 +80,7 @@ def gff3_id_mapper(forEach, map, to, gff3Obj, TOLERANT=False, UNIQUE=False):
                 (f"'{toKey}' -to key does not exist within one or more features; "
                 f"valid keys include '{list(feature.__dict__.keys())}'; check that "
                 f"letters have correct upper/lower casing for {feature}")
-            toDetails.append(feature.__dict__[toKey])
+            toDetails.append(urllib.parse.unquote(feature.__dict__[toKey]))
         
         if skip is True:
             continue
