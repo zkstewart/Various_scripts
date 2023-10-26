@@ -6,165 +6,180 @@ remotes::install_github('royfrancis/pophelper')
 library(pophelper)
 library(grid)
 library(gridExtra)
+library(RColorBrewer)
+
+
+###########################################################################
+##                                                                       ##
+##                         ANALYSIS SETUP                                ##
+##                                                                       ##
+###########################################################################
+
 
 # Setup working directory
-setwd("F:/flies/chapa_2022/fastSTRUCTURE")
+WORK_DIR = "F:/flies/chapa_2022/fastSTRUCTURE"
+setwd(WORK_DIR)
 
-###### 
-# K=2 ONLY PLOT
-######
 
-# Specify input file locations
-meanQFile="btrys06_simple.2.meanQ"
-labelsFile="F:/flies/chapa_2022/metadata/fs_sampleids.txt"
-labelsFile_2="F:/flies/chapa_2022/metadata/fs_2labels.txt"
+# Specify directory containing fastStructure outputs (.meanQ file[s])
+FS_OUT_DIR = "F:/flies/chapa_2022/fastSTRUCTURE/individual/simple"
 
-# Read in Q values
+
+# Specify prefix of output files, and K value determined by chooseK function
+PREFIX = "c2022_simple"
+K = 2
+
+
+# Specify metadata file
+## Example table format shown below
+## sample_id values must correspond to sample IDs in your VCF / BED files.
+## Also, make sure your first column does have the "sample_id" header.
+## +-------------------+------+---------+-----+
+## |     sample_id     |  env | species | ... |
+## +-------------------+------+---------+-----+
+## |    01BN_MT_502    |  MT  |   BN    | ... |
+## |    01BN_MT_503    |  MT  |   BN    | ... |
+## +-------------------+------+---------+-----+
+METADATA_FILE = "F:/flies/chapa_2022/metadata/fs_metadata_table.txt"
+
+
+
+###########################################################################
+##                                                                       ##
+##                          DATA LOADING                                 ##
+##                                                                       ##
+###########################################################################
+
+
+# Parse in metadata
+metadata.table = read.table(file=METADATA_FILE, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+
+# Get the expected .meanQ file name and load it in
+meanQFile = paste0(FS_OUT_DIR, "/", PREFIX, ".", K, ".meanQ")
 qdata = readQ(meanQFile)
+rownames(qdata[[1]]) = metadata.table$sample_id
 
-# Read in individual labels & associate to qdata
-pops = read.delim(labelsFile, header=FALSE)
 
-## Alt presentation: only genotype number
-newpops = c()
-for (i in 1:length(rownames(pops))) {
-  oldlabel = pops$V1[i]
-  newlabel = unlist(strsplit(toString(oldlabel), split="_")[1])[3]
-  if (newlabel == "E") {
-    newlabel = unlist(strsplit(toString(oldlabel), split="_")[1])[4]
-  }
-  newpops = c(newpops, newlabel)
-}
-pops$V1 = newpops
 
-rownames(qdata[[1]]) = pops$V1
-rownames(qdata[["btrys06_simple.2"]]) = pops$V1
+###########################################################################
+##                                                                       ##
+##                     GENERATE STRUCTURE PLOTS                          ##
+##                                                                       ##
+###########################################################################
 
-# Plot it
-plotQ(qlist=qdata, clustercol=c("slateblue1", "firebrick3"),
+
+# Generate a colour palette with number of colours = K
+colourPalette = brewer.pal(K, "Set1")[1:K] # [1:K] at the end handles the Warning message that occurs if K < 3
+## try experimenting with other colour palettes by replacing "Set1" with others
+## described at https://r-graph-gallery.com/38-rcolorbrewers-palettes.html
+
+
+# Specify the title for your plot
+plotTitle = "fastSTRUCTURE admixture proportions for BNEO and BTRY"
+
+
+# Generate simple plot of just sample IDs
+plotQ(qlist=qdata, clustercol=colourPalette,
       # Chart size
-      width=12, height=3,
+      width = 12, height = 3, # try to experiment with sizes
+      
       # Barplot aesthetics
-      barbordersize=0.1, barbordercolour="black",
+      barbordersize = 0.1, barbordercolour="black",
+      
       # Title
-      showtitle=TRUE,
-      titlelab="fastSTRUCTURE admixture proportions for BNEO and BTRY",
+      showtitle = TRUE,
+      titlelab = plotTitle,
+      
       # Individual labels
       showindlab=T, useindlab=T, indlabsize=2.5,
       indlabheight=1, indlabvjust=1,
-      # Output type
-      imgtype="pdf",
-      # Necessary for export
-      exportpath=getwd())
-
-# Sorted plot
-plotQ(qlist=qdata, clustercol=c("slateblue1", "firebrick3"),
-      # Chart size
-      width=12, height=3,
-      # Barplot aesthetics
-      barbordersize=0.1, barbordercolour="black",
-      # Title
-      showtitle=TRUE,
-      titlelab="fastSTRUCTURE admixture proportions for BNEO and BTRY",
-      # Individual labels
-      showindlab=T, useindlab=T, indlabsize=2.5,
-      indlabheight=1, indlabvjust=1,
-      # Output type
-      imgtype="pdf",
+      
       # Sorting
-      sortind="Cluster1",
-      # Necessary for export
-      exportpath=getwd())
+      sortind="Cluster1", # remove if you want to use the default order of samples
+      
+      # Output plot
+      imgtype="pdf",
+      exportpath=WORK_DIR)
 
-# Read in group labels
-labels2 = read.delim(labelsFile_2, header=FALSE, stringsAsFactors=F)
-colnames(labels2) = c("environ", "species")
-environLabels <- labels2[,1,drop=FALSE]
 
-# Sorted, environment label plot
-plotQ(qlist=qdata, clustercol=c("slateblue1", "firebrick3"),
+# Generate plot with additional labeling
+plotQ(qlist=qdata, clustercol=colourPalette,
       # Chart size
-      width=18, height=3,
+      width = 18, height = 3, # try to experiment with sizes
+      
       # Barplot aesthetics
-      barbordersize=0.1, barbordercolour="black",
+      barbordersize = 0.1, barbordercolour="black",
+      
       # Title
-      showtitle=TRUE,
-      titlelab="fastSTRUCTURE admixture proportions for BNEO and BTRY",
+      showtitle = TRUE,
+      titlelab = plotTitle,
+      
       # Individual labels
       showindlab=T, useindlab=T, indlabsize=2.5,
       indlabheight=1, indlabvjust=1,
-      # Output type
-      imgtype="pdf",
+      
       # Group labels
-      grplab=environLabels,grplabsize=2,linesize=0.8,pointsize=3,
+      grplab=metadata.table$environment, # change this to whatever column you want from your metadata!
+      grplabsize=2, linesize=0.8, pointsize=3,
       grplabangle=90, grplabheight=2.5,
+      
       # Sorting
-      ordergrp=T,
-      # Necessary for export
-      exportpath=getwd())
-
-# Sorted, multigroup label plot
-plotQ(qlist=qdata, clustercol=c("slateblue1", "firebrick3"),
-      # Chart size
-      width=18, height=3,
-      # Barplot aesthetics
-      barbordersize=0.1, barbordercolour="black",
-      # Title
-      showtitle=TRUE,
-      titlelab="fastSTRUCTURE admixture proportions for BNEO and BTRY",
-      # Individual labels
-      showindlab=T, useindlab=T, indlabsize=2.5,
-      indlabheight=1, indlabvjust=1,
-      # Output type
+      ordergrp=T, # should probably use this if plotting with extra metadata
+      
+      # Output plot
       imgtype="pdf",
-      # Group labels
-      grplab=labels2,grplabsize=2,linesize=0.8,pointsize=3,
-      grplabangle=90, grplabheight=2.5,
-      # Sorting
-      ordergrp=T,
-      # Necessary for export
-      exportpath=getwd())
+      exportpath=WORK_DIR)
 
 
-###### 
-# K=2 VS K=3 PLOT
-######
+###########################################################################
+##                                                                       ##
+##                  OPTIONAL: PLOT K VALUE COMPARISON                    ##
+##                                                                       ##
+###########################################################################
+## No need to use this code unless you're trying to decide between more than
+## one K value. This plot should help to visualise the differences.
 
-# Specify input file locations
-labelsFile="F:/flies/chapa_2022/metadata/fs_sampleids.txt"
-k2File="btrys06_simple.2.meanQ"
-k3File="btrys06_simple.3.meanQ"
-fsFiles <- c(k2File, k3File)
 
-# Read in Q values
+# Specify the other K value's .meanQ file
+OTHER_K = 3
+
+otherMeanQFile = paste0(FS_OUT_DIR, "/", PREFIX, ".", OTHER_K, ".meanQ")
+otherQdata = readQ(otherMeanQFile)
+rownames(otherQdata[[1]]) = metadata.table$sample_id
+
+
+# Load multiple Q value files in together
+fsFiles <- c(meanQFile, otherMeanQFile)
 fsList <- readQ(files=fsFiles)
+fsList <- lapply(fsList,"rownames<-",metadata.table$sample_id)
 
-# Read in individual labels & associate to qdata
-pops = read.delim(labelsFile, header=FALSE)
-rownames(fsList[[1]]) = pops$V1
-if(length(unique(sapply(fsList,nrow)))==1) fsList <- lapply(fsList,"rownames<-",pops$V1)
 
-# Align K=2 and K=3 runs
+# Align the different K values
 alignList <- alignK(fsList)
 
-# Plot it
-plotQ(qlist=alignList, clustercol=c("slateblue1", "firebrick3", "green"),
+
+# Generate a colour palette with number of colours = the highest K
+colourPalette = brewer.pal(max(K, OTHER_K), "Set1")[1:max(K, OTHER_K)]
+
+
+# Plot both K values
+plotQ(qlist=alignList, clustercol=colourPalette,
       # Chart size
-      width=12, height=3,
+      width = 12, height = 3, # try to experiment with sizes
+      
       # Barplot aesthetics
-      barbordersize=0.1, barbordercolour="black",
+      barbordersize = 0.1, barbordercolour="black",
+      
       # Title
-      showtitle=TRUE,
-      titlelab="fastSTRUCTURE admixture proportions for BNEO and BTRY",
+      showtitle = TRUE,
+      titlelab = plotTitle,
+      
       # Individual labels
       showindlab=T, useindlab=T, indlabsize=2.5,
       indlabheight=1, indlabvjust=1,
-      # Output type
+      
+      # Output plot
       imgtype="pdf", imgoutput="join",
-      # Necessary for export
       exportpath=getwd())
 
-p1 <- plotQ(alignList,imgoutput="join",returnplot=T,exportplot=F,basesize=11)
-grid.arrange(p1$plot[[1]])
-
-tr1 <- tabulateQ(qlist=fsList)
