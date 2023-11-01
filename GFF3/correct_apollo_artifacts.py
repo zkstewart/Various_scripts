@@ -123,8 +123,6 @@ def main():
             
             # Iterate through gene entries and modify anything relevant
             for gf in geneFeatures:
-                #if gf.ID == "F1_Ma8D_418_trimmed_to_Markers_manual_20":
-                #    stop
                 geneArtifacts = get_overlapping_artifacts(gf, contigArtifacts)
                 
                 # Perform modification of this gene's mRNA features
@@ -141,7 +139,7 @@ def main():
     
     # Write modified GFF3 to file
     with open(args.outputGff3, "w") as fileOut:
-        for gf in geneFeatures:
+        for gf in gff3.types["gene"]:
             fileOut.write(f"{gf.format_as_gff3()}\n")
             for mf in gf.mRNA:
                 fileOut.write(f"{mf.format_as_gff3()}\n")

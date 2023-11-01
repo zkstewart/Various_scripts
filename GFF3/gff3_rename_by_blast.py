@@ -122,12 +122,15 @@ def main():
         # Get mapped ID if relevant
         bestID = bestID if not bestID in idMapDict else idMapDict[bestID]
         
-        # Fix it up to be nice and all
+        # Remove problem / annoying sequence bits
         for problemBit in PROBLEM_SEQ_BITS:
             if problemBit in bestID:
                 bestID = bestID.replace(problemBit, "")
         
+        # Fix up any lingering issues
         bestID = bestID.replace(" ", "_") # no empty spaces in gene ID!
+        bestID = bestID.replace(",", "_") # no commas in the gene ID!
+        bestID = bestID.replace("__", "_") # prevent any ugliness occurring from replacing spaces and commas at same time
         
         # Append a count to the gene ID to prevent identical IDs
         idsCount.setdefault(bestID, 0)
