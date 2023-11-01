@@ -5,11 +5,29 @@
 # 1) modify the contig sequence, and 2) modify the annotation
 # coordinates to account for contig modifications.
 
-import sys
+import os, sys, argparse
 from Bio import SeqIO
 
-sys.path.append(r"C:\git\Various_scripts")
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_GFF3IO
+
+def validate_args(args):
+    # Validate input data locations
+    if not os.path.isfile(args.gff3File):
+        print('I am unable to locate the input GFF3 file (' + args.gff3File + ')')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
+    if not os.path.isfile(args.fastaFile):
+        print('I am unable to locate the input genome FASTA file (' + args.fastaFile + ')')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
+    # Handle file output
+    if os.path.exists(args.outputGff3):
+        print('The specified output GFF3 already exists. This program will not allowing overwriting.')
+        print('Move the existing file, or specify a new file name and try again.')
+    if os.path.exists(args.outputFasta):
+        print('The specified output FASTA already exists. This program will not allowing overwriting.')
+        print('Move the existing file, or specify a new file name and try again.')
 
 def get_overlapping_artifacts(feature, contigArtifacts):
     ovlArtifacts = [
@@ -33,13 +51,13 @@ def get_artifact_length_adjustment(artifacts):
 
 def adjust_feature(featureList, artifactList, preOffset):
     '''
-    featureList -- assumed to be sorted from start to end
-    artifactList -- assumed to be sorted from start to end
-    preOffset -- offset int rippling forward from previous adjustments
+    Parameters:
+        featureList -- assumed to be sorted from start to end
+        artifactList -- assumed to be sorted from start to end
+        preOffset -- offset int rippling forward from previous adjustments
     '''
-    #featureList, artifactList = mf.exon, mrnaArtifacts
     offset = 0
-    for f in featureList:
+    for f in sorted(featureList, key = lambda x: (x.start, x.end)):
         fArtifacts = get_overlapping_artifacts(f, artifactList)
         
         f.start += offset + preOffset # ripple previous offsets to the start
@@ -49,105 +67,119 @@ def adjust_feature(featureList, artifactList, preOffset):
         f.end += offset + preOffset # ripple previous + new offset to the end
         f.coords = [f.start, f.end]
 
-# File locations
-#gff3File = r"Ma418_liftoff_manual_models.gff3"
-#fastaFile = r"F:\banana_group\852_annotation\contigs\418.fasta"
-
-gff3File = r"Ma939_liftoff_manual_models.gff3"
-fastaFile = r"F:\banana_group\852_annotation\contigs\939.fasta"
-
-# Output locations
-#gff3Out = "Ma418_liftoff_manual_models.indelmodified.gff3"
-#fastaOut = "418.indelmodified.fasta"
-
-gff3Out = "Ma939_liftoff_manual_models.indelmodified.gff3"
-fastaOut = "939.indelmodified.fasta"
-
-# Load GFF3
-gff3 = ZS_GFF3IO.GFF3(gff3File)
-
-# Load FASTA
-recordsDict = SeqIO.to_dict(SeqIO.parse(fastaFile, "fasta"))
-
-# Validate that FASTA and GFF3 match
-for contigID in gff3.contigs:
-    assert contigID in recordsDict
-
-# Locate all artifacts
-artifactRecords = []
-for keyType in gff3.types.keys():
-    if "_artifact" in keyType:
-        for artifactRecord in gff3.types[keyType]:
-            artifactRecords.append(artifactRecord)
-
-# Modify GFF3 features to account for indels
-for contigID, seqRecord in recordsDict.items():
-    contigArtifacts = [ ar for ar in artifactRecords if ar.contig == contigID ]
-    contigArtifacts.sort(key = lambda x: (x.start, x.end))
-    contigOffset = 0
+def main():
+    usage = """%(prog)s ...
+    """
+    # Reqs
+    p = argparse.ArgumentParser(description=usage)
+    p.add_argument("-ig", dest="gff3File",
+                   required=True,
+                   help="Specify the location of the input GFF3 file")
+    p.add_argument("-if", dest="fastaFile",
+                   required=True,
+                   help="Specify the location of the input FASTA file")
+    p.add_argument("-og", dest="outputGff3",
+                   required=True,
+                   help="Output location for modified GFF3")
+    p.add_argument("-of", dest="outputFasta",
+                   required=True,
+                   help="Output location for modified FASTA")
     
-    # Skip modifying if no artifacts on this contig
-    if len(contigArtifacts) == 0:
-        pass
+    args = p.parse_args()
+    validate_args(args)
     
-    # Perform modification procedure
-    else:
-        # Obtain all gene entries on this contig, ordered from first to last
-        geneFeatures = [ f for f in gff3.types["gene"] if f.contig == contigID ]
-        geneFeatures.sort(key = lambda x: (x.start, x.end))
-        
-        # Iterate through gene entries and modify anything relevant
-        for gf in geneFeatures:
-            geneArtifacts = get_overlapping_artifacts(gf, contigArtifacts)
-            
-            # Perform modification of this gene's mRNA features
-            for mf in gf.mRNA:
-                mrnaArtifacts = get_overlapping_artifacts(mf, contigArtifacts)
-                
-                adjust_feature(mf.exon, mrnaArtifacts, contigOffset)
-                adjust_feature(mf.CDS, mrnaArtifacts, contigOffset)
-                mf.update_coordinates()
-            gf.update_coordinates()
-            
-            # Ripple any modifications to upstream genes via offset
-            contigOffset += get_artifact_length_adjustment(geneArtifacts)
-
-# Write modified GFF3 to file
-with open(gff3Out, "w") as fileOut:
-    for gf in geneFeatures:
-        fileOut.write(f"{gf.format_as_gff3()}\n")
-        for mf in gf.mRNA:
-            fileOut.write(f"{mf.format_as_gff3()}\n")
-            for ef in mf.exon:
-                fileOut.write(f"{ef.format_as_gff3()}\n")
-            for cf in mf.CDS:
-                fileOut.write(f"{cf.format_as_gff3()}\n")
-
-# Write modified FASTA to file
-with open(fastaOut, "w") as fileOut:
+    # Load GFF3
+    gff3 = ZS_GFF3IO.GFF3(args.gff3File)
+    
+    # Load FASTA
+    recordsDict = SeqIO.to_dict(SeqIO.parse(args.fastaFile, "fasta"))
+    
+    # Validate that FASTA and GFF3 match
+    for contigID in gff3.contigs:
+        assert contigID in recordsDict
+    
+    # Locate all artifacts
+    artifactRecords = []
+    for keyType in gff3.types.keys():
+        if "_artifact" in keyType:
+            for artifactRecord in gff3.types[keyType]:
+                artifactRecords.append(artifactRecord)
+    
+    # Modify GFF3 features to account for indels
     for contigID, seqRecord in recordsDict.items():
         contigArtifacts = [ ar for ar in artifactRecords if ar.contig == contigID ]
-        contigArtifacts.sort(key = lambda x: (-x.end, -x.start))
-        genomeSeq = str(seqRecord.seq)
+        contigArtifacts.sort(key = lambda x: (x.start, x.end))
+        contigOffset = 0
         
-        # Perform no modification if no artifacts exist
+        # Skip modifying if no artifacts on this contig
         if len(contigArtifacts) == 0:
             pass
         
         # Perform modification procedure
         else:
-            for ar in contigArtifacts:
-                startIndex = ar.start - 1 # - 1 to make this act 0-based
-                endIndex = ar.end
+            # Obtain all gene entries on this contig, ordered from first to last
+            geneFeatures = [ f for f in gff3.types["gene"] if f.contig == contigID ]
+            geneFeatures.sort(key = lambda x: (x.start, x.end))
+            
+            # Iterate through gene entries and modify anything relevant
+            for gf in geneFeatures:
+                #if gf.ID == "F1_Ma8D_418_trimmed_to_Markers_manual_20":
+                #    stop
+                geneArtifacts = get_overlapping_artifacts(gf, contigArtifacts)
                 
-                if ar.type == "deletion_artifact":
-                    genomeSeq = genomeSeq[:startIndex] + genomeSeq[endIndex:]
-                elif ar.type == "insertion_artifact":
-                    genomeSeq = genomeSeq[:startIndex+1] + ar.residues + genomeSeq[endIndex:]
-                elif ar.type == "substitution_artifact":
-                    genomeSeq = genomeSeq[:startIndex] + ar.residues + genomeSeq[endIndex:]
-                else:
-                    raise NotImplementedError(f"Unknown artifact type '{ar.type}'")
-        
-        # Write sequence to file
-        fileOut.write(f">{contigID}\n{genomeSeq}\n")
+                # Perform modification of this gene's mRNA features
+                for mf in gf.mRNA:
+                    mrnaArtifacts = get_overlapping_artifacts(mf, contigArtifacts)
+                    
+                    adjust_feature(mf.exon, mrnaArtifacts, contigOffset)
+                    adjust_feature(mf.CDS, mrnaArtifacts, contigOffset)
+                    mf.update_coordinates()
+                gf.update_coordinates()
+                
+                # Ripple any modifications to upstream genes via offset
+                contigOffset += get_artifact_length_adjustment(geneArtifacts)
+    
+    # Write modified GFF3 to file
+    with open(args.outputGff3, "w") as fileOut:
+        for gf in geneFeatures:
+            fileOut.write(f"{gf.format_as_gff3()}\n")
+            for mf in gf.mRNA:
+                fileOut.write(f"{mf.format_as_gff3()}\n")
+                for ef in mf.exon:
+                    fileOut.write(f"{ef.format_as_gff3()}\n")
+                for cf in mf.CDS:
+                    fileOut.write(f"{cf.format_as_gff3()}\n")
+    
+    # Write modified FASTA to file
+    with open(args.outputFasta, "w") as fileOut:
+        for contigID, seqRecord in recordsDict.items():
+            contigArtifacts = [ ar for ar in artifactRecords if ar.contig == contigID ]
+            contigArtifacts.sort(key = lambda x: (-x.end, -x.start))
+            genomeSeq = str(seqRecord.seq)
+            
+            # Perform no modification if no artifacts exist
+            if len(contigArtifacts) == 0:
+                pass
+            
+            # Perform modification procedure
+            else:
+                for ar in contigArtifacts:
+                    startIndex = ar.start - 1 # - 1 to make this act 0-based
+                    endIndex = ar.end
+                    
+                    if ar.type == "deletion_artifact":
+                        genomeSeq = genomeSeq[:startIndex] + genomeSeq[endIndex:]
+                    elif ar.type == "insertion_artifact":
+                        genomeSeq = genomeSeq[:startIndex+1] + ar.residues + genomeSeq[endIndex:]
+                    elif ar.type == "substitution_artifact":
+                        genomeSeq = genomeSeq[:startIndex] + ar.residues + genomeSeq[endIndex:]
+                    else:
+                        raise NotImplementedError(f"Unknown artifact type '{ar.type}'")
+            
+            # Write sequence to file
+            fileOut.write(f">{contigID}\n{genomeSeq}\n")
+    
+    print("Program completed successfully!")
+
+if __name__ == "__main__":
+    main()
