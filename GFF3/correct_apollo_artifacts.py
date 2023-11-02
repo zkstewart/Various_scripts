@@ -25,14 +25,20 @@ def validate_args(args):
     if os.path.exists(args.outputGff3):
         print('The specified output GFF3 already exists. This program will not allowing overwriting.')
         print('Move the existing file, or specify a new file name and try again.')
+        quit()
     if os.path.exists(args.outputFasta):
         print('The specified output FASTA already exists. This program will not allowing overwriting.')
         print('Move the existing file, or specify a new file name and try again.')
+        quit()
 
 def get_overlapping_artifacts(feature, contigArtifacts):
     ovlArtifacts = [
-        ar for ar in contigArtifacts
-        if ar.start >= feature.start and ar.end <= feature.end
+        ar
+        for ar in contigArtifacts
+        if 
+            (ar.type != "insertion_artifact" and (ar.start >= feature.start) and (ar.end <= feature.end))
+        or
+            (ar.type == "insertion_artifact" and ((ar.start - 1) >= feature.start) and ((ar.end - 1) <= feature.end))
     ]
     return ovlArtifacts
 
@@ -128,7 +134,6 @@ def main():
                 # Perform modification of this gene's mRNA features
                 for mf in gf.mRNA:
                     mrnaArtifacts = get_overlapping_artifacts(mf, contigArtifacts)
-                    
                     adjust_feature(mf.exon, mrnaArtifacts, contigOffset)
                     adjust_feature(mf.CDS, mrnaArtifacts, contigOffset)
                     mf.update_coordinates()
@@ -168,7 +173,7 @@ def main():
                     if ar.type == "deletion_artifact":
                         genomeSeq = genomeSeq[:startIndex] + genomeSeq[endIndex:]
                     elif ar.type == "insertion_artifact":
-                        genomeSeq = genomeSeq[:startIndex+1] + ar.residues + genomeSeq[endIndex:]
+                        genomeSeq = genomeSeq[:startIndex] + ar.residues + genomeSeq[startIndex:]
                     elif ar.type == "substitution_artifact":
                         genomeSeq = genomeSeq[:startIndex] + ar.residues + genomeSeq[endIndex:]
                     else:
