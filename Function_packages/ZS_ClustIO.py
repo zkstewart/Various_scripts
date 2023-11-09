@@ -315,7 +315,14 @@ class CDHIT:
                "-c", self.identity, "-n", self.word_length, "-G", "0" if self.local else "1", 
                "-aS", self.shorter_cov_pct, "-aL", self.longer_cov_pct, "-M", self.mem,
                "-T", self.threads, "-d", self.description_length]))
-        run_cdhit = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
+        
+        if platform.system() != "Windows":
+            run_cdhit = subprocess.Popen(" ".join(cmd), shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_cdhit = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        
         cdout, cderr = run_cdhit.communicate()
         if cderr.decode("utf-8") != '':
             raise Exception('CD-HIT Error text below' + str(cderr.decode("utf-8")))
