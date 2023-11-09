@@ -3,12 +3,12 @@
 # Specifies the CDHIT Class for performing CD-HIT reduction of
 # string fasta files, ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects.
 
-import os, sys, subprocess, shutil
+import os, sys, subprocess, shutil, platform
 from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_SeqIO import FASTA, Conversion
-from ZS_Utility import tmp_file_name_gen
+from ZS_Utility import tmp_file_name_gen, base_subprocess_cmd, convert_windows_to_wsl_path
 
 class CDHIT:
     '''
@@ -284,6 +284,7 @@ class CDHIT:
         Returns:
             cmd -- a string indicating the command executed for CD-HIT clustering.
         '''
+        # Validate parameters
         assert isinstance(fasta, str)
         assert isinstance(outputDir, str)
         assert isinstance(outputFasta, str)
@@ -295,15 +296,23 @@ class CDHIT:
         assert not os.path.isfile(os.path.join(outputDir, outputFasta)), \
             f"'{os.path.join(outputDir, outputFasta)}' already exists; cdhit method won't overwrite it"
         
+        # Figure out which CD-HIT executable we're using
         if self.molecule == "nucleotide":
             program = os.path.join(self.cdhitDir if self.cdhitDir != None else "", 'cd-hit-est')
         else:
             program = os.path.join(self.cdhitDir if self.cdhitDir != None else "", 'cd-hit')
         
-        cmd = (f"{program} -i {fasta} -o {os.path.join(outputDir, outputFasta)} " + 
-               f"-c {self.identity} -n {self.word_length} -G {0 if self.local else 1} " + 
-               f"-aS {self.shorter_cov_pct} -aL {self.longer_cov_pct} -M {self.mem} " +
-               f"-T {self.threads} -d {self.description_length}")
+        # Begin formatting cmd, converting to WSL paths where needed
+        if platform.system() == "Windows":
+            fasta = convert_windows_to_wsl_path(fasta)
+            outputFile = convert_windows_to_wsl_path(os.path.join(outputDir, outputFasta))
+        cmd = base_subprocess_cmd(program)
+        
+        # Format cmd and run it
+        cmd += list(map(str, ["-i", fasta, "-o", outputFile,
+               "-c", self.identity, "-n", self.word_length, "-G", "0" if self.local else "1", 
+               "-aS", self.shorter_cov_pct, "-aL", self.longer_cov_pct, "-M", self.mem,
+               "-T", self.threads, "-d", self.description_length]))
         run_cdhit = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
         cdout, cderr = run_cdhit.communicate()
         if cderr.decode("utf-8") != '':
