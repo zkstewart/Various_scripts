@@ -306,6 +306,8 @@ class CDHIT:
         if platform.system() == "Windows":
             fasta = convert_windows_to_wsl_path(fasta)
             outputFile = convert_windows_to_wsl_path(os.path.join(outputDir, outputFasta))
+        else:
+            outputFile = os.path.join(outputDir, outputFasta)
         cmd = base_subprocess_cmd(program)
         
         # Format cmd and run it
