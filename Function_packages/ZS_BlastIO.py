@@ -4,11 +4,12 @@
 # using ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects, as well
 # as for parsing outfmt6 results.
 
-import os, sys, subprocess, hashlib, time, random
+import os, sys, subprocess, hashlib, time, random, platform
 from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_Utility
+from ZS_Utility import base_subprocess_cmd, convert_windows_to_wsl_path
 from ZS_SeqIO import Conversion
 
 class BLAST:
@@ -477,23 +478,48 @@ class MM_DB:
         
         self._threads = value
     
+    def clean_all(self):
+        '''
+        Function to invoke after using a MMSeqs2 database which is no longer
+        wanted. It should clean up all files with _seqDB* suffix.
+        '''
+        dbPrefix = os.path.basename(f"{self.fasta}_seqDB")
+        dbDir = os.path.dirname(os.path.abspath(self.fasta))
+        
+        for file in os.listdir(dbDir):
+            if file.startswith(dbPrefix):
+                os.unlink(os.path.join(dbDir, file))
+    
     def generate(self):
         '''
         Creates a sequence DB for MMSeqs2 if it does not already exist.
         '''
-        # Format command
+        # Specify file locations
         dbname = os.path.abspath(f"{self.fasta}_seqDB")
-        cmd = f'{self.mmseqsExe} createdb "{self.fasta}" "{dbname}"'
+        fasta = self.fasta
         
         # Skip if db already exists
         if os.path.isfile(dbname):
             logString = f"# Skipping '{dbname}' DB generation..."
             return logString
         
+        # Convert to WSL paths where needed
+        if platform.system() == "Windows":
+            fasta = convert_windows_to_wsl_path(fasta)
+            dbname = convert_windows_to_wsl_path(dbname)
+        
+        # Format command
+        cmd = base_subprocess_cmd(self.mmseqsExe)
+        cmd += ["createdb", fasta, dbname]
+        
         # DB generation
-        logString = "# DB generation with: " + cmd
-        run_makedb = subprocess.Popen(cmd, shell = True,
-                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        logString = "# DB generation with: " + " ".join(cmd)
+        if platform.system() != "Windows":
+            run_makedb = subprocess.Popen(" ".join(cmd), shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_makedb = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         makedbout, makedberr = run_makedb.communicate()
         if makedberr.decode("utf-8") != '':
             raise Exception('Make MMseqs2 query db error text below\n' +
@@ -505,25 +531,39 @@ class MM_DB:
         '''
         Indexes as sequence DB for MMSeqs2 if it has not already been done.
         '''
-        # Format command
+        # Specify file locations
         dbname = os.path.abspath(f"{self.fasta}_seqDB")
-        cmd = f'{self.mmseqsExe} createindex "{dbname}" "{self.tmpDir}" --threads {self.threads}'
+        tmpDir = self.tmpDir
         
         # Skip if index already exists
         if MM_DB.mms2_index_exists(os.path.basename(dbname), os.path.dirname(dbname)):
             logString = f"# Skipping '{dbname}' DB indexing..."
             return logString
         
+        # Convert to WSL paths where needed
+        origDbname = dbname # retain the original value for output flag creation later
+        if platform.system() == "Windows":
+            dbname = convert_windows_to_wsl_path(dbname)
+            tmpDir = convert_windows_to_wsl_path(tmpDir)
+        
+        # Format command
+        cmd = base_subprocess_cmd(self.mmseqsExe)
+        cmd += ["createindex", dbname, tmpDir, "--threads", str(self.threads)]
+        
         # Run query index
-        logString = "# DB indexing with: " + cmd        
-        run_index = subprocess.Popen(cmd, shell = True,
-                                     stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        logString = "# DB indexing with: " + " ".join(cmd)
+        if platform.system() != "Windows":
+            run_index = subprocess.Popen(" ".join(cmd), shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_index = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         indexout, indexerr = run_index.communicate()
         if indexerr.decode("utf-8") != '':
                 raise Exception('Indexing MMseqs2 query db error text below\n' + indexerr.decode("utf-8"))
         
         # Create output flag
-        with open(dbname + ".idxComplete", "w") as fileOut:
+        with open(origDbname + ".idxComplete", "w") as fileOut: # need orig name if WSL change occurred
             pass # create empty file
         
         return logString

@@ -570,6 +570,9 @@ class MM_Clust:
     def tabulate(self):
         raise NotImplementedError("Abstract method must be overridden")
     
+    def clean_all(self):
+        raise NotImplementedError("Abstract method must be overridden")
+    
     def parse_tsv(self, tabulatedFile):
         '''
         Parses the output of .tabulate() (aka mmseqs createtsv) and produces
@@ -647,21 +650,37 @@ class MM_Linclust(MM_Clust):
         self.mmDB.generate()
         self.mmDB.index()
         
-        # Format command
+        # Specify file locations
+        fasta = self.mmDB.fasta
         dbname = os.path.abspath(f"{self.mmDB.fasta}_linclustDB")
-        cmd = f'{self.mmDB.mmseqsExe} linclust "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
-              f'"{self.tmpDir}" --min-seq-id {self.identity} -c {self.cov_pct} ' + \
-              f'-e {self.evalue} --cluster-mode {self.clust_mode} --threads {self.threads}'
+        tmpDir = self.tmpDir
         
         # Skip if db already exists
         if os.path.isfile(dbname):
             logString = f"# Skipping '{dbname}' linclust clustering..."
             return logString
         
+        # Convert to WSL paths where needed
+        if platform.system() == "Windows":
+            fasta = convert_windows_to_wsl_path(fasta)
+            dbname = convert_windows_to_wsl_path(dbname)
+            tmpDir = convert_windows_to_wsl_path(tmpDir)
+        
+        # Format command
+        cmd = base_subprocess_cmd(self.mmDB.mmseqsExe)
+        cmd += ["linclust", f"{fasta}_seqDB", dbname, tmpDir,
+               "--min-seq-id", str(self.identity), "-c", str(self.cov_pct),
+               "-e", str(self.evalue), "--cluster-mode", str(self.clust_mode),
+               "--threads", str(self.threads)]
+        
         # Clustering
-        logString = "# Running linclust with: " + cmd
-        run_linclust = subprocess.Popen(cmd, shell = True,
-                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        logString = "# Running linclust with: " + " ".join(cmd)
+        if platform.system() != "Windows":
+            run_linclust = subprocess.Popen(" ".join(cmd), shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_linclust = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         linclustout, linclusterr = run_linclust.communicate()
         if linclusterr.decode("utf-8") != '':
             raise Exception('Linclust error text below\n' +
@@ -677,27 +696,51 @@ class MM_Linclust(MM_Clust):
             outputFileName -- a string indicating the file name to write TSV formatted
                               clustering results to.
         '''
-        
-        # Format command
-        dbname = os.path.abspath(f"{self.mmDB.fasta}_linclustDB")
-        cmd = f'{self.mmDB.mmseqsExe} createtsv "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
-              f'"{outputFileName}"'
+        # Specify file locations
+        seqdbname = os.path.abspath(f"{self.mmDB.fasta}_seqDB")
+        clustdbname = os.path.abspath(f"{self.mmDB.fasta}_linclustDB")
         
         # Skip if table already exists
         if os.path.isfile(outputFileName):
             logString = f"# Skipping '{outputFileName}' linclust table generation..."
             return logString
         
+        # Convert to WSL paths where needed
+        if platform.system() == "Windows":
+            seqdbname = convert_windows_to_wsl_path(seqdbname)
+            clustdbname = convert_windows_to_wsl_path(clustdbname)
+            outputFileName = convert_windows_to_wsl_path(outputFileName)
+        
+        # Format command
+        cmd = base_subprocess_cmd(self.mmDB.mmseqsExe)
+        cmd += ["createtsv", seqdbname, clustdbname, outputFileName]
+        
         # Tabulation
-        logString = "# Running table generation with: " + cmd        
-        run_tabulate = subprocess.Popen(cmd, shell = True,
-                                        stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        logString = "# Running table generation with: " + " ".join(cmd)
+        if platform.system() != "Windows":
+            run_tabulate = subprocess.Popen(" ".join(cmd), shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_tabulate = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         tableout, tableerr = run_tabulate.communicate()
         if tableerr.decode("utf-8") != '':
             raise Exception('Linclust tabulation text below\n' +
                             tableerr.decode("utf-8"))
         
         return logString
+    
+    def clean_all(self):
+        '''
+        Function to invoke after performing Linclust, the results of which
+        are no longerwanted. It should clean up all files with _linclustDB* suffix.
+        '''
+        dbPrefix = os.path.basename(f"{self.mmDB.fasta}_linclustDB")
+        dbDir = os.path.dirname(os.path.abspath(self.mmDB.fasta))
+        
+        for file in os.listdir(dbDir):
+            if file.startswith(dbPrefix):
+                os.unlink(os.path.join(dbDir, file))
 
 class MM_Cascade(MM_Clust):
     '''
@@ -754,22 +797,38 @@ class MM_Cascade(MM_Clust):
         self.mmDB.generate()
         self.mmDB.index()
         
-        # Format command
+        # Specify file locations
+        fasta = self.mmDB.fasta
         dbname = os.path.abspath(f"{self.mmDB.fasta}_clustDB")
-        cmd = f'{self.mmDB.mmseqsExe} cluster "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
-              f'"{self.tmpDir}" --min-seq-id {self.identity} -c {self.cov_pct} ' + \
-              f'-e {self.evalue} --cluster-mode {self.clust_mode} -s {self.sensitivity} ' + \
-              f'--cluster-steps {self.cluster_steps} --threads {self.threads}'
+        tmpDir = self.tmpDir
         
         # Skip if db already exists
         if os.path.isfile(dbname):
             logString = f"# Skipping '{dbname}' cascaded clustering..."
             return logString
         
+        # Convert to WSL paths where needed
+        if platform.system() == "Windows":
+            fasta = convert_windows_to_wsl_path(fasta)
+            dbname = convert_windows_to_wsl_path(dbname)
+            tmpDir = convert_windows_to_wsl_path(tmpDir)
+        
+        # Format command
+        cmd = base_subprocess_cmd(self.mmDB.mmseqsExe)
+        cmd += ["cluster", f"{fasta}_seqDB", dbname, tmpDir,
+               "--min-seq-id", str(self.identity), "-c", str(self.cov_pct),
+               "-e", str(self.evalue), "--cluster-mode", str(self.clust_mode),
+               "-s", str(self.sensitivity), "--cluster-steps", str(self.cluster_steps),
+               "--threads", str(self.threads)]
+        
         # Clustering
-        logString = "# Running cascaded clustering with: " + cmd        
-        run_cluster = subprocess.Popen(cmd, shell = True,
-                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        logString = "# Running cascaded clustering with: " + " ".join(cmd)
+        if platform.system() != "Windows":
+            run_cluster = subprocess.Popen(" ".join(cmd), shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_cluster = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         clustout, clusterr = run_cluster.communicate()
         if clusterr.decode("utf-8") != '':
             raise Exception('Cascaded clustering error text below\n' +
@@ -785,27 +844,51 @@ class MM_Cascade(MM_Clust):
             outputFileName -- a string indicating the file name to write TSV formatted
                               clustering results to.
         '''
-        
-        # Format command
-        dbname = os.path.abspath(f"{self.mmDB.fasta}_clustDB")
-        cmd = f'{self.mmDB.mmseqsExe} createtsv "{self.mmDB.fasta}_seqDB" "{dbname}" ' + \
-              f'"{outputFileName}"'
+        # Specify file locations
+        seqdbname = os.path.abspath(f"{self.mmDB.fasta}_seqDB")
+        clustdbname = os.path.abspath(f"{self.mmDB.fasta}_clustDB")
         
         # Skip if table already exists
         if os.path.isfile(outputFileName):
             logString = f"# Skipping '{outputFileName}' cascaded table generation..."
             return logString
         
+        # Convert to WSL paths where needed
+        if platform.system() == "Windows":
+            seqdbname = convert_windows_to_wsl_path(seqdbname)
+            clustdbname = convert_windows_to_wsl_path(clustdbname)
+            outputFileName = convert_windows_to_wsl_path(outputFileName)
+        
+        # Format command
+        cmd = base_subprocess_cmd(self.mmDB.mmseqsExe)
+        cmd += ["createtsv", seqdbname, clustdbname, outputFileName]
+        
         # Tabulation
-        logString = "# Running table generation with: " + cmd        
-        run_tabulate = subprocess.Popen(cmd, shell = True,
-                                        stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        logString = "# Running table generation with: " + " ".join(cmd)
+        if platform.system() != "Windows":
+            run_tabulate = subprocess.Popen(" ".join(cmd), shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_tabulate = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         tableout, tableerr = run_tabulate.communicate()
         if tableerr.decode("utf-8") != '':
             raise Exception('Cascaded clustering tabulation text below\n' +
                             tableerr.decode("utf-8"))
         
         return logString
+    
+    def clean_all(self):
+        '''
+        Function to invoke after performing Linclust, the results of which
+        are no longerwanted. It should clean up all files with _clustDB* suffix.
+        '''
+        dbPrefix = os.path.basename(f"{self.mmDB.fasta}_clustDB")
+        dbDir = os.path.dirname(os.path.abspath(self.mmDB.fasta))
+        
+        for file in os.listdir(dbDir):
+            if file.startswith(dbPrefix):
+                os.unlink(os.path.join(dbDir, file))
 
 if __name__ == "__main__":
     pass
