@@ -42,7 +42,11 @@ def validate_args(args):
         "--mode is controlled by argparse choices"
         
         # Validate "MMS-CASCADE" parameters
-        "--sensitivity is controlled by argparse choices"
+        if args.sensitivity in ["5.7", "7.5"]:
+            args.sensitivity = float(args.sensitivity)
+        else:
+            args.sensitivity = int(args.sensitivity)
+        
         if args.steps < 1:
             print("steps must be greater than or equal to 1")
             quit()
@@ -156,9 +160,9 @@ def main():
                    default="set-cover")
     p.add_argument("--sensitivity", dest="sensitivity",
                    required=False,
-                   choices=[1,2,3,4,5,5.7,6,7,7.5],
+                   choices=["1","2","3","4","5","5.7","6","7","7.5"],
                    help="MMS-CASCADE: Specify the sensitivity value; default==4",
-                   default=4)
+                   default="4")
     p.add_argument("--steps", dest="steps",
                    required=False,
                    type=int,
