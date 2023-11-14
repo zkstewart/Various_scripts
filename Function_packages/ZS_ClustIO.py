@@ -5,6 +5,7 @@
 
 import os, sys, subprocess, shutil, platform
 from pathlib import Path
+from hashlib import sha256
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_SeqIO import FASTA, Conversion
@@ -650,9 +651,14 @@ class MM_Linclust(MM_Clust):
         self.mmDB.generate()
         self.mmDB.index()
         
+        # Get hash for parameters combination
+        strForHash = str(self.evalue) + str(self.identity) + str(self.cov_pct) + \
+            str(self.clust_mode)
+        strHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
+        
         # Specify file locations
         fasta = self.mmDB.fasta
-        dbname = os.path.abspath(f"{self.mmDB.fasta}_linclustDB")
+        dbname = os.path.abspath(f"{self.mmDB.fasta}_{strHash}_linclustDB")
         tmpDir = self.tmpDir
         
         # Skip if db already exists
@@ -696,9 +702,14 @@ class MM_Linclust(MM_Clust):
             outputFileName -- a string indicating the file name to write TSV formatted
                               clustering results to.
         '''
+        # Get hash for parameters combination
+        strForHash = str(self.evalue) + str(self.identity) + str(self.cov_pct) + \
+            str(self.clust_mode)
+        strHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
+        
         # Specify file locations
         seqdbname = os.path.abspath(f"{self.mmDB.fasta}_seqDB")
-        clustdbname = os.path.abspath(f"{self.mmDB.fasta}_linclustDB")
+        clustdbname = os.path.abspath(f"{self.mmDB.fasta}_{strHash}_linclustDB")
         
         # Skip if table already exists
         if os.path.isfile(outputFileName):
@@ -797,9 +808,14 @@ class MM_Cascade(MM_Clust):
         self.mmDB.generate()
         self.mmDB.index()
         
+        # Get hash for parameters combination
+        strForHash = str(self.evalue) + str(self.identity) + str(self.cov_pct) + \
+            str(self.clust_mode) + str(self.sensitivity)
+        strHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
+        
         # Specify file locations
         fasta = self.mmDB.fasta
-        dbname = os.path.abspath(f"{self.mmDB.fasta}_clustDB")
+        dbname = os.path.abspath(f"{self.mmDB.fasta}_{strHash}_clustDB")
         tmpDir = self.tmpDir
         
         # Skip if db already exists
@@ -844,9 +860,14 @@ class MM_Cascade(MM_Clust):
             outputFileName -- a string indicating the file name to write TSV formatted
                               clustering results to.
         '''
+        # Get hash for parameters combination
+        strForHash = str(self.evalue) + str(self.identity) + str(self.cov_pct) + \
+            str(self.clust_mode) + str(self.sensitivity)
+        strHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
+        
         # Specify file locations
         seqdbname = os.path.abspath(f"{self.mmDB.fasta}_seqDB")
-        clustdbname = os.path.abspath(f"{self.mmDB.fasta}_clustDB")
+        clustdbname = os.path.abspath(f"{self.mmDB.fasta}_{strHash}_clustDB")
         
         # Skip if table already exists
         if os.path.isfile(outputFileName):
