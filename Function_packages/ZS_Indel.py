@@ -9,7 +9,7 @@ from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_AlignIO import SSW
-from ZS_ORF import peakdet, _merge_coords_list, plummetdet
+from ZS_ORF import _merge_coords_list, plummetdet
 
 def plateaudet(lineChart, plummets):
     '''

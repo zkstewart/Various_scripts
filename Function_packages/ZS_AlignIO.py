@@ -3,8 +3,9 @@
 # Contains various Classes to perform manipulations involving
 # FASTA objects that are to be aligned or have been aligned.
 
-import os, platform, sys, subprocess, hashlib, time, random, re, subprocess, shutil
+import os, platform, sys, time, random, re, subprocess, shutil
 from pathlib import Path
+from hashlib import sha256
 from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
@@ -139,7 +140,7 @@ class MAFFT:
         assert type(FASTA_obj).__name__ == "FASTA" or type(FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
                 
         # Create temporary file
-        tmpHash = hashlib.sha256(bytes(str(FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        tmpHash = sha256(bytes(str(FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         tmpFileName = tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
         FASTA_obj.write(tmpFileName)
         
@@ -354,7 +355,7 @@ class MAFFT:
         assert type(add_FASTA_obj).__name__ == "FASTA" or type(add_FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
         
         # Create temporary files
-        tmpHash = hashlib.sha256(bytes(str(aligned_FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        tmpHash = sha256(bytes(str(aligned_FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         
         tmpAlignedFileName = tmp_file_name_gen("mafft_aligned_tmp" + tmpHash[0:20], "fasta")
         aligned_FASTA_obj.write(tmpAlignedFileName, asAligned=True, withDescription=True)

@@ -9,7 +9,8 @@ from copy import deepcopy
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import ZS_BlastIO, ZS_SeqIO
+from ZS_BlastIO import BLAST
+from ZS_SeqIO import FastASeq
 from ZS_AlignIO import SSW
 
 def peakdet(v, delta, x = None):
@@ -659,7 +660,7 @@ class ORF:
                         blastResults.append(math.inf)
                         continue
                     # Set up our BLAST handler
-                    blaster = ZS_BlastIO.BLAST(ZS_SeqIO.FastASeq("eg", seq=seq), transcriptomeFile, "blastp")
+                    blaster = BLAST(FastASeq("eg", seq=seq), transcriptomeFile, "blastp")
                     blaster.set_threads(4)
                     # Run BLAST
                     blastDict, _ = blaster.get_blast_results() # throw away the tmpBlastName since it will be None

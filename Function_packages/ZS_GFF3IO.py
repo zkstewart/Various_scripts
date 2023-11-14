@@ -3,10 +3,11 @@
 # Contains the GFF3 class and its associated Feature
 # Class. Can be used for (memory-heavy) GFF3 file parsing
 
-import re, sys, os, hashlib
+import re, sys, os
 import pandas as pd
 from collections import OrderedDict
 from ncls import NCLS
+from hashlib import md5
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_SeqIO import FastASeq
@@ -1088,7 +1089,7 @@ class GFF3:
             len(self.contigs),
             ";".join(["num_{0}={1}".format(key, len(self.types[key])) for key in self.types.keys()])
         )
-        hash = int(hashlib.md5(hashString.encode("utf-8")).hexdigest(), 16)
+        hash = int(md5(hashString.encode("utf-8")).hexdigest(), 16)
         return hash
 
 class LinesGFF3(GFF3):

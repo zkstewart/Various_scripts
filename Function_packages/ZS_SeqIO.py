@@ -3,13 +3,14 @@
 # Contains various Classes to perform manipulations involving
 # FASTA sequences and MSAs.
 
-import os, inspect, sys, hashlib, time, random, re, math
+import os, inspect, sys, time, random, re, math
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
 from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import ZS_Utility
+from ZS_Utility import tmp_file_name_gen
+from hashlib import sha256
 
 class Conversion:
     '''
@@ -130,7 +131,7 @@ class Conversion:
         # If inObject is a ZS_SeqIO.FASTA, make it into a file
         isTemporary = False
         if hasattr(inObject, "isFASTA") and inObject.isFASTA is True:
-            tmpinObjectName = ZS_Utility.tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
+            tmpinObjectName = tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
             inObject.write(tmpinObjectName)
             
             inObject = tmpinObjectName # after this point, inObject will be a string indicating a FASTA file name
@@ -164,7 +165,7 @@ class Conversion:
             for FastASeq_obj in inObject:
                 strForHash += FastASeq_obj.id
                 strForHash += FastASeq_obj.seq[0:1000]
-                strForHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
+                strForHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
         elif hasattr(inObject, "isFastASeq") and inObject.isFastASeq is True:
             strForHash = inObject.id + inObject.seq[0:1000]
         else:
@@ -172,9 +173,9 @@ class Conversion:
         
         # Get the hash in a randomised or non-randomised way
         if randomHash is True:
-            tmpHash = hashlib.sha256(bytes(strForHash + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+            tmpHash = sha256(bytes(strForHash + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         else:
-            tmpHash = hashlib.sha256(bytes(strForHash, 'utf-8')).hexdigest()
+            tmpHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
         
         return tmpHash[0:maxLength]
 

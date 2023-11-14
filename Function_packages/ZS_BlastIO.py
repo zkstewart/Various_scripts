@@ -4,12 +4,13 @@
 # using ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects, as well
 # as for parsing outfmt6 results.
 
-import os, sys, subprocess, hashlib, time, random, platform
+import os, sys, subprocess, time, random, platform
 from pathlib import Path
+from hashlib import sha256
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import ZS_Utility
-from ZS_Utility import base_subprocess_cmd, convert_windows_to_wsl_path
+from ZS_Utility import base_subprocess_cmd, convert_windows_to_wsl_path, \
+    tmp_file_name_gen, get_codec
 from ZS_SeqIO import Conversion
 
 class BLAST:
@@ -214,10 +215,10 @@ class BLAST:
             self.makeblastdb(t)
         
         # Get hash for temporary file creation
-        tmpHash = hashlib.sha256(bytes(q + t + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        tmpHash = sha256(bytes(q + t + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
         
         # Run BLAST
-        tmpResultName = ZS_Utility.tmp_file_name_gen("{0}.vs.{1}_{2}".format(os.path.basename(q).rsplit(".", maxsplit=1)[0], os.path.basename(t).rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "outfmt6")
+        tmpResultName = tmp_file_name_gen("{0}.vs.{1}_{2}".format(os.path.basename(q).rsplit(".", maxsplit=1)[0], os.path.basename(t).rsplit(".", maxsplit=1)[0], tmpHash[0:20]), "outfmt6")
         self.blast(q, t, tmpResultName)
         
         # Parse BLAST results
@@ -324,7 +325,7 @@ class BLAST_Results:
         '''
         blastDict = {}
         
-        with open(self.file, "r", encoding=ZS_Utility.get_codec(self.file)) as fileIn:
+        with open(self.file, "r", encoding=get_codec(self.file)) as fileIn:
             for line in fileIn:
                 # Extract details
                 sl = line.rstrip("\r\n").split('\t')
