@@ -713,7 +713,7 @@ class MM_Linclust(MM_Clust):
         
         # Format command
         cmd = base_subprocess_cmd(self.mmDB.mmseqsExe)
-        cmd += ["createtsv", seqdbname, clustdbname, outputFileName]
+        cmd += ["createtsv", seqdbname, seqdbname, clustdbname, outputFileName]
         
         # Tabulation
         logString = "# Running table generation with: " + " ".join(cmd)
@@ -861,7 +861,7 @@ class MM_Cascade(MM_Clust):
         
         # Format command
         cmd = base_subprocess_cmd(self.mmDB.mmseqsExe)
-        cmd += ["createtsv", seqdbname, clustdbname, outputFileName]
+        cmd += ["createtsv", seqdbname, seqdbname, clustdbname, outputFileName]
         
         # Tabulation
         logString = "# Running table generation with: " + " ".join(cmd)
