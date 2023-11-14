@@ -580,7 +580,43 @@ class MM_Clust:
         a cluster dictionary.
         
         Parameters:
-            tabulatedFile -- 
+            tabulatedFile -- a string indicating the file location of the
+                             output from createtsv.
+        Returns:
+            clusterDict -- a dictionary with structure like:
+                           {
+                               0: [seqid1, seqid2, ...],
+                               1: [ ... ],
+                               ...
+                           }
+        '''
+        clusterDict = {}
+        clusterNum = -1
+        lastCluster = None
+        with open(tabulatedFile, "r") as fileIn:
+            for line in fileIn:
+                l = line.rstrip("\r\n ")
+                if l != "":
+                    clustID, seqID = l.split("\t")
+                    if clustID != lastCluster:
+                        clusterNum += 1
+                    lastCluster = clustID
+                    
+                    clusterDict.setdefault(clusterNum, [])
+                    clusterDict[clusterNum].append(seqID)
+        return clusterDict
+    
+    def _header_parse_tsv(self, tabulatedFile):
+        '''
+        Parses the output of .tabulate() (aka mmseqs createtsv) and produces
+        a cluster dictionary.
+        
+        This function is now deprecated since the method of creating a tsv
+        has since changed. But, I'd like to keep the code around just in case.
+        
+        Parameters:
+            tabulatedFile -- a string indicating the file location of the
+                             output from createtsv.
         Returns:
             clusterDict -- a dictionary with structure like:
                            {
