@@ -656,7 +656,7 @@ class MM_Linclust(MM_Clust):
         tmpDir = self.tmpDir
         
         # Skip if db already exists
-        if os.path.isfile(dbname):
+        if os.path.isfile(dbname) or os.path.isfile(dbname + ".dbtype"):
             logString = f"# Skipping '{dbname}' linclust clustering..."
             return logString
         
@@ -803,7 +803,7 @@ class MM_Cascade(MM_Clust):
         tmpDir = self.tmpDir
         
         # Skip if db already exists
-        if os.path.isfile(dbname):
+        if os.path.isfile(dbname) or os.path.isfile(dbname + ".dbtype"):
             logString = f"# Skipping '{dbname}' cascaded clustering..."
             return logString
         
