@@ -782,9 +782,16 @@ class MM_Linclust(MM_Clust):
         Function to invoke after performing Linclust, the results of which
         are no longerwanted. It should clean up all files with _linclustDB* suffix.
         '''
-        dbPrefix = os.path.basename(f"{self.mmDB.fasta}_linclustDB")
+        # Get hash for parameters combination
+        strForHash = str(self.evalue) + str(self.identity) + str(self.cov_pct) + \
+            str(self.clust_mode)
+        strHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
+        
+        # Specify file prefixes
+        dbPrefix = os.path.basename(f"{self.mmDB.fasta}_{strHash}_linclustDB")
         dbDir = os.path.dirname(os.path.abspath(self.mmDB.fasta))
         
+        # Locate and delete files
         for file in os.listdir(dbDir):
             if file.startswith(dbPrefix):
                 os.unlink(os.path.join(dbDir, file))
@@ -940,9 +947,16 @@ class MM_Cascade(MM_Clust):
         Function to invoke after performing Linclust, the results of which
         are no longerwanted. It should clean up all files with _clustDB* suffix.
         '''
-        dbPrefix = os.path.basename(f"{self.mmDB.fasta}_clustDB")
+        # Get hash for parameters combination
+        strForHash = str(self.evalue) + str(self.identity) + str(self.cov_pct) + \
+            str(self.clust_mode) + str(self.sensitivity)
+        strHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
+        
+        # Specify file prefixes
+        dbPrefix = os.path.basename(f"{self.mmDB.fasta}_{strHash}_clustDB")
         dbDir = os.path.dirname(os.path.abspath(self.mmDB.fasta))
         
+        # Locate and delete files
         for file in os.listdir(dbDir):
             if file.startswith(dbPrefix):
                 os.unlink(os.path.join(dbDir, file))
