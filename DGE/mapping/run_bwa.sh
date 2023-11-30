@@ -13,10 +13,9 @@ cd $PBS_O_WORKDIR
 BWADIR=/home/stewarz2/various_programs/bwa
 
 # Specify reads location
-## For the suffix, it's assumed that just prior to the given string there
-## is the 1 / 2 suffix differentiating forward / reverse reads
 READSDIR=/home/stewarz2/banana_group/852_annotation/assembly/reads
-SUFFIX=.fq.gz
+R1SUFFIX=.trimmed_1P.fq
+R2SUFFIX=.trimmed_2P.fq
 
 # Specify genome file location
 GENDIR=/home/stewarz2/banana_group/852_annotation/contigs
@@ -30,10 +29,11 @@ CPUS=4
 # STEP 1: Locate all read prefixes for mapping
 declare -a RNAPREFIXES
 i=0
-for f in ${READSDIR}/*1${SUFFIX}; do
-    RNAPREFIXES[${i}]=$(echo "${f%%1${SUFFIX}}");
+for f in ${READSDIR}/*${R1SUFFIX}; do
+    RNAPREFIXES[${i}]=$(echo "${f%%${R1SUFFIX}}");
     i=$((i+1));
 done
+
 
 # STEP 2: Handle batch submission variables
 ARRAY_INDEX=$((${PBS_ARRAY_INDEX}-1))
@@ -43,7 +43,7 @@ BASENAME=$(basename ${PREFIX} _) # strip any _ trailing characters
 # STEP 3: Run BWA mapping
 ${BWADIR}/bwa mem -t ${CPUS} \
         ${GENDIR}/${GENFILE} \
-        ${PREFIX}1${SUFFIX} ${PREFIX}2${SUFFIX} \
+        ${PREFIX}${R1SUFFIX} ${PREFIX}${R2SUFFIX} \
         > ${BASENAME}.sam
 
 # STEP 4: Convert to BAM, sort, index, and flagstat for QC
@@ -51,3 +51,6 @@ samtools view --with-header -b ${BASENAME}.sam > ${BASENAME}.bam
 samtools sort -@ 4 -O bam -o ${BASENAME}.sorted.bam -m 5G ${BASENAME}.bam
 bamtools index -in ${BASENAME}.sorted.bam
 samtools flagstat ${BASENAME}.sorted.bam > ${BASENAME}.sorted.flagstat
+
+# STEP 5: Clean up SAM files
+rm ${BASENAME}.sam
