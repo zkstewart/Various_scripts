@@ -11,7 +11,6 @@ from Function_packages import ZS_GFF3IO, ZS_SeqIO
 
 # Load functions from other scripts
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find windows
-import windows # pulls relevant functions from snp_proximity_report.py
 import haplotypes
 
 # Define functions
@@ -25,6 +24,15 @@ def validate_args(args):
         print(f'I am unable to locate the metadata file ({args.metadataFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    # Validate that behavioural parameters make sense
+    numBehaviours = sum([ param for param in [args.homoParents, args.provideInfo]])
+    if numBehaviours == 0:
+        print("Either --homoParents or --provideInfo must be specified!")
+        quit()
+    elif numBehaviours > 1:
+        print("Only one of --homoParents or --provideInfo should be specified!")
+        quit()
+    
     # Validate output file location
     if os.path.isfile(args.outputFileName):
         print(f'File already exists at output location ({args.outputFileName})')
@@ -107,7 +115,7 @@ def is_same(gtList1, gtList2):
     return True if set(gtList1) == set(gtList2) else False
 
 def find_relevant_heterozygotes(snpGenotypes, metadataDict, ancestorGood, ancestorPoor,
-                                parentGood, parentPoor, ONLY_PATTERN_1=False):
+                                parentGood, parentPoor):
     '''
     Parameters:
         snpGenotypes -- a dictionary with structure like:
@@ -140,10 +148,13 @@ def find_relevant_heterozygotes(snpGenotypes, metadataDict, ancestorGood, ancest
                                   parents which have a good and bad phenotype
     '''
     GOOD_PCT = 0.75
+    # BAD_PCT = 0.5
     
-    selectedSNPs = {}
+    numBulk1 = sum([ 1 for sample, group in metadataDict.items() if group == 1 ])
+    # numBulk2 = sum([ 1 for sample, group in metadataDict.items() if group == 2 ])
     
     # Iterate through SNPs looking for ones which match our aims
+    selectedSNPs = {}
     for contig, posDict in snpGenotypes.items():
         for pos, sampleGTDict in posDict.items():
             # Obtain ancestor and parent GTs
@@ -156,73 +167,50 @@ def find_relevant_heterozygotes(snpGenotypes, metadataDict, ancestorGood, ancest
             except:
                 continue
             
-            # See if this meets a pattern than makes sense
+            # See if this meets a pattern that makes sense
             pattern1, pattern2, pattern3 = False, False, False
-            
             '''
-            Pattern 1 and 2 means our good parent and ancestor are both the same homozygote.
-            The bad parent and ancestor are both different to this homozygote.
-            Pattern 1 specifically is when bad side is homo, and pattern 2 is when they're het.
-            * For pattern 1, we'd want to introduce heterozygosity.
-            * For pattern 2, we'd want to maintain homozygosity.
+            The pattern we want to find is when our good parent and ancestor are both the
+            same homozygote. The bad parent and ancestor are both different to this homozygote.
+            The precocious bulk should also be this homozygote. And our selected plants should
+            be heterozygotes.
             '''
+            isPattern = False
             if (is_homo(ancestorGoodGT) and not is_same(ancestorGoodGT, ancestorPoorGT)
             and (is_homo(parentGoodGT) and not is_same(parentGoodGT, parentPoorGT))
             and is_same(ancestorGoodGT, parentGoodGT)):
-                pattern1 = True if is_homo(ancestorPoorGT) and is_homo(parentPoorGT) else False
-                pattern2 = True if is_het(ancestorPoorGT) and is_het(parentPoorGT) else False
+                isPattern = True
             
-            '''
-            Pattern 3 means our good parent and ancestor are both the same heterozygote.
-            The bad parent and ancestor are both homozygotes.
-            * For pattern 3, we'd want to maintain heterozygosity
-            '''
-            if (is_het(ancestorGoodGT) and is_homo(ancestorPoorGT)
-            and (is_het(parentGoodGT) and is_homo(parentPoorGT))
-            and is_same(ancestorGoodGT, parentGoodGT)):
-                pattern3 = True
-            
-            if not any([pattern1, pattern2, pattern3]):
+            if not isPattern:
                 continue
             
-            # Allow skipping for SNPs where we wouldn't be inducing heterozygosity
-            if ONLY_PATTERN_1 and pattern1 == False:
+            # Since this has a good pattern, figure out whether our bulk1 supports it
+            combinedGT = set(ancestorGoodGT).union(set(ancestorPoorGT))
+            assert len(combinedGT) == 2, "Unhandled genotype situation"
+            
+            desiredGT = sorted(combinedGT)
+            numGoodBulk1 = sum([
+                1
+                for sample, group in metadataDict.items()
+                if sample in sampleGTDict and group == 1
+                and sampleGTDict[sample] == ancestorGoodGT
+            ])
+            # numBadBulk2 = sum([
+            #     1
+            #     for sample, group in metadataDict.items()
+            #     if sample in sampleGTDict and group == 2
+            #     and sampleGTDict[sample] != ancestorGoodGT
+            # ])
+            
+            supportedPctGood = numGoodBulk1 / numBulk1
+            if supportedPctGood < GOOD_PCT:
                 continue
             
-            # Since this has a good pattern, figure out what we want and whether our bulk1 supports it
-            numBulk1 = sum([ 1 for sample, group in metadataDict.items() if group == 1 ])
+            # supportedPctBad = numBadBulk2 / numBulk2
+            # if supportedPctBad < BAD_PCT:
+            #     continue
             
-            if pattern1: # induced heterozygosity desired
-                desiredGT = sorted([ancestorGoodGT[0], ancestorPoorGT[1]])
-                numGoodBulk1 = sum([
-                    1
-                    for sample, group in metadataDict.items()
-                    if sample in sampleGTDict and group == 1
-                    and (sampleGTDict[sample] == ancestorGoodGT
-                         or sampleGTDict[sample] == desiredGT)
-                ])
-            elif pattern2: # homozygosity desired
-                desiredGT = ancestorGoodGT
-                numGoodBulk1 = sum([
-                    1
-                    for sample, group in metadataDict.items()
-                    if sample in sampleGTDict and group == 1
-                    and sampleGTDict[sample] == ancestorGoodGT
-                ])
-            elif pattern3: # maintaining heterozygosity desired
-                desiredGT = ancestorGoodGT
-                numGoodBulk1 = sum([
-                    1
-                    for sample, group in metadataDict.items()
-                    if sample in sampleGTDict and group == 1
-                    and sampleGTDict[sample] == ancestorGoodGT
-                ])
-            
-            supportedPct = numGoodBulk1 / numBulk1
-            if supportedPct < GOOD_PCT:
-                continue
-            
-            # Find samples which meet this ...desire...
+            # Find samples which meet our wildest desires
             selectedSNPs.setdefault(contig, {})
             selectedSNPs[contig].setdefault(pos, [])
             
@@ -232,6 +220,72 @@ def find_relevant_heterozygotes(snpGenotypes, metadataDict, ancestorGood, ancest
                         sampleGT = sampleGTDict[sample]
                         if sampleGT == desiredGT:
                             selectedSNPs[contig][pos].append(sample)
+    
+    return selectedSNPs
+
+def find_relevant_snps(snpGenotypes, metadataDict, ancestorGood, ancestorPoor,
+                                parentGood, parentPoor):
+    '''
+    See the method header for the other function
+    '''
+    GOOD_PCT = 0.75
+    
+    numBulk1 = sum([ 1 for sample, group in metadataDict.items() if group == 1 ])
+    
+    # Iterate through SNPs looking for ones which match our aims
+    selectedSNPs = {}
+    for contig, posDict in snpGenotypes.items():
+        for pos, sampleGTDict in posDict.items():
+            # Obtain ancestor and parent GTs
+            try:
+                ancestorGoodGT = sampleGTDict[ancestorGood]
+                ancestorPoorGT = sampleGTDict[ancestorPoor]
+                
+                parentGoodGT = sampleGTDict[parentGood]
+                parentPoorGT = sampleGTDict[parentPoor]
+            except:
+                continue
+            
+            # See if this meets a pattern that makes sense
+            pattern1, pattern2, pattern3 = False, False, False
+            '''
+            The pattern we want to find is when our good parent and ancestor are both the
+            same homozygote. The bad parent and ancestor are both different to this homozygote.
+            The precocious bulk should also be this homozygote. And our selected plants should
+            have ANY genotype. It doesn't matter.
+            '''
+            isPattern = False
+            if (is_homo(ancestorGoodGT) and not is_same(ancestorGoodGT, ancestorPoorGT)
+            and (is_homo(parentGoodGT) and not is_same(parentGoodGT, parentPoorGT))
+            and is_same(ancestorGoodGT, parentGoodGT)):
+                isPattern = True
+            
+            if not isPattern:
+                continue
+            
+            # Store the genotypes of each sample
+            selectedSNPs.setdefault(contig, {})
+            selectedSNPs[contig].setdefault(pos, [])
+            
+            for sample, group in metadataDict.items():
+                if group == "comparison":
+                    specifiedSample = False
+                    if sample in sampleGTDict:
+                        # Figure out what type of SNP this is
+                        sampleGT = sampleGTDict[sample]
+                        if is_homo(sampleGT) and is_same(parentGoodGT, sampleGT):
+                            snpType = "goodHom"
+                        elif is_homo(sampleGT):
+                            snpType = "badHom"
+                        else:
+                            snpType = "het"
+                        # Store it
+                        selectedSNPs[contig][pos].append(snpType)
+                        specifiedSample = True
+                    
+                    # Store a blank for this sample if we didn't find it
+                    if specifiedSample == False:
+                        selectedSNPs[contig][pos].append(".")
     
     return selectedSNPs
 
@@ -271,11 +325,19 @@ def main():
                    help="""Indicate which sample corresponds to an original parent
                    with GOOD phenotype""")
     # Optional
-    p.add_argument("--onlyPattern1", dest="onlyPattern1",
+    p.add_argument("--homoParents", dest="homoParents",
                    required=False,
                    action="store_true",
-                   help="""Optionally only consider SNPs where our goal would be
-                   to induce heterozygosity""")
+                   help="""Specify this flag to detect SNPs that meet the pattern
+                   where the good parent and ancestor are homozygotes, and the good
+                   offspring are heterozygotes""")
+    p.add_argument("--provideInfo", dest="provideInfo",
+                   required=False,
+                   action="store_true",
+                   help="""Specify this flag to simply generate a table of SNPs in
+                   which the good parent and ancestors are both homozygotes, and the
+                   bad parent is different; this table should be manually inspected
+                   to make decisions""")
     
     args = p.parse_args()
     validate_args(args)
@@ -295,12 +357,16 @@ def main():
     This script is being designed specifically for secret business with a goal
     that can be summarised as 'we want to find crosses that are heterozygous,
     where the original ancestors and parents were not both heterozygous'. This
-    approach could be useful for sampe selection.
+    approach could be useful for sample selection.
     '''
-    selectedSNPs = find_relevant_heterozygotes(snpGenotypes, metadataDict,
-                                               args.ancestorGood, args.ancestorPoor,
-                                               args.parentGood, args.parentPoor,
-                                               args.onlyPattern1)
+    if args.homoParents:
+        selectedSNPs = find_relevant_heterozygotes(snpGenotypes, metadataDict,
+                                                  args.ancestorGood, args.ancestorPoor,
+                                                  args.parentGood, args.parentPoor)
+    elif args.provideInfo:
+        selectedSNPs = find_relevant_snps(snpGenotypes, metadataDict,
+                                          args.ancestorGood, args.ancestorPoor,
+                                          args.parentGood, args.parentPoor)
     
     # Format results for human interpretation
     comparisonSamples = [ sample for sample, group in metadataDict.items() if group == "comparison" ]
@@ -311,8 +377,12 @@ def main():
         for contig, posDict in selectedSNPs.items():
             for pos, sampleList in posDict.items():
                 if sampleList != []:
-                    sampleFormat = "\t".join([ "." if c not in sampleList else "Y" for c in comparisonSamples ])
-                    fileOut.write(f"{contig}\t{pos}\t{sampleFormat}\n")
+                    if args.homoParents:
+                        sampleFormat = "\t".join([ "." if c not in sampleList else "Y" for c in comparisonSamples ])
+                        fileOut.write(f"{contig}\t{pos}\t{sampleFormat}\n")
+                    elif args.provideInfo:
+                        sampleFormat = "\t".join(sampleList)
+                        fileOut.write(f"{contig}\t{pos}\t{sampleFormat}\n")
     print("Program completed successfully!")
 
 if __name__ == "__main__":
