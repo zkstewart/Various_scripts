@@ -3,32 +3,124 @@
 # Specifies the GMAP Class for performing GMAP alignments
 # using ZS_SeqIO.FASTA and ZS_SeqIO.FastASeq objects.
 
-import os, sys, subprocess, time, random, platform
+import os, sys, subprocess, platform
 from pathlib import Path
-from hashlib import sha256
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from ZS_Utility import base_subprocess_cmd, convert_windows_to_wsl_path, \
-    tmp_file_name_gen, get_codec
-from ZS_SeqIO import Conversion
+from ZS_Utility import base_subprocess_cmd, convert_windows_to_wsl_path
+
+class GMAP_DB:
+    '''
+    The GMAP_DB Class encapsulates the logic of indexing a FASTA file using GMAP.
+    
+    Attributes:
+        fasta (REQUIRED) -- a string indicating the location of a FASTA file.
+        gmapDir (REQUIRED) -- a string indicating the location of GMAP binaries.
+    '''
+    def __init__(self, fasta, gmapDir):
+        self.fasta = fasta
+        self.gmapDir = gmapDir
+        
+        self.isGMAP_DB = True # flag to check object type
+    
+    @property
+    def fasta(self):
+        return self._fasta
+    
+    @fasta.setter
+    def fasta(self, value):
+        assert type(value).__name__ == "str"
+        if not os.path.isfile(value):
+            raise Exception(("Fasta parameter is a string, but does not point " + 
+                            "to an existing file location"))
+        
+        self._fasta = value
+    
+    @property
+    def gmapDir(self):
+        return self._gmapDir
+    
+    @gmapDir.setter
+    def gmapDir(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isdir(value):
+            raise Exception(("gmapDir does not point to an existing directory"))
+        
+        self._gmapDir = value
+        self.buildExe = os.path.join(value, "gmap_build")
+    
+    @property
+    def buildExe(self):
+        return self._buildExe
+    
+    @buildExe.setter
+    def buildExe(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isfile(value):
+            raise Exception(("buildExe does not point to an existing file"))
+        
+        self._buildExe = value
+    
+    def index_exists(self):
+        '''
+        Relies on a simple assumption that a .gmap directory's presence
+        indicates that a GMAP database was successfully created
+        from the FASTA file.
+        
+        Returns:
+            dbExists -- a Boolean where True means the database exists,
+                        and False means it does not exist.
+        '''
+        return os.path.isdir(f"{self.fasta}.gmap")
+    
+    def index(self):
+        '''
+        Makes a database out of the .fasta value for use in BLAST search.
+        '''
+        # Skip if index exists
+        if self.index_exists():
+            raise FileExistsError("GMAP index already exists!")
+        
+        # Convert to WSL paths where needed
+        if platform.system() == "Windows":
+            fasta = convert_windows_to_wsl_path(self.fasta)
+        
+        # Format command
+        cmd = base_subprocess_cmd(self.buildExe)
+        cmd += ["-D", os.path.dirname(fasta), "-d", f"{os.path.basename(fasta)}.gmap", fasta]
+        
+        # Run indexing
+        if platform.system() != "Windows":
+            run_index = subprocess.Popen(" ".join(cmd), shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_index = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        indexout, indexerr = run_index.communicate()
+        
+        # Raise exception if final part of stderr from successful run isn't found
+        if "Writing localdb sarrays" not in indexerr.decode("utf-8"):
+            raise Exception('GMAP indexing error text below\n' + indexerr.decode("utf-8"))
 
 class GMAP:
     '''
-    The GMAP Class provides easy access to several GMAP functions to perform
+    The GMAP Class provides easy access to the GMAP search function to perform
     mapping of FASTAs against each other. Object values can be set to control
     the parameters specified for a GMAP search.
     
     Attributes:
-        query (REQUIRED) -- a string, FASTA, or FastASeq object from the ZS_SeqIO suite.
-        target (REQUIRED) -- a string, FASTA, or FastASeq object from the ZS_SeqIO suite.
+        query (REQUIRED) -- a string indicating the location of a FASTA file.
+        target (REQUIRED) -- a string indicating the location of a FASTA file.
         gmapDir (REQUIRED) -- a string indicating the location of GMAP binaries.
         threads (OPTIONAL) -- an integer value specifying the number of threads to run when
                               performing BLAST search. Defaults to 1.
     '''
     def __init__(self, query, target, gmapDir, threads=1):
         self.query = query
-        self.target = target
         self.gmapDir = gmapDir
+        self.target = target # sets self.db
         self.threads = threads
         
         self.isGMAP = True # flag to check object type
@@ -47,12 +139,8 @@ class GMAP:
     
     @query.setter
     def query(self, value):
-        assert type(value).__name__ == "str" \
-            or type(value).__name__ == "FASTA" \
-            or type(value).__name__ == "ZS_SeqIO.FASTA" \
-            or type(value).__name__ == "FastASeq" \
-            or type(value).__name__ == "ZS_SeqIO.FastASeq"
-        if type(value).__name__ == "str" and not os.path.isfile(value):
+        assert type(value).__name__ == "str"
+        if not os.path.isfile(value):
             raise Exception(("Query parameter is a string, but does not point " + 
                             "to an existing file location"))
         
@@ -64,16 +152,13 @@ class GMAP:
     
     @target.setter
     def target(self, value):
-        assert type(value).__name__ == "str" \
-            or type(value).__name__ == "FASTA" \
-            or type(value).__name__ == "ZS_SeqIO.FASTA" \
-            or type(value).__name__ == "FastASeq" \
-            or type(value).__name__ == "ZS_SeqIO.FastASeq"
-        if type(value).__name__ == "str" and not os.path.isfile(value):
+        assert type(value).__name__ == "str"
+        if not os.path.isfile(value):
             raise Exception(("Target parameter is a string, but does not point " + 
                             "to an existing file location"))
         
         self._target = value
+        self.db = GMAP_DB(value, self.gmapDir)
     
     @property
     def gmapDir(self):
@@ -87,21 +172,7 @@ class GMAP:
             raise Exception(("gmapDir does not point to an existing directory"))
         
         self._gmapDir = value
-        self.buildExe = os.path.join(value, "gmap_build")
         self.gmapExe = os.path.join(value, "gmap")
-    
-    @property
-    def buildExe(self):
-        return self._buildExe
-    
-    @buildExe.setter
-    def buildExe(self, value):
-        assert type(value).__name__ == "str" \
-            or isinstance(value, Path)
-        if not os.path.isfile(value):
-            raise Exception(("buildExe does not point to an existing file"))
-        
-        self._buildExe = value
     
     @property
     def gmapExe(self):
@@ -202,48 +273,20 @@ class GMAP:
     
     def index_exists(self):
         '''
-        Relies on a simple assumption that a .gmap directory's presence
-        indicates that a GMAP database was successfully created
-        from the FASTA file.
-        
-        Returns:
-            dbExists -- a Boolean where True means the database exists,
-                        and False means it does not exist.
+        Checks if the .target value is in a GMAP index/db yet.
         '''
-        return os.path.isdir(f"{self.target}.gmap")
+        return self.db.index_exists()
     
     def index(self):
         '''
         Makes a database out of the .target value for use in BLAST search.
         '''
         # Skip if index exists
-        if self.index_exists():
+        if self.db.index_exists():
             raise FileExistsError("GMAP index already exists!")
         
-        # Convert to WSL paths where needed
-        if platform.system() == "Windows":
-            query = convert_windows_to_wsl_path(self.query)
-            target = convert_windows_to_wsl_path(self.target)
-        
-        # Format command
-        cmd = base_subprocess_cmd(self.buildExe)
-        cmd += [
-            "-D", os.path.dirname(target), "-d", f"{os.path.basename(target)}.gmap",
-            query
-        ]
-        
-        # Run indexing
-        if platform.system() != "Windows":
-            run_index = subprocess.Popen(" ".join(cmd), shell = True,
-                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
-        else:
-            run_index = subprocess.Popen(cmd, shell = True,
-                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
-        indexout, indexerr = run_index.communicate()
-        
-        # Raise exception if final part of stderr from successful run isn't found
-        if "Writing localdb sarrays" not in indexerr.decode("utf-8"):
-            raise Exception('GMAP indexing error text below\n' + indexerr.decode("utf-8"))
+        # Create index otherwise
+        self.db.index()
     
     def gmap(self, outFile):
         '''
@@ -258,7 +301,7 @@ class GMAP:
             outFile -- a string indicating the location to write the output file to. File must not already exist!
         '''
         # Skip if index does not exist
-        if not self.index_exists():
+        if not self.db.index_exists():
             raise FileNotFoundError("GMAP index does not exist! Cannot perform search.")
         
         # Error if output file already exists
