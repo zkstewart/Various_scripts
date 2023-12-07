@@ -86,6 +86,8 @@ class GMAP_DB:
         # Convert to WSL paths where needed
         if platform.system() == "Windows":
             fasta = convert_windows_to_wsl_path(self.fasta)
+        else:
+            fasta = self.fasta
         
         # Format command
         cmd = base_subprocess_cmd(self.buildExe)
@@ -314,6 +316,9 @@ class GMAP:
             target = convert_windows_to_wsl_path(self.target)
             #outFile = convert_windows_to_wsl_path(outFile)
             "WSL redirects to a Windows formatted path... it's strange to me"
+        else:
+            query = self.query
+            target = self.target
         
         # Format command
         cmd = base_subprocess_cmd(self.gmapExe)
