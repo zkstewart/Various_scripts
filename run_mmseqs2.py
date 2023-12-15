@@ -139,8 +139,8 @@ def runmms2(mmseqs2dir, queryDB, targetDB, tmpdir, searchName, searchType, param
         '''
         params = [evalue, threads, num_iterations, sensitivity, alt_ali]
         '''
-        assert searchType in ["blastn", "tblastx"]
-        searchType = "2" if searchType == "blastn" else "3"
+        assert searchType in ["auto", "blastn", "tblastx"]
+        searchType = "0" if searchType == "auto" else "2" if searchType == "blastn" else "3"
         
         import os, subprocess
         # Format command
@@ -218,6 +218,8 @@ def main():
                           help="Specify the prefix of the output files (can include the path to direct intermediate and output files to a specific location e.g., /home/example_dir/mmseqsout)")
         p.add_argument("-tmp", "--tmpDir", dest="tmpDir", type = str, required = True,
                           help="Specify location to write temporary files to; this will be used when resuming a run, so keep it UNIQUE to a single run")
+        p.add_argument("-st", "--searchtype", dest="searchtype", default="auto", choices=["auto", "blastn", "tblastx"],
+                          help="Specify what type of search to run; (default==auto)")
         # Optional
         p.add_argument("-m", "--mmseqs2dir", dest="mmseqs2dir", type = str, default = "",
                           help="Specify the directory where the MMseqs2 executable is located; if it is accessible from your PATH, you can leave this blank")
@@ -231,8 +233,6 @@ def main():
                           help="Specify the sensitivity number to be provided as an argument (default == 7)")
         p.add_argument("-a", "--alt-ali", dest="alt_ali", type = int, default = 0,
                           help="Specify the number of alternative alignments (similar to BLAST's HSPs) to be provided as an argument (default == 0)")
-        p.add_argument("-st", "--searchtype", dest="searchtype", default="blastn", choices=["blastn", "tblastx"],
-                          help="Specify whether you to run BLASTN or TBLASTX; (default==blastn)")
         p.add_argument("-i", "--index_skip", dest="skip_index", action="store_true", default=False,
                           help="Optionally specify whether you want to skip the indexing step")
         p.add_argument("-bs", "--blast_sort", dest="blast_sort", action="store_true", default=False,
