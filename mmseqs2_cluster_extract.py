@@ -18,8 +18,8 @@ def validate_args(args):
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Validate output file location
-    if os.path.exists(args.outputFile):
-        print('The specified output file name already exists (' + args.outputFile + ')')
+    if os.path.exists(args.outputFileName):
+        print('The specified output file name already exists (' + args.outputFileName + ')')
         print('Specify a different name or move/delete/rename the existing file and try again.')
         quit()
 
