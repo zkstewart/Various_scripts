@@ -43,7 +43,7 @@ def main():
     p.add_argument("-c", dest="clusterFile",
                    required=True,
                    help="Input cluster file")
-    p.add_argument("-f", dest="fataFile",
+    p.add_argument("-f", dest="fastaFile",
                    required=True,
                    help="Input FASTA file")
     p.add_argument("-o", dest="outputFileName",
