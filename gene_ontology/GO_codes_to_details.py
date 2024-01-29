@@ -10,10 +10,11 @@ def validate_args(args):
                 print('I am unable to locate the input text file (' + args.inputTextFile + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
-        elif not os.path.isfile(args.oboFile):
-                print('I am unable to locate the go-basic.obo file (' + args.oboFile + ')')
-                print('Make sure you\'ve typed the file name or location correctly and try again.')
-                quit()
+        for oboFile in args.oboFile:
+                if not os.path.isfile(oboFile):
+                        print('I am unable to locate the go-basic.obo file (' + oboFile + ')')
+                        print('Make sure you\'ve typed the file name or location correctly and try again.')
+                        quit()
         # Handle file overwrites
         if os.path.isfile(args.outputFileName):
                 print(args.outputFileName + ' already exists. Specify a different output file name or delete, move, or rename this file and run the program again.')
@@ -47,11 +48,15 @@ column contains the GO codes (the first column is ignored here).
 # Reqs
 p = argparse.ArgumentParser(description=usage)
 p.add_argument("-i", "-input", dest="inputTextFile",
-                   help="Input text file name listing GO codes")
+               required=True,
+               help="Input text file name listing GO codes")
 p.add_argument("-g", "-goobo", dest="oboFile",
-                   help="Input go-basic.obo file.")
+               required=True,
+               nargs="+",
+               help="Input go-basic.obo file.")
 p.add_argument("-o", "-output", dest="outputFileName",
-                   help="Output text file name.")
+               required=True,
+               help="Output text file name.")
 # Optional
 p.add_argument("--blank", dest="blankCharacter",
                choices=[".", "0"],
@@ -64,7 +69,7 @@ validate_args(args)
 codeDict = text_go_parse(args.inputTextFile, args.blankCharacter)
 
 # Parse .obo file
-go = obo_parser.GODag(args.oboFile)
+gos = [ obo_parser.GODag(oboFile) for oboFile in args.oboFile ]
 
 # Hardcoded GO replacements for problem entries
 obsoletedGOs = ['GO:0097034', 'GO:0097033']   # I can't find any suitable replacements for these terms
@@ -128,7 +133,16 @@ with open(args.inputTextFile, 'r') as fileIn, open(args.outputFileName, 'w') as 
                         for code in codes:
                                 if code in replacedGOs:
                                         code = replacedGOs[code]
-                                names.append(go[code].name)
+                                foundGo = False
+                                for go in gos:
+                                        try:
+                                                names.append(go[code].name)
+                                                foundGo = True
+                                                break
+                                        except:
+                                                pass
+                                assert foundGo == True, \
+                                    f'GO code {code} not found in any of the obo files!'
                         # Format and write to file
                         if isTsv:
                                 fileOut.write(geneID + "\t" + '; '.join(names) + '\n')
