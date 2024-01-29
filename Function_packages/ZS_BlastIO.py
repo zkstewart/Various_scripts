@@ -351,7 +351,7 @@ class BLAST_Results:
         
         # Sort individual entries in blastDict
         for value in blastDict.values():
-            value.sort(key = lambda x: (x[6], x[7])) # sort by evalue and bitscore
+            value.sort(key = lambda x: (x[6], -x[7])) # sort by evalue (lower) and bitscore (higher)
             for v in value:
                 del v[7] # drop the bitscore since we don't need it after sorting
         
@@ -576,6 +576,249 @@ class MM_DB:
             return True
         else:
             return False
+
+class MMseqs:
+    '''
+    The MMseqs Class provides access to the MMseqs2 search functionality. It cooperates
+    with MM_DB and BLAST_Results to provide a BLAST-like interface for searching a
+    database with a query.
+    
+    Attributes:
+        query (REQUIRED) -- a MM_DB object.
+        target (REQUIRED) -- a MM_DB object.
+        mmseqsDir (REQUIRED) -- a string pointing to the location where the mmseqs executable
+                                is found.
+        tmpDir (REQUIRED) -- a string location for where MMSeqs2 should keep temp files.
+        threads (OPTIONAL) -- an integer value specifying the number of threads to run when
+                              performing MMseqs2 search. Defaults to 1.
+        # Behavioural parameters
+        evalue (OPTIONAL) -- a float or integer value specifying the E-value cut-off to enforce
+                             when obtaining MMseqs2 results. Defaults to 1e-5.
+        iterations (OPTIONAL) -- an integer >= 1 indicating how many iterations of the search
+                                 algorithm should be performed. Defaults to 1.
+        sensitivity (OPTIONAL) -- a value in the list [1,2,3,4,5,5.7,6,7,7.5] indicating the
+                                  sensitivity of the search. Defaults to 5.7.
+        alt_ali (OPTIONAL) -- an integer >= 0 indicating how many alternate alighments should
+                              be shown for a query; similar behaviour to BLAST's HSPs. Defaults to 0.
+    '''
+    def __init__(self, query, target, mmseqsDir, tmpDir):
+        self.query = query
+        self.target = target
+        self.mmseqsDir = mmseqsDir
+        self.tmpDir = tmpDir
+        
+        # Set default attributes
+        self.evalue = 1e-5
+        self.threads = 1
+        self.iterations = 1
+        self.sensitivity = 5.7
+        self.alt_ali = 0
+        
+        # Set helper attributes
+        self.isSetup = False
+        self.searchResult = None
+        self.isMMseqs = True
+    
+    @property
+    def query(self):
+        return self._query
+    
+    @query.setter
+    def query(self, value):
+        assert type(value).__name__ == "MM_DB" \
+            or type(value).__name__ == "ZS_BlastIO.MM_DB" \
+            or hasattr(value, "isMM_DB") and value.isMM_DB == True
+        
+        self._query = value
+    
+    @property
+    def target(self):
+        return self._target
+    
+    @target.setter
+    def target(self, value):
+        assert type(value).__name__ == "MM_DB" \
+            or type(value).__name__ == "ZS_BlastIO.MM_DB" \
+            or hasattr(value, "isMM_DB") and value.isMM_DB == True
+        
+        self._target = value
+    
+    @property
+    def mmseqsDir(self):
+        return self._mmseqsDir
+    
+    @mmseqsDir.setter
+    def mmseqsDir(self, value):
+        assert type(value).__name__ == "str" \
+            or isinstance(value, Path)
+        if not os.path.isdir(value):
+            raise Exception(("mmseqsDir does not point to an existing directory"))
+        
+        self._mmseqsDir = value
+        self.mmseqsExe = os.path.join(value, "mmseqs")
+    
+    @property
+    def tmpDir(self):
+        return self._tmpDir
+    
+    @tmpDir.setter
+    def tmpDir(self, value):
+        assert isinstance(value, str), \
+            "tmpDir must be a string location"
+        
+        self._tmpDir = value
+    
+    @property
+    def evalue(self):
+        return self._evalue
+    
+    @evalue.setter
+    def evalue(self, value):
+        assert isinstance(value, float) or isinstance(value, int)
+        assert 0 <= value, "evalue must be >= 0"
+        
+        self._evalue = value
+    
+    @property
+    def threads(self):
+        return self._threads
+    
+    @threads.setter
+    def threads(self, value):
+        assert isinstance(value, int)
+        assert 0 < value, "threads must be a positive integer"
+        
+        self._threads = value
+    
+    @property
+    def iterations(self):
+        return self._iterations
+    
+    @iterations.setter
+    def iterations(self, value):
+        assert isinstance(value, int)
+        assert 0 < value, "iterations must be a positive integer"
+        
+        self._iterations = value
+    
+    @property
+    def sensitivity(self):
+        return self._sensitivity
+    
+    @sensitivity.setter
+    def sensitivity(self, value):
+        assert value in [1,2,3,4,5,5.7,6,7,7.5], \
+            "sensitivity must be a value in the list [1,2,3,4,5,5.7,6,7,7.5]"
+        
+        self._sensitivity = value
+    
+    @property
+    def alt_ali(self):
+        return self._alt_ali
+    
+    @alt_ali.setter
+    def alt_ali(self, value):
+        assert isinstance(value, int)
+        assert 0 <= value, "alt_ali must be >= 0"
+        
+        self._alt_ali = value
+    
+    def setup(self):
+        '''
+        Generates databases and indexes them (if relevant).
+        '''
+        print(self.query.generate())
+        print(self.target.generate())
+        
+        print(self.query.index())
+        print(self.target.index())
+        
+        self.isSetup = True
+    
+    def mmseqs(self, outFile):
+        '''
+        Performs the MMseqs2 search operation.
+        '''
+        
+        if not self.isSetup:
+            self.setup()
+        
+        # Specify file locations
+        query = os.path.abspath(f"{self.query.fasta}_seqDB")
+        target = os.path.abspath(f"{self.target.fasta}_seqDB")
+        tmpDir = self.tmpDir
+        
+        # Convert to WSL paths where needed
+        origOutFile = outFile
+        if platform.system() == "Windows":
+            queryDB = convert_windows_to_wsl_path(query)
+            targetDB = convert_windows_to_wsl_path(target)
+            searchOutFile = convert_windows_to_wsl_path(outFile + "_tmp")
+            tableOutFile = convert_windows_to_wsl_path(outFile)
+            tmpDir = convert_windows_to_wsl_path(tmpDir)
+        
+        # Raise exception if output file already exists
+        if os.path.exists(outFile):
+            raise FileExistsError(f"Output file '{outFile}' already exists!")
+        
+        # Format search command
+        cmd = base_subprocess_cmd(self.mmseqsExe)
+        cmd += [
+            "search", queryDB, targetDB, searchOutFile, tmpDir, "--threads", str(self.threads),
+            "-e", str(self.evalue), "--num-iterations", str(self.iterations), 
+            "-s", str(self.sensitivity), "--alt-ali", str(self.alt_ali)
+        ]
+        
+        # Run MMseqs search
+        logString = "# MMseqs2 searching with: " + " ".join(cmd)
+        if platform.system() != "Windows":
+            run_search = subprocess.Popen(" ".join(cmd), shell = True,
+                                          stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_search = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        searchout, searcherr = run_search.communicate()
+        if searcherr.decode("utf-8") != '':
+            raise Exception('MMseqs2 search error text below\n' + searcherr.decode("utf-8"))
+        
+        # Format tabulation command
+        cmd = base_subprocess_cmd(self.mmseqsExe)
+        cmd += [
+            "convertalis", queryDB, targetDB, searchOutFile, tableOutFile, "--threads", str(self.threads)
+        ]
+        
+        # Run MMseqs2 convertalis
+        logString = "# Generating MMseqs2 tabular output with: " + " ".join(cmd)
+        if platform.system() != "Windows":
+            run_table = subprocess.Popen(" ".join(cmd), shell = True,
+                                          stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_table = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        tableout, tablerr = run_table.communicate()
+        if tablerr.decode("utf-8") != '':
+            raise Exception('MMseqs2 tabulation error text below\n' + tablerr.decode("utf-8"))
+        
+        # Clean up temporary search outputs
+        outDir = os.path.dirname(os.path.abspath(outFile))
+        tmpFilePrefix = f"{outFile}_tmp"
+        for file in os.listdir(outDir):
+            if file.startswith(tmpFilePrefix):
+                os.unlink(os.path.join(outDir, file))
+        
+        self.searchResult = origOutFile
+        return logString
+    
+    def parse_result(self, searchResultFile=None):
+        if searchResultFile == None:
+            searchResultFile = self.searchResult
+        if searchResultFile == None:
+            raise FileNotFoundError(("No search result file specified, and none found from previous " +
+                                     "use of this object"))
+        
+        resultObj = BLAST_Results(searchResultFile)
+        resultObj.evalue = self.evalue
+        return resultObj.results
 
 if __name__ == "__main__":
     pass
