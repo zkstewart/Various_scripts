@@ -71,10 +71,10 @@ def parse_pops_metadata(metadataFile, ancestors, parents):
                 continue
             else:
                 sample, experiment, bulk = [ sl[x] for x in headerIndices ]
-                if sample in ancestors:
+                if sample in ancestors[0] or sample in ancestors[1]:
                     metadataDict[sample] = "ancestor"
                     foundAncestors += 1
-                elif sample in parents:
+                elif sample in parents[0] or sample in parents[1]:
                     metadataDict[sample] = "parent"
                     foundParents += 1
                 elif int(experiment) == 2: # will raise error if experiment column malformatted
@@ -85,10 +85,10 @@ def parse_pops_metadata(metadataFile, ancestors, parents):
                     foundExp1 += 1
     
     # Peform some quick validations
-    if foundAncestors != 2:
+    if foundAncestors < 2:
         print("Did not find all your ancestors in the metadata file!")
         quit()
-    if foundParents != 2:
+    if foundParents < 2:
         print("Did not find all your parents in the metadata file!")
         quit()
     if foundExp1 == 0:
@@ -106,13 +106,29 @@ def parse_pops_metadata(metadataFile, ancestors, parents):
     return metadataDict
 
 def is_homo(gtList):
-    return True if len(set(gtList)) == 1 else False
+    if not isinstance(gtList[0], list):
+        flatList = gtList
+    else:
+        flatList = [ gt for sublist in gtList for gt in sublist ]
+    return True if len(set(flatList)) == 1 else False
 
 def is_het(gtList):
-    return True if len(set(gtList)) == 2 else False
+    if not isinstance(gtList[0], list):
+        flatList = gtList
+    else:
+        flatList = [ gt for sublist in gtList for gt in sublist ]
+    return True if len(set(flatList)) == 2 else False
 
 def is_same(gtList1, gtList2):
-    return True if set(gtList1) == set(gtList2) else False
+    if not isinstance(gtList1[0], list):
+        flatList1 = gtList1
+    else:
+        flatList1 = [ gt for sublist in gtList1 for gt in sublist ]
+    if not isinstance(gtList2[0], list):
+        flatList2 = gtList2
+    else:
+        flatList2 = [ gt for sublist in gtList2 for gt in sublist ]
+    return True if set(flatList1) == set(flatList2) else False
 
 def find_relevant_heterozygotes(snpGenotypes, metadataDict, ancestorGood, ancestorPoor,
                                 parentGood, parentPoor):
@@ -175,6 +191,7 @@ def find_relevant_heterozygotes(snpGenotypes, metadataDict, ancestorGood, ancest
             The precocious bulk should also be this homozygote. And our selected plants should
             be heterozygotes.
             '''
+            
             isPattern = False
             if (is_homo(ancestorGoodGT) and not is_same(ancestorGoodGT, ancestorPoorGT)
             and (is_homo(parentGoodGT) and not is_same(parentGoodGT, parentPoorGT))
@@ -232,17 +249,20 @@ def find_relevant_snps(snpGenotypes, metadataDict, ancestorGood, ancestorPoor,
     
     numBulk1 = sum([ 1 for sample, group in metadataDict.items() if group == 1 ])
     
+    # Get a consistent order for the samples
+    sampleOrder = list(metadataDict.keys())
+    
     # Iterate through SNPs looking for ones which match our aims
     selectedSNPs = {}
     for contig, posDict in snpGenotypes.items():
         for pos, sampleGTDict in posDict.items():
             # Obtain ancestor and parent GTs
             try:
-                ancestorGoodGT = sampleGTDict[ancestorGood]
-                ancestorPoorGT = sampleGTDict[ancestorPoor]
+                ancestorGoodGTs = [ sampleGTDict[ag] for ag in ancestorGood ]
+                ancestorPoorGTs = [ sampleGTDict[ap] for ap in ancestorPoor ]
                 
-                parentGoodGT = sampleGTDict[parentGood]
-                parentPoorGT = sampleGTDict[parentPoor]
+                parentGoodGTs = [ sampleGTDict[pg] for pg in parentGood ]
+                parentPoorGTs = [ sampleGTDict[pp] for pp in parentPoor ]
             except:
                 continue
             
@@ -255,9 +275,9 @@ def find_relevant_snps(snpGenotypes, metadataDict, ancestorGood, ancestorPoor,
             have ANY genotype. It doesn't matter.
             '''
             isPattern = False
-            if (is_homo(ancestorGoodGT) and not is_same(ancestorGoodGT, ancestorPoorGT)
-            and (is_homo(parentGoodGT) and not is_same(parentGoodGT, parentPoorGT))
-            and is_same(ancestorGoodGT, parentGoodGT)):
+            if (is_homo(ancestorGoodGTs) and not is_same(ancestorGoodGTs, ancestorPoorGTs)
+            and (is_homo(parentGoodGTs) and not is_same(parentGoodGTs, parentPoorGTs))
+            and is_same(ancestorGoodGTs, parentGoodGTs)):
                 isPattern = True
             
             if not isPattern:
@@ -267,27 +287,28 @@ def find_relevant_snps(snpGenotypes, metadataDict, ancestorGood, ancestorPoor,
             selectedSNPs.setdefault(contig, {})
             selectedSNPs[contig].setdefault(pos, [])
             
-            for sample, group in metadataDict.items():
-                if group == "comparison":
-                    specifiedSample = False
-                    if sample in sampleGTDict:
-                        # Figure out what type of SNP this is
-                        sampleGT = sampleGTDict[sample]
-                        if is_homo(sampleGT) and is_same(parentGoodGT, sampleGT):
-                            snpType = "goodHom"
-                        elif is_homo(sampleGT):
-                            snpType = "badHom"
-                        else:
-                            snpType = "het"
-                        # Store it
-                        selectedSNPs[contig][pos].append(snpType)
-                        specifiedSample = True
-                    
-                    # Store a blank for this sample if we didn't find it
-                    if specifiedSample == False:
-                        selectedSNPs[contig][pos].append(".")
+            #for sample, group in metadataDict.items():
+            for sample in sampleOrder:
+                #if group == "comparison":
+                specifiedSample = False
+                if sample in sampleGTDict:
+                    # Figure out what type of SNP this is
+                    sampleGT = sampleGTDict[sample]
+                    if is_homo(sampleGT) and is_same(parentGoodGTs, sampleGT):
+                        snpType = "goodHom"
+                    elif is_homo(sampleGT):
+                        snpType = "badHom"
+                    else:
+                        snpType = "het"
+                    # Store it
+                    selectedSNPs[contig][pos].append(snpType)
+                    specifiedSample = True
+                
+                # Store a blank for this sample if we didn't find it
+                if specifiedSample == False:
+                    selectedSNPs[contig][pos].append(".")
     
-    return selectedSNPs
+    return selectedSNPs, sampleOrder
 
 def main():
     # User input
@@ -310,18 +331,22 @@ def main():
                    help="Specify the output file name")
     p.add_argument("-ancestor_poor", dest="ancestorPoor",
                    required=True,
+                   nargs="+",
                    help="""Indicate which sample corresponds to an original ancestor
                    with poor phenotype""")
     p.add_argument("-ancestor_good", dest="ancestorGood",
                    required=True,
+                   nargs="+",
                    help="""Indicate which sample corresponds to an original ancestor
                    with GOOD phenotype""")
     p.add_argument("-parent_poor", dest="parentPoor",
                    required=True,
+                   nargs="+",
                    help="""Indicate which sample corresponds to an original parent
                    with poor phenotype""")
     p.add_argument("-parent_good", dest="parentGood",
                    required=True,
+                   nargs="+",
                    help="""Indicate which sample corresponds to an original parent
                    with GOOD phenotype""")
     # Optional
@@ -364,15 +389,19 @@ def main():
                                                   args.ancestorGood, args.ancestorPoor,
                                                   args.parentGood, args.parentPoor)
     elif args.provideInfo:
-        selectedSNPs = find_relevant_snps(snpGenotypes, metadataDict,
-                                          args.ancestorGood, args.ancestorPoor,
-                                          args.parentGood, args.parentPoor)
+        selectedSNPs, sampleOrder = find_relevant_snps(snpGenotypes, metadataDict,
+                                                       args.ancestorGood, args.ancestorPoor,
+                                                       args.parentGood, args.parentPoor)
     
     # Format results for human interpretation
     comparisonSamples = [ sample for sample, group in metadataDict.items() if group == "comparison" ]
+    
     with open(args.outputFileName, "w") as fileOut:
         # Write header
-        fileOut.write("contig\tposition\t{0}\n".format("\t".join(comparisonSamples)))
+        if args.homoParents:
+            fileOut.write("contig\tposition\t{0}\n".format("\t".join(comparisonSamples)))
+        elif args.provideInfo:
+            fileOut.write("contig\tposition\t{0}\n".format("\t".join(sampleOrder)))
         # Write contents
         for contig, posDict in selectedSNPs.items():
             for pos, sampleList in posDict.items():
