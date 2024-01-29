@@ -224,7 +224,7 @@ class BLAST:
         # Parse BLAST results
         blastResults = BLAST_Results(tmpResultName)
         blastResults.evalue = self.evalue
-        blastResults.parse_blast_hit_coords()
+        blastResults.parse()
         blastDict = blastResults.results
         
         # Clean up q and t temporary files
@@ -275,6 +275,7 @@ class BLAST_Results:
         # Set default property values
         self.evalue = 1e-5
         self.num_hits = -1
+        self.results = None
         
         # Also set helper attribute
         self.isBLAST_Results = True
@@ -309,7 +310,7 @@ class BLAST_Results:
         
         self._num_hits = value
     
-    def parse_blast_hit_coords(self):
+    def parse(self):
         '''
         Parameters:
             self.file -- a string indicating the location of a BLAST results file in
@@ -818,6 +819,7 @@ class MMseqs:
         
         resultObj = BLAST_Results(searchResultFile)
         resultObj.evalue = self.evalue
+        resultObj.parse()
         return resultObj.results
 
 if __name__ == "__main__":
