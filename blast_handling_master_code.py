@@ -288,6 +288,20 @@ def blast_besthitoutfmt6(blastFile, fastaFile):
                 outList.append(value)
         return outList
 
+def blast_noselfhit(blastFile):
+        # Main function
+        outList = []
+        with open(blastFile) as fileIn:
+                for line in fileIn:
+                        sl = line.rstrip('\r\n').split('\t')
+                        qid, tid = sl[0:2]
+                        if qid == tid:
+                                continue
+                                
+                        # Store value in output list
+                        outList.append('\t'.join(sl))
+        return outList
+
 def blast_onlybestoutfmt6(blastFile):
         # Set up
         from itertools import groupby
@@ -455,6 +469,10 @@ def validate_args(args, stringFunctions, numberFunctions, fastaFunctions, functi
                 The _onlybestoutfmt6_ function accepts only the BLAST input. It will output
                 a BLAST-tab file with only the best hit for each query sequence displayed.
                 '''
+                noselfhit = '''
+                The _noselfhit_ function accepts only the BLAST input. It will output
+                a BLAST-tab file where self-hits (query ID == target ID) are removed.
+                '''
                 ## Number input
                 hitcount = '''
                 The _hitcount_ function accepts a number input. This number should
@@ -610,7 +628,7 @@ and 5) enact the function below.
 # Function list - update as new ones are added
 stringFunctions = ['hitids', 'fastahitretrieveremove', 'fastahitfastaout', 'gene2accession_info']
 numberFunctions = ['hitcount', 'hitids', 'fastahitretrieveremove']
-basicFunctions = ['onlybestoutfmt6']
+basicFunctions = ['onlybestoutfmt6', 'noselfhit']
 fastaFunctions = ['fastahitretrieveremove', 'fastahitfastaout', 'besthitid', 'besthitoutfmt6', 'gene2accession_info']
 functionList = []
 for fList in [stringFunctions + numberFunctions + basicFunctions + fastaFunctions]:     # Need more elaborate process since there can be duplicates in string and number lists
@@ -653,6 +671,8 @@ outFasta = []
 ## No input functions
 if args.function == 'onlybestoutfmt6':
         outList = blast_onlybestoutfmt6(args.blastFileName)
+if args.function == "noselfhit":
+        outList = blast_noselfhit(args.blastFileName)
 ## String functions
 ## String functions - w/ FASTA input
 if args.function == 'fastahitretrieveremove':
