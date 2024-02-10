@@ -63,7 +63,7 @@ def parse_metadata_csv(metadataCsv, prefixCol="prefix", idCol="id", smCol="sm"):
             # Handle content lines
             else:
                 prefix, id, sm = sl[prefixIndex], sl[idIndex], sl[smIndex]
-                assert sm not in SMs, "SM tag '{0}' isn't unique!".format(sm)
+                assert id not in IDs, "ID tag '{0}' isn't unique!".format(id)
                 
                 prefixes.append(prefix)
                 IDs.append(id)
