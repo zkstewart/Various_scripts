@@ -244,7 +244,7 @@ class Feature:
         return "<{0}>".format(";".join(reprPairs))
 
 class GFF3:
-    def __init__(self, file_location, strict_parse=True, slim_index=False):
+    def __init__(self, file_location, strict_parse=True, fix_duplicated_ids=False, slim_index=False):
         self.fileLocation = file_location
         self.features = OrderedDict()
         self.types = {}
@@ -256,7 +256,7 @@ class GFF3:
         self._nclsIndex = None
         
         self.isGFF3 = True
-        self.parse_gff3(strict_parse=strict_parse, slim_index=slim_index)
+        self.parse_gff3(strict_parse=strict_parse, fix_duplicated_ids=fix_duplicated_ids, slim_index=slim_index)
     
     @staticmethod
     def make_feature_case_appropriate(featureType):
@@ -296,7 +296,7 @@ class GFF3:
                 longestMrna = [mrnaFeature, mrnaLen]
         return longestMrna[0]
     
-    def parse_gff3(self, strict_parse=True, full_warning=False, slim_index=False):
+    def parse_gff3(self, strict_parse=True, fix_duplicated_ids=False, full_warning=False, slim_index=False):
         '''
         Parameters:
             strict_parse -- a boolean indicating whether this function should
@@ -469,12 +469,20 @@ class GFF3:
                                 )
                                 continue
                         
-                        # End parsing if duplicate ID is found
-                        "strict_parse won't negate this problem since it's simply unacceptable!"
+                        # End parsing if duplicate ID is found and we aren't fixing it
                         if featureType.lower() != "cds": # CDS features are the ONLY feature allowed to have non-unique IDs
-                            assert self.features[parentID].retrieve_child(featureID) == None, \
-                                (f"Error: '{featureID}' feature is associated to a parent '{parentID}' more than once;" + 
-                                f" for debugging, line #{lineCount} == {line}; parsing will stop now")
+                            if self.features[parentID].retrieve_child(featureID) != None:
+                                if fix_duplicated_ids:
+                                    for i in range(1, len(self.features[parentID].retrieve_all_children())+2):
+                                        if self.features[parentID].retrieve_child(f"{featureID}.{i}") == None:
+                                            featureID = f"{featureID}.{i}"
+                                            attributesDict["ID"] = featureID
+                                            break
+                                else:
+                                    raise ValueError(
+                                        (f"Error: '{featureID}' feature is associated to a parent '{parentID}' more than once;" + 
+                                        f" for debugging, line #{lineCount} == {line}; parsing will stop now")
+                                    )
                         
                         # Create feature and populate it with details
                         feature = Feature()
@@ -1099,8 +1107,11 @@ class LinesGFF3(GFF3):
     in my older GFF3 parsing class that is (as of writing this comment) still
     strewn throughout my Genome_analysis_scripts git repo.
     '''
-    def __init__(self, file_location, strict_parse=True):
-        super().__init__(file_location, strict_parse)
+    def __init__(self, file_location, strict_parse=True, fix_duplicated_ids=False, slim_index=False):
+        super().__init__(file_location,
+                         strict_parse=strict_parse,
+                         fix_duplicated_ids=fix_duplicated_ids,
+                         slim_index=slim_index)
         self.isLinesGFF3 = True
     
     def add_comments(self): # This function is just add_lines but with the gene lines section gutted
