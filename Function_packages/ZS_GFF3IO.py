@@ -473,7 +473,7 @@ class GFF3:
                         if featureType.lower() != "cds": # CDS features are the ONLY feature allowed to have non-unique IDs
                             if self.features[parentID].retrieve_child(featureID) != None:
                                 if fix_duplicated_ids:
-                                    for i in range(1, len(self.features[parentID].retrieve_all_children())+2):
+                                    for i in range(2, len(self.features[parentID].retrieve_all_children())+3):
                                         if self.features[parentID].retrieve_child(f"{featureID}.{i}") == None:
                                             featureID = f"{featureID}.{i}"
                                             attributesDict["ID"] = featureID
@@ -934,9 +934,11 @@ class GFF3:
             raise FileExistsError(f"GFF3 can't be written to '{outputFileName}' since it already exists and force is False")
         
         with open(outputFileName, "w") as fileOut:
-            for parentType in self.parentTypes:
-                for feature in sorted(self.types[parentType], key = lambda x: (x.contig, x.start)):
-                    GFF3._recursively_write_feature_details(feature, fileOut)
+            for contig in self.contigs:
+                for parentType in self.parentTypes:
+                    for feature in sorted([ x for x in self.types[parentType] if x.contig == contig ],
+                                          key = lambda x: (x.contig, x.start)):
+                        GFF3._recursively_write_feature_details(feature, fileOut)
     
     def add_feature(self, feature):
         '''
