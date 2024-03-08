@@ -18,10 +18,6 @@ def validate_args(args):
         print(f'I am unable to locate the VCF file ({args.vcfFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.gffFile):
-        print(f'I am unable to locate the GFF3 file ({args.gffFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
     if not os.path.isfile(args.metadataFile):
         print(f'I am unable to locate the metadata file ({args.metadataFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
@@ -37,7 +33,14 @@ def parse_pops_metadata(metadataFile):
     metadataDict = {}
     with open(metadataFile, "r") as fileIn:
         for line in fileIn:
-            sl = line.rstrip("\r\n ").split("\t")
+            if "\t" in line:
+                sl = line.rstrip("\r\n ").split("\t")
+            elif "," in line:
+                sl = line.rstrip("\r\n ").split(",")
+            else:
+                print("ERROR: Metadata file should be tab-delimited or comma-delimited!")
+                quit()
+            
             if sl == []:
                 continue
             else:
@@ -193,7 +196,7 @@ def main():
                 bulk1_alleles, bulk2_alleles, bulk1_refIndex, \
                     bulk2_refIndex, delta_refIndex, \
                     differenceRatio = calculate_snp_indices(bulk1, bulk2)
-            
+                
                 # Format and write output line
                 outputLine = f"{contig}\t{pos}\t{variant}\t{bulk1_alleles}\t" + \
                     f"{bulk2_alleles}\t{bulk1_refIndex}\t{bulk2_refIndex}\t" + \
