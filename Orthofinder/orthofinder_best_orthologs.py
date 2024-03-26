@@ -93,12 +93,15 @@ def main():
                    required=True,
                    nargs="+",
                    help="Column name(s) of the species of interest (SOI)")
-    
     p.add_argument("--suffixes", dest="suffixes",
                    required=True,
                    nargs="+",
                    help="""Specify the file suffixes to look for when parsing FASTA
                    directories; this prevents issues with duplicate file finding""")
+    p.add_argument("--molecule", dest="molecule",
+                   required=True,
+                   choices=["protein", "nucleotide"],
+                   help="Specify the molecule type of the sequences in the FASTA files")
     # Optionals
     p.add_argument("--threads", dest="threads",
                    required=False,
@@ -166,7 +169,8 @@ def main():
             targetFASTA_obj = add_seqs_to_fasta(targetSequences)
             
             # Run BLAST
-            blaster = ZS_BlastIO.BLAST(soiFASTA_obj, targetFASTA_obj, "blastn")
+            blaster = ZS_BlastIO.BLAST(soiFASTA_obj, targetFASTA_obj,
+                                       "blastn" if args.molecule == "nucleotide" else "blastp")
             blaster.set_threads(args.threads)
             blaster.set_evalue(args.evalue)
             blastDict, _ = blaster.get_blast_results()
