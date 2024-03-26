@@ -167,6 +167,34 @@ def main():
     # Parse VCF data for outlier SNP genotypes
     snpGenotypes = haplotypes.get_genotypes_from_vcf(args.vcfFile, snpPositions=None, imputeMissing=False)
     
+    # Validate that all samples are accounted for
+    vcfSamples = set([
+        sample
+        for posDict in snpGenotypes.values()
+        for sampleDict in posDict.values()
+        for sample in sampleDict.keys()
+        if sample != "ref_alt"
+    ])
+    metadataSamples = set([
+        sample
+        for samples in metadataDict.values()
+        for sample in samples
+    ])
+    
+    if vcfSamples != metadataSamples:
+        vcfDiff = vcfSamples.difference(metadataSamples)
+        metadataDiff = metadataSamples.difference(vcfSamples)
+        
+        print("ERROR: Metadata file does not match the VCF file!")
+        
+        if len(vcfDiff) > 0:
+            print("In your VCF, the following samples exist which are " + 
+                "absent from the metadata: ", ", ".join(vcfDiff))
+        if len(metadataDiff) > 0:
+            print("In your metadata, the following samples exist which are " + 
+                "absent from the VCF: ", ", ".join(metadataDiff))
+        quit()
+    
     # Format output table
     with open(args.outputFileName, "w") as fileOut:
         # Write header line
