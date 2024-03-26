@@ -514,7 +514,11 @@ class GFF3:
                         self.features[parentID].add_child(feature)
             
             # Generate shortcut fields
-            self.gene_values = self.types["gene"]
+            try:
+                self.gene_values = self.types["gene"]
+            except:
+                print("WARNING: No gene features found in GFF3 file '{0}'".format(self.fileLocation))
+                self.gene_values = None
             try:
                 self.mrna_values = self.types["mRNA"]
             except:
