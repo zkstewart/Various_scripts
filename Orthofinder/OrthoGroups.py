@@ -148,6 +148,9 @@ def fastaDict_formatter(fastaDirs, header, suffixes):
     fastaDict = {}
     for fastaDir in fastaDirs:
         for file in os.listdir(fastaDir):
+            if "." not in file: # file must have a suffix for us to consider it
+                continue
+            
             filePrefix, fileSuffix = file.rsplit(".", maxsplit=1)
             
             if filePrefix in header and fileSuffix in suffixes:

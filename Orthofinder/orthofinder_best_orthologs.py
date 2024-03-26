@@ -131,6 +131,14 @@ def main():
     # Parse OrthoFinder file
     og = OrthoGroups(args.orthogroupsTSV, fastaDict)
     
+    # Make sure FASTA file and OrthoGroups files are paired
+    if set(og.species.keys()) != set(og.sequences.keys()):
+        print("ERROR: Header of Orthogroups file does not match the discovered FASTA files.")
+        print("For FASTA files, I found: ", set(og.species.keys()))
+        print("For FASTA files, I found: ", set(og.sequences.keys()))
+        print("Check that the FASTA files and OrthoGroups file are paired correctly.")
+        quit()
+    
     # Find best orthologs for each sequence in each SOI
     SPLIT_STRING = "__zks__"
     
