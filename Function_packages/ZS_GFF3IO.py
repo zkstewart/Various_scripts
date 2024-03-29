@@ -591,22 +591,28 @@ class GFF3:
         
         Parameters:
             typeToIndex -- a string (case-sensitive) indicating the entry type
-                           to index.
+                           to index OR an iterable of strings indicating multiple
+                            types to index.
         '''
-        assert typeToIndex in self.types, \
-            "'{0}' not found as a feature type within the parsed GFF3 ('{1}')".format(typeToIndex, self.fileLocation)
+        if isinstance(typeToIndex, str):
+            typeToIndex = [typeToIndex]
+        
+        for indexType in typeToIndex:
+            assert indexType in self.types, \
+                "'{0}' not found as a feature type within the parsed GFF3 ('{1}')".format(indexType, self.fileLocation)
         
         nclsIndex = {}
         starts, ends, ids = [], [], []
         
         # Add features of the specified type to our NCLS structure
         ongoingCount = 0
-        for feature in self.types[typeToIndex]:
-            starts.append(feature.start)
-            ends.append(feature.end + 1) # NCLS indexes 0-based like a range so +1 to make this more logically compliant with gff3 1-based system
-            ids.append(ongoingCount)
-            nclsIndex[ongoingCount] = feature
-            ongoingCount += 1
+        for indexType in typeToIndex:
+            for feature in self.types[indexType]:
+                starts.append(feature.start)
+                ends.append(feature.end + 1) # NCLS indexes 0-based like a range so +1 to make this more logically compliant with gff3 1-based system
+                ids.append(ongoingCount)
+                nclsIndex[ongoingCount] = feature
+                ongoingCount += 1
         
         # Build the NCLS object
         starts = pd.Series(starts)
