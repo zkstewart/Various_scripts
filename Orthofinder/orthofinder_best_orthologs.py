@@ -222,31 +222,40 @@ def main():
                 # Store it in FASTA object
                 FASTA_obj.add(ZS_SeqIO.FastASeq(tID, targetSequence))
             
-            # Align with MAFFT
-            aligner.run(FASTA_obj)
-            
-            # Write output
+            # Get the output file name
             outputFileName = os.path.join(args.outputDirectory, f"{queryID}.fasta")
-            if os.path.isfile(outputFileName):
-                print(f"Skipping '{outputFileName}' since it already exists.")
-            else:
+            
+            # Align with MAFFT (if file doesn't exist) and write to file
+            if not os.path.isfile(outputFileName):
+                aligner.run(FASTA_obj)
                 FASTA_obj.write(outputFileName, asAligned = True)
+            else:
+                print(f"Skipping '{outputFileName}' since it already exists.")
     
     # Generate a file for the manual curation process
-    orderedSeqIDs = sorted([ y for x in orthologsDict.values() for y in x.keys() ],
-                           key = lambda x: int(re.sub(r"[^\d]+", "", x)))
-    orderedSOIs = [
-        soi
-        for seqID in orderedSeqIDs
-        for soi in orthologsDict.keys()
-        if seqID in orthologsDict[soi]
-    ]
-    assert len(orderedSeqIDs) == len(orderedSOIs), "Mismatch between ordered sequence IDs and SOIs"
+    manualOutputFileName = os.path.join(args.outputDirectory, "manual_curation.tsv")
     
-    with open(os.path.join(args.outputDirectory, "manual_curation.tsv"), "w") as fileOut:
-        fileOut.write("Sequence_ID\tSOI\trepresentative\n")
-        for seqID, soi in zip(orderedSeqIDs, orderedSOIs):
-            fileOut.write(f"{seqID}\t{soi}\t\n")
+    if not os.path.exists(manualOutputFileName):
+        try:
+            orderedSeqIDs = sorted([ y for x in orthologsDict.values() for y in x.keys() ],
+                                key = lambda x: int(re.sub(r"[^\d]+", "", x)))
+        except:
+            orderedSeqIDs = sorted([ y for x in orthologsDict.values() for y in x.keys() ])
+        
+        orderedSOIs = [
+            soi
+            for seqID in orderedSeqIDs
+            for soi in orthologsDict.keys()
+            if seqID in orthologsDict[soi]
+        ]
+        assert len(orderedSeqIDs) == len(orderedSOIs), "Mismatch between ordered sequence IDs and SOIs"
+        
+        with open(manualOutputFileName, "w") as fileOut:
+            fileOut.write("Sequence_ID\tSOI\trepresentative\n")
+            for seqID, soi in zip(orderedSeqIDs, orderedSOIs):
+                fileOut.write(f"{seqID}\t{soi}\t\n")
+    else:
+        print(f"Skipping '{manualOutputFileName}' creation since it already exists.")
     
     # Done!
     print('Program completed successfully!')
