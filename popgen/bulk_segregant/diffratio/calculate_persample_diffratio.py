@@ -1,8 +1,9 @@
 #! python3
-# qtlseq_persample.py
+# calculate_persample_diffratio.py
 # Script to perform a process akin to QTL-Seq, but for per-sample SNP data.
 # It does not compute SNP-indices in the true sense, but (what I believe is)
-# a more relevant metric when looking at per-sample calling.
+# a more relevant metric when looking at per-sample calling which I term the
+# difference ratio (or diffratio for short).
 
 # Load normal/pip packages
 import os, argparse, sys
@@ -141,9 +142,17 @@ def calculate_snp_indices(b1Gt, b2Gt):
 
 def main():
     # User input
-    usage = """%(prog)s receives several files associated with a per-sample SNP
-    prediction project dealing with two segregating populations. It produces
-    an output file similar to what's seen with QTL-Seq.
+    usage = """%(prog)s receives a VCF produced from per-sample variant calling
+    and a TSV metadata file containing the sample names and what segregating bulk
+    they belong to; the TSV should contain no header, and have two columns, the first
+    indicating the sample ID and the second indicating whether it's part of "bulk1"
+    or "bulk2". It produces an output file similar to what's seen with QTL-Seq, but
+    with differences being: *_refIndex is the proportion of alleles in a bulk which
+    match the reference allele; delta_refIndex is the difference between the two
+    *_refIndex values; and differenceRatio is (essentially) the proportion of alleles
+    which differ between the two bulks and it ranges from 0 to 1, with 0 indicating
+    complete similarity and 1 indicating complete dissimilarity in the allele profiles
+    of the two populations.
     """
     
     # Required
