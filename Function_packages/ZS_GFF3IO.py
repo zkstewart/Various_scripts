@@ -926,7 +926,7 @@ class GFF3:
         for childFeature in sorted(feature.children, key = lambda x: x.start):
             GFF3._recursively_write_feature_details(childFeature, fileHandle)
     
-    def write(self, outputFileName, force=False):
+    def write(self, outputFileName, force=False, parentTypesToSkip=[]):
         '''
         Writes the GFF3 object out to file at the location provided. Formatting will be done
         in a strictly correct GFF3 style. However, it will be done in unconventional manner
@@ -937,17 +937,25 @@ class GFF3:
                               must not exist or an error will be raised (unless Force==True)
             force -- a boolean indicating whether any existing file should be overwritten (True)
                      or if an error should be raised instead (False)
+            parentTypesToSkip -- a list containing strings which correspond to parent types
+                                 which should be omitted from the output file.
         '''
+        # Validate parameters
         if not isinstance(outputFileName, str):
             raise TypeError("GFF3 can only be written to a string file path; provided outputFileName type unrecognised")
         if os.path.isfile(outputFileName) and force is False:
             raise FileExistsError(f"GFF3 can't be written to '{outputFileName}' since it already exists and force is False")
+        for parentType in parentTypesToSkip:
+            assert parentType in self.parentTypes, \
+                f"'{parentType}' is not a recognised parent type in this GFF3 object"
         
+        # Write to file
         with open(outputFileName, "w") as fileOut:
-            for contig in self.contigs:
-                for parentType in self.parentTypes:
-                    for feature in sorted([ x for x in self.types[parentType] if x.contig == contig ],
-                                          key = lambda x: (x.contig, x.start)):
+            for parentType in self.parentTypes:
+                if parentType in parentTypesToSkip:
+                    continue
+                else:
+                    for feature in sorted(self.types[parentType], key = lambda x: (x.contig, x.start)):
                         GFF3._recursively_write_feature_details(feature, fileOut)
     
     def add_feature(self, feature):
