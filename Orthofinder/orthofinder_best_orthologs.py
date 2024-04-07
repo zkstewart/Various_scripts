@@ -236,12 +236,14 @@ def main():
     manualOutputFileName = os.path.join(args.outputDirectory, "manual_curation.tsv")
     
     if not os.path.exists(manualOutputFileName):
+        # Get ordered sequence IDs
         try:
             orderedSeqIDs = sorted([ y for x in orthologsDict.values() for y in x.keys() ],
                                 key = lambda x: int(re.sub(r"[^\d]+", "", x)))
         except:
             orderedSeqIDs = sorted([ y for x in orthologsDict.values() for y in x.keys() ])
         
+        # List the SOI of each sequence ID
         orderedSOIs = [
             soi
             for seqID in orderedSeqIDs
@@ -250,10 +252,25 @@ def main():
         ]
         assert len(orderedSeqIDs) == len(orderedSOIs), "Mismatch between ordered sequence IDs and SOIs"
         
+        # List the best ortholog match for each sequence ID
+        otherSpecies = [ species for species in header if species not in args.soi ]
+        
+        orderedOrthologs = [
+            [
+                orthologsDict[soi][seqID][otherSp][0].split(SPLIT_STRING, maxsplit=1)[1]
+                    if otherSp in orthologsDict[soi][seqID]
+                    else "."
+                for otherSp in otherSpecies
+            ]
+            for seqID, soi in zip(orderedSeqIDs, orderedSOIs)
+        ]
+        
+        # Write to file
         with open(manualOutputFileName, "w") as fileOut:
-            fileOut.write("Sequence_ID\tSOI\trepresentative\n")
-            for seqID, soi in zip(orderedSeqIDs, orderedSOIs):
-                fileOut.write(f"{seqID}\t{soi}\t\n")
+            fileOut.write("Sequence_ID\tSOI\t{0}\n".format("\t".join(otherSpecies)))
+            for seqID, soi, orthologs in zip(orderedSeqIDs, orderedSOIs, orderedOrthologs):
+                orthologs = "\t".join(orthologs)
+                fileOut.write(f"{seqID}\t{soi}\t{orthologs}\n")
     else:
         print(f"Skipping '{manualOutputFileName}' creation since it already exists.")
     
