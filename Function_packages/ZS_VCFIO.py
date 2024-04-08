@@ -12,13 +12,13 @@ def get_codec(fileName):
     try:
         f = codecs.open(fileName, encoding='utf-8', errors='strict')
         for line in f:
-            pass
+            break
         return "utf-8"
     except:
         try:
             f = codecs.open(fileName, encoding='utf-16', errors='strict')
             for line in f:
-                pass
+                break
             return "utf-16"
         except UnicodeDecodeError:
             print(f"VCF class can't tell what codec '{fileName}' is!!")
@@ -32,9 +32,95 @@ def open_vcf_file(filename):
         with open(filename, "r", encoding=get_codec(filename)) as f:
             yield f
 
+class SimpleGenotypeIterator:
+    '''
+    A class to iterate through a VCF file and yield the genotype calls.
+    The first value yielded is the sample IDs, with subsequent yields
+    providing the following parameters:
+        - chrom -- a string indicating the chromosome
+        - pos -- an int indicating the position
+        - ref -- a string indicating the reference allele
+        - alt -- a list of strings indicating the alternate allele(s)
+        - posGenotypeDict -- a dictionary with sample IDs as keys and
+                             genotype calls as lists of integers (0 for ref, 1 for alt,
+                             and so on...)
+    '''
+    def __init__(self, file_location, impute_missing=False):
+        assert os.path.exists(file_location), \
+            f"SimpleIterator class can't find file existing at '{file_location}'"
+        
+        self.fileLocation = file_location
+        self.imputeMissing = impute_missing
+    
+    def parse(self):
+        with open_vcf_file(self.fileLocation) as fileIn:
+            for line in fileIn:
+                l = line.rstrip("\r\n").replace('"', '').split("\t") # replace quotations may help with Excel files
+                
+                # Handle header lines
+                if line.startswith("#CHROM"):
+                    samples = l[9:] # This gives us the ordered sample IDs
+                    yield samples
+                    continue
+                if line.startswith("#"):
+                    continue
+                
+                # Extract relevant details of the SNP
+                chrom = l[0]
+                pos = int(l[1])
+                ref = l[3]
+                alt = l[4].split(",")
+                
+                # Determine which field position we're extracting to get our GT value
+                fieldsDescription = l[8]
+                if ":" not in fieldsDescription:
+                    gtIndex = -1
+                else:
+                    gtIndex = fieldsDescription.split(":").index("GT")
+                
+                # Format a dictionary to store sample genotypes for this position
+                posGenotypeDict = {}
+                ongoingCount = 0 # This gives us the index for our samples header list 
+                for sampleResult in l[9:]: # This gives us the results for each sample as per fieldsDescription
+                    # Grab our genotype
+                    if gtIndex != -1:
+                        genotype = sampleResult.split(":")[gtIndex]
+                    else:
+                        genotype = sampleResult
+                    
+                    # Edit genotype to have a consistently predictable separator
+                    "We don't care if the VCF is phased or not for this function"
+                    genotype = genotype.replace("/", "|")
+                    
+                    # Impute empty genotypes (if applicable) or skip otherwise
+                    if self.imputeMissing == True:
+                        genotype = genotype.replace(".", "0")
+                    else:
+                        if "." in genotype:
+                            ongoingCount += 1
+                            continue
+                    
+                    # Parse and store genotype
+                    samplePopulation = samples[ongoingCount]
+                    posGenotypeDict[samplePopulation] = list(map(int, genotype.split("|")))
+                    
+                    ongoingCount += 1
+                
+                # Check to see if this genotype, after imputation, still has a variant allele
+                alleles = set([allele for key, allelePair in posGenotypeDict.items() if key != "ref_alt" for allele in allelePair])
+                if alleles == {0}: # skip if it doesn't
+                    continue
+                
+                # Yield result
+                yield chrom, pos, ref, alt, posGenotypeDict
+    
+    def __iter__(self):
+        for x in self.parse():
+            yield x
+
 class VCF:
     def __init__(self, file_location):
-        assert os.path.isfile(file_location), \
+        assert os.path.exists(file_location), \
             f"VCF class can't find file existing at '{file_location}'"
         
         self.fileLocation = file_location
