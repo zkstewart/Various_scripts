@@ -3,7 +3,7 @@
 # Various statics that need to be shared amongst the other
 # function packages.
 
-import os, codecs, platform, re
+import os, codecs, platform, re, subprocess, shutil
 
 def tmp_file_name_gen(prefix, suffix):
     '''
@@ -39,6 +39,28 @@ def get_codec(fileName):
             return "utf-16"
         except UnicodeDecodeError:
             print(f"Can't tell what codec '{fileName}' is!!")
+
+def wsl_which(program):
+    '''
+    A function to expand upon shutil.which to work with WSL. Emulates its behaviour
+    by directly reaching into the WSL shell and calling the Unix 'which' command.
+    If this program is running in Unix, then shutil.which will be called.
+    '''
+    if platform.system() != 'Windows':
+        return shutil.which(program)
+    else:
+        cmd = ["wsl", "~", "-e", "which", program]
+        run_wsl_which = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        whichout, whicherr = run_wsl_which.communicate()
+        if whicherr.decode("utf-8") != "":
+            return None
+        elif whichout.decode("utf-8").rstrip("\r\n ") != "":
+            return whichout.decode("utf-8").rstrip("\r\n ")
+        else:
+            raise Exception(("wsl_which encountered an unhandled situation; have a look " +
+                             "at the stdout '" + whichout.decode("utf-8") + "' and stderr '" + 
+                             whicherr.decode("utf-8") + "' to make sense of this."))
 
 def convert_to_wsl_if_not_unix(fileLocation):
     if platform.system() != 'Windows':
