@@ -40,6 +40,15 @@ def get_codec(fileName):
         except UnicodeDecodeError:
             print(f"Can't tell what codec '{fileName}' is!!")
 
+def convert_to_wsl_if_not_unix(fileLocation):
+    if platform.system() != 'Windows':
+        return fileLocation
+    else:
+        if is_unix_path(fileLocation):
+            return fileLocation
+        else:
+            return convert_windows_to_wsl_path(fileLocation)
+
 def base_subprocess_cmd(exe):
     '''
     Helper function to begin formatting a cmd list for use with subprocess
@@ -48,10 +57,22 @@ def base_subprocess_cmd(exe):
     execute. Saves a bit of code repetion is all.
     '''
     if platform.system() == "Windows":
-        cmd = ["wsl", "~", "-e", convert_windows_to_wsl_path(exe)]
+        cmd = ["wsl", "~", "-e", convert_to_wsl_if_not_unix(exe)]
     else:
         cmd = [exe]
     return cmd
+
+def is_unix_path(path):
+    '''
+    Helper function to check if a path is a unix path. Relies on a simple
+    heuristic of checking if the path does not contain backslashes.
+    
+    Parameters:
+        path -- a string indicating the path to check.
+    Returns:
+        isUnix -- a boolean indicating whether the path is a unix path.
+    '''
+    return path.count("\\") == 0
 
 def convert_windows_to_wsl_path(windowsPath):
     '''    
