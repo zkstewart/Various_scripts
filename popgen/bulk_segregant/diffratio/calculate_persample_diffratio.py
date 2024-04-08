@@ -9,8 +9,8 @@
 import os, argparse, sys
 
 # Load functions from other scripts
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find windows
-import haplotypes
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))) # 4 dirs up is where we find Function_packages
+from Function_packages import ZS_VCFIO
 
 # Define functions
 def validate_args(args):
@@ -172,39 +172,13 @@ def main():
     
     # Parse metadata file
     metadataDict = parse_pops_metadata(args.metadataFile)
-    
-    # Parse VCF data for outlier SNP genotypes
-    snpGenotypes = haplotypes.get_genotypes_from_vcf(args.vcfFile, snpPositions=None, imputeMissing=False)
-    
-    # Validate that all samples are accounted for
-    vcfSamples = set([
-        sample
-        for posDict in snpGenotypes.values()
-        for sampleDict in posDict.values()
-        for sample in sampleDict.keys()
-        if sample != "ref_alt"
-    ])
     metadataSamples = set([
         sample
         for samples in metadataDict.values()
         for sample in samples
     ])
     
-    if vcfSamples != metadataSamples:
-        vcfDiff = vcfSamples.difference(metadataSamples)
-        metadataDiff = metadataSamples.difference(vcfSamples)
-        
-        print("ERROR: Metadata file does not match the VCF file!")
-        
-        if len(vcfDiff) > 0:
-            print("In your VCF, the following samples exist which are " + 
-                "absent from the metadata: ", ", ".join(vcfDiff))
-        if len(metadataDiff) > 0:
-            print("In your metadata, the following samples exist which are " + 
-                "absent from the VCF: ", ", ".join(metadataDiff))
-        quit()
-    
-    # Format output table
+    # Iteratively build output table
     with open(args.outputFileName, "w") as fileOut:
         # Write header line
         fileOut.write("{0}\n".format("\t".join([
@@ -214,16 +188,41 @@ def main():
             "differenceRatio"
         ])))
         
-        # Write content lines
-        for contig, posDict in snpGenotypes.items():
-            for pos, snpDict in posDict.items():
+        # Parse through VCF file
+        vcfIterator = ZS_VCFIO.SimpleGenotypeIterator(args.vcfFile)
+        firstLine = True
+        for values in vcfIterator:
+            # Grab header line containing sample IDs
+            if firstLine:
+                vcfSamples = set(values)
+                firstLine = False
+                
+                # Check that the metadata file matches the VCF file
+                if vcfSamples != metadataSamples:
+                    vcfDiff = vcfSamples.difference(metadataSamples)
+                    metadataDiff = metadataSamples.difference(vcfSamples)
+                    
+                    print("ERROR: Metadata file does not match the VCF file!")
+                    
+                    if len(vcfDiff) > 0:
+                        print("In your VCF, the following samples exist which are " + 
+                            "absent from the metadata: ", ", ".join(vcfDiff))
+                    if len(metadataDiff) > 0:
+                        print("In your metadata, the following samples exist which are " + 
+                            "absent from the VCF: ", ", ".join(metadataDiff))
+                    quit()
+            # Handle content lines
+            else:
+                contig, pos, ref, alt, snpDict = values
+                ref_alt = [ref, *alt]
+                
                 # Figure out what type of variant this is
-                if any([ x == "." for x in snpDict["ref_alt"] ]):
+                if any([ x == "." for x in ref_alt ]):
                     variant = "indel"
-                elif len(snpDict["ref_alt"][0]) == len(snpDict["ref_alt"][1]):
-                    variant = "snp"
+                elif any([ len(ref_alt[0]) != len(ref_alt[x]) for x in range(1, len(ref_alt))]):
+                    variant = "indel"
                 else:
-                    variant = "indel"
+                    variant = "snp"
                 
                 # Split sample genotypes into bulk1 and bulk2
                 bulk1 = [ snpDict[sample] for sample in metadataDict["bulk1"] if sample in snpDict ]
