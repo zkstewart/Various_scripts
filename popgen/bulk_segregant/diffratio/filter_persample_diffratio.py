@@ -238,7 +238,7 @@ def main():
         for contigID, contigSnpsDict in diffratioDict.items():
             for pos, variantDict in contigSnpsDict.items():
                 fileOut.write(
-                    "{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}\t{7}\t{8}\\n".format(
+                    "{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}\t{7}\t{8}\n".format(
                         contigID, pos, variantDict["variant"],
                         variantDict["bulk1_alleles"], variantDict["bulk2_alleles"],
                         variantDict["bulk1_refIndex"], variantDict["bulk2_refIndex"],
