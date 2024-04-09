@@ -101,9 +101,9 @@ def parse_persample_diffratio_file(diffratioFile):
                     "variant": variantType,
                     "bulk1_alleles": int(bulk1_alleles),
                     "bulk2_alleles": int(bulk2_alleles),
-                    "bulk1_refIndex": float(bulk1_refIndex),
-                    "bulk2_refIndex": float(bulk2_refIndex),
-                    "delta_refIndex": float(delta_refIndex),
+                    "bulk1_refIndex": float(bulk1_refIndex) if bulk1_refIndex != "." else None,
+                    "bulk2_refIndex": float(bulk2_refIndex) if bulk2_refIndex != "." else None,
+                    "delta_refIndex": float(delta_refIndex) if delta_refIndex != "." else None,
                     "differenceRatio": float(differenceRatio)
                 }
     return snpIndexDict
@@ -150,15 +150,15 @@ def filter_diffratio(diffratioDict, variantFilter,
                     filtersPassed = False
             
             if bulk1_refIndex != None:
-                if variantDict["bulk1_refIndex"] < bulk1_refIndex:
+                if variantDict["bulk1_refIndex"] != "." and (variantDict["bulk1_refIndex"] < bulk1_refIndex):
                     filtersPassed = False
             
             if bulk2_refIndex != None:
-                if variantDict["bulk2_refIndex"] < bulk2_refIndex:
+                if variantDict["bulk2_refIndex"] != "." and (variantDict["bulk2_refIndex"] < bulk2_refIndex):
                     filtersPassed = False
             
             if delta_refIndex != None:
-                if variantDict["delta_refIndex"] < delta_refIndex:
+                if variantDict["delta_refIndex"] != "." and (variantDict["delta_refIndex"] < delta_refIndex):
                     filtersPassed = False
             
             if differenceRatio != None:
