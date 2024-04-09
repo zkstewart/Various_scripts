@@ -5,10 +5,14 @@
 
 import os, argparse, sys, platform, subprocess, shutil
 from intervaltree import IntervalTree
+from Bio import SeqIO
+from pyfaidx import Fasta
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find windows
+sys.path.append(os.path.dirname(os.path.abspath(__file__))) # the current dir is where we find haplotypes
+from predict_variant_effects import convert_vcf_snps_to_cds_snps
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find GFF3IO
-from Function_packages import ZS_GFF3IO, ZS_Utility
+from Function_packages import ZS_GFF3IO, ZS_Utility, ZS_VCFIO
 
 # Define functions
 def validate_args(args):
@@ -74,6 +78,22 @@ def validate_args(args):
     else:
         if not os.path.isfile(args.whatshap):
             _not_found_error("whatshap", args.whatshap)
+    
+    if args.bgzip is None:
+        args.bgzip = ZS_Utility.wsl_which("bgzip")
+        if args.bgzip is None:
+            _not_specified_error("bgzip")
+    else:
+        if not os.path.isfile(args.bgzip):
+            _not_found_error("bgzip", args.bgzip)
+    
+    if args.tabix is None:
+        args.tabix = ZS_Utility.wsl_which("tabix")
+        if args.tabix is None:
+            _not_specified_error("tabix")
+    else:
+        if not os.path.isfile(args.tabix):
+            _not_found_error("tabix", args.tabix)
     # Validate numeric inputs
     if 0 > args.plusMinus:
         print("--plusMinus should be 0 or greater")
@@ -124,6 +144,23 @@ def gff3_to_coordinatesDict(gff3Obj, plusMinus):
             coordinatesDict[parentFeature.contig].append([start, end])
     return coordinatesDict
 
+def merge_coordinates_list(coordinatesList):
+    '''
+    Parameters:
+        coordinatesList -- a list of lists, each containing two integers
+                           indicating the start and end of a region
+    Returns:
+        mergedCoordinatesList -- a list of lists, each containing two integers
+                                 indicating the start and end of a region, with
+                                 overlapping regions merged
+    '''
+    tree = IntervalTree.from_tuples(coordinatesList)
+    mergedCoordinatesList = []
+    for interval in tree:
+        mergedCoordinatesList.append([interval.begin, interval.end])
+    mergedCoordinatesList.sort()
+    return mergedCoordinatesList
+
 def merge_overlapping_coordinates(coordinatesDict):
     '''
     Parameters:
@@ -148,12 +185,7 @@ def merge_overlapping_coordinates(coordinatesDict):
     '''
     correctedCoordinatesDict = {}
     for contig, coordsList in coordinatesDict.items():
-        correctedCoordinatesDict[contig] = []
-        
-        tree = IntervalTree.from_tuples(coordsList)
-        for interval in tree:
-            correctedCoordinatesDict[contig].append([interval.begin, interval.end])
-        correctedCoordinatesDict[contig].sort()
+        correctedCoordinatesDict[contig] = merge_coordinates_list(coordsList)
     return correctedCoordinatesDict
 
 def format_samtools_regions(coordinatesDict):
@@ -363,10 +395,10 @@ def bcftools_mpileup(bamFiles, fastaFile, outputFile, bcftoolsPath, regions=None
                                             stdout = subprocess.PIPE,
                                             stderr = subprocess.PIPE)
     mpileupout, mpileuperr = run_bcftools_mpileup.communicate()
-    if mpileupout.decode("utf-8") != "" and (not any([ bw in mpileuperr.decode("utf-8") for bw in BAD_WORDS ])):
+    if mpileupout.decode("utf-8") != "" and (not any([ bw in mpileuperr.decode("utf-8").lower() for bw in BAD_WORDS ])):
         print("WARNING: bcftools_mpileup may have encountered an error, since the stdout is not empty as expected. " +
               f'Please check the stdout for more information ({mpileupout.decode("utf-8")})')
-    elif any([ bw in mpileuperr.decode("utf-8") for bw in BAD_WORDS ]):
+    elif any([ bw in mpileuperr.decode("utf-8").lower() for bw in BAD_WORDS ]):
         raise Exception(("ERROR: bcftools_mpileup encountered an error; have a look " +
                          f'at the stdout ({mpileupout.decode("utf-8")}) and stderr ' + 
                          f'({mpileuperr.decode("utf-8")}) to make sense of this.'))
@@ -393,10 +425,10 @@ def bcftools_call(mpileupFile, outputFile, bcftoolsPath):
                                          stdout = subprocess.PIPE,
                                          stderr = subprocess.PIPE)
     callout, callerr = run_bcftools_call.communicate()
-    if callout.decode("utf-8") != "" and (not any([ bw in callerr.decode("utf-8") for bw in BAD_WORDS ])):
+    if callout.decode("utf-8") != "" and (not any([ bw in callerr.decode("utf-8").lower() for bw in BAD_WORDS ])):
         print("WARNING: bcftools_call may have encountered an error, since the stdout is not empty as expected. " +
               f'Please check the stdout for more information ({callout.decode("utf-8")})')
-    elif any([ bw in callerr.decode("utf-8") for bw in BAD_WORDS ]):
+    elif any([ bw in callerr.decode("utf-8").lower() for bw in BAD_WORDS ]):
         raise Exception(("ERROR: bcftools_call encountered an error; have a look " +
                          f'at the stdout ({callout.decode("utf-8")}) and stderr ' + 
                          f'({callerr.decode("utf-8")}) to make sense of this.'))
@@ -456,10 +488,10 @@ def bcftools_norm_leftalign(vcfFile, fastaFile, outputFile, bcftoolsPath):
                                          stdout = subprocess.PIPE,
                                          stderr = subprocess.PIPE)
     normout, normerr = run_bcftools_norm_left.communicate()
-    if normout.decode("utf-8") != "" and (not any([ bw in normerr.decode("utf-8") for bw in BAD_WORDS ])):
+    if normout.decode("utf-8") != "" and (not any([ bw in normerr.decode("utf-8").lower() for bw in BAD_WORDS ])):
         print("WARNING: run_bcftools_norm_left may have encountered an error, since the stdout is not empty as expected. " +
               f'Please check the stdout for more information ({normout.decode("utf-8")})')
-    elif any([ bw in normerr.decode("utf-8") for bw in BAD_WORDS ]):
+    elif any([ bw in normerr.decode("utf-8").lower().lower() for bw in BAD_WORDS ]):
         raise Exception(("ERROR: run_bcftools_norm_left encountered an error; have a look " +
                          f'at the stdout ({normout.decode("utf-8")}) and stderr ' + 
                          f'({normerr.decode("utf-8")}) to make sense of this.'))
@@ -495,6 +527,147 @@ def whatshap_phase(vcfFile, fastaFile, bamFiles, outputFile, whatshapPath):
         raise Exception(("ERROR: whatshap_phase encountered an error; have a look " +
                          f'at the stdout ({phaseout.decode("utf-8")}) and stderr ' + 
                          f'({phaseerr.decode("utf-8")}) to make sense of this.'))
+
+def whatshap_polyphase(vcfFile, fastaFile, bamFiles, outputFile, whatshapPath, ploidy=2):
+    '''
+    Parameters:
+        vcfFile -- a string indicating the location of the VCF file to phase
+        fastaFile -- a string indicating the location of the genome FASTA file
+        bamFiles -- a list containing one or more strings indicating the location of the
+                    BAM files to mpileup
+        outputFile -- a string indicating the location to write the whatshap result to
+        whatshapPath -- a string indicating the location of the whatshap executable
+    '''    
+    # Construct the cmd for subprocess
+    cmd = ZS_Utility.base_subprocess_cmd(whatshapPath)
+    cmd += [
+        "polyphase", "--ploidy", str(ploidy), "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
+        f"--reference={ZS_Utility.convert_to_wsl_if_not_unix(fastaFile)}",
+        ZS_Utility.convert_to_wsl_if_not_unix(vcfFile),
+        *[ ZS_Utility.convert_to_wsl_if_not_unix(x) for x in bamFiles ]
+    ]
+    
+    # Run the command
+    run_whatshap_poly = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.PIPE,
+                                         stderr = subprocess.PIPE)
+    polyout, polyerr = run_whatshap_poly.communicate()
+    if polyout.decode("utf-8") != "" and (not "Total elapsed time" in polyerr.decode("utf-8")):
+        print("WARNING: whatshap_polyphase may have encountered an error, since the stdout is not empty as expected. " +
+              f'Please check the stdout for more information ({polyout.decode("utf-8")})')
+    elif not "Total elapsed time" in polyerr.decode("utf-8"):
+        raise Exception(("ERROR: whatshap_polyphase encountered an error; have a look " +
+                         f'at the stdout ({polyout.decode("utf-8")}) and stderr ' + 
+                         f'({polyerr.decode("utf-8")}) to make sense of this.'))
+
+def merge_whatshap_vcfs(phaseFile, polyFile, outputFile):
+    '''
+    This function will merge the 'whatshap phase' and 'whatshap polyphase' VCF files
+    into a single VCF file. This allows the benefit of 'polyphase' (multiallelic phasing)
+    to be combined with additional strength of 'phase' for diploid phasing some variants that
+    'polyphase' fails to phase.
+    
+    Parameters:
+        phaseFile -- a string indicating the location of the 'whatshap phase' VCF file
+        polyFile -- a string indicating the location of the 'whatshap polyphase' VCF file
+        outputFile -- a string indicating the location to write the whatshap result to
+    '''
+    with open(phaseFile, "r") as phaseIn, open(polyFile, "r") as polyIn, open(outputFile, "w") as fileOut:
+        # Iterate through phase file, writing header to output
+        while True:
+            phaseLine = phaseIn.readline()
+            if phaseLine.startswith("#"):
+                fileOut.write(phaseLine)
+            if phaseLine.startswith("#CHROM"):
+                break
+        
+        # Iterate through poly file, skipping over header
+        while True:
+            polyLine = polyIn.readline()
+            if polyLine.startswith("#"):
+                pass
+            if polyLine.startswith("#CHROM"):
+                break
+        
+        # Iterate line-by-line through both files, writing the best phased result to file
+        while True:
+            phaseLine = phaseIn.readline()
+            polyLine = polyIn.readline()
+            
+            # Exit condition
+            if phaseLine == "" or polyLine == "":
+                assert phaseLine == "" and polyLine == "", \
+                    "ERROR: phase and polyphase files have different numbers of lines!"
+                break
+            
+            # Extract details from each line
+            phaseSl = phaseLine.rstrip("\r\n ").split("\t")
+            polySl = polyLine.rstrip("\r\n ").split("\t")
+            
+            # Get the GT field
+            phaseGTindex = phaseSl[8].split(":").index("GT")
+            polyGTindex = polySl[8].split(":").index("GT")
+            
+            phaseGT = phaseSl[9].split(":")[phaseGTindex]
+            polyGT = polySl[9].split(":")[polyGTindex]
+            
+            # Write the best phased line to the output
+            if "|" in phaseGT: # 'whatshap phase' is assumed to be better if it phased something
+                fileOut.write(phaseLine)
+            elif "|" in polyGT: # 'whatshap polyphase', if phase failed, is assumed to be better than nothing
+                fileOut.write(polyLine)
+            else: # If both failed to phase, write the 'whatshap phase' line
+                fileOut.write(phaseLine)
+
+def bgzip_file(fileName, bgzipPath):
+    '''
+    Parameters:
+        fileName -- a string indicating the location of a file to index
+        bgzipPath -- a string indicating the location of the bgzip executable
+    '''
+    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
+    
+    # Construct the cmd for subprocess
+    cmd = ZS_Utility.base_subprocess_cmd(bgzipPath)
+    cmd.append(ZS_Utility.convert_to_wsl_if_not_unix(fileName))
+    
+    # Run the command
+    run_bgzip = subprocess.Popen(cmd, shell = True,
+                                 stdout = subprocess.PIPE,
+                                 stderr = subprocess.PIPE)
+    bgzipout, bgziperr = run_bgzip.communicate()
+    if bgzipout.decode("utf-8") != "" and (not any([ bw in bgziperr.decode("utf-8").lower() for bw in BAD_WORDS ])):
+        print("WARNING: bgzip_file may have encountered an error, since the stdout is not empty as expected. " +
+              f'Please check the stdout for more information ({bgzipout.decode("utf-8")})')
+    elif any([ bw in bgziperr.decode("utf-8").lower() for bw in BAD_WORDS ]):
+        raise Exception(("ERROR: bgzip_file encountered an error; have a look " +
+                         f'at the stdout ({bgzipout.decode("utf-8")}) and stderr ' + 
+                         f'({bgziperr.decode("utf-8")}) to make sense of this.'))
+
+def tabix_file(fileName, tabixPath):
+    '''
+    Parameters:
+        fastaFile -- a string indicating the location of the FASTA file to index
+        tabixPath -- a string indicating the location of the tabix executable
+    '''
+    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
+    
+    # Construct the cmd for subprocess
+    cmd = ZS_Utility.base_subprocess_cmd(tabixPath)
+    cmd.append(ZS_Utility.convert_to_wsl_if_not_unix(fileName))
+    
+    # Run the command
+    run_tabix = subprocess.Popen(cmd, shell = True,
+                                 stdout = subprocess.PIPE,
+                                 stderr = subprocess.PIPE)
+    tabixout, tabixerr = run_tabix.communicate()
+    if tabixout.decode("utf-8") != "" and (not any([ bw in tabixerr.decode("utf-8").lower() for bw in BAD_WORDS ])):
+        print("WARNING: tabix_file may have encountered an error, since the stdout is not empty as expected. " +
+              f'Please check the stdout for more information ({tabixout.decode("utf-8")})')
+    elif any([ bw in tabixerr.decode("utf-8").lower() for bw in BAD_WORDS ]):
+        raise Exception(("ERROR: tabix_file encountered an error; have a look " +
+                         f'at the stdout ({tabixout.decode("utf-8")}) and stderr ' + 
+                         f'({tabixerr.decode("utf-8")}) to make sense of this.'))
 
 ## Main
 def main():
@@ -540,6 +713,16 @@ def main():
     p.add_argument("--whatshap", dest="whatshap",
                    required=False,
                    help="""Optionally, specify the whatshap executable file
+                   if it is not discoverable in the path""",
+                   default=None)
+    p.add_argument("--bgzip", dest="bgzip",
+                   required=False,
+                   help="""Optionally, specify the bgzip executable file
+                   if it is not discoverable in the path""",
+                   default=None)
+    p.add_argument("--tabix", dest="tabix",
+                   required=False,
+                   help="""Optionally, specify the tabix executable file
                    if it is not discoverable in the path""",
                    default=None)
     # Opts (behavioural)
@@ -699,17 +882,141 @@ def main():
     else:
         print(f"bcftools norm -f file has already been generated; skipping.")
     
-    # Run WhatsHap
-    phasedFileName = os.path.join(args.outputDirectory, "whatshap.vcf.gz")
-    if not os.path.exists(phasedFileName) or not \
-        os.path.exists(os.path.join(args.outputDirectory, "whatshap_was_successful.flag")):
-            whatshap_phase(finalVcfFileName, args.fastaFile, subsetBamFiles, phasedFileName, args.whatshap)
-            open(os.path.join(args.outputDirectory, "whatshap_was_successful.flag"), "w").close()
-    else:
-        print(f"whatshap file has already been generated; skipping.")
+    # Run WhatsHap phase
+    mergedWhatsHapName = os.path.join(args.outputDirectory, "whatshap.merged.vcf")
+    compressedWhatsHapName = f"{mergedWhatsHapName}.gz"
     
-    # Generate phased sequences for each sample
-    ## TBD ...
+    phasedFileName = os.path.join(args.outputDirectory, "whatshap.phase.vcf")
+    if (not os.path.exists(phasedFileName) and not os.path.exists(compressedWhatsHapName)) and not \
+        os.path.exists(os.path.join(args.outputDirectory, "phase_was_successful.flag")):
+            whatshap_phase(finalVcfFileName, args.fastaFile, subsetBamFiles, phasedFileName, args.whatshap)
+            open(os.path.join(args.outputDirectory, "phase_was_successful.flag"), "w").close()
+    else:
+        print(f"whatshap phase file has already been generated; skipping.")
+    
+    # Run WhatsHap polyphase
+    polyFileName = os.path.join(args.outputDirectory, "whatshap.poly.vcf")
+    if (not os.path.exists(polyFileName) and not os.path.exists(compressedWhatsHapName)) and not \
+        os.path.exists(os.path.join(args.outputDirectory, "poly_was_successful.flag")):
+            whatshap_polyphase(finalVcfFileName, args.fastaFile, subsetBamFiles, polyFileName, args.whatshap)
+            open(os.path.join(args.outputDirectory, "poly_was_successful.flag"), "w").close()
+    else:
+        print(f"whatshap polyphase file has already been generated; skipping.")
+    
+    # Merge phase and polyphase files
+    if (not os.path.exists(mergedWhatsHapName) and not os.path.exists(compressedWhatsHapName)) and not \
+        os.path.exists(os.path.join(args.outputDirectory, "merge_was_successful.flag")):
+            merge_whatshap_vcfs(phasedFileName, polyFileName, mergedWhatsHapName)
+            open(os.path.join(args.outputDirectory, "merge_was_successful.flag"), "w").close()
+    else:
+        print(f"whatshap phase+polyphase merge file has already been generated; skipping.")
+    
+    # Compress the phased VCF
+    if not os.path.exists(compressedWhatsHapName) or not \
+        os.path.exists(os.path.join(args.outputDirectory, "compression_was_successful.flag")):
+            bgzip_file(mergedWhatsHapName, args.bgzip)
+            open(os.path.join(args.outputDirectory, "compression_was_successful.flag"), "w").close()
+    else:
+        print(f"whatshap VCF has already been compressed; skipping.")
+    
+    # Index the phased VCF
+    compressedIndexName = f"{compressedWhatsHapName}.tbi"
+    if not os.path.exists(compressedIndexName) or not \
+        os.path.exists(os.path.join(args.outputDirectory, "tabix_was_successful.flag")):
+            tabix_file(compressedWhatsHapName, args.tabix)
+            open(os.path.join(args.outputDirectory, "tabix_was_successful.flag"), "w").close()
+    else:
+        print(f"whatshap VCF has already been tabix indexed; skipping.")
+    
+    # Parse the VCF
+    phasedVCF_obj = ZS_VCFIO.PhasedVCF(compressedWhatsHapName)
+    phasedVCF_obj.parse_whatshap_vcf()
+    
+    # Generate phased gene sequences for each sample
+    FASTA_obj = Fasta(args.fastaFile)
+    
+    for haplotypeNum in range(1, 3):
+        haplotypeFastaFile = os.path.join(args.outputDirectory, f"haplotype_{haplotypeNum}.fasta")
+        # Skip if we've generated this file already
+        if not os.path.exists(haplotypeFastaFile) or not \
+            os.path.exists(os.path.join(args.outputDirectory, f"fasta_phasing_{haplotypeNum}_was_successful.flag")):
+                # Start writing phased sequences for this haplotype
+                with open(haplotypeFastaFile, "w") as fileOut:
+                    for parentType in gff3Obj.parentTypes:
+                        
+                        # Iterate through parent features
+                        for parentFeature in gff3Obj.types[parentType]:
+                            mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(parentFeature)
+                            
+                            # Skip if there are no SNPs on this contig
+                            if not parentFeature.contig in phasedVCF_obj:
+                                fileOut.write(f"# {parentFeature.ID} is reference type\n")
+                                continue
+                            
+                            # Get the exon regions for this gene
+                            exonCoords = [ exonFeature.coords for exonFeature in mrnaFeature.exon ]
+                            
+                            # Find any SNPs located within this gene
+                            positionsInGene = [
+                                pos
+                                for pos in phasedVCF_obj[parentFeature.contig]
+                                for start, end in exonCoords
+                                if start <= pos <= end
+                            ]
+                            
+                            # Skip if there are no SNPs in this gene
+                            if len(positionsInGene) == 0:
+                                fileOut.write(f"# {parentFeature.ID} is reference type\n")
+                                continue
+                            
+                            # Get the mRNA feature sequence
+                            exon_FastASeq_obj, exon_featureType, exon_startingFrame = \
+                                gff3Obj.retrieve_sequence_from_FASTA(FASTA_obj, mrnaFeature.ID, "exon")
+
+                            #if parentFeature.start < 4743973 < parentFeature.end:
+                            #    stophere
+                            
+                            # Iterate through samples and generate haplotypes
+                            sampleHaplotypes = {}
+                            for sampleID in phasedVCF_obj.samples:
+                                sampleHaplotypes[sampleID] = []
+                                
+                                # Get any SNPs located within this gene for this sample
+                                sampleSNPs = {
+                                    pos: phasedVCF_obj[parentFeature.contig][pos][sampleID]
+                                    for pos in positionsInGene
+                                }
+                                
+                                # Extract variants within exon regions, and modify positions to be relative to the exon
+                                sampleSNPs = convert_vcf_snps_to_cds_snps(mrnaFeature, sampleSNPs, featureType="exon")
+                                
+                                # Get the ordered SNP positions
+                                orderedPositions = list(sampleSNPs.keys())
+                                orderedPositions.sort()
+                                
+                                # Format haplotype
+                                haplotypes = [[], []]
+                                for pos in orderedPositions:
+                                    genotypeDict = sampleSNPs[pos]
+                                    ## TBD: Figure out how to link phase groups using PS tag and such
+                                    haplotypes[0].append([genotypeDict["ref_alt"][0], genotypeDict["GT"][0]])
+                                    haplotypes[1].append([genotypeDict["ref_alt"][0], genotypeDict["GT"][1]])
+                            
+                            # Get just the unique haplotypes so we can avoid redundant sequence extraction
+                            # uniqueHaplotypes = list(set(
+                            #     tuple(subgenotype)
+                            #     for genotype in haploCodeDict.values()
+                            #     for subgenotype in genotype
+                            # ))
+                            
+                            # Extract haplotype sequences for all unique haplotypes
+                            # haplotypeSequences = []
+                            # for haplotype in uniqueHaplotypes:
+                            #     haplotypeSequence = edit_reference_to_haplotype_sequence(cds_FastASeq_obj.seq[:], haplotype, orderedPositions, newSnpDict, mrnaFeature.strand)
+                            #     haplotypeSequences.append(haplotypeSequence)
+                            
+                            # Write haplotype sequences to file
+                            ## TBD...
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
