@@ -381,7 +381,7 @@ def predict_variant(genotypeDict, pos, cds_FastASeq_obj, strand):
     )
     return formattedRef, formattedAlts, homozygotes, heterozygotes
 
-def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict, embedOriginalPos=False):
+def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict, embedOriginalPos=False, featureType="CDS"):
     '''
     Receives a mRNA feature and a dictionary indicating SNP locations as interpreted
     from a VCF, and alters the positions to point to locations in the CDS where edits
@@ -398,19 +398,24 @@ def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict, embedOriginalPos=False):
                             should also index the original SNP index. Provided as
                             optional since I'm adding this functionality into
                             legacy code and I don't want to break stuff.
+        featureType -- a string indicating the type of feature we're localising to
+                       e.g., a child feature of the mRNA like "CDS" or "exon".
     '''
+    assert hasattr(mrnaFeature, featureType), \
+        f"ERROR: mrnaFeature '{mrnaFeature.ID}' does not have a {featureType} attribute!"
+    
     newSnpDict = {}
     ongoingCount = 0
-    for cdsFeature in mrnaFeature.CDS:
+    for childFeature in mrnaFeature.__dict__[featureType]:
         # Check each position to see if we need to localise it
         for pos, genotypeDict in snpDict.items():
             # If the position overlaps this CDS section
-            if pos >= cdsFeature.start and pos <= cdsFeature.end:
+            if pos >= childFeature.start and pos <= childFeature.end:
                 # Get the strand-adjusted position
                 if mrnaFeature.strand == "+":
-                    newPos = (pos - cdsFeature.start) + ongoingCount
+                    newPos = (pos - childFeature.start) + ongoingCount
                 else:
-                    newPos = cdsFeature.end - pos + ongoingCount
+                    newPos = childFeature.end - pos + ongoingCount
                 # Handle splice site variants
                 '''
                 Originally, I was trying to make this function do fancy things with splice
@@ -427,9 +432,9 @@ def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict, embedOriginalPos=False):
                 '''
                 refAllele = genotypeDict["ref_alt"][0]
                 skipThisPos = False
-                if (pos + len(refAllele) - 1) > cdsFeature.end:
+                if (pos + len(refAllele) - 1) > childFeature.end:
                     # Modify the ref allele to be contained within the exon
-                    allowedAlleleLength = cdsFeature.end - pos + 1
+                    allowedAlleleLength = childFeature.end - pos + 1
                     newRefAllele = refAllele[0:allowedAlleleLength]
                     # Modify alt allele(s)
                     newAltAlleles = [allele[0:allowedAlleleLength] for allele in genotypeDict["ref_alt"][1:]]
@@ -457,7 +462,7 @@ def convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict, embedOriginalPos=False):
                     newSnpDict[newPos] = genotypeDict
                     if embedOriginalPos is True:
                         newSnpDict[newPos]["originalPos"] = pos
-        ongoingCount += cdsFeature.end - cdsFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
+        ongoingCount += childFeature.end - childFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
     return newSnpDict
 
 def edit_reference_to_alt_sequence(referenceSeq, pos, refAllele, varAllele, strand):
