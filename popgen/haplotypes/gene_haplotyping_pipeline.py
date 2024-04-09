@@ -3,7 +3,7 @@
 # Script to take in a GFF3 file and a directory containing
 # sorted, indexed BAM files to 
 
-import os, argparse, sys, platform, subprocess, shutil, gzip
+import os, argparse, sys, platform, subprocess, shutil
 from intervaltree import IntervalTree
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find windows
@@ -273,6 +273,32 @@ def picard_addreplace_readgroups(inputBamFile, outputBamFile, rgID, rgLB, rgPL, 
                          f'at the stdout ({addreplaceout.decode("utf-8")}) and stderr ' + 
                          f'({addreplaceerr.decode("utf-8")}) to make sense of this.'))
 
+def samtools_faidx(fastaFile, samtoolsPath):
+    '''
+    Parameters:
+        fastaFile -- a string indicating the location of the FASTA file to index
+        samtoolsPath -- a string indicating the location of the samtools executable
+    '''
+    # Construct the cmd for subprocess
+    cmd = ZS_Utility.base_subprocess_cmd(samtoolsPath)
+    cmd += [
+        "faidx",
+        ZS_Utility.convert_to_wsl_if_not_unix(fastaFile)
+    ]
+    
+    # Run the command
+    run_samtools_index = subprocess.Popen(cmd, shell = True,
+                                          stdout = subprocess.PIPE,
+                                          stderr = subprocess.PIPE)
+    indexout, indexerr = run_samtools_index.communicate()
+    if indexout.decode("utf-8") != "" and indexerr.decode("utf-8") == "":
+        print("WARNING: samtools_faidx may have encountered an error, since the stdout is not empty as expected. " +
+              f'Please check the stdout for more information ({indexout.decode("utf-8")})')
+    elif indexerr.decode("utf-8") != "":
+        raise Exception(("ERROR: samtools_faidx encountered an error; have a look " +
+                         f'at the stdout > {indexout.decode("utf-8")} < and stderr ' + 
+                         f'> {indexerr.decode("utf-8")} < to make sense of this.'))
+
 def samtools_index_bam(bamFile, samtoolsPath):
     '''
     Parameters:
@@ -374,6 +400,69 @@ def bcftools_call(mpileupFile, outputFile, bcftoolsPath):
         raise Exception(("ERROR: bcftools_call encountered an error; have a look " +
                          f'at the stdout ({callout.decode("utf-8")}) and stderr ' + 
                          f'({callerr.decode("utf-8")}) to make sense of this.'))
+
+def bcftools_norm_multiallelics(vcfFile, outputFile, bcftoolsPath):
+    '''
+    Parameters:
+        vcfFile -- a string indicating the location of the VCF file to multiallele normalise
+        outputFile -- a string indicating the location to write the VCF result to
+        bcftoolsPath -- a string indicating the location of the bcftools executable
+    '''
+    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
+    
+    # Construct the cmd for subprocess
+    cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
+    cmd += [
+        "norm", "-m", "+any",
+        "-Oz", "--write-index",
+        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
+        ZS_Utility.convert_to_wsl_if_not_unix(vcfFile)
+    ]
+    
+    # Run the command
+    run_bcftools_norm_m = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.PIPE,
+                                         stderr = subprocess.PIPE)
+    normout, normerr = run_bcftools_norm_m.communicate()
+    if normout.decode("utf-8") != "" and (not any([ bw in normerr.decode("utf-8") for bw in BAD_WORDS ])):
+        print("WARNING: bcftools_norm_multiallelics may have encountered an error, since the stdout is not empty as expected. " +
+              f'Please check the stdout for more information ({normout.decode("utf-8")})')
+    elif any([ bw in normerr.decode("utf-8") for bw in BAD_WORDS ]):
+        raise Exception(("ERROR: bcftools_norm_multiallelics encountered an error; have a look " +
+                         f'at the stdout ({normout.decode("utf-8")}) and stderr ' + 
+                         f'({normerr.decode("utf-8")}) to make sense of this.'))
+
+def bcftools_norm_leftalign(vcfFile, fastaFile, outputFile, bcftoolsPath):
+    '''
+    Parameters:
+        vcfFile -- a string indicating the location of the VCF file to left-align normalise
+        fastaFile -- a string indicating the location of the genome FASTA file
+        outputFile -- a string indicating the location to write the VCF result to
+        bcftoolsPath -- a string indicating the location of the bcftools executable
+    '''
+    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
+    
+    # Construct the cmd for subprocess
+    cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
+    cmd += [
+        "norm", "-f", ZS_Utility.convert_to_wsl_if_not_unix(fastaFile),
+        "-Oz", "--write-index",
+        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
+        ZS_Utility.convert_to_wsl_if_not_unix(vcfFile)
+    ]
+    
+    # Run the command
+    run_bcftools_norm_left = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.PIPE,
+                                         stderr = subprocess.PIPE)
+    normout, normerr = run_bcftools_norm_left.communicate()
+    if normout.decode("utf-8") != "" and (not any([ bw in normerr.decode("utf-8") for bw in BAD_WORDS ])):
+        print("WARNING: run_bcftools_norm_left may have encountered an error, since the stdout is not empty as expected. " +
+              f'Please check the stdout for more information ({normout.decode("utf-8")})')
+    elif any([ bw in normerr.decode("utf-8") for bw in BAD_WORDS ]):
+        raise Exception(("ERROR: run_bcftools_norm_left encountered an error; have a look " +
+                         f'at the stdout ({normout.decode("utf-8")}) and stderr ' + 
+                         f'({normerr.decode("utf-8")}) to make sense of this.'))
 
 def whatshap_phase(vcfFile, fastaFile, bamFiles, outputFile, whatshapPath):
     '''
@@ -496,6 +585,10 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
+    # Index the FASTA file
+    if not os.path.exists(f"{args.fastaFile}.fai"):
+        samtools_faidx(args.fastaFile, args.samtools)
+    
     # Parse GFF3
     gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse = not args.relaxedParsing)
     
@@ -588,11 +681,29 @@ def main():
     else:
         print(f"bcftools call file has already been generated; skipping.")
     
+    # Normalise multiallelic variants
+    multialleleFileName = os.path.join(args.outputDirectory, "bcftools.multiallele.norm.vcf.gz")
+    if not os.path.exists(vcfFileName) or not \
+        os.path.exists(os.path.join(args.outputDirectory, "norm_multiallele_was_successful.flag")):            
+            bcftools_norm_multiallelics(vcfFileName, multialleleFileName, args.bcftools)
+            open(os.path.join(args.outputDirectory, "norm_multiallele_was_successful.flag"), "w").close()
+    else:
+        print(f"bcftools norm -m file has already been generated; skipping.")
+    
+    # Left-align and produce finalised variants
+    finalVcfFileName = os.path.join(args.outputDirectory, "bcftools.final.vcf.gz")
+    if not os.path.exists(vcfFileName) or not \
+        os.path.exists(os.path.join(args.outputDirectory, "finalise_variants_was_successful.flag")):            
+            bcftools_norm_leftalign(multialleleFileName, args.fastaFile, finalVcfFileName, args.bcftools)
+            open(os.path.join(args.outputDirectory, "finalise_variants_was_successful.flag"), "w").close()
+    else:
+        print(f"bcftools norm -f file has already been generated; skipping.")
+    
     # Run WhatsHap
     phasedFileName = os.path.join(args.outputDirectory, "whatshap.vcf.gz")
     if not os.path.exists(phasedFileName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "whatshap_was_successful.flag")):
-            whatshap_phase(vcfFileName, args.fastaFile, subsetBamFiles, phasedFileName, args.whatshap)
+            whatshap_phase(finalVcfFileName, args.fastaFile, subsetBamFiles, phasedFileName, args.whatshap)
             open(os.path.join(args.outputDirectory, "whatshap_was_successful.flag"), "w").close()
     else:
         print(f"whatshap file has already been generated; skipping.")
