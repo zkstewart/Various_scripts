@@ -428,5 +428,124 @@ class VCF:
             sum([len(v) for v in self.variants.values()])
         )
 
+class PhasedVCF:
+    def __init__(self, file_location):
+        assert os.path.exists(file_location), \
+            f"PhasedVCF class can't find file existing at '{file_location}'"
+        
+        self.fileLocation = file_location
+        
+        self.samples = [] # contains the sample IDs as defined by the #CHROM line from splitLine[9:]
+        self.variants = {} # contains the variant calls indexed by chrom->pos->sampleID
+        
+        self.isPhasedVCF = True
+    
+    def parse_whatshap_vcf(self):
+        '''
+        This function will parse a VCF file produced by WhatsHap.
+        
+        Parameters:
+            self.fileLocation -- a string indicating the file location of the VCF file
+        Sets:
+            variants -- a dictionary with structure like:
+                        ## TBD?
+                        {
+                            'chrom1': {
+                                pos1: {"REF": ___, "ALT": ___, "GT": ___, "AD: ___, ...},
+                                pos2: { ... },
+                                ...
+                            },
+                            'chrom2': ...,
+                            ...
+                        }
+        '''
+        with open_vcf_file(self.fileLocation) as fileIn:
+            for line in fileIn:
+                l = line.rstrip("\r\n ")
+                sl = l.split("\t")
+                
+                # Store #CHROM header line
+                if line.startswith("#CHROM"):
+                    self.samples = sl[9:]
+                    continue
+                # Skip over any other comment lines
+                elif line.startswith("#"):
+                    continue
+                
+                # Handle content lines
+                else:
+                    chrom, pos, id, ref, alt, \
+                        qual, filter, info, format = sl[0:9]
+                    pos = int(pos)
+                    formatList = format.split(":")
+                    ref_alt = [ref, *alt.split(",")]
+                    
+                    # Establish dictionary structure
+                    self.variants.setdefault(chrom, {})
+                    self.variants[chrom].setdefault(pos, {x: None for x in self.samples})
+                    
+                    # Store sample details if appropriate
+                    for i in range(len(self.samples)):
+                        sampleDetailsDict = { _format:_value for _format,_value in zip(formatList, sl[9+i].split(":")) }
+                        sampleDetailsDict["phased"] = True if \
+                            ("|" in sampleDetailsDict["GT"] or len(set(sampleDetailsDict["GT"].split("/"))) == 1) \
+                            else False
+                        sampleDetailsDict["ref_alt"] = ref_alt
+                        sampleDetailsDict["GT"] = [ ref_alt[int(x)] for x in sampleDetailsDict["GT"].replace("|", "/").split("/") ]
+                        
+                        # Store the first occurrence of this position
+                        if self.variants[chrom][pos][self.samples[i]] == None:
+                            self.variants[chrom][pos][self.samples[i]] = sampleDetailsDict
+                        # Handle duplicated positions
+                        else:
+                            if self.variants[chrom][pos][self.samples[i]]["phased"] == False:
+                                # Overwrite the unphased call with the phased call
+                                "We assume WhatsHap's ability to phase this call means it's the correct one"
+                                if sampleDetailsDict["phased"] == True:
+                                    self.variants[chrom][pos][self.samples[i]] = sampleDetailsDict
+                            else:
+                                if sampleDetailsDict["phased"] == True:
+                                    raise Exception((f"Found a duplicate phased call at {chrom}:{pos} for sample {self.samples[i]}, " + 
+                                                    "both of which were phased; I don't know which call to use!"))
+                                
+                                # Overwrite the call with the one with the higher combined AD
+                                elif sum(map(int, sampleDetailsDict["AD"].split(","))) > \
+                                    sum(map(int, self.variants[chrom][pos][self.samples[i]]["AD"].split(","))):
+                                        self.variants[chrom][pos][self.samples[i]] = sampleDetailsDict
+    
+    def __getitem__(self, key):
+        return self.variants[key]
+    
+    def __setitem__(self, key, item):
+        self.variants[key] = item
+    
+    def __len__(self):
+        return len(self.variants)
+    
+    def __iter__(self):
+        return iter(self.variants)
+    
+    def __contains__(self, item):
+        return item in self.variants
+    
+    def has_key(self, key):
+        return key in self.variants
+    
+    def keys(self):
+        return self.variants.keys()
+    
+    def values(self):
+        return self.variants.values()
+    
+    def items(self):
+        return self.variants.items()
+    
+    def __repr__(self):
+        return "<PhasedVCF object;file='{0}';num_contigs={1};num_variants={2}>".format(
+            self.fileLocation,
+            len(self.variants),
+            sum([len(v) for v in self.variants.values()])
+        )
+
 if __name__ == "__main__":
     pass
