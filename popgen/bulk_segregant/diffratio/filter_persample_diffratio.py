@@ -104,7 +104,7 @@ def parse_persample_diffratio_file(diffratioFile):
                     "bulk1_refIndex": float(bulk1_refIndex) if bulk1_refIndex != "." else ".",
                     "bulk2_refIndex": float(bulk2_refIndex) if bulk2_refIndex != "." else ".",
                     "delta_refIndex": float(delta_refIndex) if delta_refIndex != "." else ".",
-                    "differenceRatio": float(differenceRatio)
+                    "differenceRatio": float(differenceRatio) if differenceRatio != "." else "."
                 }
     return snpIndexDict
 
@@ -150,19 +150,27 @@ def filter_diffratio(diffratioDict, variantFilter,
                     filtersPassed = False
             
             if bulk1_refIndex != None:
-                if variantDict["bulk1_refIndex"] != "." and (variantDict["bulk1_refIndex"] < bulk1_refIndex):
+                if variantDict["bulk1_refIndex"] == ".":
+                    filtersPassed = False
+                elif variantDict["bulk1_refIndex"] < bulk1_refIndex:
                     filtersPassed = False
             
             if bulk2_refIndex != None:
-                if variantDict["bulk2_refIndex"] != "." and (variantDict["bulk2_refIndex"] < bulk2_refIndex):
+                if variantDict["bulk2_refIndex"] == ".":
+                    filtersPassed = False
+                elif variantDict["bulk2_refIndex"] < bulk2_refIndex:
                     filtersPassed = False
             
             if delta_refIndex != None:
-                if variantDict["delta_refIndex"] != "." and (variantDict["delta_refIndex"] < delta_refIndex):
+                if variantDict["delta_refIndex"] == ".":
+                    filtersPassed = False
+                elif variantDict["delta_refIndex"] < delta_refIndex:
                     filtersPassed = False
             
             if differenceRatio != None:
-                if variantDict["differenceRatio"] < differenceRatio:
+                if variantDict["differenceRatio"] == ".":
+                    filtersPassed = False
+                elif variantDict["differenceRatio"] < differenceRatio:
                     filtersPassed = False
             
             if filtersPassed:
