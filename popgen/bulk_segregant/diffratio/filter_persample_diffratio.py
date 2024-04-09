@@ -101,9 +101,9 @@ def parse_persample_diffratio_file(diffratioFile):
                     "variant": variantType,
                     "bulk1_alleles": int(bulk1_alleles),
                     "bulk2_alleles": int(bulk2_alleles),
-                    "bulk1_refIndex": float(bulk1_refIndex) if bulk1_refIndex != "." else None,
-                    "bulk2_refIndex": float(bulk2_refIndex) if bulk2_refIndex != "." else None,
-                    "delta_refIndex": float(delta_refIndex) if delta_refIndex != "." else None,
+                    "bulk1_refIndex": float(bulk1_refIndex) if bulk1_refIndex != "." else ".",
+                    "bulk2_refIndex": float(bulk2_refIndex) if bulk2_refIndex != "." else ".",
+                    "delta_refIndex": float(delta_refIndex) if delta_refIndex != "." else ".",
                     "differenceRatio": float(differenceRatio)
                 }
     return snpIndexDict
