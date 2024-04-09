@@ -5,6 +5,7 @@
 
 import re, sys, os
 import pandas as pd
+from pyfaidx import Fasta
 from collections import OrderedDict
 from ncls import NCLS
 from hashlib import md5
@@ -702,6 +703,12 @@ class GFF3:
             if contigID != contigSequences.id and contigID != contigSequences.alt:
                 raise ValueError("'{0}' contig does not match the provided FastASeq object".format(contigID))
             sequence = contigSequences.seq
+        
+        # Handle pyfaidx.Fasta type
+        elif type(contigSequences) == Fasta:
+            if contigID not in contigSequences:
+                raise KeyError("'{0}' does not exist within the pyfaidx.Fasta sequences object".format(contigID))
+            sequence = str(contigSequences[contigID])
         
         # Throw error for unhandled types
         else:
