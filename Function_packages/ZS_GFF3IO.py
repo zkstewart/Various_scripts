@@ -847,7 +847,8 @@ class GFF3:
         startingFrame = featureFrame[0]
         return featureCoord, startingFrame, featureType
     
-    def retrieve_sequence_from_FASTA(self, contigSequences, feature_or_featureID, sequenceType):
+    def retrieve_sequence_from_FASTA(self, contigSequences, feature_or_featureID, sequenceType,
+                                     skipComplement=False):
         '''
         Using this GFF3 instance, retrieve the exon or CDS sequence for the corresponding
         sequenceID.
@@ -860,6 +861,8 @@ class GFF3:
                                     or just a feature object in general
             sequenceType -- a string corresponding to the type of sequence to retrieve
                             i.e., in the list ["CDS", "exon"]
+            skipComplement -- OPTIONAL; a boolean indicating whether this function should
+                              automatically reverse complement -ve stranded features.
         Returns:
             FastASeq_objs -- a list containing ZS_SeqIO.FastASeq objects. Why? Because if
                              you provide a gene ID here, there may be multiple mRNAs that
@@ -914,7 +917,7 @@ class GFF3:
             sequence += sequenceBit
         
         # Reverse complement if necessary
-        if feature.strand == "-":
+        if feature.strand == "-" and skipComplement is False:
             sequence = FastASeq.get_reverse_complement(self=None, staticSeq=sequence)
         
         # Create FastASeq object to represent this sequence
