@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__))) # the current dir is
 from predict_variant_effects import convert_vcf_snps_to_cds_snps
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find GFF3IO
-from Function_packages import ZS_GFF3IO, ZS_Utility, ZS_VCFIO
+from Function_packages import ZS_GFF3IO, ZS_Utility, ZS_VCFIO, ZS_SeqIO
 
 # Define functions
 def validate_args(args):
@@ -907,6 +907,73 @@ def tabix_file(fileName, tabixPath):
                          f'at the stdout ({tabixout.decode("utf-8")}) and stderr ' + 
                          f'({tabixerr.decode("utf-8")}) to make sense of this.'))
 
+def edit_reference_to_haplotype_sequence(referenceSeq, haplotypeEditList,
+                                         strand, VALIDATE_STRICT=True): # turn it to False when testing/dev is done
+    '''
+    This function will take in a reference nucleotide sequence, typically representing
+    a CDS for a gene in either +ve or -ve strand, and generates the haplotype version
+    of that sequence.
+    
+    Parameters:
+        referenceSeq -- the sequence as a string prior to any editing
+        haplotypeEditList -- a list with structure like:
+                             [
+                                 [pos1, "ref", "allele"],
+                                 [pos2, "ref", "allele"],
+                                 ...
+                             ]; at each position, the reference allele is replaced with the
+                             allele allele
+        strand -- a string equal to "+" or "-" indicating the strandedness of this gene
+        VALIDATE_STRICT -- a boolean indicating whether sequence validation should occur;
+                           this is useful during testing and development but it causes issues
+                           for things that are very hard to validate (i.e., the changes this
+                           code make are correct, but nested variants can mess with the
+                           validation).
+    Returns:
+        editedSeq -- an edited version of the input referenceSeq with all variations made
+    '''
+    # referenceSeq, haplotypeEditList, strand = exon_FastASeq_obj.seq[:], haplotypeExemplar, mrnaFeature.strand
+    # VALIDATE_STRICT=True
+    
+    # Make sure haplotypeEditList is sorted by position
+    assert [ x[0] for x in haplotypeEditList ] == sorted([ x[0] for x in haplotypeEditList ]), \
+        "haplotypeEditList must be sorted by position!"
+    
+    # Perform the editing operation
+    for i in range(len(haplotypeEditList)-1, -1, -1): # iterate backwards through positions and variants
+        pos, ref, variant = haplotypeEditList[i]
+        
+        # Skip if variant is reference type
+        if ref == variant:
+            continue
+        
+        # Get strand-appropriate alleles
+        if strand == "+":
+            refAllele = ref # ref allele might be more than 1 character long
+            varAllele = variant
+        else:
+            refAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, ref)
+            varAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, variant)
+        
+        # Validate that our position is correct and edit the sequence
+        if strand == "+":
+            if VALIDATE_STRICT:
+                assert referenceSeq[pos:pos+len(refAllele)].upper() == refAllele.upper(), \
+                    "Zac, you need to fix your +ve haplotype positioning code!"
+                #if not (referenceSeq[pos:pos+len(refAllele)].upper() == refAllele.upper()):
+                #    print(f"Zac, you need to fix your +ve haplotype positioning code! {pos} {refAllele} {varAllele}")
+            referenceSeq = referenceSeq[:pos] + varAllele + referenceSeq[pos+len(refAllele):]
+        else:
+            if VALIDATE_STRICT:
+                assert referenceSeq[pos-len(refAllele)+1:pos+1].upper() == refAllele.upper(), \
+                    "Zac, you need to fix your -ve haplotype positioning code!"
+                #if not (referenceSeq[pos-len(refAllele)+1:pos+1].upper() == refAllele.upper()):
+                #    print(f"Zac, you need to fix your -ve haplotype positioning code! {pos} {refAllele} {varAllele}")
+            referenceSeq = referenceSeq[:pos-len(refAllele)+1] + varAllele + referenceSeq[pos+1:]
+    
+    editedSeq = referenceSeq # just for clarity since this sequence is a new, modified object
+    return editedSeq.upper() # we'd like all sequences to be upper cased
+
 ## Main
 def main():
     # User input
@@ -1176,106 +1243,157 @@ def main():
     # Generate phased gene sequences for each sample
     FASTA_obj = Fasta(args.fastaFile)
     
-    with open(os.path.join(args.outputDirectory, "haplotyping_results.tsv"), "w") as logOut:
-        # Write log file header
-        logOut.write("GeneID\thas_snps\t{0}\n".format("\t".join( [ f"{sid}_haplotype1\t{sid}_haplotype2" for sid in phasedVCF_obj.samples ])))
-        # Iterate through haplotypes
-        for haplotypeNum in range(1, 3):
-            haplotypeFastaFile = os.path.join(args.outputDirectory, f"haplotype_{haplotypeNum}.fasta")
-            # Skip if we've generated this file already
-            if not os.path.exists(haplotypeFastaFile) or not \
-                os.path.exists(os.path.join(args.outputDirectory, f"fasta_phasing_{haplotypeNum}_was_successful.flag")):
-                    # Start writing phased sequences for this haplotype
-                    with open(haplotypeFastaFile, "w") as fileOut:
-                        for parentType in gff3Obj.parentTypes:
+    # Skip if we've completed this already
+    if os.path.exists(os.path.join(args.outputDirectory, f"fasta_phasing_was_successful.flag")):
+        print("Phased FASTA files have already been generated; skipping.")
+    
+    # Otherwise, generate the phased FASTA files for each gene
+    else:
+        # Make the output directory
+        phasingOutputDir = os.path.join(args.outputDirectory, "phasing")
+        os.makedirs(phasingOutputDir, exist_ok=True)
+        
+        # Perform main phasing loop
+        with open(os.path.join(args.outputDirectory, "haplotyping_results.tsv"), "w") as logOut:
+            # Write log file header
+            logOut.write("GeneID\thas_snps\t{0}\n".format("\t".join( [ f"{sid}_haplotype1\t{sid}_haplotype2" for sid in phasedVCF_obj.samples ])))
+                
+            # Iterate through genes
+            for parentType in gff3Obj.parentTypes:
+                for parentFeature in gff3Obj.types[parentType]:
+                    mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(parentFeature)
+                    
+                    # Get the output file name and skip if it exists
+                    fastaFileName = os.path.join(phasingOutputDir, f"{parentFeature.ID}.fasta")
+                    if os.path.isfile(fastaFileName):
+                        print(f"'{parentFeature.ID}' FASTA file has already been generated; skipping.")
+                        continue
+                    
+                    # Skip if there are no SNPs on this contig
+                    if not parentFeature.contig in phasedVCF_obj:
+                        logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples))))
+                        continue
+                    
+                    # Get the exon regions for this gene
+                    exonCoords = [ exonFeature.coords for exonFeature in mrnaFeature.exon ]
+                    
+                    # Find any SNPs located within this gene
+                    positionsInGene = [
+                        pos
+                        for pos in phasedVCF_obj[parentFeature.contig]
+                        for start, end in exonCoords
+                        if start <= pos <= end
+                    ]
+                    
+                    # Skip if there are no SNPs in this gene
+                    if len(positionsInGene) == 0:
+                        logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples))))
+                        continue
+                    
+                    # Start writing the FASTA file
+                    with open(fastaFileName, "w") as fileOut:
+                        # Get the mRNA feature sequence
+                        exon_FastASeq_obj, exon_featureType, exon_startingFrame = \
+                            gff3Obj.retrieve_sequence_from_FASTA(FASTA_obj, mrnaFeature.ID, "exon", skipComplement=True)
+                        
+                        # Iterate through samples and generate haplotype codes
+                        sampleHaplotypes = {}
+                        sampleSwitchPoints = {sampleID: False for sampleID in phasedVCF_obj.samples}
+                        for sampleID in phasedVCF_obj.samples:
+                            sampleHaplotypes[sampleID] = []
                             
-                            # Iterate through parent features
-                            for parentFeature in gff3Obj.types[parentType]:
-                                mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(parentFeature)
+                            # Get any SNPs located within this gene for this sample
+                            sampleSNPs = {
+                                pos: phasedVCF_obj[parentFeature.contig][pos][sampleID]
+                                for pos in positionsInGene
+                            }
+                            
+                            # Extract variants within exon regions, and modify positions to be relative to the exon
+                            sampleSNPs = convert_vcf_snps_to_cds_snps(mrnaFeature, sampleSNPs, featureType="exon")
+                            
+                            # Get the ordered SNP positions
+                            orderedPositions = list(sampleSNPs.keys())
+                            orderedPositions.sort()
+                            
+                            # Format haplotype noting if there is a potential switch point
+                            hap1, hap2 = [], [] # contains [pos, ref, allele]
+                            for i, pos in enumerate(orderedPositions):
+                                genotypeDict = sampleSNPs[pos]
                                 
-                                # Skip if there are no SNPs on this contig
-                                if not parentFeature.contig in phasedVCF_obj:
-                                    logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples))))
-                                    continue
+                                # Determine if this is a potential switch point
+                                if i != 0:
+                                    if not genotypeDict["phased"]:
+                                        sampleSwitchPoints[sampleID] = True
+                                    elif "PS" in genotypeDict and lastPS != None and genotypeDict["PS"] != lastPS:
+                                        sampleSwitchPoints[sampleID] = True
                                 
-                                # Get the exon regions for this gene
-                                exonCoords = [ exonFeature.coords for exonFeature in mrnaFeature.exon ]
+                                # Store the haplotype
+                                hap1.append([pos, genotypeDict["ref_alt"][0], genotypeDict["GT"][0]])
+                                hap2.append([pos, genotypeDict["ref_alt"][0], genotypeDict["GT"][1]])
                                 
-                                # Find any SNPs located within this gene
-                                positionsInGene = [
-                                    pos
-                                    for pos in phasedVCF_obj[parentFeature.contig]
-                                    for start, end in exonCoords
-                                    if start <= pos <= end
-                                ]
-                                
-                                # Skip if there are no SNPs in this gene
-                                if len(positionsInGene) == 0:
-                                    logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples))))
-                                    continue
-                                
-                                # Get the mRNA feature sequence
-                                exon_FastASeq_obj, exon_featureType, exon_startingFrame = \
-                                    gff3Obj.retrieve_sequence_from_FASTA(FASTA_obj, mrnaFeature.ID, "exon")
-                                
-                                #if parentFeature.start < 4743973 < parentFeature.end:
-                                #    stophere
-                                
-                                # Iterate through samples and generate haplotypes
-                                sampleHaplotypes = {}
-                                for sampleID in phasedVCF_obj.samples:
-                                    sampleHaplotypes[sampleID] = []
-                                    
-                                    # Get any SNPs located within this gene for this sample
-                                    sampleSNPs = {
-                                        pos: phasedVCF_obj[parentFeature.contig][pos][sampleID]
-                                        for pos in positionsInGene
-                                    }
-                                    
-                                    # Extract variants within exon regions, and modify positions to be relative to the exon
-                                    sampleSNPs = convert_vcf_snps_to_cds_snps(mrnaFeature, sampleSNPs, featureType="exon")
-                                    
-                                    # Get the ordered SNP positions
-                                    orderedPositions = list(sampleSNPs.keys())
-                                    orderedPositions.sort()
-                                    
-                                    # Format haplotype noting potential switch points
-                                    hap1, hap2 = [], [] # contains [pos, ref, allele, potentialSwitchPoint]
-                                    lastPS = None
-                                    # stop
-                                    for pos in orderedPositions:
-                                        genotypeDict = sampleSNPs[pos]
-                                        
-                                        # Determine if this is a potential switch point
-                                        potentialSwitchPoint = True
-                                        
-                                        # if lastPS == None:
-                                        #     potentialSwitchPoint = False
-                                        # elif "PS" in genotypeDict:
-                                        #     if genotypeDict["PS"] == lastPS:
-                                        #         potentialSwitchPoint = False
-                                        # elif genotypeDict["phased"] == True:
-                                            
-                                        
-                                        # ## TBD: Figure out how to link phase groups using PS tag and such
-                                        # haplotypes[0].append([genotypeDict["ref_alt"][0], genotypeDict["GT"][0]])
-                                        # haplotypes[1].append([genotypeDict["ref_alt"][0], genotypeDict["GT"][1]])
-                                
-                                # Get just the unique haplotypes so we can avoid redundant sequence extraction
-                                # uniqueHaplotypes = list(set(
-                                #     tuple(subgenotype)
-                                #     for genotype in haploCodeDict.values()
-                                #     for subgenotype in genotype
-                                # ))
-                                
-                                # Extract haplotype sequences for all unique haplotypes
-                                # haplotypeSequences = []
-                                # for haplotype in uniqueHaplotypes:
-                                #     haplotypeSequence = edit_reference_to_haplotype_sequence(cds_FastASeq_obj.seq[:], haplotype, orderedPositions, newSnpDict, mrnaFeature.strand)
-                                #     haplotypeSequences.append(haplotypeSequence)
-                                
-                                # Write haplotype sequences to file
-                            ## TBD...
+                                lastPS = genotypeDict["PS"] if "PS" in genotypeDict else None
+
+                            # Store the haplotypes for this sample
+                            sampleHaplotypes[sampleID] = [hap1, hap2]
+                        
+                        # Get just the unique haplotypes so we can avoid redundant sequence extraction
+                        "Done for efficiency purposes"
+                        sampleCodes = {
+                            sampleID : [
+                                tuple( x[-1] for x in haplotypeList[0] ),
+                                tuple( x[-1] for x in haplotypeList[1] )
+                            ]
+                            for sampleID, haplotypeList in sampleHaplotypes.items()
+                        }
+                        
+                        uniqueHaplotypes = list(set(
+                            haplotypeCode
+                            for haplotypeCodeList in sampleCodes.values()
+                            for haplotypeCode in haplotypeCodeList
+                        ))
+                        
+                        # Extract haplotype sequences for all unique haplotypes
+                        haplotypeSequences = {}
+                        for haplotypeCode in uniqueHaplotypes:
+                            # Find an example sample with this haplotype
+                            "The sample value is richer and contains data our codes lack"
+                            haplotypeExemplar = [
+                                haplotype
+                                for haplotypesList in sampleHaplotypes.values()
+                                for haplotype in haplotypesList
+                                if tuple( x[-1] for x in haplotype ) == haplotypeCode
+                            ][0]
+                            
+                            # Get the edited sequence
+                            haplotypeSequence = edit_reference_to_haplotype_sequence(exon_FastASeq_obj.seq[:], 
+                                                    haplotypeExemplar, mrnaFeature.strand)
+                            haplotypeSequences[haplotypeCode] = haplotypeSequence
+                        
+                        # Write haplotype sequences to file
+                        sampleLoggingInfo = []
+                        for sampleID, haplotypeCodeList in sampleCodes.items():
+                            sampleSeq1 = haplotypeSequences[haplotypeCodeList[0]]
+                            sampleSeq2 = haplotypeSequences[haplotypeCodeList[1]]
+                            
+                            fileOut.write(f">{sampleID}_haplotype_1" + \
+                                    " has_switch_error={0}\n{1}\n".format(
+                                        "yes" if sampleSwitchPoints[sampleID] else "no",
+                                        sampleSeq1
+                                    ))
+                            fileOut.write(f">{sampleID}_haplotype_2" + \
+                                    " has_switch_error={0}\n{1}\n".format(
+                                        "yes" if sampleSwitchPoints[sampleID] else "no",
+                                        sampleSeq2
+                                    ))
+                            
+                            # Add info to logging
+                            sampleLoggingInfo.append("*" if sampleSwitchPoints[sampleID] else "" + "-".join(haplotypeCodeList[0]))
+                            sampleLoggingInfo.append("*" if sampleSwitchPoints[sampleID] else "" + "-".join(haplotypeCodeList[1]))
+                        
+                        # Write logging information
+                        logOut.write("{0}\tyes\t{1}\n".format(parentFeature.ID, "\t".join(sampleLoggingInfo)))
+
+        open(os.path.join(args.outputDirectory, "fasta_phasing_was_successful.flag"), "w").close()
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
