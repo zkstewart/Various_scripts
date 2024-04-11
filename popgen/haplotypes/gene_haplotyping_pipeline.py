@@ -155,6 +155,8 @@ def merge_coordinates_list(coordinatesList):
                                  overlapping regions merged
     '''
     tree = IntervalTree.from_tuples(coordinatesList)
+    tree.merge_overlaps(strict=False)
+    
     mergedCoordinatesList = []
     for interval in tree:
         mergedCoordinatesList.append([interval.begin, interval.end])
@@ -560,64 +562,300 @@ def whatshap_polyphase(vcfFile, fastaFile, bamFiles, outputFile, whatshapPath, p
                          f'at the stdout ({polyout.decode("utf-8")}) and stderr ' + 
                          f'({polyerr.decode("utf-8")}) to make sense of this.'))
 
-def merge_whatshap_vcfs(phaseFile, polyFile, outputFile):
+def parse_whatshap_for_merge(vcfFile):
+    '''
+    This function will parse a phased WhatsHap result file, produced using either
+    'phase' or 'polyphase', into a data structure that can be used to merge the
+    two VCF files.
+    
+    Parameters:
+        vcfFile -- a string indicating the location of a WhatsHap phased VCF file
+    Returns:
+        phaseDict -- a dictionary with structure like:
+                    {
+                        "contig1": {
+                            position1: {
+                                "GT": "0|1",
+                                "PS": "1"
+                            },
+                            position2: {
+                                "GT": "1|0",
+                                "PS": "1"
+                            },
+                            ...
+                        },
+                        "contig2": {
+                            position1: {
+                                "GT": "0|1",
+                                "PS": "1"
+                            },
+                            position2: {
+                                "GT": "1|0",
+                                "PS": "1"
+                            },
+                            ...
+                        },
+                        ...
+                    }
+    '''
+    phaseDict = {}
+    with open(vcfFile, "r") as phaseIn:
+        for line in phaseIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            
+            # Handle header lines
+            if line.startswith("#"):
+                if line.startswith("#CHROM"):
+                    samples = sl[9:]
+            
+            # Handle content lines
+            else:
+                chrom, pos, id, ref, alt, \
+                    qual, filter, info, _format = sl[0:9]
+                pos = int(pos)
+                formatList = _format.split(":")
+                
+                GTindex = formatList.index("GT")
+                PSindex = formatList.index("PS") if "PS" in formatList else -1
+                
+                # Set up phaseDict structure
+                phaseDict.setdefault(chrom, {})
+                phaseDict[chrom].setdefault(pos, {})
+                
+                # Extract GT and PS fields per sample
+                for i, sample in enumerate(samples):
+                    sampleDetails = sl[9 + i].split(":")
+                    phaseDict[chrom][pos][sample] = {
+                        "GT": sampleDetails[GTindex],
+                        "PS": sampleDetails[PSindex] if PSindex != -1 else None
+                    }
+    return phaseDict
+
+def get_positions_from_list(orderedList, start, end):
+    '''
+    Parameters:
+        orderedList -- a list of integers in ascending order
+        start -- the start of the range to search for
+        end -- the end of the range to search for
+    Returns:
+        a list of integers in the range [start, end] that are in the orderedList
+    '''
+    return [ x for x in orderedList if x >= start and x <= end ]
+
+def find_proximal_snps(pos, chrom, sample, phaseDict, polyDict, contigPositions, psBoundaries):
+    '''
+    This function will find the most proximal phased SNPs before and after a given position
+    in a given sample.
+    
+    Parameters:
+        pos -- an integer indicating the position to search around
+        chrom -- a string indicating the contig to search on
+        sample -- a string indicating the sample to search in
+        phaseDict -- a dictionary resulting from parse_whatshap_for_merge run on the 'phase' VCF
+        polyDict -- a dictionary resulting from parse_whatshap_for_merge run on the 'polyphase' VCF
+        contigPositions -- a dictionary of lists of integers, indicating the variant positions on each contig
+        psBoundaries -- a dictionary of lists of lists, indicating the start and end boundaries of each
+                        PS group, indexed by the sample and contig
+    Returns:
+        prevPhase -- a string indicating the phased GT of the SNP before the given position
+        prevPoly -- a string indicating the polyphase GT of the SNP before the given position
+        nextPhase -- a string indicating the phased GT of the SNP after the given position
+        nextPoly -- a string indicating the polyphase GT of the SNP after the given position
+    '''
+    boundariesList = psBoundaries[chrom][sample]
+    psStart, psEnd = [ x for x in boundariesList if pos >= x[0] and pos <= x[1] ][0]
+    
+    psPositions = get_positions_from_list(contigPositions[chrom], psStart, psEnd)
+    currentPosIndex = psPositions.index(pos)
+    
+    found = 0
+    prevPhase, prevPoly = None, None
+    for i in range(currentPosIndex - 1, -1, -1):
+        prevPos = psPositions[i]
+        phaseGT = phaseDict[chrom][prevPos][sample]["GT"]
+        polyGT = polyDict[chrom][prevPos][sample]["GT"]
+        
+        if "|" in phaseGT and prevPhase == None:
+            prevPhase = phaseGT
+            found += 1
+        if "|" in polyGT and prevPoly == None:
+            prevPoly = polyGT
+            found += 1
+        if found == 2:
+            break
+    
+    found = 0
+    nextPhase, nextPoly = None, None
+    for i in range(currentPosIndex + 1, len(psPositions)):
+        nextPos = psPositions[i]
+        phaseGT = phaseDict[chrom][nextPos][sample]["GT"]
+        polyGT = polyDict[chrom][nextPos][sample]["GT"]
+        
+        if "|" in phaseGT and nextPhase == None:
+            nextPhase = phaseGT
+            found += 1
+        if "|" in polyGT and nextPoly == None:
+            nextPoly = polyGT
+            found += 1
+        if found == 2:
+            break
+    
+    return prevPhase, prevPoly, nextPhase, nextPoly
+
+def merge_whatshap_vcfs(vcfFile, phaseDict, polyDict, outputFile):
     '''
     This function will merge the 'whatshap phase' and 'whatshap polyphase' VCF files
     into a single VCF file. This allows the benefit of 'polyphase' (multiallelic phasing)
     to be combined with additional strength of 'phase' for diploid phasing some variants that
-    'polyphase' fails to phase.
+    'polyphase' fails to phase. In order to do this, you must first parse the two VCFs
+    with parse_whatshap_for_merge() and provide their results as input.
     
     Parameters:
-        phaseFile -- a string indicating the location of the 'whatshap phase' VCF file
-        polyFile -- a string indicating the location of the 'whatshap polyphase' VCF file
-        outputFile -- a string indicating the location to write the whatshap result to
+        vcfFile -- a string indicating the location of a WhatsHap phased VCF file
+        phaseDict -- a dictionary resulting from parse_whatshap_for_merge run on the 'phase' VCF
+        polyDict -- a dictionary resulting from parse_whatshap_for_merge run on the 'polyphase' VCF
+        outputFile -- a string indicating the location to write the merged whatshap result to
     '''
-    with open(phaseFile, "r") as phaseIn, open(polyFile, "r") as polyIn, open(outputFile, "w") as fileOut:
-        # Iterate through phase file, writing header to output
-        while True:
-            phaseLine = phaseIn.readline()
-            if phaseLine.startswith("#"):
-                fileOut.write(phaseLine)
-            if phaseLine.startswith("#CHROM"):
-                break
-        
-        # Iterate through poly file, skipping over header
-        while True:
-            polyLine = polyIn.readline()
-            if polyLine.startswith("#"):
-                pass
-            if polyLine.startswith("#CHROM"):
-                break
-        
-        # Iterate line-by-line through both files, writing the best phased result to file
-        while True:
-            phaseLine = phaseIn.readline()
-            polyLine = polyIn.readline()
+    assert set(phaseDict.keys()) == set(polyDict.keys()), "Contigs do not match in phase and polyphase dicts"
+    for chrom in phaseDict.keys():
+        assert set(phaseDict[chrom].keys()) == set(polyDict[chrom].keys()), \
+            "Positions do not match in phase and polyphase dicts"
+        for pos in phaseDict[chrom].keys():
+            assert set(phaseDict[chrom][pos].keys()) == set(polyDict[chrom][pos].keys()), \
+                "Samples do not match in phase and polyphase dicts"
+    
+    # Establish data structures for easy searching of coordinates
+    contigPositions = {
+        chrom: sorted(phaseDict[chrom].keys())
+        for chrom in phaseDict.keys()
+    }
+    
+    # Find maximal boundaries of each PS group
+    psCoords = {}
+    for chrom, posList in contigPositions.items():
+        psCoords.setdefault(chrom, {})
+        for pos in posList:
+            phaseSampleDict = phaseDict[chrom][pos]
+            for sampleID, phaseValueDict in phaseSampleDict.items():
+                psCoords[chrom].setdefault(sampleID, {})
+                polyValueDict = polyDict[chrom][pos][sampleID]
+                
+                if phaseValueDict["PS"] != None:
+                    psCoords[chrom][sampleID].setdefault(phaseValueDict["PS"], [pos, pos]) # init start and end as same for PS group
+                    psCoords[chrom][sampleID][phaseValueDict["PS"]][1] = pos # update the end of the PS group with most recent pos
+                if polyValueDict["PS"] != None:
+                    psCoords[chrom][sampleID].setdefault(polyValueDict["PS"], [pos, pos])
+                    psCoords[chrom][sampleID][polyValueDict["PS"]][1] = pos
+    
+    # Collapse PS group boundaries across phase and poly
+    psBoundaries = {}
+    for chrom, sampleDict in psCoords.items():
+        psBoundaries.setdefault(chrom, {})
+        for sampleID, psDict in sampleDict.items():
+            thisCoords = [ x for x in psDict.values() if x[0] != x[1] ] # single position PS groups don't make sense and cause interval tree errors
+            psBoundaries[chrom][sampleID] = merge_coordinates_list(thisCoords)
+    
+    # Produce the merged VCF
+    with open(vcfFile, "r") as vcfIn, open(outputFile, "w") as vcfOut:
+        for line in vcfIn:
+            sl = line.rstrip("\r\n ").split("\t")
             
-            # Exit condition
-            if phaseLine == "" or polyLine == "":
-                assert phaseLine == "" and polyLine == "", \
-                    "ERROR: phase and polyphase files have different numbers of lines!"
-                break
+            # Write the header
+            if line.startswith("#CHROM"):
+                samples = sl[9:]
+            if line.startswith("#"):
+                vcfOut.write(line)
+                continue
             
-            # Extract details from each line
-            phaseSl = phaseLine.rstrip("\r\n ").split("\t")
-            polySl = polyLine.rstrip("\r\n ").split("\t")
+            # Extract details from the body
+            chrom, pos, id, ref, alt, \
+                qual, filter, info, format = sl[0:9]
+            pos = int(pos)
+            formatList = format.split(":")
             
-            # Get the GT field
-            phaseGTindex = phaseSl[8].split(":").index("GT")
-            polyGTindex = polySl[8].split(":").index("GT")
+            gtIndex = formatList.index("GT")
+            psIndex = formatList.index("PS") if "PS" in formatList else -1
             
-            phaseGT = phaseSl[9].split(":")[phaseGTindex]
-            polyGT = polySl[9].split(":")[polyGTindex]
+            # Iterate through the samples
+            rowSampleData = sl[9:]
+            phasedSomething = False
+            for i, sample in enumerate(samples):
+                # Extract details of the sample
+                sampleData = rowSampleData[i].split(":")
+                phaseGT = sampleData[gtIndex]
+                
+                # Update PS group for all phased lines
+                "Our phase set start site might change by merging 'polyphase' results in"
+                if "|" in phaseGT:
+                    if chrom in psBoundaries:
+                        for start, end in psBoundaries[chrom][sample]:
+                            if pos >= start and pos <= end:
+                                sampleData[psIndex] = str(start)
+                                break
+                
+                # Handle unphased 'phase' lines
+                if not "|" in phaseGT:
+                    # Get the 'polyphase' data
+                    polyData = polyDict[chrom][pos][sample]
+                    polyGT = polyData["GT"]
+                    
+                    # Skip if the 'polyphase' line is also unphased
+                    if not "|" in polyGT:
+                        continue
+                    
+                    # See if we need to flip the 'polyphase' GT
+                    prevPhase, prevPoly, nextPhase, nextPoly = find_proximal_snps(pos, chrom, sample, \
+                        phaseDict, polyDict, contigPositions, psBoundaries)
+                    
+                    flip = 0
+                    dontflip = 0
+                    if prevPhase != None and prevPoly != None:
+                        if prevPhase != prevPoly:
+                            flip += 1
+                        else:
+                            dontflip += 1
+                    if nextPhase != None and nextPoly != None:
+                        if nextPhase != nextPoly:
+                            flip += 1
+                        else:
+                            dontflip += 1
+                    
+                    if flip > dontflip:
+                        polyGT = "|".join(polyGT.split("|")[::-1])
+                    elif dontflip > flip:
+                        pass
+                    else:
+                        """If we're here, we have a tie in the flip/don't flip decision which means the phasing is
+                        unreliable and there's no benefit to merging in 'polyphase's data. We'll skip this line."""
+                        continue
+                    
+                    # Specifically set PS group if we're merging a 'polyphase' line in where the original was unphased
+                    if chrom in psBoundaries:
+                        for start, end in psBoundaries[chrom][sample]:
+                            if pos >= start and pos <= end:
+                                sampleData.append(str(start)) # add PS group to the sampleData list
+                                break
+                    
+                    # Update the sample details
+                    sampleData[gtIndex] = polyGT
+                    phasedSomething = True
+                
+                # Update the sample in the line
+                rowSampleData[i] = ":".join(sampleData)
             
-            # Write the best phased line to the output
-            if "|" in phaseGT: # 'whatshap phase' is assumed to be better if it phased something
-                fileOut.write(phaseLine)
-            elif "|" in polyGT: # 'whatshap polyphase', if phase failed, is assumed to be better than nothing
-                fileOut.write(polyLine)
-            else: # If both failed to phase, write the 'whatshap phase' line
-                fileOut.write(phaseLine)
+            # Fix the line up if PS did not exist in 'poly'
+            if psIndex == -1 and phasedSomething:
+                # Add a blank PS if we didn't phase this sample
+                for i, sample in enumerate(samples):
+                    if rowSampleData[i].count(":") == len(formatList) - 1:
+                        rowSampleData[i] += ":."
+                
+                # Add PS to the format list
+                formatList.append("PS")
+            
+            # Write the line to the output
+            newLine = "\t".join(sl[:8] + [":".join(formatList)] + rowSampleData) + "\n"
+            vcfOut.write(newLine)
 
 def bgzip_file(fileName, bgzipPath):
     '''
@@ -906,7 +1144,10 @@ def main():
     # Merge phase and polyphase files
     if (not os.path.exists(mergedWhatsHapName) and not os.path.exists(compressedWhatsHapName)) and not \
         os.path.exists(os.path.join(args.outputDirectory, "merge_was_successful.flag")):
-            merge_whatshap_vcfs(phasedFileName, polyFileName, mergedWhatsHapName)
+            phaseDict = parse_whatshap_for_merge(phasedFileName)
+            polyDict = parse_whatshap_for_merge(polyFileName)
+            
+            merge_whatshap_vcfs(phasedFileName, phaseDict, polyDict, mergedWhatsHapName)
             open(os.path.join(args.outputDirectory, "merge_was_successful.flag"), "w").close()
     else:
         print(f"whatshap phase+polyphase merge file has already been generated; skipping.")
@@ -935,87 +1176,105 @@ def main():
     # Generate phased gene sequences for each sample
     FASTA_obj = Fasta(args.fastaFile)
     
-    for haplotypeNum in range(1, 3):
-        haplotypeFastaFile = os.path.join(args.outputDirectory, f"haplotype_{haplotypeNum}.fasta")
-        # Skip if we've generated this file already
-        if not os.path.exists(haplotypeFastaFile) or not \
-            os.path.exists(os.path.join(args.outputDirectory, f"fasta_phasing_{haplotypeNum}_was_successful.flag")):
-                # Start writing phased sequences for this haplotype
-                with open(haplotypeFastaFile, "w") as fileOut:
-                    for parentType in gff3Obj.parentTypes:
-                        
-                        # Iterate through parent features
-                        for parentFeature in gff3Obj.types[parentType]:
-                            mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(parentFeature)
+    with open(os.path.join(args.outputDirectory, "haplotyping_results.tsv"), "w") as logOut:
+        # Write log file header
+        logOut.write("GeneID\thas_snps\t{0}\n".format("\t".join( [ f"{sid}_haplotype1\t{sid}_haplotype2" for sid in phasedVCF_obj.samples ])))
+        # Iterate through haplotypes
+        for haplotypeNum in range(1, 3):
+            haplotypeFastaFile = os.path.join(args.outputDirectory, f"haplotype_{haplotypeNum}.fasta")
+            # Skip if we've generated this file already
+            if not os.path.exists(haplotypeFastaFile) or not \
+                os.path.exists(os.path.join(args.outputDirectory, f"fasta_phasing_{haplotypeNum}_was_successful.flag")):
+                    # Start writing phased sequences for this haplotype
+                    with open(haplotypeFastaFile, "w") as fileOut:
+                        for parentType in gff3Obj.parentTypes:
                             
-                            # Skip if there are no SNPs on this contig
-                            if not parentFeature.contig in phasedVCF_obj:
-                                fileOut.write(f"# {parentFeature.ID} is reference type\n")
-                                continue
-                            
-                            # Get the exon regions for this gene
-                            exonCoords = [ exonFeature.coords for exonFeature in mrnaFeature.exon ]
-                            
-                            # Find any SNPs located within this gene
-                            positionsInGene = [
-                                pos
-                                for pos in phasedVCF_obj[parentFeature.contig]
-                                for start, end in exonCoords
-                                if start <= pos <= end
-                            ]
-                            
-                            # Skip if there are no SNPs in this gene
-                            if len(positionsInGene) == 0:
-                                fileOut.write(f"# {parentFeature.ID} is reference type\n")
-                                continue
-                            
-                            # Get the mRNA feature sequence
-                            exon_FastASeq_obj, exon_featureType, exon_startingFrame = \
-                                gff3Obj.retrieve_sequence_from_FASTA(FASTA_obj, mrnaFeature.ID, "exon")
-
-                            #if parentFeature.start < 4743973 < parentFeature.end:
-                            #    stophere
-                            
-                            # Iterate through samples and generate haplotypes
-                            sampleHaplotypes = {}
-                            for sampleID in phasedVCF_obj.samples:
-                                sampleHaplotypes[sampleID] = []
+                            # Iterate through parent features
+                            for parentFeature in gff3Obj.types[parentType]:
+                                mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(parentFeature)
                                 
-                                # Get any SNPs located within this gene for this sample
-                                sampleSNPs = {
-                                    pos: phasedVCF_obj[parentFeature.contig][pos][sampleID]
-                                    for pos in positionsInGene
-                                }
+                                # Skip if there are no SNPs on this contig
+                                if not parentFeature.contig in phasedVCF_obj:
+                                    logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples))))
+                                    continue
                                 
-                                # Extract variants within exon regions, and modify positions to be relative to the exon
-                                sampleSNPs = convert_vcf_snps_to_cds_snps(mrnaFeature, sampleSNPs, featureType="exon")
+                                # Get the exon regions for this gene
+                                exonCoords = [ exonFeature.coords for exonFeature in mrnaFeature.exon ]
                                 
-                                # Get the ordered SNP positions
-                                orderedPositions = list(sampleSNPs.keys())
-                                orderedPositions.sort()
+                                # Find any SNPs located within this gene
+                                positionsInGene = [
+                                    pos
+                                    for pos in phasedVCF_obj[parentFeature.contig]
+                                    for start, end in exonCoords
+                                    if start <= pos <= end
+                                ]
                                 
-                                # Format haplotype
-                                haplotypes = [[], []]
-                                for pos in orderedPositions:
-                                    genotypeDict = sampleSNPs[pos]
-                                    ## TBD: Figure out how to link phase groups using PS tag and such
-                                    haplotypes[0].append([genotypeDict["ref_alt"][0], genotypeDict["GT"][0]])
-                                    haplotypes[1].append([genotypeDict["ref_alt"][0], genotypeDict["GT"][1]])
-                            
-                            # Get just the unique haplotypes so we can avoid redundant sequence extraction
-                            # uniqueHaplotypes = list(set(
-                            #     tuple(subgenotype)
-                            #     for genotype in haploCodeDict.values()
-                            #     for subgenotype in genotype
-                            # ))
-                            
-                            # Extract haplotype sequences for all unique haplotypes
-                            # haplotypeSequences = []
-                            # for haplotype in uniqueHaplotypes:
-                            #     haplotypeSequence = edit_reference_to_haplotype_sequence(cds_FastASeq_obj.seq[:], haplotype, orderedPositions, newSnpDict, mrnaFeature.strand)
-                            #     haplotypeSequences.append(haplotypeSequence)
-                            
-                            # Write haplotype sequences to file
+                                # Skip if there are no SNPs in this gene
+                                if len(positionsInGene) == 0:
+                                    logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples))))
+                                    continue
+                                
+                                # Get the mRNA feature sequence
+                                exon_FastASeq_obj, exon_featureType, exon_startingFrame = \
+                                    gff3Obj.retrieve_sequence_from_FASTA(FASTA_obj, mrnaFeature.ID, "exon")
+                                
+                                #if parentFeature.start < 4743973 < parentFeature.end:
+                                #    stophere
+                                
+                                # Iterate through samples and generate haplotypes
+                                sampleHaplotypes = {}
+                                for sampleID in phasedVCF_obj.samples:
+                                    sampleHaplotypes[sampleID] = []
+                                    
+                                    # Get any SNPs located within this gene for this sample
+                                    sampleSNPs = {
+                                        pos: phasedVCF_obj[parentFeature.contig][pos][sampleID]
+                                        for pos in positionsInGene
+                                    }
+                                    
+                                    # Extract variants within exon regions, and modify positions to be relative to the exon
+                                    sampleSNPs = convert_vcf_snps_to_cds_snps(mrnaFeature, sampleSNPs, featureType="exon")
+                                    
+                                    # Get the ordered SNP positions
+                                    orderedPositions = list(sampleSNPs.keys())
+                                    orderedPositions.sort()
+                                    
+                                    # Format haplotype noting potential switch points
+                                    hap1, hap2 = [], [] # contains [pos, ref, allele, potentialSwitchPoint]
+                                    lastPS = None
+                                    # stop
+                                    for pos in orderedPositions:
+                                        genotypeDict = sampleSNPs[pos]
+                                        
+                                        # Determine if this is a potential switch point
+                                        potentialSwitchPoint = True
+                                        
+                                        # if lastPS == None:
+                                        #     potentialSwitchPoint = False
+                                        # elif "PS" in genotypeDict:
+                                        #     if genotypeDict["PS"] == lastPS:
+                                        #         potentialSwitchPoint = False
+                                        # elif genotypeDict["phased"] == True:
+                                            
+                                        
+                                        # ## TBD: Figure out how to link phase groups using PS tag and such
+                                        # haplotypes[0].append([genotypeDict["ref_alt"][0], genotypeDict["GT"][0]])
+                                        # haplotypes[1].append([genotypeDict["ref_alt"][0], genotypeDict["GT"][1]])
+                                
+                                # Get just the unique haplotypes so we can avoid redundant sequence extraction
+                                # uniqueHaplotypes = list(set(
+                                #     tuple(subgenotype)
+                                #     for genotype in haploCodeDict.values()
+                                #     for subgenotype in genotype
+                                # ))
+                                
+                                # Extract haplotype sequences for all unique haplotypes
+                                # haplotypeSequences = []
+                                # for haplotype in uniqueHaplotypes:
+                                #     haplotypeSequence = edit_reference_to_haplotype_sequence(cds_FastASeq_obj.seq[:], haplotype, orderedPositions, newSnpDict, mrnaFeature.strand)
+                                #     haplotypeSequences.append(haplotypeSequence)
+                                
+                                # Write haplotype sequences to file
                             ## TBD...
     
     # Let user know everything went swimmingly
