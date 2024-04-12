@@ -947,32 +947,93 @@ def edit_reference_to_haplotype_sequence(referenceSeq, haplotypeEditList,
         if ref == variant:
             continue
         
-        # Get strand-appropriate alleles
-        if strand == "+":
-            refAllele = ref # ref allele might be more than 1 character long
-            varAllele = variant
-        else:
-            refAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, ref)
-            varAllele = ZS_SeqIO.FastASeq.get_reverse_complement(None, variant)
-        
         # Validate that our position is correct and edit the sequence
-        if strand == "+":
-            if VALIDATE_STRICT:
-                assert referenceSeq[pos:pos+len(refAllele)].upper() == refAllele.upper(), \
-                    "Zac, you need to fix your +ve haplotype positioning code!"
-                #if not (referenceSeq[pos:pos+len(refAllele)].upper() == refAllele.upper()):
-                #    print(f"Zac, you need to fix your +ve haplotype positioning code! {pos} {refAllele} {varAllele}")
-            referenceSeq = referenceSeq[:pos] + varAllele + referenceSeq[pos+len(refAllele):]
-        else:
-            if VALIDATE_STRICT:
-                assert referenceSeq[pos-len(refAllele)+1:pos+1].upper() == refAllele.upper(), \
-                    "Zac, you need to fix your -ve haplotype positioning code!"
-                #if not (referenceSeq[pos-len(refAllele)+1:pos+1].upper() == refAllele.upper()):
-                #    print(f"Zac, you need to fix your -ve haplotype positioning code! {pos} {refAllele} {varAllele}")
-            referenceSeq = referenceSeq[:pos-len(refAllele)+1] + varAllele + referenceSeq[pos+1:]
+        if VALIDATE_STRICT:
+            # Prevent errors with nested alleles
+            if i != len(haplotypeEditList)-1: # if it's not the last variant, meaning we could've edited part of this variant
+                if pos + len(ref) < haplotypeEditList[i+1][0]: # if the next variant doesn't overlap this one, meaning it's not nested
+                    assert referenceSeq[pos:pos+len(ref)].upper() == ref.upper(), \
+                        "Zac, you need to fix your +ve haplotype positioning code!"
+        referenceSeq = referenceSeq[:pos] + variant + referenceSeq[pos+len(ref):]
     
-    editedSeq = referenceSeq # just for clarity since this sequence is a new, modified object
+    # Reverse complement the sequence if it's on the -ve strand
+    editedSeq = referenceSeq if strand == "+" else ZS_SeqIO.FastASeq.get_reverse_complement(self=None, staticSeq=referenceSeq)
     return editedSeq.upper() # we'd like all sequences to be upper cased
+
+def localise_vcf_snps_to_feature(mrnaFeature, snpDict, featureType="CDS"):
+    '''
+    Receives a mRNA feature and a dictionary indicating SNP locations as interpreted
+    from a VCF, and alters the positions to point to locations in the CDS where edits
+    should be made. This function handles +ve and -ve stranded mRNA features differenly
+    to give the appropriate coordinates in a 5' -> 3' reading direction.
+    
+    Parameters:
+        mrnaFeature -- a ZS_GFF3IO.Feature object representing a mRNA
+        snpDict -- a dictionary with structure like:
+                   {
+                       pos1: { ... } # contents of dictionary don't matter
+                   }
+        embedOriginalPos -- optional; boolean to indicate whether the output dict
+                            should also index the original SNP index. Provided as
+                            optional since I'm adding this functionality into
+                            legacy code and I don't want to break stuff.
+        featureType -- a string indicating the type of feature we're localising to
+                       e.g., a child feature of the mRNA like "CDS" or "exon".
+    '''
+    #mrnaFeature, snpDict, featureType = mrnaFeature, sampleSNPs, "exon"
+    
+    assert hasattr(mrnaFeature, featureType), \
+        f"ERROR: mrnaFeature '{mrnaFeature.ID}' does not have a {featureType} attribute!"
+    
+    # Get the order of snp positions to iterate through
+    "Ordering is necessary for the ongoingCount value to be correct"
+    orderedPositions = sorted(snpDict.keys(), reverse = True)
+    
+    newSnpDict = {}
+    ongoingCount = 0
+    for childFeature in sorted(mrnaFeature.__dict__[featureType], key = lambda x: x.start):        
+        # Check each position to see if we need to localise it
+        for pos in orderedPositions:
+            # If the position overlaps this CDS section
+            if pos >= childFeature.start and pos <= childFeature.end:
+                genotypeDict = snpDict[pos]
+                # Get the adjusted position
+                newPos = pos - childFeature.start + ongoingCount
+                
+                # Handle splice site variants
+                refAllele = genotypeDict["ref_alt"][0]
+                skipThisPos = False
+                if (pos + len(refAllele) - 1) > childFeature.end:
+                    # Modify the ref allele to be contained within the exon
+                    allowedAlleleLength = childFeature.end - pos + 1
+                    newRefAllele = refAllele[0:allowedAlleleLength]
+                    # Modify alt allele(s)
+                    newAltAlleles = [allele[0:allowedAlleleLength] for allele in genotypeDict["ref_alt"][1:]]
+                    # If an alt allele is identical to our reference, eliminate it now
+                    deleteIndices = []
+                    for x in range(len(newAltAlleles)):
+                        if newAltAlleles[x] == newRefAllele:
+                            deleteIndices.append(x)
+                            for sampleID, genotype in genotypeDict.items():
+                                if sampleID != "ref_alt":
+                                    for z in range(len(genotype)):
+                                        if genotype[z] == x+1: # x+1 gives the index of our alt allele in ["ref_alt"]
+                                            genotype[z] = 0 # set it to the ref allele index
+                                    genotypeDict[sampleID] = genotype
+                    for index in deleteIndices[::-1]:
+                        del newAltAlleles[index] # remove it from our alt alleles values
+                    # If we no longer have any variants contained within the CDS region, eliminate this variant position
+                    if newAltAlleles == []:
+                        skipThisPos = True
+                    # Otherwise, update the ref_alt allele in our dictionary
+                    else:
+                        genotypeDict["ref_alt"] = [newRefAllele, *newAltAlleles]
+                
+                # Handle normal scenarios / index the modified alleles if relevant
+                if skipThisPos is False:
+                    newSnpDict[newPos] = genotypeDict
+        ongoingCount += childFeature.end - childFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
+    return newSnpDict
 
 ## Main
 def main():
@@ -1271,7 +1332,7 @@ def main():
                     
                     # Skip if there are no SNPs on this contig
                     if not parentFeature.contig in phasedVCF_obj:
-                        logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples))))
+                        logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples) * 2)))
                         continue
                     
                     # Get the exon regions for this gene
@@ -1287,7 +1348,7 @@ def main():
                     
                     # Skip if there are no SNPs in this gene
                     if len(positionsInGene) == 0:
-                        logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples))))
+                        logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples) * 2)))
                         continue
                     
                     # Start writing the FASTA file
@@ -1309,7 +1370,7 @@ def main():
                             }
                             
                             # Extract variants within exon regions, and modify positions to be relative to the exon
-                            sampleSNPs = convert_vcf_snps_to_cds_snps(mrnaFeature, sampleSNPs, featureType="exon")
+                            sampleSNPs = localise_vcf_snps_to_feature(mrnaFeature, sampleSNPs, featureType="exon")
                             
                             # Get the ordered SNP positions
                             orderedPositions = list(sampleSNPs.keys())
@@ -1387,12 +1448,12 @@ def main():
                                     ))
                             
                             # Add info to logging
-                            sampleLoggingInfo.append("*" if sampleSwitchPoints[sampleID] else "" + "-".join(haplotypeCodeList[0]))
-                            sampleLoggingInfo.append("*" if sampleSwitchPoints[sampleID] else "" + "-".join(haplotypeCodeList[1]))
+                            sampleLoggingInfo.append(("*" if sampleSwitchPoints[sampleID] else "") + "-".join(haplotypeCodeList[0]))
+                            sampleLoggingInfo.append(("*" if sampleSwitchPoints[sampleID] else "") + "-".join(haplotypeCodeList[1]))
                         
                         # Write logging information
                         logOut.write("{0}\tyes\t{1}\n".format(parentFeature.ID, "\t".join(sampleLoggingInfo)))
-
+        
         open(os.path.join(args.outputDirectory, "fasta_phasing_was_successful.flag"), "w").close()
     
     # Let user know everything went swimmingly
