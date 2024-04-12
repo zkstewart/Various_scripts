@@ -3,7 +3,7 @@
 # Contains various Classes to perform manipulations involving
 # FASTA sequences and MSAs.
 
-import os, inspect, sys, time, random, re, math, subprocess
+import os, inspect, sys, time, random, re, math, subprocess, platform
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
 from copy import deepcopy
@@ -30,6 +30,9 @@ class StandardProgramRunners:
             "faidx",
             ZS_Utility.convert_to_wsl_if_not_unix(fastaFile)
         ]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
         
         # Run the command
         run_samtools_index = subprocess.Popen(cmd, shell = True,
