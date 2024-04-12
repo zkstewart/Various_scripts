@@ -3,12 +3,138 @@
 # Implemented as a bamnostic.AlignmentFile Class with extra
 # functions added for my own purposes.
 
-import os, pickle
+import os, pickle, subprocess, platform
 import bamnostic as bs
 import numpy as np
 import pandas as pd
 
 from ZS_SeqIO import FASTA
+import ZS_Utility
+
+class StandardProgramRunners:
+    '''
+    A class of static methods to help with running standard programs
+    involved in SAM or BAM creation or editing.
+    '''
+    @staticmethod
+    def samtools_subset_bam(bamFile, outputFile, samtoolsRegions, samtoolsPath):
+        '''
+        Parameters:
+            bamFile -- a string indicating the location of the BAM file to subset
+            outputFile -- a string indicating the location to write the subset BAM to
+            samtoolsRegions -- a list of strings formatted for samtools
+                            like:
+                            [
+                                "contig1:start1-end1",
+                                "contig1:start2-end2",
+                                ...
+                                "contig2:start1-end1",
+                                "contig2:start2-end2",
+                                ...
+                            ]
+            samtoolsPath -- a string indicating the location of the samtools executable
+        '''
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(samtoolsPath)
+        cmd += [
+            "view", "-b", "-h",
+            ZS_Utility.convert_to_wsl_if_not_unix(bamFile),
+            "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
+            *samtoolsRegions
+        ]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_samtools_subset = subprocess.Popen(cmd, shell = True,
+                                            stdout = subprocess.PIPE,
+                                            stderr = subprocess.PIPE)
+        subsetout, subseterr = run_samtools_subset.communicate()
+        if subsetout.decode("utf-8") != "" and subseterr.decode("utf-8") == "":
+            print("WARNING: samtools_subset_bam may have encountered an error, since the stdout is not empty as expected. " +
+                f'Please check the stdout for more information ({subsetout.decode("utf-8")})')
+        elif subseterr.decode("utf-8") != "":
+            raise Exception(("ERROR: samtools_subset_bam encountered an error; have a look " +
+                            f'at the stdout ({subsetout.decode("utf-8")}) and stderr ' + 
+                            f'({subseterr.decode("utf-8")}) to make sense of this.'))
+    
+    @staticmethod
+    def samtools_index_bam(bamFile, samtoolsPath):
+        '''
+        Parameters:
+            bamFile -- a string indicating the location of the BAM file to subset
+            samtoolsPath -- a string indicating the location of the samtools executable
+        '''
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(samtoolsPath)
+        cmd += [
+            "index",
+            ZS_Utility.convert_to_wsl_if_not_unix(bamFile)
+        ]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_samtools_index = subprocess.Popen(cmd, shell = True,
+                                            stdout = subprocess.PIPE,
+                                            stderr = subprocess.PIPE)
+        indexout, indexerr = run_samtools_index.communicate()
+        if indexout.decode("utf-8") != "" and indexerr.decode("utf-8") == "":
+            print("WARNING: samtools_index_bam may have encountered an error, since the stdout is not empty as expected. " +
+                f'Please check the stdout for more information ({indexout.decode("utf-8")})')
+        elif indexerr.decode("utf-8") != "":
+            raise Exception(("ERROR: samtools_index_bam encountered an error; have a look " +
+                            f'at the stdout ({indexout.decode("utf-8")}) and stderr ' + 
+                            f'({indexerr.decode("utf-8")}) to make sense of this.'))
+    
+    @staticmethod
+    def picard_addreplace_readgroups(inputBamFile, outputBamFile, rgID, rgLB, rgPL, rgPU, rgSM, picardPath):
+        '''
+        Parameters:
+            inputBamFile -- a string indicating the location of the input BAM file
+            outputBamFile -- a string indicating the location to write the output BAM to
+            rgID -- a string indicating the read group ID
+            rgLB -- a string indicating the read group library
+            rgPL -- a string indicating the read group platform
+            rgPU -- a string indicating the read group platform unit
+            rgSM -- a string indicating the read group sample
+            picardPath -- a string indicating the location of the picard executable
+        '''
+        # Construct the cmd for subprocess
+        if platform.system() == "Windows":
+            cmd = ZS_Utility.base_subprocess_cmd("bash") # necessary for executable-ised picard
+            cmd.append(ZS_Utility.convert_to_wsl_if_not_unix(picardPath))
+        else:
+            cmd = ZS_Utility.base_subprocess_cmd(picardPath)
+        
+        cmd += [
+            "AddOrReplaceReadGroups",
+            "I=" + ZS_Utility.convert_to_wsl_if_not_unix(inputBamFile),
+            "O=" + ZS_Utility.convert_to_wsl_if_not_unix(outputBamFile),
+            "RGID=" + rgID,
+            "RGLB=" + rgLB,
+            "RGPL=" + rgPL,
+            "RGPU=" + rgPU,
+            "RGSM=" + rgSM
+        ]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_picard_addreplace = subprocess.Popen(cmd, shell = True,
+                                                stdout = subprocess.PIPE,
+                                                stderr = subprocess.PIPE)
+        addreplaceout, addreplaceerr = run_picard_addreplace.communicate()
+        if addreplaceout.decode("utf-8") != "" and addreplaceerr.decode("utf-8") == "":
+            print("WARNING: picard_addreplace_readgroups may have encountered an error, since the stdout is not empty as expected. " +
+                f'Please check the stdout for more information ({addreplaceout.decode("utf-8")})')
+        elif "done" not in addreplaceerr.decode("utf-8"):
+            raise Exception(("ERROR: picard_addreplace_readgroups has probably encountered an error; have a look " +
+                            f'at the stdout ({addreplaceout.decode("utf-8")}) and stderr ' + 
+                            f'({addreplaceerr.decode("utf-8")}) to make sense of this.'))
 
 class BAM(bs.AlignmentFile):
     def __init__(self, file_location):

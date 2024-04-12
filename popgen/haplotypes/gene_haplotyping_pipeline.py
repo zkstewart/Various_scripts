@@ -3,16 +3,12 @@
 # Script to take in a GFF3 file and a directory containing
 # sorted, indexed BAM files to 
 
-import os, argparse, sys, platform, subprocess, shutil
+import os, argparse, sys, shutil
 from intervaltree import IntervalTree
-from Bio import SeqIO
 from pyfaidx import Fasta
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__))) # the current dir is where we find haplotypes
-from predict_variant_effects import convert_vcf_snps_to_cds_snps
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find GFF3IO
-from Function_packages import ZS_GFF3IO, ZS_Utility, ZS_VCFIO, ZS_SeqIO
+from Function_packages import ZS_GFF3IO, ZS_Utility, ZS_VCFIO, ZS_SeqIO, ZS_BAMIO
 
 # Define functions
 def validate_args(args):
@@ -224,343 +220,6 @@ def format_samtools_regions(coordinatesDict):
         for coords in coordsList:
             samtoolsRegions.append(f"{contig}:{coords[0]}-{coords[1]}")
     return samtoolsRegions
-
-def samtools_subset_bam(bamFile, outputFile, samtoolsRegions, samtoolsPath):
-    '''
-    Parameters:
-        bamFile -- a string indicating the location of the BAM file to subset
-        outputFile -- a string indicating the location to write the subset BAM to
-        samtoolsRegions -- a list of strings formatted for samtools
-                           like:
-                           [
-                               "contig1:start1-end1",
-                               "contig1:start2-end2",
-                               ...
-                               "contig2:start1-end1",
-                               "contig2:start2-end2",
-                               ...
-                           ]
-        samtoolsPath -- a string indicating the location of the samtools executable
-    '''
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(samtoolsPath)
-    cmd += [
-        "view", "-b", "-h",
-        ZS_Utility.convert_to_wsl_if_not_unix(bamFile),
-        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
-        *samtoolsRegions
-    ]
-    
-    # Run the command
-    run_samtools_subset = subprocess.Popen(cmd, shell = True,
-                                           stdout = subprocess.PIPE,
-                                           stderr = subprocess.PIPE)
-    subsetout, subseterr = run_samtools_subset.communicate()
-    if subsetout.decode("utf-8") != "" and subseterr.decode("utf-8") == "":
-        print("WARNING: samtools_subset_bam may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({subsetout.decode("utf-8")})')
-    elif subseterr.decode("utf-8") != "":
-        raise Exception(("ERROR: samtools_subset_bam encountered an error; have a look " +
-                         f'at the stdout > {subsetout.decode("utf-8")} < and stderr ' + 
-                         f'> {subseterr.decode("utf-8")} < to make sense of this.'))
-
-def picard_addreplace_readgroups(inputBamFile, outputBamFile, rgID, rgLB, rgPL, rgPU, rgSM, picardPath):
-    '''
-    Parameters:
-        inputBamFile -- a string indicating the location of the input BAM file
-        outputBamFile -- a string indicating the location to write the output BAM to
-        rgID -- a string indicating the read group ID
-        rgLB -- a string indicating the read group library
-        rgPL -- a string indicating the read group platform
-        rgPU -- a string indicating the read group platform unit
-        rgSM -- a string indicating the read group sample
-        picardPath -- a string indicating the location of the picard executable
-    '''
-    # Construct the cmd for subprocess
-    if platform.system() == "Windows":
-        cmd = ZS_Utility.base_subprocess_cmd("bash") # necessary for executable-ised picard
-        cmd.append(ZS_Utility.convert_to_wsl_if_not_unix(picardPath))
-    else:
-        cmd = ZS_Utility.base_subprocess_cmd(picardPath)
-    
-    cmd += [
-        "AddOrReplaceReadGroups",
-        "I=" + ZS_Utility.convert_to_wsl_if_not_unix(inputBamFile),
-        "O=" + ZS_Utility.convert_to_wsl_if_not_unix(outputBamFile),
-        "RGID=" + rgID,
-        "RGLB=" + rgLB,
-        "RGPL=" + rgPL,
-        "RGPU=" + rgPU,
-        "RGSM=" + rgSM
-    ]
-    
-    # Run the command
-    run_picard_addreplace = subprocess.Popen(cmd, shell = True,
-                                             stdout = subprocess.PIPE,
-                                             stderr = subprocess.PIPE)
-    addreplaceout, addreplaceerr = run_picard_addreplace.communicate()
-    if addreplaceout.decode("utf-8") != "" and addreplaceerr.decode("utf-8") == "":
-        print("WARNING: picard_addreplace_readgroups may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({addreplaceout.decode("utf-8")})')
-    elif "done" not in addreplaceerr.decode("utf-8"):
-        raise Exception(("ERROR: picard_addreplace_readgroups has probably encountered an error; have a look " +
-                         f'at the stdout ({addreplaceout.decode("utf-8")}) and stderr ' + 
-                         f'({addreplaceerr.decode("utf-8")}) to make sense of this.'))
-
-def samtools_faidx(fastaFile, samtoolsPath):
-    '''
-    Parameters:
-        fastaFile -- a string indicating the location of the FASTA file to index
-        samtoolsPath -- a string indicating the location of the samtools executable
-    '''
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(samtoolsPath)
-    cmd += [
-        "faidx",
-        ZS_Utility.convert_to_wsl_if_not_unix(fastaFile)
-    ]
-    
-    # Run the command
-    run_samtools_index = subprocess.Popen(cmd, shell = True,
-                                          stdout = subprocess.PIPE,
-                                          stderr = subprocess.PIPE)
-    indexout, indexerr = run_samtools_index.communicate()
-    if indexout.decode("utf-8") != "" and indexerr.decode("utf-8") == "":
-        print("WARNING: samtools_faidx may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({indexout.decode("utf-8")})')
-    elif indexerr.decode("utf-8") != "":
-        raise Exception(("ERROR: samtools_faidx encountered an error; have a look " +
-                         f'at the stdout > {indexout.decode("utf-8")} < and stderr ' + 
-                         f'> {indexerr.decode("utf-8")} < to make sense of this.'))
-
-def samtools_index_bam(bamFile, samtoolsPath):
-    '''
-    Parameters:
-        bamFile -- a string indicating the location of the BAM file to subset
-        samtoolsPath -- a string indicating the location of the samtools executable
-    '''
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(samtoolsPath)
-    cmd += [
-        "index",
-        ZS_Utility.convert_to_wsl_if_not_unix(bamFile)
-    ]
-    
-    # Run the command
-    run_samtools_index = subprocess.Popen(cmd, shell = True,
-                                          stdout = subprocess.PIPE,
-                                          stderr = subprocess.PIPE)
-    indexout, indexerr = run_samtools_index.communicate()
-    if indexout.decode("utf-8") != "" and indexerr.decode("utf-8") == "":
-        print("WARNING: samtools_index_bam may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({indexout.decode("utf-8")})')
-    elif indexerr.decode("utf-8") != "":
-        raise Exception(("ERROR: samtools_index_bam encountered an error; have a look " +
-                         f'at the stdout > {indexout.decode("utf-8")} < and stderr ' + 
-                         f'> {indexerr.decode("utf-8")} < to make sense of this.'))
-
-def bcftools_mpileup(bamFiles, fastaFile, outputFile, bcftoolsPath, regions=None):
-    '''
-    Parameters:
-        bamFiles -- a list containing one or more strings indicating the location of the
-                    BAM files to mpileup
-        fastaFile -- a string indicating the location of the genome FASTA file
-        outputFile -- a string indicating the location to write the mpileup result to
-        bcftoolsPath -- a string indicating the location of the bcftools executable
-        regions -- optionally, a list of strings formatted for bcftools like:
-                    [
-                        "contig1:start1-end1",
-                        "contig1:start2-end2",
-                        ...
-                        "contig2:start1-end1",
-                        "contig2:start2-end2",
-                        ...
-                    ]
-    '''
-    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
-    
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
-    cmd += [
-        "mpileup", "-q", "10", "-Q", "20", "-a", "AD", "--threads", "2",
-        "-f", ZS_Utility.convert_to_wsl_if_not_unix(fastaFile),
-        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile)
-    ]
-    
-    if regions != None:
-        cmd += ["-r", ",".join(regions)]
-    
-    cmd += [ ZS_Utility.convert_to_wsl_if_not_unix(x) for x in bamFiles ]
-    
-    # Run the command
-    run_bcftools_mpileup = subprocess.Popen(cmd, shell = True,
-                                            stdout = subprocess.PIPE,
-                                            stderr = subprocess.PIPE)
-    mpileupout, mpileuperr = run_bcftools_mpileup.communicate()
-    if mpileupout.decode("utf-8") != "" and (not any([ bw in mpileuperr.decode("utf-8").lower() for bw in BAD_WORDS ])):
-        print("WARNING: bcftools_mpileup may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({mpileupout.decode("utf-8")})')
-    elif any([ bw in mpileuperr.decode("utf-8").lower() for bw in BAD_WORDS ]):
-        raise Exception(("ERROR: bcftools_mpileup encountered an error; have a look " +
-                         f'at the stdout ({mpileupout.decode("utf-8")}) and stderr ' + 
-                         f'({mpileuperr.decode("utf-8")}) to make sense of this.'))
-
-def bcftools_call(mpileupFile, outputFile, bcftoolsPath):
-    '''
-    Parameters:
-        mpileupFile -- a string indicating the result of bcftools mpileup
-        outputFile -- a string indicating the location to write the VCF result to
-        bcftoolsPath -- a string indicating the location of the bcftools executable
-    '''
-    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
-    
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
-    cmd += [
-        "call", "-m", "-v", "-Oz", "--write-index",
-        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
-        ZS_Utility.convert_to_wsl_if_not_unix(mpileupFile)
-    ]
-    
-    # Run the command
-    run_bcftools_call = subprocess.Popen(cmd, shell = True,
-                                         stdout = subprocess.PIPE,
-                                         stderr = subprocess.PIPE)
-    callout, callerr = run_bcftools_call.communicate()
-    if callout.decode("utf-8") != "" and (not any([ bw in callerr.decode("utf-8").lower() for bw in BAD_WORDS ])):
-        print("WARNING: bcftools_call may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({callout.decode("utf-8")})')
-    elif any([ bw in callerr.decode("utf-8").lower() for bw in BAD_WORDS ]):
-        raise Exception(("ERROR: bcftools_call encountered an error; have a look " +
-                         f'at the stdout ({callout.decode("utf-8")}) and stderr ' + 
-                         f'({callerr.decode("utf-8")}) to make sense of this.'))
-
-def bcftools_norm_multiallelics(vcfFile, outputFile, bcftoolsPath):
-    '''
-    Parameters:
-        vcfFile -- a string indicating the location of the VCF file to multiallele normalise
-        outputFile -- a string indicating the location to write the VCF result to
-        bcftoolsPath -- a string indicating the location of the bcftools executable
-    '''
-    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
-    
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
-    cmd += [
-        "norm", "-m", "+any",
-        "-Oz", "--write-index",
-        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
-        ZS_Utility.convert_to_wsl_if_not_unix(vcfFile)
-    ]
-    
-    # Run the command
-    run_bcftools_norm_m = subprocess.Popen(cmd, shell = True,
-                                         stdout = subprocess.PIPE,
-                                         stderr = subprocess.PIPE)
-    normout, normerr = run_bcftools_norm_m.communicate()
-    if normout.decode("utf-8") != "" and (not any([ bw in normerr.decode("utf-8") for bw in BAD_WORDS ])):
-        print("WARNING: bcftools_norm_multiallelics may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({normout.decode("utf-8")})')
-    elif any([ bw in normerr.decode("utf-8") for bw in BAD_WORDS ]):
-        raise Exception(("ERROR: bcftools_norm_multiallelics encountered an error; have a look " +
-                         f'at the stdout ({normout.decode("utf-8")}) and stderr ' + 
-                         f'({normerr.decode("utf-8")}) to make sense of this.'))
-
-def bcftools_norm_leftalign(vcfFile, fastaFile, outputFile, bcftoolsPath):
-    '''
-    Parameters:
-        vcfFile -- a string indicating the location of the VCF file to left-align normalise
-        fastaFile -- a string indicating the location of the genome FASTA file
-        outputFile -- a string indicating the location to write the VCF result to
-        bcftoolsPath -- a string indicating the location of the bcftools executable
-    '''
-    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
-    
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
-    cmd += [
-        "norm", "-f", ZS_Utility.convert_to_wsl_if_not_unix(fastaFile),
-        "-Oz", "--write-index",
-        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
-        ZS_Utility.convert_to_wsl_if_not_unix(vcfFile)
-    ]
-    
-    # Run the command
-    run_bcftools_norm_left = subprocess.Popen(cmd, shell = True,
-                                         stdout = subprocess.PIPE,
-                                         stderr = subprocess.PIPE)
-    normout, normerr = run_bcftools_norm_left.communicate()
-    if normout.decode("utf-8") != "" and (not any([ bw in normerr.decode("utf-8").lower() for bw in BAD_WORDS ])):
-        print("WARNING: run_bcftools_norm_left may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({normout.decode("utf-8")})')
-    elif any([ bw in normerr.decode("utf-8").lower().lower() for bw in BAD_WORDS ]):
-        raise Exception(("ERROR: run_bcftools_norm_left encountered an error; have a look " +
-                         f'at the stdout ({normout.decode("utf-8")}) and stderr ' + 
-                         f'({normerr.decode("utf-8")}) to make sense of this.'))
-
-def whatshap_phase(vcfFile, fastaFile, bamFiles, outputFile, whatshapPath):
-    '''
-    Parameters:
-        vcfFile -- a string indicating the location of the VCF file to phase
-        fastaFile -- a string indicating the location of the genome FASTA file
-        bamFiles -- a list containing one or more strings indicating the location of the
-                    BAM files to mpileup
-        outputFile -- a string indicating the location to write the whatshap result to
-        whatshapPath -- a string indicating the location of the whatshap executable
-    '''    
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(whatshapPath)
-    cmd += [
-        "phase", "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
-        f"--reference={ZS_Utility.convert_to_wsl_if_not_unix(fastaFile)}",
-        ZS_Utility.convert_to_wsl_if_not_unix(vcfFile),
-        *[ ZS_Utility.convert_to_wsl_if_not_unix(x) for x in bamFiles ]
-    ]
-    
-    # Run the command
-    run_whatshap_phase = subprocess.Popen(cmd, shell = True,
-                                          stdout = subprocess.PIPE,
-                                          stderr = subprocess.PIPE)
-    phaseout, phaseerr = run_whatshap_phase.communicate()
-    if phaseout.decode("utf-8") != "" and (not "Total elapsed time" in phaseerr.decode("utf-8")):
-        print("WARNING: whatshap_phase may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({phaseout.decode("utf-8")})')
-    elif not "Total elapsed time" in phaseerr.decode("utf-8"):
-        raise Exception(("ERROR: whatshap_phase encountered an error; have a look " +
-                         f'at the stdout ({phaseout.decode("utf-8")}) and stderr ' + 
-                         f'({phaseerr.decode("utf-8")}) to make sense of this.'))
-
-def whatshap_polyphase(vcfFile, fastaFile, bamFiles, outputFile, whatshapPath, ploidy=2):
-    '''
-    Parameters:
-        vcfFile -- a string indicating the location of the VCF file to phase
-        fastaFile -- a string indicating the location of the genome FASTA file
-        bamFiles -- a list containing one or more strings indicating the location of the
-                    BAM files to mpileup
-        outputFile -- a string indicating the location to write the whatshap result to
-        whatshapPath -- a string indicating the location of the whatshap executable
-    '''    
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(whatshapPath)
-    cmd += [
-        "polyphase", "--ploidy", str(ploidy), "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
-        f"--reference={ZS_Utility.convert_to_wsl_if_not_unix(fastaFile)}",
-        ZS_Utility.convert_to_wsl_if_not_unix(vcfFile),
-        *[ ZS_Utility.convert_to_wsl_if_not_unix(x) for x in bamFiles ]
-    ]
-    
-    # Run the command
-    run_whatshap_poly = subprocess.Popen(cmd, shell = True,
-                                         stdout = subprocess.PIPE,
-                                         stderr = subprocess.PIPE)
-    polyout, polyerr = run_whatshap_poly.communicate()
-    if polyout.decode("utf-8") != "" and (not "Total elapsed time" in polyerr.decode("utf-8")):
-        print("WARNING: whatshap_polyphase may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({polyout.decode("utf-8")})')
-    elif not "Total elapsed time" in polyerr.decode("utf-8"):
-        raise Exception(("ERROR: whatshap_polyphase encountered an error; have a look " +
-                         f'at the stdout ({polyout.decode("utf-8")}) and stderr ' + 
-                         f'({polyerr.decode("utf-8")}) to make sense of this.'))
 
 def parse_whatshap_for_merge(vcfFile):
     '''
@@ -857,184 +516,6 @@ def merge_whatshap_vcfs(vcfFile, phaseDict, polyDict, outputFile):
             newLine = "\t".join(sl[:8] + [":".join(formatList)] + rowSampleData) + "\n"
             vcfOut.write(newLine)
 
-def bgzip_file(fileName, bgzipPath):
-    '''
-    Parameters:
-        fileName -- a string indicating the location of a file to index
-        bgzipPath -- a string indicating the location of the bgzip executable
-    '''
-    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
-    
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(bgzipPath)
-    cmd.append(ZS_Utility.convert_to_wsl_if_not_unix(fileName))
-    
-    # Run the command
-    run_bgzip = subprocess.Popen(cmd, shell = True,
-                                 stdout = subprocess.PIPE,
-                                 stderr = subprocess.PIPE)
-    bgzipout, bgziperr = run_bgzip.communicate()
-    if bgzipout.decode("utf-8") != "" and (not any([ bw in bgziperr.decode("utf-8").lower() for bw in BAD_WORDS ])):
-        print("WARNING: bgzip_file may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({bgzipout.decode("utf-8")})')
-    elif any([ bw in bgziperr.decode("utf-8").lower() for bw in BAD_WORDS ]):
-        raise Exception(("ERROR: bgzip_file encountered an error; have a look " +
-                         f'at the stdout ({bgzipout.decode("utf-8")}) and stderr ' + 
-                         f'({bgziperr.decode("utf-8")}) to make sense of this.'))
-
-def tabix_file(fileName, tabixPath):
-    '''
-    Parameters:
-        fastaFile -- a string indicating the location of the FASTA file to index
-        tabixPath -- a string indicating the location of the tabix executable
-    '''
-    BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
-    
-    # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(tabixPath)
-    cmd.append(ZS_Utility.convert_to_wsl_if_not_unix(fileName))
-    
-    # Run the command
-    run_tabix = subprocess.Popen(cmd, shell = True,
-                                 stdout = subprocess.PIPE,
-                                 stderr = subprocess.PIPE)
-    tabixout, tabixerr = run_tabix.communicate()
-    if tabixout.decode("utf-8") != "" and (not any([ bw in tabixerr.decode("utf-8").lower() for bw in BAD_WORDS ])):
-        print("WARNING: tabix_file may have encountered an error, since the stdout is not empty as expected. " +
-              f'Please check the stdout for more information ({tabixout.decode("utf-8")})')
-    elif any([ bw in tabixerr.decode("utf-8").lower() for bw in BAD_WORDS ]):
-        raise Exception(("ERROR: tabix_file encountered an error; have a look " +
-                         f'at the stdout ({tabixout.decode("utf-8")}) and stderr ' + 
-                         f'({tabixerr.decode("utf-8")}) to make sense of this.'))
-
-def edit_reference_to_haplotype_sequence(referenceSeq, haplotypeEditList,
-                                         strand, VALIDATE_STRICT=True): # turn it to False when testing/dev is done
-    '''
-    This function will take in a reference nucleotide sequence, typically representing
-    a CDS for a gene in either +ve or -ve strand, and generates the haplotype version
-    of that sequence.
-    
-    Parameters:
-        referenceSeq -- the sequence as a string prior to any editing
-        haplotypeEditList -- a list with structure like:
-                             [
-                                 [pos1, "ref", "allele"],
-                                 [pos2, "ref", "allele"],
-                                 ...
-                             ]; at each position, the reference allele is replaced with the
-                             allele allele
-        strand -- a string equal to "+" or "-" indicating the strandedness of this gene
-        VALIDATE_STRICT -- a boolean indicating whether sequence validation should occur;
-                           this is useful during testing and development but it causes issues
-                           for things that are very hard to validate (i.e., the changes this
-                           code make are correct, but nested variants can mess with the
-                           validation).
-    Returns:
-        editedSeq -- an edited version of the input referenceSeq with all variations made
-    '''
-    # referenceSeq, haplotypeEditList, strand = exon_FastASeq_obj.seq[:], haplotypeExemplar, mrnaFeature.strand
-    # VALIDATE_STRICT=True
-    
-    # Make sure haplotypeEditList is sorted by position
-    assert [ x[0] for x in haplotypeEditList ] == sorted([ x[0] for x in haplotypeEditList ]), \
-        "haplotypeEditList must be sorted by position!"
-    
-    # Perform the editing operation
-    for i in range(len(haplotypeEditList)-1, -1, -1): # iterate backwards through positions and variants
-        pos, ref, variant = haplotypeEditList[i]
-        
-        # Skip if variant is reference type
-        if ref == variant:
-            continue
-        
-        # Validate that our position is correct and edit the sequence
-        if VALIDATE_STRICT:
-            # Prevent errors with nested alleles
-            if i != len(haplotypeEditList)-1: # if it's not the last variant, meaning we could've edited part of this variant
-                if pos + len(ref) < haplotypeEditList[i+1][0]: # if the next variant doesn't overlap this one, meaning it's not nested
-                    assert referenceSeq[pos:pos+len(ref)].upper() == ref.upper(), \
-                        "Zac, you need to fix your +ve haplotype positioning code!"
-        referenceSeq = referenceSeq[:pos] + variant + referenceSeq[pos+len(ref):]
-    
-    # Reverse complement the sequence if it's on the -ve strand
-    editedSeq = referenceSeq if strand == "+" else ZS_SeqIO.FastASeq.get_reverse_complement(self=None, staticSeq=referenceSeq)
-    return editedSeq.upper() # we'd like all sequences to be upper cased
-
-def localise_vcf_snps_to_feature(mrnaFeature, snpDict, featureType="CDS"):
-    '''
-    Receives a mRNA feature and a dictionary indicating SNP locations as interpreted
-    from a VCF, and alters the positions to point to locations in the CDS where edits
-    should be made. This function handles +ve and -ve stranded mRNA features differenly
-    to give the appropriate coordinates in a 5' -> 3' reading direction.
-    
-    Parameters:
-        mrnaFeature -- a ZS_GFF3IO.Feature object representing a mRNA
-        snpDict -- a dictionary with structure like:
-                   {
-                       pos1: { ... } # contents of dictionary don't matter
-                   }
-        embedOriginalPos -- optional; boolean to indicate whether the output dict
-                            should also index the original SNP index. Provided as
-                            optional since I'm adding this functionality into
-                            legacy code and I don't want to break stuff.
-        featureType -- a string indicating the type of feature we're localising to
-                       e.g., a child feature of the mRNA like "CDS" or "exon".
-    '''
-    #mrnaFeature, snpDict, featureType = mrnaFeature, sampleSNPs, "exon"
-    
-    assert hasattr(mrnaFeature, featureType), \
-        f"ERROR: mrnaFeature '{mrnaFeature.ID}' does not have a {featureType} attribute!"
-    
-    # Get the order of snp positions to iterate through
-    "Ordering is necessary for the ongoingCount value to be correct"
-    orderedPositions = sorted(snpDict.keys(), reverse = True)
-    
-    newSnpDict = {}
-    ongoingCount = 0
-    for childFeature in sorted(mrnaFeature.__dict__[featureType], key = lambda x: x.start):        
-        # Check each position to see if we need to localise it
-        for pos in orderedPositions:
-            # If the position overlaps this CDS section
-            if pos >= childFeature.start and pos <= childFeature.end:
-                genotypeDict = snpDict[pos]
-                # Get the adjusted position
-                newPos = pos - childFeature.start + ongoingCount
-                
-                # Handle splice site variants
-                refAllele = genotypeDict["ref_alt"][0]
-                skipThisPos = False
-                if (pos + len(refAllele) - 1) > childFeature.end:
-                    # Modify the ref allele to be contained within the exon
-                    allowedAlleleLength = childFeature.end - pos + 1
-                    newRefAllele = refAllele[0:allowedAlleleLength]
-                    # Modify alt allele(s)
-                    newAltAlleles = [allele[0:allowedAlleleLength] for allele in genotypeDict["ref_alt"][1:]]
-                    # If an alt allele is identical to our reference, eliminate it now
-                    deleteIndices = []
-                    for x in range(len(newAltAlleles)):
-                        if newAltAlleles[x] == newRefAllele:
-                            deleteIndices.append(x)
-                            for sampleID, genotype in genotypeDict.items():
-                                if sampleID != "ref_alt":
-                                    for z in range(len(genotype)):
-                                        if genotype[z] == x+1: # x+1 gives the index of our alt allele in ["ref_alt"]
-                                            genotype[z] = 0 # set it to the ref allele index
-                                    genotypeDict[sampleID] = genotype
-                    for index in deleteIndices[::-1]:
-                        del newAltAlleles[index] # remove it from our alt alleles values
-                    # If we no longer have any variants contained within the CDS region, eliminate this variant position
-                    if newAltAlleles == []:
-                        skipThisPos = True
-                    # Otherwise, update the ref_alt allele in our dictionary
-                    else:
-                        genotypeDict["ref_alt"] = [newRefAllele, *newAltAlleles]
-                
-                # Handle normal scenarios / index the modified alleles if relevant
-                if skipThisPos is False:
-                    newSnpDict[newPos] = genotypeDict
-        ongoingCount += childFeature.end - childFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
-    return newSnpDict
-
 ## Main
 def main():
     # User input
@@ -1136,7 +617,7 @@ def main():
     
     # Index the FASTA file
     if not os.path.exists(f"{args.fastaFile}.fai"):
-        samtools_faidx(args.fastaFile, args.samtools)
+        ZS_SeqIO.StandardProgramRunners.samtools_faidx(args.fastaFile, args.samtools)
     
     # Parse GFF3
     gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse = not args.relaxedParsing)
@@ -1162,7 +643,7 @@ def main():
     for bamFile in bamFiles:
         outputFile = os.path.join(args.outputDirectory, os.path.basename(bamFile))
         if not os.path.exists(outputFile):
-            samtools_subset_bam(bamFile, outputFile, samtoolsRegions, args.samtools)
+            ZS_BAMIO.StandardProgramRunners.samtools_subset_bam(bamFile, outputFile, samtoolsRegions, args.samtools)
         else:
             print(f"Subset BAM file '{outputFile}' already exists; skipping.")
         subsetBamFiles.append(outputFile)
@@ -1183,9 +664,8 @@ def main():
                     rgSM = rgID
                     
                     # Update read group using picard
-                    picard_addreplace_readgroups(tmpFile, bamFile,
-                                                rgID, args.rgLB, args.rgPL,
-                                                args.rgPU, rgSM, args.picard)
+                    ZS_BAMIO.StandardProgramRunners.picard_addreplace_readgroups(
+                        tmpFile, bamFile,rgID, args.rgLB, args.rgPL, args.rgPU, rgSM, args.picard)
                     
                     # Clean up tmp file
                     os.remove(tmpFile)
@@ -1208,7 +688,7 @@ def main():
     # Index BAMs
     for bamFile in subsetBamFiles:
         if not os.path.exists(f"{bamFile}.bai"):
-            samtools_index_bam(bamFile, args.samtools)
+            ZS_BAMIO.StandardProgramRunners.samtools_index_bam(bamFile, args.samtools)
         else:
             print(f"Indexed BAM file '{outputFile}' already exists; skipping.")
     
@@ -1216,7 +696,8 @@ def main():
     mpileupFileName = os.path.join(args.outputDirectory, "bcftools.mpileup")
     if not os.path.exists(mpileupFileName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "mpileup_was_successful.flag")):
-            bcftools_mpileup(subsetBamFiles, args.fastaFile, mpileupFileName, args.bcftools, samtoolsRegions)
+            ZS_VCFIO.StandardProgramRunners.bcftools_mpileup(subsetBamFiles, args.fastaFile,
+                                                             mpileupFileName, args.bcftools, samtoolsRegions)
             open(os.path.join(args.outputDirectory, "mpileup_was_successful.flag"), "w").close()
     else:
         print(f"bcftools mpileup file has already been generated; skipping.")
@@ -1225,7 +706,7 @@ def main():
     vcfFileName = os.path.join(args.outputDirectory, "bcftools.vcf.gz")
     if not os.path.exists(vcfFileName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "call_was_successful.flag")):
-            bcftools_call(mpileupFileName, vcfFileName, args.bcftools)
+            ZS_VCFIO.StandardProgramRunners.bcftools_call(mpileupFileName, vcfFileName, args.bcftools)
             open(os.path.join(args.outputDirectory, "call_was_successful.flag"), "w").close()
     else:
         print(f"bcftools call file has already been generated; skipping.")
@@ -1234,7 +715,8 @@ def main():
     multialleleFileName = os.path.join(args.outputDirectory, "bcftools.multiallele.norm.vcf.gz")
     if not os.path.exists(vcfFileName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "norm_multiallele_was_successful.flag")):            
-            bcftools_norm_multiallelics(vcfFileName, multialleleFileName, args.bcftools)
+            ZS_VCFIO.StandardProgramRunners.bcftools_norm_multiallelics(vcfFileName, multialleleFileName,
+                                                                        args.bcftools)
             open(os.path.join(args.outputDirectory, "norm_multiallele_was_successful.flag"), "w").close()
     else:
         print(f"bcftools norm -m file has already been generated; skipping.")
@@ -1243,7 +725,8 @@ def main():
     finalVcfFileName = os.path.join(args.outputDirectory, "bcftools.final.vcf.gz")
     if not os.path.exists(vcfFileName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "finalise_variants_was_successful.flag")):            
-            bcftools_norm_leftalign(multialleleFileName, args.fastaFile, finalVcfFileName, args.bcftools)
+            ZS_VCFIO.StandardProgramRunners.bcftools_norm_leftalign(multialleleFileName, args.fastaFile,
+                                                                    finalVcfFileName, args.bcftools)
             open(os.path.join(args.outputDirectory, "finalise_variants_was_successful.flag"), "w").close()
     else:
         print(f"bcftools norm -f file has already been generated; skipping.")
@@ -1255,7 +738,8 @@ def main():
     phasedFileName = os.path.join(args.outputDirectory, "whatshap.phase.vcf")
     if (not os.path.exists(phasedFileName) and not os.path.exists(compressedWhatsHapName)) and not \
         os.path.exists(os.path.join(args.outputDirectory, "phase_was_successful.flag")):
-            whatshap_phase(finalVcfFileName, args.fastaFile, subsetBamFiles, phasedFileName, args.whatshap)
+            ZS_VCFIO.StandardProgramRunners.whatshap_phase(finalVcfFileName, args.fastaFile,
+                                                           subsetBamFiles, phasedFileName, args.whatshap)
             open(os.path.join(args.outputDirectory, "phase_was_successful.flag"), "w").close()
     else:
         print(f"whatshap phase file has already been generated; skipping.")
@@ -1264,7 +748,8 @@ def main():
     polyFileName = os.path.join(args.outputDirectory, "whatshap.poly.vcf")
     if (not os.path.exists(polyFileName) and not os.path.exists(compressedWhatsHapName)) and not \
         os.path.exists(os.path.join(args.outputDirectory, "poly_was_successful.flag")):
-            whatshap_polyphase(finalVcfFileName, args.fastaFile, subsetBamFiles, polyFileName, args.whatshap)
+            ZS_VCFIO.StandardProgramRunners.whatshap_polyphase(finalVcfFileName, args.fastaFile,
+                                                               subsetBamFiles, polyFileName, args.whatshap)
             open(os.path.join(args.outputDirectory, "poly_was_successful.flag"), "w").close()
     else:
         print(f"whatshap polyphase file has already been generated; skipping.")
@@ -1283,7 +768,7 @@ def main():
     # Compress the phased VCF
     if not os.path.exists(compressedWhatsHapName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "compression_was_successful.flag")):
-            bgzip_file(mergedWhatsHapName, args.bgzip)
+            ZS_VCFIO.StandardProgramRunners.bgzip_file(mergedWhatsHapName, args.bgzip)
             open(os.path.join(args.outputDirectory, "compression_was_successful.flag"), "w").close()
     else:
         print(f"whatshap VCF has already been compressed; skipping.")
@@ -1292,7 +777,7 @@ def main():
     compressedIndexName = f"{compressedWhatsHapName}.tbi"
     if not os.path.exists(compressedIndexName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "tabix_was_successful.flag")):
-            tabix_file(compressedWhatsHapName, args.tabix)
+            ZS_VCFIO.StandardProgramRunners.tabix_file(compressedWhatsHapName, args.tabix)
             open(os.path.join(args.outputDirectory, "tabix_was_successful.flag"), "w").close()
     else:
         print(f"whatshap VCF has already been tabix indexed; skipping.")
@@ -1370,7 +855,8 @@ def main():
                             }
                             
                             # Extract variants within exon regions, and modify positions to be relative to the exon
-                            sampleSNPs = localise_vcf_snps_to_feature(mrnaFeature, sampleSNPs, featureType="exon")
+                            sampleSNPs = ZS_VCFIO.SNPStatics.localise_vcf_snps_to_feature(
+                                mrnaFeature, sampleSNPs, featureType="exon")
                             
                             # Get the ordered SNP positions
                             orderedPositions = list(sampleSNPs.keys())
@@ -1426,8 +912,8 @@ def main():
                             ][0]
                             
                             # Get the edited sequence
-                            haplotypeSequence = edit_reference_to_haplotype_sequence(exon_FastASeq_obj.seq[:], 
-                                                    haplotypeExemplar, mrnaFeature.strand)
+                            haplotypeSequence = ZS_VCFIO.SNPStatics.edit_reference_to_haplotype_sequence(
+                                exon_FastASeq_obj.seq[:], haplotypeExemplar, mrnaFeature.strand)
                             haplotypeSequences[haplotypeCode] = haplotypeSequence
                         
                         # Write haplotype sequences to file

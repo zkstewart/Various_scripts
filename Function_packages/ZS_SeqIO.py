@@ -3,14 +3,46 @@
 # Contains various Classes to perform manipulations involving
 # FASTA sequences and MSAs.
 
-import os, inspect, sys, time, random, re, math
+import os, inspect, sys, time, random, re, math, subprocess
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
 from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from ZS_Utility import tmp_file_name_gen
+import ZS_Utility
 from hashlib import sha256
+
+class StandardProgramRunners:
+    '''
+    A class of static methods to help with running standard programs
+    involved in FASTA creation or editing.
+    '''
+    @staticmethod
+    def samtools_faidx(fastaFile, samtoolsPath):
+        '''
+        Parameters:
+            fastaFile -- a string indicating the location of the FASTA file to index
+            samtoolsPath -- a string indicating the location of the samtools executable
+        '''
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(samtoolsPath)
+        cmd += [
+            "faidx",
+            ZS_Utility.convert_to_wsl_if_not_unix(fastaFile)
+        ]
+        
+        # Run the command
+        run_samtools_index = subprocess.Popen(cmd, shell = True,
+                                            stdout = subprocess.PIPE,
+                                            stderr = subprocess.PIPE)
+        indexout, indexerr = run_samtools_index.communicate()
+        if indexout.decode("utf-8") != "" and indexerr.decode("utf-8") == "":
+            print("WARNING: samtools_faidx may have encountered an error, since the stdout is not empty as expected. " +
+                f'Please check the stdout for more information ({indexout.decode("utf-8")})')
+        elif indexerr.decode("utf-8") != "":
+            raise Exception(("ERROR: samtools_faidx encountered an error; have a look " +
+                            f'at the stdout ({indexout.decode("utf-8")}) and stderr ' + 
+                            f'({indexerr.decode("utf-8")}) to make sense of this.'))
 
 class Conversion:
     '''
@@ -131,7 +163,7 @@ class Conversion:
         # If inObject is a ZS_SeqIO.FASTA, make it into a file
         isTemporary = False
         if hasattr(inObject, "isFASTA") and inObject.isFASTA is True:
-            tmpinObjectName = tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
+            tmpinObjectName = ZS_Utility.tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
             inObject.write(tmpinObjectName)
             
             inObject = tmpinObjectName # after this point, inObject will be a string indicating a FASTA file name
