@@ -367,36 +367,19 @@ class SNPStatics:
                     
                     # Handle splice site variants
                     refAllele = genotypeDict["ref_alt"][0]
-                    skipThisPos = False
                     if (pos + len(refAllele) - 1) > childFeature.end:
-                        # Modify the ref allele to be contained within the exon
+                        # Modify the ref and alt alleles to be contained within the exon
                         allowedAlleleLength = childFeature.end - pos + 1
                         newRefAllele = refAllele[0:allowedAlleleLength]
-                        # Modify alt allele(s)
+                        newGTAllele = [allele[0:allowedAlleleLength] for allele in genotypeDict["GT"]]
                         newAltAlleles = [allele[0:allowedAlleleLength] for allele in genotypeDict["ref_alt"][1:]]
-                        # If an alt allele is identical to our reference, eliminate it now
-                        deleteIndices = []
-                        for x in range(len(newAltAlleles)):
-                            if newAltAlleles[x] == newRefAllele:
-                                deleteIndices.append(x)
-                                for sampleID, genotype in genotypeDict.items():
-                                    if sampleID != "ref_alt":
-                                        for z in range(len(genotype)):
-                                            if genotype[z] == x+1: # x+1 gives the index of our alt allele in ["ref_alt"]
-                                                genotype[z] = 0 # set it to the ref allele index
-                                        genotypeDict[sampleID] = genotype
-                        for index in deleteIndices[::-1]:
-                            del newAltAlleles[index] # remove it from our alt alleles values
-                        # If we no longer have any variants contained within the CDS region, eliminate this variant position
-                        if newAltAlleles == []:
-                            skipThisPos = True
-                        # Otherwise, update the ref_alt allele in our dictionary
-                        else:
-                            genotypeDict["ref_alt"] = [newRefAllele, *newAltAlleles]
+                        
+                        # Update values in our dict
+                        genotypeDict["ref_alt"] = [newRefAllele, *newAltAlleles]
+                        genotypeDict["GT"] = newGTAllele
                     
-                    # Handle normal scenarios / index the modified alleles if relevant
-                    if skipThisPos is False:
-                        newSnpDict[newPos] = genotypeDict
+                    # Index the alleles (after any modifications that may have occurred)
+                    newSnpDict[newPos] = genotypeDict
             ongoingCount += childFeature.end - childFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
         return newSnpDict
     
@@ -905,9 +888,18 @@ class PhasedVCF:
                     # Store sample details if appropriate
                     for i in range(len(self.samples)):
                         sampleDetailsDict = { _format:_value for _format,_value in zip(formatList, sl[9+i].split(":")) }
+                        
+                        # Impute blank GT
+                        "Blanks might be deletions, but for simplicity we'll assume it's simply a data quality issue"
+                        if "." in sampleDetailsDict["GT"]:
+                            sampleDetailsDict["GT"] = "0/0"
+                        
+                        # Determine if the call is phased
                         sampleDetailsDict["phased"] = True if \
                             ("|" in sampleDetailsDict["GT"] or len(set(sampleDetailsDict["GT"].split("/"))) == 1) \
                             else False
+                        
+                        # Store genotype as alleles rather than integers
                         sampleDetailsDict["ref_alt"] = ref_alt
                         sampleDetailsDict["GT"] = [ ref_alt[int(x)] for x in sampleDetailsDict["GT"].replace("|", "/").split("/") ]
                         
