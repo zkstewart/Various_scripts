@@ -322,7 +322,10 @@ def find_proximal_snps(pos, chrom, sample, phaseDict, polyDict, contigPositions,
         nextPoly -- a string indicating the polyphase GT of the SNP after the given position
     '''
     boundariesList = psBoundaries[chrom][sample]
-    psStart, psEnd = [ x for x in boundariesList if pos >= x[0] and pos <= x[1] ][0]
+    try:
+        psStart, psEnd = [ x for x in boundariesList if pos >= x[0] and pos <= x[1] ][0]
+    except:
+        return None, None, None, None
     
     psPositions = get_positions_from_list(contigPositions[chrom], psStart, psEnd)
     currentPosIndex = psPositions.index(pos)
@@ -736,7 +739,7 @@ def main():
     compressedWhatsHapName = f"{mergedWhatsHapName}.gz"
     
     phasedFileName = os.path.join(args.outputDirectory, "whatshap.phase.vcf")
-    if (not os.path.exists(phasedFileName) and not os.path.exists(compressedWhatsHapName)) and not \
+    if (not os.path.exists(phasedFileName) and not os.path.exists(compressedWhatsHapName)) or not \
         os.path.exists(os.path.join(args.outputDirectory, "phase_was_successful.flag")):
             ZS_VCFIO.StandardProgramRunners.whatshap_phase(finalVcfFileName, args.fastaFile,
                                                            subsetBamFiles, phasedFileName, args.whatshap)
@@ -746,7 +749,7 @@ def main():
     
     # Run WhatsHap polyphase
     polyFileName = os.path.join(args.outputDirectory, "whatshap.poly.vcf")
-    if (not os.path.exists(polyFileName) and not os.path.exists(compressedWhatsHapName)) and not \
+    if (not os.path.exists(polyFileName) and not os.path.exists(compressedWhatsHapName)) or not \
         os.path.exists(os.path.join(args.outputDirectory, "poly_was_successful.flag")):
             ZS_VCFIO.StandardProgramRunners.whatshap_polyphase(finalVcfFileName, args.fastaFile,
                                                                subsetBamFiles, polyFileName, args.whatshap)
@@ -755,7 +758,7 @@ def main():
         print(f"whatshap polyphase file has already been generated; skipping.")
     
     # Merge phase and polyphase files
-    if (not os.path.exists(mergedWhatsHapName) and not os.path.exists(compressedWhatsHapName)) and not \
+    if (not os.path.exists(mergedWhatsHapName) and not os.path.exists(compressedWhatsHapName)) or not \
         os.path.exists(os.path.join(args.outputDirectory, "merge_was_successful.flag")):
             phaseDict = parse_whatshap_for_merge(phasedFileName)
             polyDict = parse_whatshap_for_merge(polyFileName)
