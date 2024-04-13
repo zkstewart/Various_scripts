@@ -576,6 +576,13 @@ def main():
                    if it is not discoverable in the path""",
                    default=None)
     # Opts (behavioural)
+    p.add_argument("--featureType", dest="featureType",
+                   required=False,
+                   choices=["exon", "CDS"],
+                   help="""Optionally, specify whether you wish for exon (i.e.,
+                   mRNA transcript) or CDS to be extracted for haplotyping;
+                   default == CDS""",
+                   default="CDS")
     p.add_argument("--plusMinus", dest="plusMinus",
                    type=int,
                    required=False,
@@ -823,14 +830,17 @@ def main():
                         logOut.write("{0}\tno\t{1}\n".format(parentFeature.ID, "\t".join(["."] * len(phasedVCF_obj.samples) * 2)))
                         continue
                     
-                    # Get the exon regions for this gene
-                    exonCoords = [ exonFeature.coords for exonFeature in mrnaFeature.exon ]
+                    # Get the regions for this gene
+                    regionCoords = [
+                        childFeature.coords
+                        for childFeature in mrnaFeature.__dict__[args.featureType]
+                    ]
                     
                     # Find any SNPs located within this gene
                     positionsInGene = [
                         pos
                         for pos in phasedVCF_obj[parentFeature.contig]
-                        for start, end in exonCoords
+                        for start, end in regionCoords
                         if start <= pos <= end
                     ]
                     
@@ -842,8 +852,8 @@ def main():
                     # Start writing the FASTA file
                     with open(fastaFileName, "w") as fileOut:
                         # Get the mRNA feature sequence
-                        exon_FastASeq_obj, exon_featureType, exon_startingFrame = \
-                            gff3Obj.retrieve_sequence_from_FASTA(FASTA_obj, mrnaFeature.ID, "exon", skipComplement=True)
+                        child_FastASeq_obj, _, _ = gff3Obj.retrieve_sequence_from_FASTA(
+                            FASTA_obj, mrnaFeature.ID, args.featureType, skipComplement=True)
                         
                         # Iterate through samples and generate haplotype codes
                         sampleHaplotypes = {}
@@ -857,9 +867,10 @@ def main():
                                 for pos in positionsInGene
                             }
                             
-                            # Extract variants within exon regions, and modify positions to be relative to the exon
+                            # Extract variants within regions, and modify positions to be relative to the region
+                            "By region I mean CDS or exon, whatever args.featureType equals"
                             sampleSNPs = ZS_VCFIO.SNPStatics.localise_vcf_snps_to_feature(
-                                mrnaFeature, sampleSNPs, featureType="exon")
+                                mrnaFeature, sampleSNPs, featureType=args.featureType)
                             
                             # Get the ordered SNP positions
                             orderedPositions = list(sampleSNPs.keys())
@@ -916,7 +927,7 @@ def main():
                             
                             # Get the edited sequence
                             haplotypeSequence = ZS_VCFIO.SNPStatics.edit_reference_to_haplotype_sequence(
-                                exon_FastASeq_obj.seq[:], haplotypeExemplar, mrnaFeature.strand)
+                                child_FastASeq_obj.seq[:], haplotypeExemplar, mrnaFeature.strand)
                             haplotypeSequences[haplotypeCode] = haplotypeSequence
                         
                         # Write haplotype sequences to file
