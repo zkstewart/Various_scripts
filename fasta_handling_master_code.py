@@ -55,6 +55,21 @@ def reversecomplement2multi(fastaFile, multilineLength, outputFileName):
                         sequence = '\n'.join([sequence[i:i+multilineLength] for i in range(0, len(sequence), multilineLength)])
                         fastaOut.write('>' + record.description + '\n' + sequence + '\n')
 
+def explodeintocontigs(fastaFile, outputDirectory):
+        # Load fasta file
+        records = SeqIO.parse(open(fastaFile, 'r'), 'fasta')
+        # Create output directory
+        if not os.path.exists(outputDirectory):
+                print(f"explodeintocontigs is creating output directory '{outputDirectory}'...")
+                os.makedirs(outputDirectory, exist_ok=True)
+        # Perform function
+        for record in records:
+                outputFileName = os.path.join(outputDirectory, record.id + ".fasta")
+                if os.path.exists(outputFileName):
+                        raise FileExistsError('File ' + outputFileName + ' already exists. Please remove it and try again.')
+                with open(outputFileName, 'w') as fastaOut:
+                        fastaOut.write('>' + record.description + '\n' + str(record.seq) + '\n')
+
 ## Fastq ONLY functions
 def q_to_a(fastqFile, outputFileName):
         # Set up
@@ -813,6 +828,11 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 The _gc_ function requires no special input. This function will produce
                 and output text file listing the GC percentage of each sequence.
                 '''
+                explodeintocontigs = '''
+                The _explodeintocontigs_ function requires no special input. This function
+                will produce one output fasta file for each contig, with the output file name
+                being the sequence ID. The output value for this function will specify a directory.
+                '''
                 ## Number input
                 multi2single = '''
                 The _multi2single_ function requires no special input. The output is 
@@ -1000,7 +1020,7 @@ def main():
         # Function list - update as new ones are added
         stringFunctions = ['rename', 'listrename', 'appendrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
         numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi']
-        basicFunctions = ['ids', 'descriptions', 'lengths', 'lengths_tsv', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc']
+        basicFunctions = ['ids', 'descriptions', 'lengths', 'lengths_tsv', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc', 'explodeintocontigs']
         functionList = stringFunctions + numberFunctions + basicFunctions
         
         ##### USER INPUT SECTION
@@ -1089,6 +1109,8 @@ def main():
                 striphyphens(args.fastaFileName, args.outputFileName)
         if args.function == 'gc':
                 gc(args.fastaFileName, args.outputFileName)
+        if args.function == 'explodeintocontigs':
+                explodeintocontigs(args.fastaFileName, args.outputFileName)
         print('Program completed successfully!')
 
 if __name__ == '__main__':
