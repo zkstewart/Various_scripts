@@ -8,7 +8,7 @@ import bamnostic as bs
 import numpy as np
 import pandas as pd
 
-from ZS_SeqIO import FASTA
+import ZS_SeqIO
 import ZS_Utility
 
 class StandardProgramRunners:
@@ -431,7 +431,8 @@ class BAM(bs.AlignmentFile):
         for contig, coverage in self.coverage.items():
             # Figure out the histogram bin boundaries
             contigLength = len(coverage)
-            binBoundaries = FASTA.get_chunking_points(contigLength, numBins, isNumOfChunks=True) + [contigLength]
+            binBoundaries = ZS_SeqIO.FASTA.get_chunking_points(contigLength, numBins,
+                                                               isNumOfChunks=True) + [contigLength]
             
             # Summarise coverage per bin
             self.coverage_histogram[contig] = np.zeros(len(binBoundaries))
