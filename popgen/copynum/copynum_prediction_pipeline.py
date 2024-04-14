@@ -7,7 +7,7 @@
 import os, argparse, sys
 from Bio import SeqIO
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find GFF3IO
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find Function_packages
 from Function_packages import ZS_Utility, ZS_BAMIO
 
 # Define functions
@@ -170,7 +170,7 @@ def freec_bam_reheader(renameTSVFileName, bamFile, outputFile, samtoolsPath, pic
     
     # Obtain the current header for the BAM file
     tmpHeaderFile = ZS_Utility.tmp_file_name_gen("freec_bam_reheader_tmp", ".raw.sam")
-    ZS_BAMIO.samtools_view_header(bamFile, tmpHeaderFile, samtoolsPath)
+    ZS_BAMIO.StandardProgramRunners.samtools_view_header(bamFile, tmpHeaderFile, samtoolsPath)
     
     # Modify the header to reflect the new sequence IDs
     tmpRenamedFile = ZS_Utility.tmp_file_name_gen("freec_bam_reheader_tmp", ".renamed.sam")
@@ -188,7 +188,7 @@ def freec_bam_reheader(renameTSVFileName, bamFile, outputFile, samtoolsPath, pic
     os.remove(tmpHeaderFile)
     
     # Reheader the BAM file
-    ZS_BAMIO.picard_ReplaceSamHeader(bamFile, tmpRenamedFile, outputFile, picardPath)
+    ZS_BAMIO.StandardProgramRunners.picard_ReplaceSamHeader(bamFile, tmpRenamedFile, outputFile, picardPath)
     
     # Clean up second temporary file
     os.remove(tmpRenamedFile)
