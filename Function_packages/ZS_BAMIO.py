@@ -135,6 +135,75 @@ class StandardProgramRunners:
             raise Exception(("ERROR: picard_addreplace_readgroups has probably encountered an error; have a look " +
                             f'at the stdout ({addreplaceout.decode("utf-8")}) and stderr ' + 
                             f'({addreplaceerr.decode("utf-8")}) to make sense of this.'))
+    
+    def samtools_view_header(bamFile, outputFile, samtoolsPath):
+        '''
+        Parameters:
+            bamFile -- a string indicating the location of the BAM file to grab header from
+            outputFile -- a string indicating the location to write the BAM header to
+            samtoolsPath -- a string indicating the location of the samtools executable
+        '''
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(samtoolsPath)
+        cmd += [
+            "view", "-H",
+            ZS_Utility.convert_to_wsl_if_not_unix(bamFile),
+            "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile)
+        ]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_samtools_headerview = subprocess.Popen(cmd, shell = True,
+                                                   stdout = subprocess.PIPE,
+                                                   stderr = subprocess.PIPE)
+        headerout, headererr = run_samtools_headerview.communicate()
+        if headerout.decode("utf-8") != "" and headererr.decode("utf-8") == "":
+            print("WARNING: samtools_view_header may have encountered an error, since the stdout is not empty as expected. " +
+                f'Please check the stdout for more information ({headerout.decode("utf-8")})')
+        elif headererr.decode("utf-8") != "":
+            raise Exception(("ERROR: samtools_view_header encountered an error; have a look " +
+                            f'at the stdout ({headerout.decode("utf-8")}) and stderr ' + 
+                            f'({headererr.decode("utf-8")}) to make sense of this.'))
+
+    def picard_ReplaceSamHeader(bamFile, samFileWithHeader, outputFile, picardPath):
+        '''
+        Parameters:
+            bamFile -- a string indicating the location of the BAM file to grab header from
+            samFileWithHeader -- a string indicating the location of the SAM file with the new header
+            outputFile -- a string indicating the location to write the BAM header to
+            picardPath -- a string indicating the location of the picard executable
+        '''
+        # Construct the cmd for subprocess
+        if platform.system() == "Windows":
+            cmd = ZS_Utility.base_subprocess_cmd("bash") # necessary for executable-ised picard
+            cmd.append(ZS_Utility.convert_to_wsl_if_not_unix(picardPath))
+        else:
+            cmd = ZS_Utility.base_subprocess_cmd(picardPath)
+        
+        cmd += [
+            "ReplaceSamHeader",
+            "I=" + ZS_Utility.convert_to_wsl_if_not_unix(bamFile),
+            "HEADER=" + ZS_Utility.convert_to_wsl_if_not_unix(samFileWithHeader),
+            "O=" + ZS_Utility.convert_to_wsl_if_not_unix(outputFile)
+        ]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_picard_reheader = subprocess.Popen(cmd, shell = True,
+                                               stdout = subprocess.PIPE,
+                                               stderr = subprocess.PIPE)
+        reheaderout, reheadererr = run_picard_reheader.communicate()
+        if reheaderout.decode("utf-8") != "" and reheadererr.decode("utf-8") == "":
+            print("WARNING: picard_ReplaceSamHeader may have encountered an error, since the stdout is not empty as expected. " +
+                f'Please check the stdout for more information ({reheaderout.decode("utf-8")})')
+        elif reheadererr.decode("utf-8") != "":
+            raise Exception(("ERROR: picard_ReplaceSamHeader encountered an error; have a look " +
+                            f'at the stdout ({reheaderout.decode("utf-8")}) and stderr ' + 
+                            f'({reheadererr.decode("utf-8")}) to make sense of this.'))
 
 class BAM(bs.AlignmentFile):
     def __init__(self, file_location):
