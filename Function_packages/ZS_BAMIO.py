@@ -3,11 +3,12 @@
 # Implemented as a bamnostic.AlignmentFile Class with extra
 # functions added for my own purposes.
 
-import os, pickle, subprocess, platform
+import os, pickle, subprocess, platform, sys
 import bamnostic as bs
 import numpy as np
 import pandas as pd
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_SeqIO
 import ZS_Utility
 
