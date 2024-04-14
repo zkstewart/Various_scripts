@@ -289,7 +289,8 @@ def main():
     
     # Reheader BAM files with new sequence IDs
     bamReheaderDir = os.path.join(args.outputDirectory, "bam_reheader")
-    os.makedirs(explosionDir, exist_ok=True)
+    os.makedirs(bamReheaderDir, exist_ok=True)
+    
     if not os.path.exists(os.path.join(args.outputDirectory, "reheader_was_successful.flag")):
         # Locate BAM files
         bamFiles = [
