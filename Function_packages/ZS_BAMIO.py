@@ -201,7 +201,7 @@ class StandardProgramRunners:
         if reheaderout.decode("utf-8") != "" and reheadererr.decode("utf-8") == "":
             print("WARNING: picard_ReplaceSamHeader may have encountered an error, since the stdout is not empty as expected. " +
                 f'Please check the stdout for more information ({reheaderout.decode("utf-8")})')
-        elif reheadererr.decode("utf-8") != "":
+        elif " done." not in reheadererr.decode("utf-8"):
             raise Exception(("ERROR: picard_ReplaceSamHeader encountered an error; have a look " +
                             f'at the stdout ({reheaderout.decode("utf-8")}) and stderr ' + 
                             f'({reheadererr.decode("utf-8")}) to make sense of this.'))
