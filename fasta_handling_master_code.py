@@ -969,7 +969,9 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
         if args.outputFileName == None:
                 print('-o argument must be provided, fix your inputs and try again.')
                 quit()
+        
         exclusions = ["explodeintocontigs"] # for these functions we don't want to alter the output file name
+        listOutName = None
         if not args.function in exclusions:
                 outPrefix = args.outputFileName.rsplit('.', maxsplit=1)
                 if len(outPrefix) == 1: # This probably means the user specified a prefix only; in this case we can get the suffix from the input file
