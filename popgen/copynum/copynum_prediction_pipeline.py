@@ -169,11 +169,13 @@ def freec_bam_reheader(renameTSVFileName, bamFile, outputFile, samtoolsPath, pic
     renameDict = parse_rename_tsv(renameTSVFileName)
     
     # Obtain the current header for the BAM file
-    tmpHeaderFile = ZS_Utility.tmp_file_name_gen("freec_bam_reheader_tmp", ".raw.sam")
+    tmpHeaderFile = ZS_Utility.tmp_file_name_gen(
+        os.path.join(os.getcwd(), "freec_bam_reheader_tmp"), "raw.sam")
     ZS_BAMIO.StandardProgramRunners.samtools_view_header(bamFile, tmpHeaderFile, samtoolsPath)
     
     # Modify the header to reflect the new sequence IDs
-    tmpRenamedFile = ZS_Utility.tmp_file_name_gen("freec_bam_reheader_tmp", ".renamed.sam")
+    tmpRenamedFile = ZS_Utility.tmp_file_name_gen(
+        os.path.join(os.getcwd(), "freec_bam_reheader_tmp"), "renamed.sam")
     with open(tmpHeaderFile, "r") as headerIn, open(tmpRenamedFile, "w") as headerOut:
         for line in headerIn:
             if line.startswith("@SQ"):
