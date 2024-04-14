@@ -969,28 +969,30 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
         if args.outputFileName == None:
                 print('-o argument must be provided, fix your inputs and try again.')
                 quit()
-        outPrefix = args.outputFileName.rsplit('.', maxsplit=1)
-        if len(outPrefix) == 1: # This probably means the user specified a prefix only; in this case we can get the suffix from the input file
-                outSuffix = args.fastaFileName.rsplit('.', maxsplit=1)[-1]
-                args.outputFileName += '.' + outSuffix
-                outPrefix.append(outSuffix)
-        listOutName = outPrefix[0] + '.list'
-        if os.path.isfile(args.outputFileName):
-                print(args.outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
-                quit()
-        if os.path.isfile(listOutName):
-                print(listOutName + ' already exists. Delete/move/rename this file and run the program again.')
-                quit()
-        # Validate string inputs if relevant
-        if args.function in stringFunctions:
-                if args.string == None:
-                        print('You need to specify a string argument when running function \'' + args.function + '\'. Try again.')
+        exclusions = ["explodeintocontigs"] # for these functions we don't want to alter the output file name
+        if not args.function in exclusions:
+                outPrefix = args.outputFileName.rsplit('.', maxsplit=1)
+                if len(outPrefix) == 1: # This probably means the user specified a prefix only; in this case we can get the suffix from the input file
+                        outSuffix = args.fastaFileName.rsplit('.', maxsplit=1)[-1]
+                        args.outputFileName += '.' + outSuffix
+                        outPrefix.append(outSuffix)
+                listOutName = outPrefix[0] + '.list'
+                if os.path.isfile(args.outputFileName):
+                        print(args.outputFileName + ' already exists. Delete/move/rename this file and run the program again.')
                         quit()
-                # Special string-based functions
-                if args.function in ['listrename', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']:
-                        if not os.path.isfile(args.string):
-                                print('The specified string does not point to a file. Make sure you have typed this correctly or provided the full path and try again.')
+                if os.path.isfile(listOutName):
+                        print(listOutName + ' already exists. Delete/move/rename this file and run the program again.')
+                        quit()
+                # Validate string inputs if relevant
+                if args.function in stringFunctions:
+                        if args.string == None:
+                                print('You need to specify a string argument when running function \'' + args.function + '\'. Try again.')
                                 quit()
+                        # Special string-based functions
+                        if args.function in ['listrename', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']:
+                                if not os.path.isfile(args.string):
+                                        print('The specified string does not point to a file. Make sure you have typed this correctly or provided the full path and try again.')
+                                        quit()
         # Validate number inputs if relevant
         if args.function in numberFunctions:
                 if args.number == None:
