@@ -211,7 +211,7 @@ def generate_chr_len_file(explosionDir, outputFileName):
         seqID = fastaFile.rsplit(".", maxsplit=1)[0]
         seqNum = int(seqID.split("chr")[1])
         seqLen = len(record.seq)
-        chrLenList.append(seqNum, seqID, seqLen)
+        chrLenList.append([seqNum, seqID, seqLen])
     
     # Sort the list by sequence number
     chrLenList.sort(key=lambda x: x[0])
