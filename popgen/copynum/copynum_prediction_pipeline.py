@@ -221,8 +221,9 @@ def generate_chr_len_file(explosionDir, outputFileName):
         for seqNum, seqID, seqLen in chrLenList:
             chrLenOut.write(f"{seqNum}\t{seqID}\t{seqLen}\n")
 
-def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums, mateOrientation,
-                             outputDir, outputConfFile, cpus=1, sambambaPath=None):
+def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums,
+                             mateOrientation, outputDir, outputConfFile,
+                             cpus=1, controlBamFile=None, sambambaPath=None):
     '''
     Parameters:
         bamFile -- a string indicating the location of the BAM file to use
@@ -233,6 +234,12 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums, mate
         outputDir -- a string indicating the location to write the Control-FREEC output to
         outputConfFile -- a string indicating the location to write the Control-FREEC
                           configuration file to
+        cpus -- OPTIONAL; an integer indicating the number of CPUs to use for Control-FREEC
+                computations; default == 1
+        controlBamFile -- OPTIONAL; a string indicating the location of a control BAM file
+                          to use for Control-FREEC; default == None
+        sambambaPath -- OPTIONAL; a string indicating the location of the sambamba executable
+                        to use for Control-FREEC in lieu of samtools; default == None
     '''
     # Upgrade file locations to absolute paths with WSL formatting
     bamFile = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(bamFile))
@@ -260,6 +267,14 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums, mate
         confOut.write(f"mateFile={bamFile}\n")
         confOut.write(f"inputFormat=BAM\n")
         confOut.write(f"mateOrientation={mateOrientation}\n\n")
+        
+        # Write control settings (if relevant)
+        if controlBamFile is not None:
+            controlBamFile = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(controlBamFile))
+            confOut.write(f"[control]\n\n")
+            confOut.write(f"mateFile={controlBamFile}\n")
+            confOut.write(f"inputFormat=BAM\n")
+            confOut.write(f"mateOrientation={mateOrientation}\n\n")
 
 def freec_worked(outputDir, EXPECTED_SUFFIXES):
     return len(
@@ -338,6 +353,13 @@ def main():
                    if it is not discoverable in the path""",
                    default=None)
     # Opts (Control-FREEC)
+    p.add_argument("--controlSample", dest="controlSample",
+                   required=False,
+                   help="""Optionally, if you have a control BAM file e.g., reads
+                   from the reference genome species/variety, specify it here so as
+                   to configure Control-FREEC to use it as control; specify the file
+                   prefix prior to the --bamSuffix value!""",
+                   default=None)
     p.add_argument("--freecBamParser", dest="bamParser",
                    required=False,
                    help="""Optionally, specify the sambamba executable OR
@@ -430,6 +452,15 @@ def main():
         # Locate reheadered BAM files
         bamFiles = [ os.path.join(bamReheaderDir, file) for file in os.listdir(bamReheaderDir) ]
         
+        # Ensure the control BAM exists (if applicable)
+        if args.controlSample != None:
+            controlBamFile = os.path.join(bamReheaderDir, args.controlSample + args.bamSuffix)
+            if not os.path.exists(controlBamFile):
+                print(f"Control BAM file '{controlBamFile}' not found; program must end now.")
+                quit()
+        else:
+            controlBamFile = None
+        
         # Iterate through each BAM file
         for bamFile in bamFiles:
             bamBase = os.path.basename(bamFile).replace(args.bamSuffix, "")
@@ -438,7 +469,8 @@ def main():
             # Generate .conf file
             confFileName = os.path.join(freecBaseDir, bamBase + ".conf")
             generate_freec_conf_file(bamFile, explosionDir, chrLenFile, args.ploidy,
-                                     args.mateOrientation, workingDir, confFileName, cpus=args.cpus,
+                                     args.mateOrientation, workingDir, confFileName,
+                                     cpus=args.cpus, controlSample=controlBamFile,
                                      sambambaPath=None if "samtools" in args.bamParser else args.bamParser)
             
             # Run Control-FREEC
