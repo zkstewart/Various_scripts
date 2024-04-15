@@ -4,7 +4,7 @@
 # prediction of gene copy number variation in a set of BAM files
 # using a GFF3 file and a reference genome FASTA file.
 
-import os, argparse, sys
+import os, argparse, sys, platform, subprocess
 from Bio import SeqIO
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find Function_packages
@@ -195,6 +195,93 @@ def freec_bam_reheader(renameTSVFileName, bamFile, outputFile, samtoolsPath, pic
     # Clean up second temporary file
     os.remove(tmpRenamedFile)
 
+def generate_chr_len_file(explosionDir, outputFileName):
+    '''
+    Parameters:
+        explosionDir -- a string indicating the directory containing exploded contigs
+        outputFileName -- a string indicating the location to write the chrLen file to
+    '''
+    # Parse the FASTA files for sequence lengths
+    chrLenList = []
+    for fastaFile in os.listdir(explosionDir):
+        # Parse in a single record
+        record = SeqIO.read(os.path.join(explosionDir, fastaFile), "fasta")
+        
+        # Extract components for the chrLen file
+        seqID = fastaFile.rsplit(".", maxsplit=1)[0]
+        seqNum = int(seqID.split("chr")[1])
+        seqLen = len(record.seq)
+        chrLenList.append(seqNum, seqID, seqLen)
+    
+    # Sort the list by sequence number
+    chrLenList.sort(key=lambda x: x[0])
+    
+    # Write the chromosome length file
+    with open(outputFileName, "w") as chrLenOut:
+        for seqNum, seqID, seqLen in chrLenList:
+            chrLenOut.write(f"{seqNum}\t{seqID}\t{seqLen}\n")
+
+def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums, mateOrientation,
+                             outputDir, outputConfFile, cpus=1, sambambaPath=None):
+    '''
+    Parameters:
+        bamFile -- a string indicating the location of the BAM file to use
+        explosionDir -- a string indicating the location of the exploded FASTA files
+        chrLenFile -- a string indicating the location of the chromosome length file to use
+        ploidyNums -- a list of integers indicating the ploidy numbers to test for
+        mateOrientation -- a string indicating the mate orientation to use for Control-FREEC
+        outputDir -- a string indicating the location to write the Control-FREEC output to
+        outputConfFile -- a string indicating the location to write the Control-FREEC
+                          configuration file to
+    '''
+    # Generate the Control-FREEC configuration file
+    with open(outputConfFile, "w") as confOut:
+        # Write the general settings
+        confOut.write(f"[general]\n\n")
+        confOut.write(f"chrLenFile={chrLenFile}\n")
+        confOut.write("ploidy={0}\n".format(",".join(map(str, ploidyNums))))
+        confOut.write(f"chrFiles={explosionDir}\n")
+        confOut.write(f"outputDir={outputDir}\n\n") # linebreak for behavioural params
+        confOut.write(f"breakPointThreshold=.8\n")
+        confOut.write(f"window=50000\n\n") # linebreak for computational params
+        confOut.write(f"maxThreads={cpus}\n")
+        confOut.write(f"numberOfProcesses={cpus}\n")
+        if sambambaPath is not None:
+            confOut.write(f"sambamba={ZS_Utility.convert_to_wsl_if_not_unix(sambambaPath)}\n")
+        
+        # Write sample settings
+        confOut.write(f"mateFile={bamFile}\n")
+        confOut.write(f"inputFormat=BAM\n")
+        confOut.write(f"mateOrientation={mateOrientation}\n\n")
+
+def run_freec(confFile, freecPath):
+    '''
+    Parameters:
+        confFile -- a string indicating the location of the freec .conf file
+        freecPath -- a string indicating the location of the freec executable
+    '''
+    # Construct the cmd for subprocess
+    cmd = ZS_Utility.base_subprocess_cmd(freecPath)
+    cmd += [
+        "-conf", ZS_Utility.convert_to_wsl_if_not_unix(confFile)
+    ]
+    
+    if platform.system() != "Windows":
+        cmd = " ".join(cmd)
+    
+    # Run the command
+    run_freec = subprocess.Popen(cmd, shell = True,
+                                 stdout = subprocess.PIPE,
+                                 stderr = subprocess.PIPE)
+    freecout, freecerr = run_freec.communicate()
+    if freecout.decode("utf-8") != "" and freecerr.decode("utf-8") == "":
+        print("WARNING: run_freec may have encountered an error, since the stdout is not empty as expected. " +
+            f'Please check the stdout for more information ({freecout.decode("utf-8")})')
+    elif freecerr.decode("utf-8") != "":
+        raise Exception(("ERROR: run_freec encountered an error; have a look " +
+                        f'at the stdout ({freecout.decode("utf-8")}) and stderr ' + 
+                        f'({freecerr.decode("utf-8")}) to make sense of this.'))
+
 ## Main
 def main():
     # User input
@@ -307,6 +394,43 @@ def main():
         open(os.path.join(args.outputDirectory, "reheader_was_successful.flag"), "w").close()
     else:
         print(f"bam reheadering has already been performing; skipping.")
+    
+    # Generate chrLenFile for use with Control-FREEC
+    chrLenFile = os.path.join(args.outputDirectory, "chrLenFile.tsv")
+    if not os.path.exists(os.path.join(args.outputDirectory, "chrLen_was_successful.flag")) \
+        or not os.path.exists(chrLenFile):
+            generate_chr_len_file(explosionDir, chrLenFile)
+            open(os.path.join(args.outputDirectory, "chrLen_was_successful.flag"), "w").close()
+    else:
+        print(f"chrLenFile has already been generated; skipping.")
+    
+    # Run Control-FREEC for each BAM file
+    freecBaseDir = os.path.join(args.outputDirectory, "freec_output")
+    os.makedirs(freecBaseDir, exist_ok=True)
+    
+    if not os.path.exists(os.path.join(args.outputDirectory, "freec_was_successful.flag")):
+        # Locate reheadered BAM files
+        bamFiles = [ os.path.join(bamReheaderDir, file) for file in os.listdir(bamReheaderDir) ]
+        
+        # Iterate through each BAM file
+        for bamFile in bamFiles:
+            bamBase = os.path.basename(bamFile).replace(args.bamSuffix, "")
+            workingDir = os.path.join(freecBaseDir, bamBase)
+            
+            # Generate .conf file
+            confFileName = os.path.join(freecBaseDir, bamBase + ".conf")
+            generate_freec_conf_file(bamFile, explosionDir, chrLenFile, args.ploidy,
+                                     args.mateOrientation, workingDir, confFileName, cpus=args.cpus,
+                                     sambambaPath=None if "samtools" in args.bamParser else args.bamParser)
+            
+            # Run Control-FREEC
+            if not os.path.exists(workingDir): # this isn't a perfect check, but it works until I find a better one
+                os.makedirs(workingDir, exist_ok=True)
+                run_freec(confFileName, args.freec)
+        
+        open(os.path.join(args.outputDirectory, "freec_was_successful.flag"), "w").close()
+    else:
+        print(f"freec has already been performed; skipping.")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
