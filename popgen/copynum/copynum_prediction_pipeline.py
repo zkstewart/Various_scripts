@@ -234,6 +234,12 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums, mate
         outputConfFile -- a string indicating the location to write the Control-FREEC
                           configuration file to
     '''
+    # Upgrade file locations to absolute paths with WSL formatting
+    bamFile = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(bamFile))
+    explosionDir = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(explosionDir))
+    chrLenFile = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(chrLenFile))
+    outputDir = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(outputDir))
+    
     # Generate the Control-FREEC configuration file
     with open(outputConfFile, "w") as confOut:
         # Write the general settings
@@ -250,6 +256,7 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums, mate
             confOut.write(f"sambamba={ZS_Utility.convert_to_wsl_if_not_unix(sambambaPath)}\n")
         
         # Write sample settings
+        confOut.write(f"\n[sample]\n\n")
         confOut.write(f"mateFile={bamFile}\n")
         confOut.write(f"inputFormat=BAM\n")
         confOut.write(f"mateOrientation={mateOrientation}\n\n")
