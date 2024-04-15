@@ -262,6 +262,12 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums,
         if sambambaPath is not None:
             confOut.write(f"sambamba={ZS_Utility.convert_to_wsl_if_not_unix(sambambaPath)}\n")
         
+        # Write general settings contingent on control presence
+        if controlBamFile is not None:
+            confOut.write(f"\nintercept=0\n")
+            confOut.write(f"degree=1\n")
+            confOut.write(f"forceGCcontentNormalization=0\n")
+        
         # Write sample settings
         confOut.write(f"\n[sample]\n\n")
         confOut.write(f"mateFile={bamFile}\n")
