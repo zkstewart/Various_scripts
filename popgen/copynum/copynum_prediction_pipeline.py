@@ -470,7 +470,7 @@ def main():
             confFileName = os.path.join(freecBaseDir, bamBase + ".conf")
             generate_freec_conf_file(bamFile, explosionDir, chrLenFile, args.ploidy,
                                      args.mateOrientation, workingDir, confFileName,
-                                     cpus=args.cpus, controlSample=controlBamFile,
+                                     cpus=args.cpus, controlBamFile=controlBamFile,
                                      sambambaPath=None if "samtools" in args.bamParser else args.bamParser)
             
             # Run Control-FREEC
