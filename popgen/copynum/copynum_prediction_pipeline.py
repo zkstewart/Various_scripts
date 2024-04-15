@@ -261,11 +261,22 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums, mate
         confOut.write(f"inputFormat=BAM\n")
         confOut.write(f"mateOrientation={mateOrientation}\n\n")
 
-def run_freec(confFile, freecPath):
+def freec_worked(outputDir, EXPECTED_SUFFIXES):
+    return len(
+        [ f for f in os.listdir(outputDir) for s in EXPECTED_SUFFIXES if f.endswith(s) ]
+    ) == len(EXPECTED_SUFFIXES)
+
+def run_freec(confFile, outputDir, freecPath,
+              EXPECTED_SUFFIXES=["_CNVs", "_info.txt", "_ratio.txt", "_sample.cpn"]):
     '''
     Parameters:
         confFile -- a string indicating the location of the freec .conf file
+        outputDir -- a string indicating the location where freec will write
+                     outputs to; needed for validating if the program run successfully
         freecPath -- a string indicating the location of the freec executable
+        EXPECTED_SUFFIXES -- OPTIONAL; a list of strings indicating the suffixes
+                             of files that freec should output; used to check for
+                             successful program completion
     '''
     # Construct the cmd for subprocess
     cmd = ZS_Utility.base_subprocess_cmd(freecPath)
@@ -281,10 +292,9 @@ def run_freec(confFile, freecPath):
                                  stdout = subprocess.PIPE,
                                  stderr = subprocess.PIPE)
     freecout, freecerr = run_freec.communicate()
-    if freecout.decode("utf-8") != "" and freecerr.decode("utf-8") == "":
-        print("WARNING: run_freec may have encountered an error, since the stdout is not empty as expected. " +
-            f'Please check the stdout for more information ({freecout.decode("utf-8")})')
-    elif freecerr.decode("utf-8") != "":
+    
+    # Check file outputs to see if there was an error
+    if not freec_worked(outputDir, EXPECTED_SUFFIXES):
         raise Exception(("ERROR: run_freec encountered an error; have a look " +
                         f'at the stdout ({freecout.decode("utf-8")}) and stderr ' + 
                         f'({freecerr.decode("utf-8")}) to make sense of this.'))
@@ -412,6 +422,7 @@ def main():
         print(f"chrLenFile has already been generated; skipping.")
     
     # Run Control-FREEC for each BAM file
+    EXPECTED_SUFFIXES = ["_CNVs", "_info.txt", "_ratio.txt", "_sample.cpn"] # used for program resumption
     freecBaseDir = os.path.join(args.outputDirectory, "freec_output")
     os.makedirs(freecBaseDir, exist_ok=True)
     
@@ -431,13 +442,15 @@ def main():
                                      sambambaPath=None if "samtools" in args.bamParser else args.bamParser)
             
             # Run Control-FREEC
-            if not os.path.exists(workingDir): # this isn't a perfect check, but it works until I find a better one
+            if (not os.path.exists(workingDir)) or (not freec_worked(workingDir, EXPECTED_SUFFIXES)):
                 os.makedirs(workingDir, exist_ok=True)
-                run_freec(confFileName, args.freec)
+                run_freec(confFileName, workingDir, args.freec, EXPECTED_SUFFIXES)
+            else:
+                print(f"Control-FREEC has already been run for '{bamBase}'; skipping.")
         
         open(os.path.join(args.outputDirectory, "freec_was_successful.flag"), "w").close()
     else:
-        print(f"freec has already been performed; skipping.")
+        print(f"Control-FREEC has already been performed; skipping.")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
