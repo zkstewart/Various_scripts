@@ -69,15 +69,17 @@ def validate_args(args):
         os.makedirs(args.outputDirectory)
         print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
 
-def generate_atfile_file(pair, atFilesName):
+def generate_atfile_file(pair, fastqDir, atFilesName):
     '''
     Parameters:
         pair -- a list containing one or two strings indicating the location of the FASTQ file(s)
                 making up a pair
+        fastqDir -- a string indicating the location of the FASTQ files in the pair
         atFilesName -- a string indicating the location to write the @FILES file to
     '''
     with open(atFilesName, "w") as fileOut:
-        fileOut.write("\n".join(pair) + "\n")
+        for fastqFile in pair:
+            fileOut.write(os.path.join(fastqDir, fastqFile) + "\n")
 
 def run_kmc(atFilesName, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
     '''
@@ -360,7 +362,7 @@ def main():
     os.makedirs(kmcDir, exist_ok=True)
     
     kmcTmpDir = os.path.join(kmcDir, "tmp")
-    os.makedirs(kmcDir, exist_ok=True)
+    os.makedirs(kmcTmpDir, exist_ok=True)
     
     if not os.path.exists(os.path.join(args.outputDirectory, "kmc_was_successful.flag")):
         # Iterate through each FASTQ file pair
@@ -370,7 +372,7 @@ def main():
             # Write @FILES file for kmc
             atFilesName = os.path.join(kmcDir, samplePrefix + ".atfile")
             if not os.path.exists(atFilesName):
-                generate_atfile_file(pair, atFilesName)
+                generate_atfile_file(pair, fastqsDir, atFilesName)
             else:
                 print(f"@FILE generation has already been run for '{samplePrefix}'; skipping.")
             
