@@ -5,10 +5,9 @@
 # using a reference genome FASTA.
 
 import os, argparse, sys, platform, subprocess
-from Bio import SeqIO
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find Function_packages
-from Function_packages import ZS_Utility, ZS_BAMIO
+from Function_packages import ZS_Utility
 
 # Define functions
 def validate_args(args):
@@ -53,75 +52,6 @@ def validate_args(args):
     if not os.path.isdir(args.outputDirectory):
         os.makedirs(args.outputDirectory)
         print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
-
-def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums,
-                             mateOrientation, outputDir, outputConfFile, bamSuffix,
-                             cpus=1, controlBamFile=None, sambambaPath=None):
-    '''
-    Parameters:
-        bamFile -- a string indicating the location of the BAM file to use
-        explosionDir -- a string indicating the location of the exploded FASTA files
-        chrLenFile -- a string indicating the location of the chromosome length file to use
-        ploidyNums -- a list of integers indicating the ploidy numbers to test for
-        mateOrientation -- a string indicating the mate orientation to use for Control-FREEC
-        outputDir -- a string indicating the location to write the Control-FREEC output to
-        outputConfFile -- a string indicating the location to write the Control-FREEC
-                          configuration file to
-        bamSuffix -- a string indicating the suffix of the BAM files
-        cpus -- OPTIONAL; an integer indicating the number of CPUs to use for Control-FREEC
-                computations; default == 1
-        controlBamFile -- OPTIONAL; a string indicating the location of a control BAM file
-                          to use for Control-FREEC; default == None
-        sambambaPath -- OPTIONAL; a string indicating the location of the sambamba executable
-                        to use for Control-FREEC in lieu of samtools; default == None
-    '''
-    # Upgrade file locations to absolute paths with WSL formatting
-    bamFile = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(bamFile))
-    explosionDir = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(explosionDir))
-    chrLenFile = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(chrLenFile))
-    outputDir = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(outputDir))
-    
-    # Check if the control BAM (if applicable) is the same as the sample BAM
-    sampleIsControl = False
-    if controlBamFile != None:
-        controlBamPrefix = os.path.basename(controlBamFile).replace(bamSuffix, "")
-        sampleBamPrefix = os.path.basename(bamFile).replace(bamSuffix, "")
-        sampleIsControl = controlBamPrefix == sampleBamPrefix
-    
-    # Generate the Control-FREEC configuration file
-    with open(outputConfFile, "w") as confOut:
-        # Write the general settings
-        confOut.write(f"[general]\n\n")
-        confOut.write(f"chrLenFile={chrLenFile}\n")
-        confOut.write("ploidy={0}\n".format(",".join(map(str, ploidyNums))))
-        confOut.write(f"chrFiles={explosionDir}\n")
-        confOut.write(f"outputDir={outputDir}\n\n") # linebreak for behavioural params
-        confOut.write(f"breakPointThreshold=.8\n")
-        confOut.write(f"window=50000\n\n") # linebreak for computational params
-        confOut.write(f"maxThreads={cpus}\n")
-        confOut.write(f"numberOfProcesses={cpus}\n")
-        if sambambaPath is not None:
-            confOut.write(f"sambamba={ZS_Utility.convert_to_wsl_if_not_unix(sambambaPath)}\n")
-        
-        # Write general settings contingent on control presence
-        if (controlBamFile is not None) and (sampleIsControl is False):
-            confOut.write(f"\nintercept=0\n")
-            confOut.write(f"degree=1\n")
-            confOut.write(f"forceGCcontentNormalization=0\n")
-        
-        # Write sample settings
-        confOut.write(f"\n[sample]\n\n")
-        confOut.write(f"mateFile={bamFile}\n")
-        confOut.write(f"inputFormat=BAM\n")
-        confOut.write(f"mateOrientation={mateOrientation}\n\n")
-        
-        # Write control settings (if relevant)
-        if (controlBamFile is not None) and (sampleIsControl is False):
-            controlBamFile = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(controlBamFile))
-            confOut.write(f"[control]\n\n")
-            confOut.write(f"mateFile={controlBamFile}\n")
-            confOut.write(f"inputFormat=BAM\n")
-            confOut.write(f"mateOrientation={mateOrientation}\n\n")
 
 def run_nQuire_create(bamFile, outputBaseName, nQuirePath):
     '''
@@ -219,7 +149,6 @@ def parse_lrdmodel_file(lrdModelFile):
                 ploidyLikelihoodOrder.sort(key = lambda x: x[0])
                 
                 return [x[1] for x in ploidyLikelihoodOrder]
-                
 
 def tabulate_ploidy_estimates(lrdmodelDir, outputFileName):
     '''
