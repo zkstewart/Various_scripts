@@ -171,7 +171,7 @@ def run_smudgeplot_cutoff(kmcHistogramFile, cutoff, smudgeplotPath):
     smudgeout, smudgerr = run_smudge_cutoff.communicate()
     
     # Check file outputs to see if there was an error
-    if (smudgeout.decode("utf-8") == "") or (not smudgerr.decode("utf-8") == ""):
+    if (smudgeout.decode("utf-8") == "") or (not "Done!" in smudgerr.decode("utf-8")):
         raise Exception(("ERROR: run_smudgeplot_cutoff encountered an error; have a look " +
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
                         f'({smudgerr.decode("utf-8")}) to make sense of this.'))
