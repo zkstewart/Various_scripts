@@ -222,7 +222,7 @@ def generate_chr_len_file(explosionDir, outputFileName):
             chrLenOut.write(f"{seqNum}\t{seqID}\t{seqLen}\n")
 
 def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums,
-                             mateOrientation, outputDir, outputConfFile,
+                             mateOrientation, outputDir, outputConfFile, bamSuffix,
                              cpus=1, controlBamFile=None, sambambaPath=None):
     '''
     Parameters:
@@ -234,6 +234,7 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums,
         outputDir -- a string indicating the location to write the Control-FREEC output to
         outputConfFile -- a string indicating the location to write the Control-FREEC
                           configuration file to
+        bamSuffix -- a string indicating the suffix of the BAM files
         cpus -- OPTIONAL; an integer indicating the number of CPUs to use for Control-FREEC
                 computations; default == 1
         controlBamFile -- OPTIONAL; a string indicating the location of a control BAM file
@@ -246,6 +247,13 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums,
     explosionDir = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(explosionDir))
     chrLenFile = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(chrLenFile))
     outputDir = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(outputDir))
+    
+    # Check if the control BAM (if applicable) is the same as the sample BAM
+    sampleIsControl = False
+    if controlBamFile != None:
+        controlBamPrefix = os.path.basename(controlBamFile).replace(bamSuffix, "")
+        sampleBamPrefix = os.path.basename(bamFile).replace(bamSuffix, "")
+        sampleIsControl = controlBamPrefix == sampleBamPrefix
     
     # Generate the Control-FREEC configuration file
     with open(outputConfFile, "w") as confOut:
@@ -263,7 +271,7 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums,
             confOut.write(f"sambamba={ZS_Utility.convert_to_wsl_if_not_unix(sambambaPath)}\n")
         
         # Write general settings contingent on control presence
-        if controlBamFile is not None:
+        if (controlBamFile is not None) and (sampleIsControl is False):
             confOut.write(f"\nintercept=0\n")
             confOut.write(f"degree=1\n")
             confOut.write(f"forceGCcontentNormalization=0\n")
@@ -275,7 +283,7 @@ def generate_freec_conf_file(bamFile, explosionDir, chrLenFile, ploidyNums,
         confOut.write(f"mateOrientation={mateOrientation}\n\n")
         
         # Write control settings (if relevant)
-        if controlBamFile is not None:
+        if (controlBamFile is not None) and (sampleIsControl is False):
             controlBamFile = ZS_Utility.convert_to_wsl_if_not_unix(os.path.abspath(controlBamFile))
             confOut.write(f"[control]\n\n")
             confOut.write(f"mateFile={controlBamFile}\n")
@@ -319,6 +327,72 @@ def run_freec(confFile, outputDir, freecPath,
         raise Exception(("ERROR: run_freec encountered an error; have a look " +
                         f'at the stdout ({freecout.decode("utf-8")}) and stderr ' + 
                         f'({freecerr.decode("utf-8")}) to make sense of this.'))
+
+def parse_freec_info_file(infoFileName):
+    '''
+    Parameters:
+        infoFileName -- a string indicating the location of the Control-FREEC
+                        info file to parse.
+    Returns:
+        infoDict -- a dictionary with the parsed information from the info file
+                    where keys correspond to column 1, and values to column 2.
+    '''
+    infoDict = {}
+    with open(infoFileName, "r") as fileIn:
+        for line in fileIn:
+            sl = line.strip().split("\t")
+            infoDict[sl[0]] = sl[1]
+    return infoDict
+
+def tabulate_ploidy_estimates(freecBaseDir, outputFileName):
+    '''
+    Parameters:
+        freecBaseDir -- a string indicating the location where freec folders are
+                        located
+        outputFileName -- a string indicating the location to write the ploidy
+                          estimates to
+    '''
+    with open(outputFileName, "w") as fileOut:
+        # Write header line
+        fileOut.write("sample_id\tploidy\n")
+        
+        # Iterate through each sample folder
+        for freecOutputDir in os.listdir(freecBaseDir):
+            if not freecOutputDir.endswith(".conf"):
+                # Format the *_info.txt file path
+                infoFileName = os.path.join(freecBaseDir, freecOutputDir, freecOutputDir + "_info.txt")
+                
+                # Parse the Control-FREEC info file
+                infoDict = parse_freec_info_file(infoFileName)
+                
+                # Write to file
+                fileOut.write(f"{freecOutputDir}\t{infoDict['Output_Ploidy']}\n")
+
+def tabulate_copynum_estimates(freecBaseDir, outputFileName):
+    '''
+    Parameters:
+        freecBaseDir -- a string indicating the location where freec folders are
+                        located
+        outputFileName -- a string indicating the location to write the copy number
+                          estimates to
+    '''
+    raise NotImplementedError()
+    
+    with open(outputFileName, "w") as fileOut:
+        # Write header line
+        fileOut.write("sample_id\tploidy\n")
+        
+        # Iterate through each sample folder
+        for freecOutputDir in os.listdir(freecBaseDir):
+            if not freecOutputDir.endswith(".conf"):
+                # Format the *_info.txt file path
+                infoFileName = os.path.join(freecBaseDir, freecOutputDir, freecOutputDir + "_info.txt")
+                
+                # Parse the Control-FREEC info file
+                infoDict = parse_freec_info_file(infoFileName)
+                
+                # Write to file
+                fileOut.write(f"{freecOutputDir}\t{infoDict['Output_Ploidy']}\n")
 
 ## Main
 def main():
@@ -475,7 +549,7 @@ def main():
             # Generate .conf file
             confFileName = os.path.join(freecBaseDir, bamBase + ".conf")
             generate_freec_conf_file(bamFile, explosionDir, chrLenFile, args.ploidy,
-                                     args.mateOrientation, workingDir, confFileName,
+                                     args.mateOrientation, workingDir, confFileName, args.bamSuffix,
                                      cpus=args.cpus, controlBamFile=controlBamFile,
                                      sambambaPath=None if "samtools" in args.bamParser else args.bamParser)
             
@@ -489,6 +563,24 @@ def main():
         open(os.path.join(args.outputDirectory, "freec_was_successful.flag"), "w").close()
     else:
         print(f"Control-FREEC has already been performed; skipping.")
+    
+    # Tabulate sample ploidy results
+    ploidyTableFile = os.path.join(args.outputDirectory, "ploidy_estimates.tsv")
+    if not os.path.exists(ploidyTableFile) or not \
+        os.path.exists(os.path.join(args.outputDirectory, "ploidy_tabulation_was_successful.flag")):            
+            tabulate_ploidy_estimates(freecBaseDir, ploidyTableFile)
+            open(os.path.join(args.outputDirectory, "ploidy_tabulation_was_successful.flag"), "w").close()
+    else:
+        print(f"ploidy tabulation file has already been generated; skipping.")
+    
+    # Tabulate gene copy number results
+    copynumTableFile = os.path.join(args.outputDirectory, "gene_copy_numbers.tsv")
+    if not os.path.exists(copynumTableFile) or not \
+        os.path.exists(os.path.join(args.outputDirectory, "copynum_tabulation_was_successful.flag")):            
+            tabulate_copynum_estimates(freecBaseDir, copynumTableFile) # not implemented yet
+            open(os.path.join(args.outputDirectory, "copynum_tabulation_was_successful.flag"), "w").close()
+    else:
+        print(f"copy number table file has already been generated; skipping.")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
