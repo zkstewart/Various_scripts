@@ -1,8 +1,7 @@
 #! python3
 # smudgeplot_pipeline.py
 # Script to automatically run smudgeplot analysis for the
-# prediction of genome ploidy values in a set of BAM files
-# using a reference genome FASTA.
+# prediction of genome ploidy values in a set of FASTQ files.
 
 import os, argparse, sys, platform, subprocess
 
@@ -111,7 +110,7 @@ def run_kmc(atFilesName, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
     kmcout, kmcerr = run_kmc.communicate()
     
     # Check file outputs to see if there was an error
-    if (not kmcout.decode("utf-8") == "") or (not kmcerr.decode("utf-8") == ""):
+    if (not "Stats:" in kmcout.decode("utf-8")) and (not "100%" in kmcerr.decode("utf-8")):
         raise Exception(("ERROR: run_kmc encountered an error; have a look " +
                         f'at the stdout ({kmcout.decode("utf-8")}) and stderr ' + 
                         f'({kmcerr.decode("utf-8")}) to make sense of this.'))
