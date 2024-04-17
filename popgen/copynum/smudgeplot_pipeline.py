@@ -37,12 +37,12 @@ def validate_args(args):
     
     # Validate program discoverability
     if args.smudgeplot is None:
-        args.smudgeplot = ZS_Utility.wsl_which("smudgeplot")
+        args.smudgeplot = ZS_Utility.wsl_which("smudgeplot.py")
         if args.smudgeplot is None:
-            _not_specified_error("smudgeplot")
+            _not_specified_error("smudgeplot.py")
     else:
         if not os.path.isfile(args.smudgeplot):
-            _not_found_error("smudgeplot", args.smudgeplot)
+            _not_found_error("smudgeplot.py", args.smudgeplot)
     
     if args.kmc is None:
         args.kmc = ZS_Utility.wsl_which("kmc")
