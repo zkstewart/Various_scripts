@@ -93,7 +93,7 @@ def run_kmc(atFilesName, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
     # Construct the cmd for subprocess
     cmd = ZS_Utility.base_subprocess_cmd(kmcPath)
     cmd += [
-        "kmc", "-k21", f"-t{cpus}", f"-m{mem}", "-ci1", "-cs10000",
+        "-k21", f"-t{cpus}", f"-m{mem}", "-ci1", "-cs10000",
         "@" + ZS_Utility.convert_to_wsl_if_not_unix(atFilesName),
         ZS_Utility.convert_to_wsl_if_not_unix(kmcdbPrefix),
         ZS_Utility.convert_to_wsl_if_not_unix(tmpDir)
