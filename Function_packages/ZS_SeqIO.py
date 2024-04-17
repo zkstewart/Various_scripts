@@ -701,6 +701,45 @@ class FASTA:
         self.isFASTA = True
     
     @staticmethod
+    def get_rnaseq_files(readsDir, readsSuffix, isSingleEnd):
+        '''
+        This function is intended to help with locating FASTQ files in a directory and,
+        specifically, pairing paired-end reads up. It will return a list of forward
+        reads and a list of reverse reads. If the reads are single-end, the reverse
+        reads list will be None.
+        '''
+        # Locate files from the directory
+        forwardReads = []
+        reverseReads = []
+        for file in os.listdir(readsDir):
+            if file.endswith(readsSuffix):
+                if isSingleEnd:
+                    forwardReads.append(os.path.join(readsDir, file))
+                else:
+                    if file.endswith(f"1{readsSuffix}"):
+                        forwardReads.append(os.path.join(readsDir, file))
+                    elif file.endswith(f"2{readsSuffix}"):
+                        reverseReads.append(os.path.join(readsDir, file))
+                    else:
+                        raise ValueError(f"{file} ends with the expected suffix '{readsSuffix}' but is not preceeded by a 1 or 2!")
+        forwardReads.sort()
+        reverseReads.sort()
+        
+        # Validate that paired files match
+        if not isSingleEnd:
+            assert len(forwardReads) == len(reverseReads), \
+                f"Number of reads don't match for forward ({len(forwardReads)}) and reverse ({len(reverseReads)}) files"
+            for i in range(len(forwardReads)):
+                prefix = os.path.commonprefix([forwardReads[i], reverseReads[i]])
+                assert prefix != "", \
+                    "forward and reverse read pairs don't have a common prefix?"
+                assert forwardReads[i].startswith(f"{prefix}1") and reverseReads[i].startswith(f"{prefix}2"), \
+                    f"forward and reverse reads don't start with a recognised prefix ({prefix} should preceed a 1 or 2)"
+        
+        # Return files
+        return forwardReads, reverseReads if reverseReads != [] else None
+    
+    @staticmethod
     def get_chunking_points(numberToChunk, chunks, isNumOfChunks=True):
         '''
         This is a general purpose function to take in a number of "things"
