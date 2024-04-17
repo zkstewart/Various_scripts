@@ -140,7 +140,7 @@ def run_kmctools_histogram(kmcdbPrefix, outFileName, kmc_toolsPath):
     kmcout, kmcerr = run_kmc.communicate()
     
     # Check file outputs to see if there was an error
-    if (not kmcout.decode("utf-8") == "") or (not kmcerr.decode("utf-8") == ""):
+    if (not kmcout.decode("utf-8") == "") and (not "100%" in kmcerr.decode("utf-8")):
         raise Exception(("ERROR: run_kmctools_histogram encountered an error; have a look " +
                         f'at the stdout ({kmcout.decode("utf-8")}) and stderr ' + 
                         f'({kmcerr.decode("utf-8")}) to make sense of this.'))
@@ -206,7 +206,7 @@ def run_kmctools_dump(kmcdbPrefix, lCutoff, uCutoff, outFileName, kmc_toolsPath)
     kmcout, kmcerr = run_kmc.communicate()
     
     # Check file outputs to see if there was an error
-    if (not kmcout.decode("utf-8") == "") or (not kmcerr.decode("utf-8") == ""):
+    if (not kmcout.decode("utf-8") == "") and (not "100%" in kmcerr.decode("utf-8")):
         raise Exception(("ERROR: run_kmctools_dump encountered an error; have a look " +
                         f'at the stdout ({kmcout.decode("utf-8")}) and stderr ' + 
                         f'({kmcerr.decode("utf-8")}) to make sense of this.'))
