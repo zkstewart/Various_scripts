@@ -408,12 +408,11 @@ def main():
             else:
                 print(f"kmc_tools has already taken a dump at '{samplePrefix}'; skipping.")
             
-            # Run smudgeplot hetkmers function
-            EXPECTED_SUFFIX = "_coverages.tsv" # used for program resumption
-            
-            hetkmersFileName = os.path.join(smudgeplotDir, samplePrefix + "_hetkmers")
-            if not os.path.exists(hetkmersFileName + EXPECTED_SUFFIX):
-                run_smudgeplot_hetkmers(dumpFileName, hetkmersFileName, args.smudgeplot)
+            # Run smudgeplot hetkmers function            
+            hetkmersPrefix = os.path.join(smudgeplotDir, samplePrefix + "_hetkmers")
+            hetkmersFileName = hetkmersPrefix + "_coverages.tsv"
+            if not os.path.exists(hetkmersFileName):
+                run_smudgeplot_hetkmers(dumpFileName, hetkmersPrefix, args.smudgeplot)
             else:
                 print(f"smudgeplot hetkmers has already been run for '{samplePrefix}'; skipping.")
             
