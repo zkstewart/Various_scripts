@@ -497,7 +497,7 @@ def main():
         pairedReads = [ [f] for f in forwardReads ]
     
     # Symlink FASTQ files into working directory
-    fastqsDir = os.path.join(args.outputDirectory, "fastqs")
+    fastqsDir = os.path.abspath(os.path.join(args.outputDirectory, "fastqs"))
     os.makedirs(fastqsDir, exist_ok=True)
     
     if not os.path.exists(os.path.join(args.outputDirectory, "fastq_symlink_was_successful.flag")):
@@ -511,13 +511,17 @@ def main():
     else:
         print(f"fastq symlinking has already been performing; skipping.")
     
-    # Run kmc->ploidyfrost for each FASTQ file pairing
-    kmcDir = os.path.join(args.outputDirectory, "kmc_files")
+    # Set up the working directory structure
+    kmcDir = os.path.abspath(os.path.join(args.outputDirectory, "kmc_files"))
     os.makedirs(kmcDir, exist_ok=True)
     
     kmcTmpDir = os.path.join(kmcDir, "tmp")
     os.makedirs(kmcTmpDir, exist_ok=True)
     
+    ploidyfrostDir = os.path.abspath(os.path.join(args.outputDirectory, "ploidyfrost_files"))
+    os.makedirs(ploidyfrostDir, exist_ok=True)
+    
+    # Run kmc->ploidyfrost for each FASTQ file pairing
     if not os.path.exists(os.path.join(args.outputDirectory, "pipeline_was_successful.flag")):
         # Iterate through each FASTQ file pair
         for pair in pairedReads:
@@ -549,7 +553,7 @@ def main():
             # Run kmc_tools filter
             lCutoff = None # used for later to see if we need to re-compute this value
             
-            filterFileName = samplePrefix + "_filtered.fq"
+            filterFileName = os.path.join(kmcDir, samplePrefix + "_filtered.fq")
             if not os.path.exists(filterFileName):
                 lCutoff = run_ploidyfrost_cutoff(histFileName, "L", args.ploidyfrost)
                 run_kmctools_filter(kmcdbPrefix, atFilesName, lCutoff, args.cpus, filterFileName, args.kmc_tools)
@@ -559,14 +563,14 @@ def main():
             # Run bifrost for CBDG graph construction
             EXPECTED_SUFFIXES = [".bfi", ".gfa.gz"] # used for program resumption
             
-            bifrostFileName = samplePrefix + "_dbg"
+            bifrostFileName = os.path.join(kmcDir, samplePrefix + "_dbg")
             if not all([ os.path.exists(kmcdbPrefix + suf) for suf in EXPECTED_SUFFIXES ]):
                 run_bifrost_build(filterFileName, args.cpus, bifrostFileName, args.bifrost)
             else:
                 print(f"bifrost build has already been run for '{samplePrefix}'; skipping.")
             
             # Run ploidyfrost for ploidy prediction
-            ploidyfrostFileName = samplePrefix + "_ploidyfrost"
+            ploidyfrostFileName = os.path.join(ploidyfrostDir, samplePrefix + "_pf")
             if not os.path.exists(ploidyfrostFileName):
                 lCutoff = run_ploidyfrost_cutoff(histFileName, "L", args.ploidyfrost) if lCutoff is None else lCutoff
                 uCutoff = run_ploidyfrost_cutoff(histFileName, "U", args.ploidyfrost)
@@ -576,7 +580,7 @@ def main():
                 print(f"ploidyfrost estimate has already been run for '{samplePrefix}'; skipping.")
             
             # Run ploidyfrost filter
-            pfFilterPrefix = samplePrefix + "_ploidyfrost-filtered"
+            pfFilterPrefix = ploidyfrostFileName + "filt"
             pfFilterFileName = pfFilterPrefix + "-filtered_allele_frequency.txt"
             if not os.path.exists(pfFilterFileName):
                 run_ploidyfrost_filter(ploidyfrostFileName, pfFilterPrefix, args.pfFilter, args.rscript)
@@ -584,16 +588,16 @@ def main():
                 print(f"ploidyfrost filter has already been run for '{samplePrefix}'; skipping.")
             
             # Run ploidyfrost gmm
-            gmmFileName = samplePrefix + "_ploidyfrost-gmm"
+            gmmFileName = os.path.join(args.outputDirectory, samplePrefix + "_pf-gmm")
             if not os.path.exists(gmmFileName):
                 run_ploidyfrost_gmm(pfFilterFileName, gmmFileName, args.ploidyfrost)
             else:
                 print(f"ploidyfrost gmm has already been run for '{samplePrefix}'; skipping.")
-
+            
             # Run ploidyfrost drawfreq
-            drawfreqFileName = samplePrefix + "_ploidyfrost-drawfreq"
+            drawfreqFileName = os.path.join(args.outputDirectory, samplePrefix + "_pf-drawfreq")
             if not os.path.exists(drawfreqFileName):
-                run_ploidyfrost_drawfreq(ploidyfrostFileName, drawfreqFileName, samplePrefix, args.pfDrawFreq, args.rscript)
+                run_ploidyfrost_drawfreq(pfFilterFileName, drawfreqFileName, samplePrefix, args.pfDrawFreq, args.rscript)
             else:
                 print(f"ploidyfrost drawfreq has already been run for '{samplePrefix}'; skipping.")
         
