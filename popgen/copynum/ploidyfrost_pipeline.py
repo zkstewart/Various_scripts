@@ -436,6 +436,11 @@ def main():
                    help="""Optionally, specify the PloidyFrost executable file
                    if it is not discoverable in the path""",
                    default=None)
+    p.add_argument("--bifrost", dest="bifrost",
+                   required=False,
+                   help="""Optionally, specify the Bifrost executable file
+                   if it is not discoverable in the path""",
+                   default=None)
     p.add_argument("--kmc", dest="kmc",
                    required=False,
                    help="""Optionally, specify the kmc file
