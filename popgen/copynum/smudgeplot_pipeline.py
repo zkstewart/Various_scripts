@@ -357,13 +357,17 @@ def main():
     else:
         print(f"fastq symlinking has already been performing; skipping.")
     
-    # Run kmc->smudgeplot for each FASTQ file pairing
+    # Set up the working directory structure
     kmcDir = os.path.join(args.outputDirectory, "kmc_files")
     os.makedirs(kmcDir, exist_ok=True)
     
     kmcTmpDir = os.path.join(kmcDir, "tmp")
     os.makedirs(kmcTmpDir, exist_ok=True)
     
+    smudgeplotDir = os.path.abspath(os.path.join(args.outputDirectory, "smudgeplot_files"))
+    os.makedirs(smudgeplotDir, exist_ok=True)
+    
+    # Run kmc->smudgeplot for each FASTQ file pairing
     if not os.path.exists(os.path.join(args.outputDirectory, "pipeline_was_successful.flag")):
         # Iterate through each FASTQ file pair
         for pair in pairedReads:
@@ -407,14 +411,14 @@ def main():
             # Run smudgeplot hetkmers function
             EXPECTED_SUFFIX = "_coverages.tsv" # used for program resumption
             
-            hetkmersFileName = kmcdbPrefix + "_hetkmers"
+            hetkmersFileName = os.path.join(smudgeplotDir, samplePrefix + "_hetkmers")
             if not os.path.exists(hetkmersFileName + EXPECTED_SUFFIX):
                 run_smudgeplot_hetkmers(dumpFileName, hetkmersFileName, args.smudgeplot)
             else:
                 print(f"smudgeplot hetkmers has already been run for '{samplePrefix}'; skipping.")
             
             # Run smudgeplot plot function
-            plotFileName = hetkmersFileName + "_plot.txt"
+            plotFileName = os.path.join(args.outputDirectory, samplePrefix + "_plot.txt")
             if not os.path.exists(hetkmersFileName):
                 run_smudgeplot_plot(hetkmersFileName, plotFileName, args.smudgeplot)
             else:
