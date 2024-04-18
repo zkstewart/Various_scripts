@@ -241,18 +241,20 @@ def run_smudgeplot_hetkmers(kmcDumpFile, outputFileName, smudgeplotPath):
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
                         f'({smudgeerr.decode("utf-8")}) to make sense of this.'))
 
-def run_smudgeplot_plot(smudgeCoveragesFile, outputFileName, smudgeplotPath):
+def run_smudgeplot_plot(smudgeCoveragesFile, outputFileName, samplePrefix, smudgeplotPath):
     '''
     Parameters:
         smudgeCoveragesFile -- a string indicating the location of the smudgeplot
                                _coverages.tsv file
+        samplePrefix -- a string to use for the plot title; typically the sample name
         outputFileName -- a string indicating the output file name for the plot result
         smudgeplotPath -- a string indicating the location of the smudgeplot.py executable
     '''
     # Construct the cmd for subprocess
     cmd = ZS_Utility.base_subprocess_cmd(smudgeplotPath)
     cmd += [
-        "plot", "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFileName),
+        "plot", "-t", samplePrefix,
+        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFileName),
         ZS_Utility.convert_to_wsl_if_not_unix(smudgeCoveragesFile)
         
     ]
@@ -419,7 +421,7 @@ def main():
             # Run smudgeplot plot function
             plotFileName = os.path.join(args.outputDirectory, samplePrefix + "_plot.txt")
             if not os.path.exists(hetkmersFileName):
-                run_smudgeplot_plot(hetkmersFileName, plotFileName, args.smudgeplot)
+                run_smudgeplot_plot(hetkmersFileName, plotFileName, samplePrefix, args.smudgeplot)
             else:
                 print(f"smudgeplot plot has already been run for '{samplePrefix}'; skipping.")
         
