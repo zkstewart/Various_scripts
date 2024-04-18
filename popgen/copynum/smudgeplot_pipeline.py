@@ -345,7 +345,7 @@ def main():
         pairedReads = [ [f] for f in forwardReads ]
     
     # Symlink FASTQ files into working directory
-    fastqsDir = os.path.join(args.outputDirectory, "fastqs")
+    fastqsDir = os.path.abspath(os.path.join(args.outputDirectory, "fastqs"))
     os.makedirs(fastqsDir, exist_ok=True)
     
     if not os.path.exists(os.path.join(args.outputDirectory, "fastq_symlink_was_successful.flag")):
@@ -360,7 +360,7 @@ def main():
         print(f"fastq symlinking has already been performing; skipping.")
     
     # Set up the working directory structure
-    kmcDir = os.path.join(args.outputDirectory, "kmc_files")
+    kmcDir = os.path.abspath(os.path.join(args.outputDirectory, "kmc_files"))
     os.makedirs(kmcDir, exist_ok=True)
     
     kmcTmpDir = os.path.join(kmcDir, "tmp")
@@ -410,7 +410,7 @@ def main():
             else:
                 print(f"kmc_tools has already taken a dump at '{samplePrefix}'; skipping.")
             
-            # Run smudgeplot hetkmers function            
+            # Run smudgeplot hetkmers function
             hetkmersPrefix = os.path.join(smudgeplotDir, samplePrefix + "_hetkmers")
             hetkmersFileName = hetkmersPrefix + "_coverages.tsv"
             if not os.path.exists(hetkmersFileName):
