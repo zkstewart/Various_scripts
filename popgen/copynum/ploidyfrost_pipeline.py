@@ -210,7 +210,7 @@ def run_ploidyfrost_cutoff(kmcHistogramFile, cutoff, ploidyfrostPath):
                         f'({frosterr.decode("utf-8")}) to make sense of this.'))
     
     # Return cutoff value as printed to stdout
-    return frostout.decode("utf-8")
+    return frostout.decode("utf-8").rstrip("\r\n ")
 
 def run_kmctools_filter(kmcdbPrefix, atFilesName, lCutoff, cpus, outFileName, kmc_toolsPath):
     '''
