@@ -278,11 +278,37 @@ def run_bifrost_build(filteredFastqFile, cpus, outputFileName, bifrostPath):
                         f'at the stdout ({bifrostout.decode("utf-8")}) and stderr ' + 
                         f'({bifrosterr.decode("utf-8")}) to make sense of this.'))
 
-def run_ploidyfrost_estimate(bifrostFileName, kmcdbPrefix, ploidyfrostFileName,
+def gunzip(gzFileName):
+    '''
+    Parameters:
+        gzFileName -- a string indicating the location of a .gz file
+    '''
+    # Construct the cmd for subprocess
+    cmd = ZS_Utility.base_subprocess_cmd("gunzip")
+    cmd += [
+        ZS_Utility.convert_to_wsl_if_not_unix(gzFileName)
+    ]
+    
+    if platform.system() != "Windows":
+        cmd = " ".join(cmd)
+    
+    # Run the command
+    run_gunzip = subprocess.Popen(cmd, shell = True,
+                                  stdout = subprocess.PIPE,
+                                  stderr = subprocess.PIPE)
+    gunzipout, gunziperr = run_gunzip.communicate()
+    
+    # Check file outputs to see if there was an error
+    if (gunzipout.decode("utf-8") == "") or (not gunziperr.decode("utf-8") == ""):
+        raise Exception(("ERROR: gunzip encountered an error; have a look " +
+                        f'at the stdout ({gunzipout.decode("utf-8")}) and stderr ' + 
+                        f'({gunziperr.decode("utf-8")}) to make sense of this.'))
+
+def run_ploidyfrost_estimate(bifrostGfaFile, kmcdbPrefix, ploidyfrostFileName,
                              lCutoff, uCutoff, cpus, ploidyfrostPath):
     '''
     Parameters:
-        bifrostFileName -- a string indicating the prefix of the Bifrost files
+        bifrostGfaFile -- a string indicating the prefix of the Bifrost .gfa
         kmcdbPrefix -- a string indicating the location of the KMC db file
         ploidyfrostFileName -- a string indicating the output file name for the ploidyfrost result
         lCutoff -- an integer/string indicating the lower cutoff value
@@ -292,7 +318,7 @@ def run_ploidyfrost_estimate(bifrostFileName, kmcdbPrefix, ploidyfrostFileName,
     # Construct the cmd for subprocess
     cmd = ZS_Utility.base_subprocess_cmd(ploidyfrostPath)
     cmd += [
-        "-g", ZS_Utility.convert_to_wsl_if_not_unix(bifrostFileName) + ".gfa.gz",
+        "-g", ZS_Utility.convert_to_wsl_if_not_unix(bifrostGfaFile),
         "-d", ZS_Utility.convert_to_wsl_if_not_unix(kmcdbPrefix),
         "-t", str(cpus), "-v", "-o", ZS_Utility.convert_to_wsl_if_not_unix(ploidyfrostFileName),
         "-l", str(lCutoff), "-u", str(uCutoff)
@@ -560,14 +586,21 @@ def main():
             else:
                 print(f"kmc_tools filter has already been run for '{samplePrefix}'; skipping.")
             
-            # Run bifrost for CBDG graph construction
-            EXPECTED_SUFFIXES = [".bfi", ".gfa.gz"] # used for program resumption
+            # Run bifrost for CBDG graph construction            
+            bifrostPrefix = os.path.join(kmcDir, samplePrefix + "_dbg")
+            bifrostFileName = bifrostPrefix + ".gfa"
+            bifrostGzFileName = bifrostFileName + ".gz"
             
-            bifrostFileName = os.path.join(kmcDir, samplePrefix + "_dbg")
-            if not all([ os.path.exists(kmcdbPrefix + suf) for suf in EXPECTED_SUFFIXES ]):
-                run_bifrost_build(filterFileName, args.cpus, bifrostFileName, args.bifrost)
+            if (not os.path.exists(bifrostFileName)) and (not os.path.exists(bifrostGzFileName)):
+                run_bifrost_build(filterFileName, args.cpus, bifrostPrefix, args.bifrost)
             else:
                 print(f"bifrost build has already been run for '{samplePrefix}'; skipping.")
+            
+            # Gunzip the GFA file
+            if os.path.exists(bifrostGzFileName):
+                gunzip(bifrostGzFileName)
+            else:
+                print(f"bifrost gfa has already been gunzipped for '{samplePrefix}'; skipping.")
             
             # Run ploidyfrost for ploidy prediction
             ploidyfrostFileName = os.path.join(ploidyfrostDir, samplePrefix + "_pf")
