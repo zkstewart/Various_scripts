@@ -344,11 +344,13 @@ def parse_freec_info_file(infoFileName):
             infoDict[sl[0]] = sl[1]
     return infoDict
 
-def tabulate_ploidy_estimates(freecBaseDir, outputFileName):
+def tabulate_ploidy_estimates(freecBaseDir, bamSuffix, outputFileName):
     '''
     Parameters:
         freecBaseDir -- a string indicating the location where freec folders are
                         located
+        bamSuffix -- a string indicating the suffix of the BAM files; this is needed
+                     to format the info file name
         outputFileName -- a string indicating the location to write the ploidy
                           estimates to
     '''
@@ -360,7 +362,8 @@ def tabulate_ploidy_estimates(freecBaseDir, outputFileName):
         for freecOutputDir in os.listdir(freecBaseDir):
             if not freecOutputDir.endswith(".conf"):
                 # Format the *_info.txt file path
-                infoFileName = os.path.join(freecBaseDir, freecOutputDir, freecOutputDir + "_info.txt")
+                infoFileName = os.path.join(freecBaseDir, freecOutputDir,
+                                            freecOutputDir + bamSuffix + "_info.txt")
                 
                 # Parse the Control-FREEC info file
                 infoDict = parse_freec_info_file(infoFileName)
@@ -568,7 +571,7 @@ def main():
     ploidyTableFile = os.path.join(args.outputDirectory, "ploidy_estimates.tsv")
     if not os.path.exists(ploidyTableFile) or not \
         os.path.exists(os.path.join(args.outputDirectory, "ploidy_tabulation_was_successful.flag")):            
-            tabulate_ploidy_estimates(freecBaseDir, ploidyTableFile)
+            tabulate_ploidy_estimates(freecBaseDir, args.bamSuffix, ploidyTableFile)
             open(os.path.join(args.outputDirectory, "ploidy_tabulation_was_successful.flag"), "w").close()
     else:
         print(f"ploidy tabulation file has already been generated; skipping.")
