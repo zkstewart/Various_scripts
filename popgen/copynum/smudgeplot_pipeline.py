@@ -178,7 +178,7 @@ def run_smudgeplot_cutoff(kmcHistogramFile, cutoff, smudgeplotPath):
                         f'({smudgerr.decode("utf-8")}) to make sense of this.'))
     
     # Return cutoff value as printed to stdout
-    return smudgeout.decode("utf-8")
+    return smudgeout.decode("utf-8").rstrip("\r\n ")
 
 def run_kmctools_dump(kmcdbPrefix, lCutoff, uCutoff, outFileName, kmc_toolsPath):
     '''
@@ -420,7 +420,7 @@ def main():
             
             # Run smudgeplot plot function
             plotFileName = os.path.join(args.outputDirectory, samplePrefix + "_plot.txt")
-            if not os.path.exists(hetkmersFileName):
+            if not os.path.exists(plotFileName):
                 run_smudgeplot_plot(hetkmersFileName, plotFileName, samplePrefix, args.smudgeplot)
             else:
                 print(f"smudgeplot plot has already been run for '{samplePrefix}'; skipping.")
