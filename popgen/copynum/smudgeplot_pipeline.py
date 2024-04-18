@@ -83,7 +83,8 @@ def generate_atfile_file(pair, fastqDir, atFilesName):
 def run_kmc(atFilesName, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
     '''
     Parameters:
-        bamFile -- a string indicating the location of the BAM file to process
+        atFilesName -- a string indicating the location of the @FILES file containing
+                       input file names
         kmcdbPrefix -- a string indicating the basename for kmc to write the k-mer
                        database to (note: kmc will add .kmc_pre and .kmc_suf extension)
         cpus -- an integer indicating how many threads to run KMC with
@@ -275,7 +276,7 @@ def run_smudgeplot_plot(smudgeCoveragesFile, outputFileName, smudgeplotPath):
 def main():
     # User input
     usage = """%(prog)s accepts a directory containing one or more FASTQ files in single or paired end.
-    It will run smudgeplot for each samplee and tabulate their most likely ploidy.
+    It will run smudgeplot for each sample and tabulate their most likely ploidy.
     """
     p = argparse.ArgumentParser(description=usage)
     # Reqs
@@ -363,7 +364,7 @@ def main():
     kmcTmpDir = os.path.join(kmcDir, "tmp")
     os.makedirs(kmcTmpDir, exist_ok=True)
     
-    if not os.path.exists(os.path.join(args.outputDirectory, "kmc_was_successful.flag")):
+    if not os.path.exists(os.path.join(args.outputDirectory, "pipeline_was_successful.flag")):
         # Iterate through each FASTQ file pair
         for pair in pairedReads:
             samplePrefix = pair[0].replace(args.fastqSuffix, "")
@@ -389,7 +390,7 @@ def main():
             if not os.path.exists(histFileName):
                 run_kmctools_histogram(kmcdbPrefix, histFileName, args.kmc_tools)
             else:
-                print(f"kmc_tools has already been run for '{samplePrefix}'; skipping.")
+                print(f"kmc_tools histogram has already been run for '{samplePrefix}'; skipping.")
             
             # Run kmc_tools dump
             dumpFileName = kmcdbPrefix + ".dump"
@@ -401,7 +402,7 @@ def main():
                 # Now drop a dump (file)
                 run_kmctools_dump(kmcdbPrefix, lCutoff, uCutoff, dumpFileName, args.kmc_tools)
             else:
-                print(f"kmc_tools has already been run for '{samplePrefix}'; skipping.")
+                print(f"kmc_tools has already taken a dump at '{samplePrefix}'; skipping.")
             
             # Run smudgeplot hetkmers function
             EXPECTED_SUFFIX = "_coverages.tsv" # used for program resumption
@@ -419,7 +420,7 @@ def main():
             else:
                 print(f"smudgeplot plot has already been run for '{samplePrefix}'; skipping.")
         
-        open(os.path.join(args.outputDirectory, "kmc_was_successful.flag"), "w").close()
+        open(os.path.join(args.outputDirectory, "pipeline_was_successful.flag"), "w").close()
     else:
         print(f"kmc->smudgeplot pipeline has already been performed; skipping.")
     
