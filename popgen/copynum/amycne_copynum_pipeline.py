@@ -158,7 +158,7 @@ def run_amycne_per_gene(gcFile, tidditFile, gff3Obj, outputFileName, python2Exe,
         amycneDirectory -- a string indicating the location of the AMYCNE directory
                            containing AMYCNE.py
     '''
-    assert "gene" in gff3Obj.featureTypes, "ERROR: GFF3 file does not contain 'gene' features!?!"
+    assert "gene" in gff3Obj.parentTypes, "ERROR: GFF3 file does not contain 'gene' features!?!"
     
     # Iterate over GFF3 gene features
     resultLines = ["gene\tbins\tused_bin_ratio\tref_coverage\tCN_raw\t95%CI\tCN_rounded\tregion_command"]
