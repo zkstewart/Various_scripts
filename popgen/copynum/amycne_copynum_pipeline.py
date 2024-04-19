@@ -185,7 +185,8 @@ def run_amycne_per_gene(gcFile, tidditFile, gff3Obj, outputFileName, python2Exe,
         amycneout, amycneerr = run_amycne.communicate()
         
         # Check to see if there was an error
-        if (amycneout.decode("utf-8") == "") or (amycneerr.decode("utf-8") != ""):
+        tidditNoTab = os.path.basename(tidditFile).replace(".tab", "") # should be the first column value of a successful run
+        if tidditNoTab not in amycneout.decode("utf-8"):
             raise Exception(("ERROR: run_amycne_per_gene encountered an error; have a look " +
                             f'at the stdout ({amycneout.decode("utf-8")}) and stderr ' + 
                             f'({amycneerr.decode("utf-8")}) to make sense of this.'))
