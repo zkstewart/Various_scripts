@@ -299,7 +299,7 @@ def gunzip(gzFileName):
     gunzipout, gunziperr = run_gunzip.communicate()
     
     # Check file outputs to see if there was an error
-    if (gunzipout.decode("utf-8") == "") or (not gunziperr.decode("utf-8") == ""):
+    if (gunzipout.decode("utf-8") != "") or (not gunziperr.decode("utf-8") == ""):
         raise Exception(("ERROR: gunzip encountered an error; have a look " +
                         f'at the stdout ({gunzipout.decode("utf-8")}) and stderr ' + 
                         f'({gunziperr.decode("utf-8")}) to make sense of this.'))
@@ -334,7 +334,7 @@ def run_ploidyfrost_estimate(bifrostGfaFile, kmcdbPrefix, ploidyfrostFileName,
     frostout, frosterr = run_frost_estimate.communicate()
     
     # Check file outputs to see if there was an error
-    if (frostout.decode("utf-8") == "") or (not frosterr.decode("utf-8") == ""):
+    if (frostout.decode("utf-8") == "") or ("fail" in frosterr.decode("utf-8").lower()):
         raise Exception(("ERROR: run_ploidyfrost_estimate encountered an error; have a look " +
                         f'at the stdout ({frostout.decode("utf-8")}) and stderr ' + 
                         f'({frosterr.decode("utf-8")}) to make sense of this.'))
