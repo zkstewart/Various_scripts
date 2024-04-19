@@ -101,7 +101,7 @@ def generate_gc_file(fastaFile, windowSize, outputFile, python2Exe, amycneDirect
     gcout, gcerr = run_gc_tab.communicate()
     
     # Check to see if there was an error
-    if (gcout.decode("utf-8") != "") or (gcerr.decode("utf-8") != ""):
+    if (gcout.decode("utf-8") == "") or (gcerr.decode("utf-8") != ""):
         raise Exception(("ERROR: generate_gc_file encountered an error; have a look " +
                         f'at the stdout ({gcout.decode("utf-8")}) and stderr ' + 
                         f'({gcerr.decode("utf-8")}) to make sense of this.'))
