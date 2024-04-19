@@ -110,7 +110,7 @@ def run_kmc(atFilesName, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
                                stderr = subprocess.PIPE)
     kmcout, kmcerr = run_kmc.communicate()
     
-    # Check file outputs to see if there was an error
+    # Check to see if there was an error
     if (not "Stats:" in kmcout.decode("utf-8")) and (not "100%" in kmcerr.decode("utf-8")):
         raise Exception(("ERROR: run_kmc encountered an error; have a look " +
                         f'at the stdout ({kmcout.decode("utf-8")}) and stderr ' + 
@@ -140,7 +140,7 @@ def run_kmctools_histogram(kmcdbPrefix, outFileName, kmc_toolsPath):
                                stderr = subprocess.PIPE)
     kmcout, kmcerr = run_kmc.communicate()
     
-    # Check file outputs to see if there was an error
+    # Check to see if there was an error
     if (not kmcout.decode("utf-8") == "") and (not "100%" in kmcerr.decode("utf-8")):
         raise Exception(("ERROR: run_kmctools_histogram encountered an error; have a look " +
                         f'at the stdout ({kmcout.decode("utf-8")}) and stderr ' + 
@@ -171,7 +171,7 @@ def run_smudgeplot_cutoff(kmcHistogramFile, cutoff, smudgeplotPath):
                                          stderr = subprocess.PIPE)
     smudgeout, smudgerr = run_smudge_cutoff.communicate()
     
-    # Check file outputs to see if there was an error
+    # Check to see if there was an error
     if (smudgeout.decode("utf-8") == "") or (not "Done!" in smudgerr.decode("utf-8")):
         raise Exception(("ERROR: run_smudgeplot_cutoff encountered an error; have a look " +
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
@@ -206,7 +206,7 @@ def run_kmctools_dump(kmcdbPrefix, lCutoff, uCutoff, outFileName, kmc_toolsPath)
                                stderr = subprocess.PIPE)
     kmcout, kmcerr = run_kmc.communicate()
     
-    # Check file outputs to see if there was an error
+    # Check to see if there was an error
     if (not kmcout.decode("utf-8") == "") and (not "100%" in kmcerr.decode("utf-8")):
         raise Exception(("ERROR: run_kmctools_dump encountered an error; have a look " +
                         f'at the stdout ({kmcout.decode("utf-8")}) and stderr ' + 
@@ -235,7 +235,7 @@ def run_smudgeplot_hetkmers(kmcDumpFile, outputFileName, smudgeplotPath):
                                          stderr = subprocess.PIPE)
     smudgeout, smudgeerr = run_smudge_hetkmers.communicate()
     
-    # Check file outputs to see if there was an error
+    # Check to see if there was an error
     if (smudgeout.decode("utf-8") != "") or (not "Done!" in smudgeerr.decode("utf-8")):
         raise Exception(("ERROR: run_smudgeplot_hetkmers encountered an error; have a look " +
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
@@ -268,8 +268,8 @@ def run_smudgeplot_plot(smudgeCoveragesFile, outputFileName, samplePrefix, smudg
                                          stderr = subprocess.PIPE)
     smudgeout, smudgeerr = run_smudge_plot.communicate()
     
-    # Check file outputs to see if there was an error
-    if (smudgeout.decode("utf-8") != "") or (not "Done!" in smudgeerr.decode("utf-8")):
+    # Check to see if there was an error
+    if not "Done!" in smudgeerr.decode("utf-8"):
         raise Exception(("ERROR: run_smudge_plot encountered an error; have a look " +
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
                         f'({smudgeerr.decode("utf-8")}) to make sense of this.'))
