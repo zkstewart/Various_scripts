@@ -297,7 +297,7 @@ def main():
         print(f"gc_content.tab file has already been generated; skipping.")
     
     # Parse the GFF3 file
-    gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, relaxed=args.relaxedParsing)
+    gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse = not args.relaxedParsing)
     
     # Run AMYCNE for each BAM file
     if not os.path.exists(os.path.join(args.outputDirectory, "amycne_was_successful.flag")):
