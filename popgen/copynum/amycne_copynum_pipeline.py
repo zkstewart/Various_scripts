@@ -110,19 +110,21 @@ def generate_gc_file(fastaFile, windowSize, outputFile, python2Exe, amycneDirect
     with open(outputFile, "w") as gcFile:
         gcFile.write(gcout.decode("utf-8"))
 
-def generate_tiddit_file(fastaFile, bamFile, windowSize, outputPrefix, tidditPath):
+def generate_tiddit_file(fastaFile, bamFile, windowSize, outputPrefix, python2Exe, tidditPath):
     '''
     Parameters:
         fastaFile -- a string indicating the location of the FASTA file to generate the
                      GC content file from
-        
+        bamFile -- a string indicating the location of the BAM file to generate the tiddit file from
         windowSize -- an integer indicating the window size to calculate GC content over
         outputPrefix -- a string indicating the prefix for output file generation by tiddit
+        python2Exe -- a string indicating the location of the python2 executable
         tidditPath -- a string indicating the location of the tiddit executable
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(tidditPath)
+    cmd = ZS_Utility.base_subprocess_cmd(python2Exe)
     cmd += [
+        ZS_Utility.convert_to_wsl_if_not_unix(tidditPath),
         "--cov", "--bam", ZS_Utility.convert_to_wsl_if_not_unix(bamFile),
         "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputPrefix),
         "-z", str(windowSize), "--ref", ZS_Utility.convert_to_wsl_if_not_unix(fastaFile)
@@ -313,7 +315,7 @@ def main():
             tidditFileName = tidditPrefix + ".tab"
             if not os.path.exists(tidditFileName):
                 generate_tiddit_file(args.fastaFile, bamFile, args.windowSize,
-                                     tidditPrefix, args.tiddit)
+                                     tidditPrefix, args.python2, args.tiddit)
             else:
                 print(f"tiddit has already been run for '{bamBase}'; skipping.")
             
