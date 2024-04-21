@@ -151,7 +151,7 @@ def cnvnator_stat(rootFileName, windowSize, cnvnatorFile):
     natorout, natorerr = run_cnvnator.communicate()
     
     # Check to see if there was an error
-    if (not "Average RD per bin" in natorout.decode("utf-8")) or (natorerr.decode("utf-8") != ""):
+    if not "Average RD per bin" in natorout.decode("utf-8"):
         raise Exception(("ERROR: cnvnator_stat encountered an error; have a look " +
                         f'at the stdout ({natorout.decode("utf-8")}) and stderr ' + 
                         f'({natorerr.decode("utf-8")}) to make sense of this.'))
