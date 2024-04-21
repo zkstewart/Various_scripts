@@ -32,10 +32,6 @@ def validate_args(args):
         print('I am unable to locate the BAM directory (' + args.bamDirectory + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isdir(args.cnvnatorDirectory):
-        print('I am unable to locate the CNVnator directory (' + args.cnvnatorDirectory + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
     
     # Validate BAM suffix
     foundABAM = False
@@ -49,9 +45,6 @@ def validate_args(args):
         quit()
     
     # Validate program discoverability
-    if not os.path.isfile(args.python2):
-        _not_found_error("python", args.python2)
-    
     if args.cnvnator is None:
         args.cnvnator = ZS_Utility.wsl_which("cnvnator")
         if args.cnvnator is None:
