@@ -340,7 +340,7 @@ def main():
         
             # Run stat
             statFlag = os.path.join(rootDir, bamBase + ".stat_was_successful.flag")
-            if not os.path.exists(hisFlag):
+            if not os.path.exists(statFlag):
                 for windowSize in WINDOW_SIZES:
                     cnvnator_stat(rootFile, windowSize, args.cnvnator)
                 open(statFlag, "w").close()
@@ -349,7 +349,7 @@ def main():
 
             # Run partition
             partitionFlag = os.path.join(rootDir, bamBase + ".partition_was_successful.flag")
-            if not os.path.exists(hisFlag):
+            if not os.path.exists(partitionFlag):
                 for windowSize in WINDOW_SIZES:
                     cnvnator_partition(rootFile, windowSize, args.cnvnator)
                 open(partitionFlag, "w").close()
