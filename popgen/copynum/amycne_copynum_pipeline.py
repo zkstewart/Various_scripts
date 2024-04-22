@@ -5,6 +5,7 @@
 # using a GFF3 file and a reference genome FASTA file.
 
 import os, argparse, sys, platform, subprocess
+from statistics import median, stdev
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find Function_packages
 from Function_packages import ZS_Utility, ZS_GFF3IO
@@ -205,6 +206,67 @@ def run_amycne_per_gene(gcFile, tidditFile, gff3Obj, outputFileName, python2Exe,
     with open(outputFileName, "w") as amycneFile:
         amycneFile.write("\n".join(resultLines))
 
+def parse_amycne_copynum(amycneFile):
+    '''
+    Parameters:
+        amycneFile -- a string indicating the location of an AMYCNE copy number result file
+    Returns:
+        cnvGenes -- a list of lists with format like:
+                     [
+                         [geneID, normalisedRD],
+                         ...,
+                     ]
+    '''
+    MAGIC_NUM = 0.1
+    cnvGenes = []
+    
+    # Initial parse of the AMYCNE file to get average reference coverage
+    refCoverages = []
+    with open(amycneFile, "r") as fileIn:
+        for line in fileIn:
+            gene, bins, usedBinRatio, refCoverage, rawCN, cnCI, \
+                roundedCN, regionCmd = line.rstrip("\r\n ").split("\t")
+            
+            if refCoverage != "ref_coverage": # skip the header line
+                refCoverages.append(float(refCoverage))
+    avgRefCoverage = median(refCoverages)
+    refCoverageStdev = stdev(refCoverages)
+    
+    # Parse through AMYCNE file for deviations from normal CN
+    with open(amycneFile, "r") as fileIn:
+        for line in fileIn:
+            gene, bins, usedBinRatio, refCoverage, rawCN, cnCI, \
+                roundedCN, regionCmd = line.rstrip("\r\n ").split("\t")
+            if bins == "bins": # skip the header line
+                continue
+            
+            # Skip if CN prediction is 2
+            "i.e., no copy number variation detected"
+            if int(roundedCN) == 2:
+                continue
+            
+            # Derive the normalised read depth value
+            """It's probably not a real normalised RD, but it's analogous to how I handle the CNVnator pipeline;
+            use stdev since some samples have highly variable reference coverage value which I want to account for
+            in a way that only allows a CNV to be predicted if it passes strict thresholds."""
+            normalisedRDs = []
+            for modifier in [-refCoverageStdev, 0, refCoverageStdev]:
+                normalisedRDs.append((float(refCoverage)) / (avgRefCoverage + modifier))
+            
+            # Skip if CN doesn't diverge enough from 2
+            shouldSkip = False
+            for normalisedRD in normalisedRDs:
+                if ((round((normalisedRD + MAGIC_NUM)*2) / 2) == 1) or ((round((normalisedRD - MAGIC_NUM)*2) / 2) == 1):
+                    shouldSkip = True
+                    break
+            if shouldSkip:
+                continue
+            
+            # Store values
+            cnvGenes.append([gene, normalisedRDs[1]])
+    
+    return cnvGenes
+
 ## Main
 def main():
     # User input
@@ -332,14 +394,33 @@ def main():
     else:
         print(f"AMYCNE has already been performed; skipping.")
     
-    # # Tabulate gene copy number results
-    # copynumTableFile = os.path.join(args.outputDirectory, "gene_copy_numbers.tsv")
-    # if not os.path.exists(copynumTableFile) or not \
-    #     os.path.exists(os.path.join(args.outputDirectory, "copynum_tabulation_was_successful.flag")):            
-    #         tabulate_copynum_estimates(freecBaseDir, copynumTableFile) # not implemented yet
-    #         open(os.path.join(args.outputDirectory, "copynum_tabulation_was_successful.flag"), "w").close()
-    # else:
-    #     print(f"copy number table file has already been generated; skipping.")
+    # Tabulate gene copy number results
+    copynumTableFile = os.path.join(args.outputDirectory, "gene_copy_numbers.tsv")
+    if not os.path.exists(os.path.join(args.outputDirectory, "tabulation_was_successful.flag")):
+        # Locate symlinked BAM files
+        bamFiles = [ os.path.join(bamsDir, file) for file in os.listdir(bamsDir) ]
+        
+        # Begin generating result tabulation
+        with open(copynumTableFile, "w") as fileOut:
+            # Write header line
+            fileOut.write("sampleid\tgeneid\tmultiplication\n")
+            
+            # Iterate through each sample's AMYCNE output file
+            for bamFile in bamFiles:
+                samplePrefix = os.path.basename(bamFile).replace(args.bamSuffix, "")
+                
+                # Parse the output file for CNV genes
+                amycneFileName = os.path.join(amycneDir, samplePrefix + ".tsv")
+                cnvGenes = parse_amycne_copynum(amycneFileName)
+                
+                # Write any results to file
+                for geneID, normalisedRD in cnvGenes:
+                    multiplicationFactor = round(normalisedRD*2) / 2
+                    fileOut.write(f"{samplePrefix}\t{geneID}\t{multiplicationFactor}\n")
+        
+        open(os.path.join(args.outputDirectory, "tabulation_was_successful.flag"), "w").close()
+    else:
+        print(f"tabulation has already been performed; skipping.")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
