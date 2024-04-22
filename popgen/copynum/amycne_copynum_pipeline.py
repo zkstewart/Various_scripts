@@ -247,7 +247,7 @@ def parse_amycne_copynum(amycneFile):
             
             # Skip if it bugged and used no bins
             "Not sure why AMYCNE does this, but it has enough bugs I've already had to fix so why am I surprised?"
-            if int(usedBinRatio) == 0:
+            if float(usedBinRatio) == 0:
                 continue
             
             # Derive the normalised read depth value
