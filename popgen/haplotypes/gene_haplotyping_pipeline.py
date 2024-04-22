@@ -625,6 +625,19 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
+    # Set up the working directory structure
+    bamsDir = os.path.abspath(os.path.join(args.outputDirectory, "bams"))
+    os.makedirs(bamsDir, exist_ok=True)
+    
+    bcfDir = os.path.abspath(os.path.join(args.outputDirectory, "bcftools_files"))
+    os.makedirs(bcfDir, exist_ok=True)
+    
+    whatshapDir = os.path.abspath(os.path.join(args.outputDirectory, "whatshap_files"))
+    os.makedirs(whatshapDir, exist_ok=True)
+    
+    phasingOutputDir = os.path.join(args.outputDirectory, "phasing")
+    os.makedirs(phasingOutputDir, exist_ok=True)
+    
     # Index the FASTA file
     if not os.path.exists(f"{args.fastaFile}.fai"):
         ZS_SeqIO.StandardProgramRunners.samtools_faidx(args.fastaFile, args.samtools)
@@ -651,7 +664,7 @@ def main():
     # Subset BAMs using samtools
     subsetBamFiles = []
     for bamFile in bamFiles:
-        outputFile = os.path.join(args.outputDirectory, os.path.basename(bamFile))
+        outputFile = os.path.join(bamsDir, os.path.basename(bamFile))
         if not os.path.exists(outputFile):
             ZS_BAMIO.StandardProgramRunners.samtools_subset_bam(bamFile, outputFile, samtoolsRegions, args.samtools)
         else:
@@ -703,7 +716,7 @@ def main():
             print(f"Indexed BAM file '{outputFile}' already exists; skipping.")
     
     # Run bcftools mpileup
-    mpileupFileName = os.path.join(args.outputDirectory, "bcftools.mpileup")
+    mpileupFileName = os.path.join(bcfDir, "bcftools.mpileup")
     if not os.path.exists(mpileupFileName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "mpileup_was_successful.flag")):
             ZS_VCFIO.StandardProgramRunners.bcftools_mpileup(subsetBamFiles, args.fastaFile,
@@ -712,8 +725,12 @@ def main():
     else:
         print(f"bcftools mpileup file has already been generated; skipping.")
     
+    ##
+    # TBD: Implement copy number/ploidy alteration handling here
+    ##
+    
     # Run bcftools call
-    vcfFileName = os.path.join(args.outputDirectory, "bcftools.vcf.gz")
+    vcfFileName = os.path.join(bcfDir, "bcftools.vcf.gz")
     if not os.path.exists(vcfFileName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "call_was_successful.flag")):
             ZS_VCFIO.StandardProgramRunners.bcftools_call(mpileupFileName, vcfFileName, args.bcftools)
@@ -722,8 +739,8 @@ def main():
         print(f"bcftools call file has already been generated; skipping.")
     
     # Normalise multiallelic variants
-    multialleleFileName = os.path.join(args.outputDirectory, "bcftools.multiallele.norm.vcf.gz")
-    if not os.path.exists(vcfFileName) or not \
+    multialleleFileName = os.path.join(bcfDir, "bcftools.multiallele.norm.vcf.gz")
+    if not os.path.exists(multialleleFileName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "norm_multiallele_was_successful.flag")):            
             ZS_VCFIO.StandardProgramRunners.bcftools_norm_multiallelics(vcfFileName, multialleleFileName,
                                                                         args.bcftools)
@@ -732,8 +749,8 @@ def main():
         print(f"bcftools norm -m file has already been generated; skipping.")
     
     # Left-align and produce finalised variants
-    finalVcfFileName = os.path.join(args.outputDirectory, "bcftools.final.vcf.gz")
-    if not os.path.exists(vcfFileName) or not \
+    finalVcfFileName = os.path.join(bcfDir, "bcftools.final.vcf.gz")
+    if not os.path.exists(finalVcfFileName) or not \
         os.path.exists(os.path.join(args.outputDirectory, "finalise_variants_was_successful.flag")):            
             ZS_VCFIO.StandardProgramRunners.bcftools_norm_leftalign(multialleleFileName, args.fastaFile,
                                                                     finalVcfFileName, args.bcftools)
@@ -742,10 +759,10 @@ def main():
         print(f"bcftools norm -f file has already been generated; skipping.")
     
     # Run WhatsHap phase
-    mergedWhatsHapName = os.path.join(args.outputDirectory, "whatshap.merged.vcf")
+    mergedWhatsHapName = os.path.join(whatshapDir, "whatshap.merged.vcf")
     compressedWhatsHapName = f"{mergedWhatsHapName}.gz"
     
-    phasedFileName = os.path.join(args.outputDirectory, "whatshap.phase.vcf")
+    phasedFileName = os.path.join(whatshapDir, "whatshap.phase.vcf")
     if (not os.path.exists(phasedFileName) and not os.path.exists(compressedWhatsHapName)) or not \
         os.path.exists(os.path.join(args.outputDirectory, "phase_was_successful.flag")):
             ZS_VCFIO.StandardProgramRunners.whatshap_phase(finalVcfFileName, args.fastaFile,
@@ -755,7 +772,7 @@ def main():
         print(f"whatshap phase file has already been generated; skipping.")
     
     # Run WhatsHap polyphase
-    polyFileName = os.path.join(args.outputDirectory, "whatshap.poly.vcf")
+    polyFileName = os.path.join(whatshapDir, "whatshap.poly.vcf")
     if (not os.path.exists(polyFileName) and not os.path.exists(compressedWhatsHapName)) or not \
         os.path.exists(os.path.join(args.outputDirectory, "poly_was_successful.flag")):
             ZS_VCFIO.StandardProgramRunners.whatshap_polyphase(finalVcfFileName, args.fastaFile,
@@ -805,15 +822,10 @@ def main():
     
     # Otherwise, generate the phased FASTA files for each gene
     else:
-        # Make the output directory
-        phasingOutputDir = os.path.join(args.outputDirectory, "phasing")
-        os.makedirs(phasingOutputDir, exist_ok=True)
-        
-        # Perform main phasing loop
         with open(os.path.join(args.outputDirectory, "haplotyping_results.tsv"), "w") as logOut:
             # Write log file header
             logOut.write("GeneID\thas_snps\t{0}\n".format("\t".join( [ f"{sid}_haplotype1\t{sid}_haplotype2" for sid in phasedVCF_obj.samples ])))
-                
+            
             # Iterate through genes
             for parentType in gff3Obj.parentTypes:
                 for parentFeature in gff3Obj.types[parentType]:

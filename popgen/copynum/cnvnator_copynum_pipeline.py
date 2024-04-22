@@ -296,7 +296,7 @@ def find_genes_within_cnvs(callsList, gff3Obj, overlapProportion=0.5):
         # Store any identified genes with their CNV information
         for foundGeneID in foundGenes:
             cnvGenes.append([foundGeneID, normalisedRD])
-            
+    
     return cnvGenes
 
 ## Main
