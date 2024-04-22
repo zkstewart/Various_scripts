@@ -241,20 +241,20 @@ def run_smudgeplot_hetkmers(kmcDumpFile, outputFileName, smudgeplotPath):
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
                         f'({smudgeerr.decode("utf-8")}) to make sense of this.'))
 
-def run_smudgeplot_plot(smudgeCoveragesFile, outputFileName, samplePrefix, smudgeplotPath):
+def run_smudgeplot_plot(smudgeCoveragesFile, outputPrefix, samplePrefix, smudgeplotPath):
     '''
     Parameters:
         smudgeCoveragesFile -- a string indicating the location of the smudgeplot
                                _coverages.tsv file
+        outputPrefix -- a string indicating the prefix for output file names
         samplePrefix -- a string to use for the plot title; typically the sample name
-        outputFileName -- a string indicating the output file name for the plot result
         smudgeplotPath -- a string indicating the location of the smudgeplot.py executable
     '''
     # Construct the cmd for subprocess
     cmd = ZS_Utility.base_subprocess_cmd(smudgeplotPath)
     cmd += [
         "plot", "-t", samplePrefix,
-        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFileName),
+        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputPrefix),
         ZS_Utility.convert_to_wsl_if_not_unix(smudgeCoveragesFile)
         
     ]
@@ -273,6 +273,21 @@ def run_smudgeplot_plot(smudgeCoveragesFile, outputFileName, samplePrefix, smudg
         raise Exception(("ERROR: run_smudge_plot encountered an error; have a look " +
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
                         f'({smudgeerr.decode("utf-8")}) to make sense of this.'))
+
+def parse_smudge_ploidy(summaryFileName):
+    '''
+    Parameters:
+        summaryFileName -- a string indicating the location of the smudgepot verbose summary file
+    Returns:
+        ploidyNum -- string value of the most likely ploidy number according to smudgeplot
+    '''
+    with open(summaryFileName, "r") as fileIn:
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            if sl[0] == "* Proposed ploidy:":
+                assert len(sl) == 2, \
+                    f"ERROR: smudgeplot summary file '{summaryFileName}' has an unexpected format."
+                return sl[1]
 
 ## Main
 def main():
@@ -419,15 +434,39 @@ def main():
                 print(f"smudgeplot hetkmers has already been run for '{samplePrefix}'; skipping.")
             
             # Run smudgeplot plot function
-            plotFileName = os.path.join(args.outputDirectory, samplePrefix + "_plot.txt")
+            plotPrefix = os.path.join(args.outputDirectory, samplePrefix + "_plot")
+            plotFileName = plotPrefix + "_smudgeplot.png"
             if not os.path.exists(plotFileName):
-                run_smudgeplot_plot(hetkmersFileName, plotFileName, samplePrefix, args.smudgeplot)
+                run_smudgeplot_plot(hetkmersFileName, plotPrefix, samplePrefix, args.smudgeplot)
             else:
                 print(f"smudgeplot plot has already been run for '{samplePrefix}'; skipping.")
         
         open(os.path.join(args.outputDirectory, "pipeline_was_successful.flag"), "w").close()
     else:
         print(f"kmc->smudgeplot pipeline has already been performed; skipping.")
+    
+    # Tabulate ploidy number results
+    ploidyTableFile = os.path.join(args.outputDirectory, "ploidy_numbers.tsv")
+    if not os.path.exists(os.path.join(args.outputDirectory, "tabulation_was_successful.flag")):
+        # Begin generating result tabulation
+        with open(ploidyTableFile, "w") as fileOut:
+            # Write header line
+            fileOut.write("sampleid\tploidy\n")
+            
+            # Iterate through samples
+            for pair in pairedReads:
+                samplePrefix = pair[0].replace(args.fastqSuffix, "")
+                
+                # Parse the output summary file
+                summaryFileName = os.path.join(args.outputDirectory, samplePrefix + "_plot_verbose_summary.txt")
+                ploidyNum = parse_smudge_ploidy(summaryFileName)
+                
+                # Write result to file
+                fileOut.write(f"{samplePrefix}\t{ploidyNum}\n")
+        
+        open(os.path.join(args.outputDirectory, "tabulation_was_successful.flag"), "w").close()
+    else:
+        print(f"tabulation has already been performed; skipping.")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
