@@ -219,6 +219,86 @@ def cnvnator_call(rootFileName, windowSize, callFileName, cnvnatorFile):
     with open(callFileName, "w") as fileOut:
         fileOut.write(natorout.decode("utf-8"))
 
+def parse_cnvnator_calls(callFile, evalueCutoff=1e-5):
+    '''
+    Parameters:
+        callFile -- a string indicating the location of a CNVnator call file
+        evalueCutoff -- a float indicating the E-value significance of the T-test
+                        for a CNV to be called; default == 1e-5
+    Returns:
+        callsList -- a list of lists with format like:
+                     [
+                         [chromosome, start, end, normalisedRD],
+                         ...,
+                     ]
+    '''
+    MAGIC_NUM = 0.1
+    callsList = []
+    
+    with open(callFile, "r") as fileIn:
+        for line in fileIn:
+            cnvType, coords, cnvSize, normalisedRD, eval1, \
+                eval2, eval3, eval4, q0 = line.rstrip("\r\n ").split("\t")
+            
+            # Skip if E-value 1 (T-test statistic) does not meet significance
+            if float(eval1) > evalueCutoff:
+                continue
+            
+            # Extract start and end from coords
+            chromosome, coords = coords.split(":")
+            start, end = coords.split("-")
+            
+            # Skip if RD doesn't diverge enough from 1
+            normalisedRD = float(normalisedRD)
+            if ((round((normalisedRD + MAGIC_NUM)*2) / 2) == 1) or ((round((normalisedRD - MAGIC_NUM)*2) / 2) == 1):
+                continue
+            
+            # Store values
+            callsList.append([chromosome, int(start), int(end), normalisedRD])
+    
+    return callsList
+
+def find_genes_within_cnvs(callsList, gff3Obj, overlapProportion=0.5):
+    '''
+    Parameters:
+        callsList -- a list of lists with format like:
+                     [
+                         [chromosome, start, end, normalisedRD],
+                         ...,
+                     ]
+        gff3Obj -- a ZS_GFF3IO.GFF3 object with NCLS indexing applied
+        overlapProportion -- a float indicating the proportion of a gene that must
+                             be within a CNV to be considered; default == 0.5
+    Returns:
+        callsList -- a list of lists with format like:
+                     [
+                         [chromosome, start, end, normalisedRD],
+                         ...,
+                     ]
+    '''
+    cnvGenes = []
+    for chromosome, start, end, normalisedRD in callsList:
+        # Find genes overlapping this region via NCLS
+        overlappingGenes = gff3Obj.ncls_finder(start, end, "contig", chromosome)
+        if overlappingGenes == []:
+            continue
+        
+        # Calculate the proportion of the gene(s) that are within the CNV
+        foundGenes = []
+        for geneFeature in overlappingGenes:
+            geneStart, geneEnd = geneFeature.coords
+            if geneStart <= end and geneEnd >= start:
+                thisOverlap = min(end, geneEnd) - max(start, geneStart) + 1
+                thisProportion = thisOverlap / (end - start + 1)
+                if thisProportion >= overlapProportion:
+                    foundGenes.append(geneFeature.ID)
+        
+        # Store any identified genes with their CNV information
+        for foundGeneID in foundGenes:
+            cnvGenes.append([foundGeneID, normalisedRD])
+            
+    return cnvGenes
+
 ## Main
 def main():
     # User input
@@ -337,7 +417,7 @@ def main():
                 open(hisFlag, "w").close()
             else:
                 print(f"cnvnator 'his' already been run for '{bamBase}'; skipping.")
-        
+            
             # Run stat
             statFlag = os.path.join(rootDir, bamBase + ".stat_was_successful.flag")
             if not os.path.exists(statFlag):
@@ -346,7 +426,7 @@ def main():
                 open(statFlag, "w").close()
             else:
                 print(f"cnvnator 'stat' already been run for '{bamBase}'; skipping.")
-
+            
             # Run partition
             partitionFlag = os.path.join(rootDir, bamBase + ".partition_was_successful.flag")
             if not os.path.exists(partitionFlag):
@@ -366,22 +446,47 @@ def main():
                 open(callFlag, "w").close()
             else:
                 print(f"cnvnator 'call' already been run for '{bamBase}'; skipping.")
-            
+        
         open(os.path.join(args.outputDirectory, "cnvnator_was_successful.flag"), "w").close()
     else:
         print(f"cnvnator has already been performed; skipping.")
     
-    # Parse the GFF3 file
-    #gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse = not args.relaxedParsing)
+    # Parse the GFF3 file with NCLS indexing
+    gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse = not args.relaxedParsing)
+    gff3Obj.create_ncls_index(typeToIndex="gene")
     
-    # # Tabulate gene copy number results
-    # copynumTableFile = os.path.join(args.outputDirectory, "gene_copy_numbers.tsv")
-    # if not os.path.exists(copynumTableFile) or not \
-    #     os.path.exists(os.path.join(args.outputDirectory, "copynum_tabulation_was_successful.flag")):            
-    #         tabulate_copynum_estimates(freecBaseDir, copynumTableFile) # not implemented yet
-    #         open(os.path.join(args.outputDirectory, "copynum_tabulation_was_successful.flag"), "w").close()
-    # else:
-    #     print(f"copy number table file has already been generated; skipping.")
+    # Tabulate gene copy number results
+    CHOSEN_WINDOW_SIZE = 10000
+    
+    copynumTableFile = os.path.join(args.outputDirectory, "gene_copy_numbers.tsv")
+    if not os.path.exists(os.path.join(args.outputDirectory, "tabulation_was_successful.flag")):
+        # Locate symlinked BAM files
+        bamFiles = [ os.path.join(bamsDir, file) for file in os.listdir(bamsDir) ]
+        
+        # Begin generating result tabulation
+        with open(copynumTableFile, "w") as fileOut:
+            # Write header line
+            fileOut.write("sampleid\tgeneid\tmultiplication\n")
+            
+            # Iterate through each sample's call file
+            for bamFile in bamFiles:
+                samplePrefix = os.path.basename(bamFile).replace(args.bamSuffix, "")
+                
+                # Parse the call file for CNV regions
+                callFile = os.path.join(callsDir, f"{samplePrefix}.calls.{CHOSEN_WINDOW_SIZE}.tsv")
+                callsList = parse_cnvnator_calls(callFile)
+                
+                # Find genes contained within a call region
+                cnvGenes = find_genes_within_cnvs(callsList, gff3Obj)
+                
+                # Write any results to file
+                for geneID, normalisedRD in cnvGenes:
+                    multiplicationFactor = round(normalisedRD*2) / 2
+                    fileOut.write(f"{samplePrefix}\t{geneID}\t{multiplicationFactor}\n")
+        
+        open(os.path.join(args.outputDirectory, "tabulation_was_successful.flag"), "w").close()
+    else:
+        print(f"tabulation has already been performed; skipping.")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
