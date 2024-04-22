@@ -245,6 +245,11 @@ def parse_amycne_copynum(amycneFile):
             if int(roundedCN) == 2:
                 continue
             
+            # Skip if it bugged and used no bins
+            "Not sure why AMYCNE does this, but it has enough bugs I've already had to fix so why am I surprised?"
+            if int(usedBinRatio) == 0:
+                continue
+            
             # Derive the normalised read depth value
             """It's probably not a real normalised RD, but it's analogous to how I handle the CNVnator pipeline;
             use stdev since some samples have highly variable reference coverage value which I want to account for
