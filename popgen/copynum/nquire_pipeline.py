@@ -137,7 +137,7 @@ def parse_lrdmodel_file(lrdModelFile):
             
             # Handle first line
             if firstLine:
-                assert sl == ["file", "free", "dip", "tri", "test", "d_dip", "d_tri", "d_tet"], \
+                assert sl == ["file", "free", "dip", "tri", "tet", "d_dip", "d_tri", "d_tet"], \
                     f"ERROR: lrdmodel file '{lrdModelFile}' is not formatted correctly; header isn't as expected"
                 firstLine = False
             # Handle subsequent line
