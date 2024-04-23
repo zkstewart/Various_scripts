@@ -145,10 +145,10 @@ def parse_lrdmodel_file(lrdModelFile):
                 f, free, dip, tri, tet, d_dip, d_tri, d_tet = sl
                 
                 # Get the ordered likelihoods
-                ploidyLikelihoodOrder = [[float(dip), "diploid"], [float(tri), "triploid"], [float(tet), "tetraploid"]]
+                ploidyLikelihoodOrder = [[float(d_dip), "diploid"], [float(d_tri), "triploid"], [float(d_tet), "tetraploid"]]
                 ploidyLikelihoodOrder.sort(key = lambda x: x[0])
                 
-                return [x[1] for x in ploidyLikelihoodOrder]
+                return ploidyLikelihoodOrder
 
 def tabulate_ploidy_estimates(lrdmodelDir, outputFileName):
     '''
@@ -160,7 +160,8 @@ def tabulate_ploidy_estimates(lrdmodelDir, outputFileName):
     '''
     with open(outputFileName, "w") as fileOut:
         # Write header line
-        fileOut.write("sample_id\tlikely_ploidy\tnext_likeliest\tleast_likely\n")
+        fileOut.write("sample_id\tlikely_ploidy\tnext_likeliest\tleast_likely" + 
+                      "\tlikely_deltalog\tnext_deltalog\tleast_deltalog\n")
         
         # Iterate through each sample folder
         for lrdResultFile in os.listdir(lrdmodelDir):
@@ -168,9 +169,12 @@ def tabulate_ploidy_estimates(lrdmodelDir, outputFileName):
                 # Parse the lrdmodel results file
                 first, second, third = parse_lrdmodel_file(os.path.join(lrdmodelDir, lrdResultFile))
                 
+                # Format results
+                results = f"{first[1]}\t{second[1]}\t{third[1]}\t{first[0]}\t{second[0]}\t{third[0]}"
+                
                 # Write to file
                 lrdPrefix = lrdResultFile.rsplit(".", maxsplit=1)[0]
-                fileOut.write(f"{lrdPrefix}\t{first}\t{second}\t{third}\n")
+                fileOut.write(f"{lrdPrefix}\t{results}\n")
 
 ## Main
 def main():
