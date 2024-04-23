@@ -1,10 +1,9 @@
 #! python 3
-# predict_chimeric_transcripts.py
+# complement_amplicons.py
 # A script to receive a multiple sequence alignment of reference sequences
-# alongside a FASTQ file of amplicon reads which are on the same strand as
-# the reference. This script will then use smith waterman alignment and
-# a rough heuristic to determine whether the read may be chimeric. The
-# input FASTQ will be split into chimeric and non-chimeric output FASTQ files.
+# alongside a FASTQ file of amplicon reads. This script will use a simple
+# Levenshtein ratio to determine whether the read should be reverse complemented
+# to match the reference sequence or not.
 
 import os, argparse, gzip
 
@@ -53,14 +52,10 @@ def open_gz_file(filename):
 
 
 def main():
-    usage = """%(prog)s will predict chimeric amplicons by ...
-    
-    1) The reference FASTA must have more than one sequence, and be 
-    a multiple sequence alignment. Try to keep it to just the amplicon
-    region.
-    2) The input FASTQ must have all reads in the same orientation
-    as the reference sequence. You can ensure that by first running
-    unify_complement_seqs.py.
+    usage = """%(prog)s will receive a FASTQ file of amplicon reads and a reference amplicon
+    sequence. It will then compare each read to the reference amplicon, and if the reverse
+    complement of the read is a better match, it will reverse complement the read and write
+    it to a new FASTQ file.
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
