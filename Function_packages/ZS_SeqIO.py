@@ -88,6 +88,10 @@ class Conversion:
             # Gives a lame ID string, but if you're making a FASTA file this way you mustn't care about that anyway
             inObject = FastASeq("tmpID", inObject)
         
+        # If value is a Bio.SeqIO.SeqRecord, make it a FastASeq object
+        if type(inObject).__name__ == "SeqRecord":
+            inObject = FastASeq(inObject.id, str(inObject.seq))
+        
         # If inObject is a FastASeq, make it a FASTA object
         if hasattr(inObject, "isFastASeq") and inObject.isFastASeq is True:
             tmpFASTA = FASTA(None) # create an empty FASTA object
@@ -195,6 +199,8 @@ class Conversion:
         # Get a string for hash building
         if isinstance(inObject, str):
             strForHash = inObject
+        elif type(inObject).__name__ == "SeqRecord":
+            strForHash = inObject.id + str(inObject.seq)[0:1000]
         elif hasattr(inObject, "isFASTA") and inObject.isFASTA is True:
             strForHash = ""
             for FastASeq_obj in inObject:
