@@ -324,7 +324,7 @@ class MAFFT:
         # Set flag that this FASTA object has been aligned
         FASTA_obj.isAligned = True
     
-    def add(self, aligned_FASTA_obj, add_FASTA_obj):
+    def add(self, alignedFasta, toAddFasta, reorder=True, keeplength=False):
         '''
         Handles the execution of MAFFT alignment, running in the mode where new sequences
         are added into an existing alignment. This method otherwise behaves similarly to
@@ -339,50 +339,81 @@ class MAFFT:
         set_threads() and use_linsi() if you don't want the default E-INSi behaviour.
         
         Params:
-            aligned_FASTA_obj -- an object of ZS_SeqIO.FASTA class which has already been
-                                 aligned and is to have new sequences added into it.
-            add_FASTA_obj -- an object of ZS_SeqIO.FASTA class which has not been aligned
-                               and will be added into the existing alignment
+            alignedFasta -- a string indicating a file path, OR an object of ZS_SeqIO.FASTA class
+                            which has already been aligned and is to have new sequences added into it.
+            toAddFasta -- a string indicating a file path, OR an object of ZS_SeqIO.FASTA class which
+                          has not been aligned and will be added into the existing alignment
+            reorder -- OPTIONAL; a boolean indicating whether to run MAFFT with the --reorder flag to maintain
+                       the original ordering of the alignedFasta file/FASTA object.
+                       Default == True.
+            keeplength -- OPTIONAL;  a boolean indicating whether to run MAFFT with the --keeplength flag to
+                          maintain the original length of the alignedFasta file/FASTA object.
+                          Default == False.
         Returns:
             result_FASTA_obj -- an object of ZS_SeqIO.FASTA class which results from MAFFT
                                 adding the add_FASTA_obj into aligned_FASTA_obj
-        '''
+        '''        
         # Validate input value type
-        # assert isinstance(aligned_FASTA_obj, FASTA) ## This fails -- annoying!
-        assert type(aligned_FASTA_obj).__name__ == "FASTA" or type(aligned_FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
-        assert aligned_FASTA_obj.isAligned, "aligned_FASTA_obj must be aligned first!"
-        # assert isinstance(add_FASTA_obj, FASTA)
-        assert type(add_FASTA_obj).__name__ == "FASTA" or type(add_FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
+        assert (isinstance(alignedFasta, str) and os.path.isfile(alignedFasta)) or hasattr(alignedFasta, "isFASTA") and alignedFasta.isFASTA, \
+            "alignedFasta must be a string or a FASTA object"
+        if hasattr(alignedFasta, "isFASTA"):
+            assert alignedFasta.isAligned, "alignedFasta must be aligned first!"
         
-        # Create temporary files
-        tmpHash = sha256(bytes(str(aligned_FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+        assert (isinstance(toAddFasta, str) and os.path.isfile(toAddFasta)) or hasattr(toAddFasta, "isFASTA") and toAddFasta.isFASTA, \
+            "toAddFasta must be a string or a FASTA object"
         
-        tmpAlignedFileName = tmp_file_name_gen("mafft_aligned_tmp" + tmpHash[0:20], "fasta")
-        aligned_FASTA_obj.write(tmpAlignedFileName, asAligned=True, withDescription=True)
+        # If object type is ZS_SeqIO.FASTA, create temporary files
+        alignedIsTemporary = False
+        if hasattr(alignedFasta, "isFASTA"):
+            tmpHash = sha256(bytes(str(alignedFasta.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+            tmpAlignedFileName = tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
+            alignedFasta.write(tmpAlignedFileName, asAligned=True, withDescription=True)
+            alignedIsTemporary = True
+        else:
+            tmpAlignedFileName = alignedFasta
         
-        tmpAddedFileName = tmp_file_name_gen("mafft_added_tmp" + tmpHash[0:20], "fasta")
-        add_FASTA_obj.write(tmpAddedFileName, withDescription=True)
+        toAddIsTemporary = False
+        if hasattr(toAddFasta, "isFASTA"):
+            tmpHash = sha256(bytes(str(toAddFasta.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+            tmpToAddFileName = tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
+            toAddFasta.write(tmpToAddFileName, withDescription=True)
+            toAddIsTemporary = True
+        else:
+            tmpToAddFileName = toAddFasta
         
+        # Generate temporary output file name
+        tmpHash = sha256(
+            bytes(
+                str(alignedFasta.fileOrder[0][0]) if hasattr(alignedFasta, "isFASTA") else alignedFasta +
+                str(toAddFasta.fileOrder[0][0]) if hasattr(toAddFasta, "isFASTA") else toAddFasta +
+                str(time.time()) +
+                str(random.randint(0, 100000)), 'utf-8'
+            )
+        ).hexdigest()
         tmpOutputFileName = tmp_file_name_gen("mafft_output_tmp" + tmpHash[0:20], "fasta")
         
         # Format command for running
-        cmd = "{0} --thread {1} --add \"{2}\" \"{3}\" > \"{4}\"".format(
-            os.path.join(self.mafftDir, "mafft"), self.cline.thread,
-            tmpAddedFileName, tmpAlignedFileName, tmpOutputFileName
+        cmd = "{0}{1}{2} --thread {3} --add \"{4}\" \"{5}\" > \"{6}\"".format(
+            os.path.join(self.mafftDir, "mafft"),
+            " --reorder" if reorder else "", " --keeplength" if keeplength else "",
+            self.cline.thread,
+            tmpToAddFileName, tmpAlignedFileName, tmpOutputFileName
         )
         
         # Run
         run_mafft = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
         stdout, stderr = run_mafft.communicate()
-        if stdout == '':
-            raise Exception("MAFFT error text below" + str(stderr))
+        if "Strategy:" not in stderr.decode("utf-8"):
+            raise Exception("MAFFT error text below" + stderr.decode("utf-8"))
         
         # Parse output file into new FASTA object
         result_FASTA_obj = FASTA(tmpOutputFileName, isAligned=True)
         
         # Clean up temporary files
-        os.unlink(tmpAlignedFileName)
-        os.unlink(tmpAddedFileName)
+        if alignedIsTemporary:
+            os.unlink(tmpAlignedFileName)
+        if toAddIsTemporary:
+            os.unlink(tmpToAddFileName)
         os.unlink(tmpOutputFileName)
         
         # Return new result
