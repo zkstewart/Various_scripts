@@ -829,7 +829,9 @@ class FASTA:
         
         # Diverge into one of the three overload methods
         if isinstance(fasta, str):
-            if not os.path.isfile(fasta):
+            if fasta.startswith(">"):
+                self._add_from_string(fasta, isAligned)
+            elif not os.path.isfile(fasta):
                 raise Exception("{0} does not exist; can't add".format(fasta))
             else:
                 self._add_from_file(fasta, isAligned)
@@ -876,6 +878,38 @@ class FASTA:
                 self.seqs.append(FastASeq_obj)
         
         self.fileOrder.append([fastaFile, "add"])
+    
+    def _add_from_string(self, fastaString, isAligned):
+        # Helper function to prevent code duplication
+        def __process_seq(id, seq):
+            seq = "".join(seq)
+            if isAligned:
+                FastASeq_obj = FastASeq(id=id, gapSeq=seq)
+            else:
+                FastASeq_obj = FastASeq(id=id, seq=seq)
+            self.seqs.append(FastASeq_obj)
+        
+        # Process the FASTA string
+        seq = []
+        for line in fastaString.rstrip("\r\n ").split("\n"):
+            if line.startswith(">"): # id line
+                # Store FastASeq object
+                if seq != []:
+                    __process_seq(id, seq)
+                
+                # Set up for new FastASeq object collection
+                id = line.rstrip("\r ")[1:] # remove the ">" character
+                seq = []
+            else: # seq line
+                seq.append(line.rstrip("\r "))
+        
+        # Process the last sequence group
+        if seq != []:
+            __process_seq(id, seq)
+        else:
+            raise Exception("Provided FASTA string has no sequences")
+        
+        self.fileOrder.append(["string", "add"])
     
     def concat(self, fasta):
         '''
