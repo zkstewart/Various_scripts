@@ -6,12 +6,49 @@
 # a rough heuristic to determine whether the read may be chimeric. The
 # input FASTQ will be split into chimeric and non-chimeric output FASTQ files.
 
-import os, argparse, sys, gzip
+import os, argparse, sys, gzip, subprocess, platform
 from contextlib import contextmanager
 from Bio import SeqIO
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from Function_packages import ZS_SeqIO, ZS_AlignIO
+from Function_packages import ZS_SeqIO, ZS_Utility
+
+class MinimalMUSCLE:
+    '''
+    Provides a minimal interface to the MUSCLE aligner, for the purpose of adding
+    sequences into an existing alignment. Its minimisation is to try to keep its
+    footprint small for speed purposes, so it won't perform any kind of validation
+    since it is assumed that the input sequences are already validated via their
+    direct implementation in this script.
+    '''
+    def __init__(self, musclePath, gapOpen=-1, gapExtend=2):
+        self.exe = musclePath
+        self.gapOpen = gapOpen
+        self.gapExtend = gapExtend
+    
+    def add(self, originalMSA, toAdd):
+        # Construct the cmd for subprocess
+        cmd = [self.exe, "-profile", "-in1", originalMSA, "-in2", toAdd,
+               "-gapopen", str(self.gapOpen), "-gapextend", str(self.gapExtend)]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_muscle = subprocess.Popen(cmd, shell = True,
+                                stdout = subprocess.PIPE,
+                                stderr = subprocess.PIPE)
+        muscleout, muscleerr = run_muscle.communicate()
+        
+        # Check to see if there was an error
+        if (not "Writing output" in muscleerr.decode("utf-8")):
+            raise Exception(("ERROR: MinimalMUSCLE.add() encountered an error; have a look " +
+                            f'at the stdout ({muscleout.decode("utf-8")}) and stderr ' + 
+                            f'({muscleerr.decode("utf-8")}) to make sense of this.'))
+        
+        # Parse out the MSA result
+        msa = muscleout.decode("utf-8").replace("\r", "")
+        return msa
 
 def validate_args(args):
     # Validate input data locations
@@ -23,6 +60,18 @@ def validate_args(args):
         print(f'I am unable to locate the reads FASTQ file ({args.fastqFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    
+    # Validate MUSCLE location
+    if not os.path.isfile(args.muscle):
+        print(f'I am unable to locate the MUSCLE executable ({args.muscle})')
+        print("Make sure you've specified the correct location, and try again.")
+        quit()
+    
+    # Validate numeric arguments
+    if args.gapOpen > 0:
+        print("gapOpen value must be 0 or negative; positive values induce weird behaviour in MUSCLE")
+        quit()
+    
     # Handle file output
     args.chimerOut = os.path.join(args.outputDirectory, "chimeras.fastq")
     args.nonChimerOut = os.path.join(args.outputDirectory, "non_chimeras.fastq")
@@ -148,41 +197,51 @@ def most_common_position(positions):
                 mostFrequent = [numOfThisPosition, position]
         return mostFrequent[1]
 
-def align_record_to_consensus(record, consensusReference):
+def align_record_to_reference(record, originalMSA, muscleObj):
     '''
-    Peforms striped smith waterman alignment of the record
-    (which should be an amplicon sequence) against a consensus
-    sequence. Cleans up the alignment to make it uniform in length
-    against the original consensus.
+    Peforms MAFFT L-insi --add of the record (which should be an amplicon
+    sequence) against a reference MSA. Cleans up the alignment to make it
+    uniform in length against the original alignment.
     
     Parameters:
         record -- a SeqIO.SeqRecord object with a nucleotide amplicon read
-        consensusReference -- a string of a nucleotide generated via
-                              consensus generation from a MSA.
+        originalMSA -- a string indicating the file location of the original
+                       reference alleles MSA file.
+        muscleObj -- a MinimalMUSCLE object for aligning sequences
     Returns:
         queryAlign -- a string with gaps indicated where relevant for
                       the alignment of the amplicon against the consensus
-        consensusAlign -- a string of how the consensus was aligned against
-                          the amplicon sequence.
     '''
-    alignResult = ZS_AlignIO.SSW.ssw_parasail(
-        str(record.seq), consensusReference, "nucleotide"
-    ) # TBD: Alignment needs to be against a static reference
+    # Write the record to a temporary FASTA file
+    tmpFileName = ZS_Utility.tmp_file_name_gen("chimeras_muscle", "fasta")
+    with open(tmpFileName, "w") as fileOut:
+        SeqIO.write(record, fileOut, "fasta")
     
-    # Adjust the query alignment to have the same positioning as the consensus
-    queryAlign, consensusAlign = "", ""
-    for qNuc, tNuc in zip(alignResult.queryAlign, alignResult.targetAlign):
-        if tNuc != "-":
-            queryAlign += qNuc
-            consensusAlign += tNuc
+    # Run MUSCLE to add the record to the reference MSA
+    msa = muscleObj.add(originalMSA, tmpFileName)
     
-    # Add any gaps to the start and end for uniformity of length
-    queryAlign = '-'*alignResult.targetStartIndex + queryAlign
-    queryAlign += '-'*(len(consensusReference) - len(queryAlign))
+    # Clean up the temporary file
+    os.remove(tmpFileName)
     
-    return queryAlign, consensusAlign
+    # Parse the MSA into a FASTA object
+    alignedFASTA = ZS_SeqIO.FASTA(msa, isAligned=True)
+    
+    # Drop any positions that don't have a residue in the original MSA
+    refSeqs = [ x.gap_seq for x in alignedFASTA.seqs if x.id != record.id ]
+    recordSeq = alignedFASTA[record.id].gap_seq
+    
+    adjustedRefs = [ "" for x in refSeqs ]
+    adjustedRecord = ""
+    for posIndex in range(len(recordSeq)):
+        refResidues = set([ x[posIndex] for x in refSeqs ])
+        if refResidues != {"-"}:
+            for i in range(len(refSeqs)):
+                adjustedRefs[i] += refSeqs[i][posIndex]
+            adjustedRecord += recordSeq[posIndex]
+    
+    return adjustedRecord
 
-def get_vote_data(refHaplotypes, readHaplotype):
+def get_vote_data(refHaplotypes, readHaplotype, turnOffSmoothing=False):
     '''
     Performs some data smoothing of how the read's haplotype
     relates to the reference haplotypes. Ideally, the resulting
@@ -197,6 +256,12 @@ def get_vote_data(refHaplotypes, readHaplotype):
                              'C----CAAC-'
                          ]
         readHaplotype -- a string akin to 'C---GCAACT'
+        turnOffSmoothing -- OPTIONAL; a boolean indicating whether
+                        vote smoothing over a sliding window should
+                        be turned off. It is believed that smoothing
+                        will make the algorithm more tolerant to
+                        rare substitution errors. Default is False,
+                        i.e., smoothing will be applied.
     Returns:
         voteLines -- a list of strings akin to:
                      [
@@ -211,6 +276,8 @@ def get_vote_data(refHaplotypes, readHaplotype):
                             [1, 1, 1, 1, 1, 1, 1, 1, 1, 0]
                         ]
     '''
+    WINDOW_SIZE = 1
+    
     # Create "vote line" list for finding where variants are shared
     voteLines = [ '' for i in range(len(refHaplotypes)) ]
     for i in range(len(readHaplotype)):
@@ -221,10 +288,13 @@ def get_vote_data(refHaplotypes, readHaplotype):
             else:
                 voteLines[x] += '-'
     
-    # Calculate a moving window for optimal alignment site
-    'This smoothes the vote line'
+    # If we're not smoothing, return a simple vote line
+    if turnOffSmoothing:
+        return voteLines, [ [1 if x == "X" else 0 for x in line] for line in voteLines ]
+    
+    # Otherwise, smooth over a moving window for optimal alignment site
     voteSmoothed = []
-    windowSize = 1
+    
     for voteLine in voteLines:
         voteSmoothed.append([])
         # Harshly weight first SNP
@@ -234,13 +304,16 @@ def get_vote_data(refHaplotypes, readHaplotype):
             voteSmoothed[-1].append(0)
         
         # Calculate for body SNPs
-        for i in range(windowSize, len(voteLine) - windowSize):
-            window = voteLine[i-windowSize:i+windowSize+1]
-            if window.count("X") / len(window) > 0.5:
+        for i in range(WINDOW_SIZE, len(voteLine) - WINDOW_SIZE):
+            if voteLine[i] == "X": # don't smooth if this position is the same as a reference type
                 voteSmoothed[-1].append(1)
             else:
-                voteSmoothed[-1].append(0)
-            # voteSmoothed[-1].append(window.count("X") / len(window))
+                window = voteLine[i-WINDOW_SIZE:i+WINDOW_SIZE+1]
+                
+                if window.count("X") / len(window) > 0.5:
+                    voteSmoothed[-1].append(1)
+                else:
+                    voteSmoothed[-1].append(0)
         
         # Harshly weight last SNP
         if voteLine[-1] == "X":
@@ -253,7 +326,7 @@ def get_vote_data(refHaplotypes, readHaplotype):
 def find_last_index(inputList, value):
     return len(inputList) - inputList[::-1].index(value) - 1
 
-def is_possible_chimera(voteSmoothed, voteLines):
+def is_possible_chimera(voteSmoothed, voteLines, disallowAmbiguity=False):
     '''
     Employs a relatively simple heuristic upon the smoothed vote list to
     see if there may be a reference switch occurring in the amplicon sequence
@@ -276,6 +349,10 @@ def is_possible_chimera(voteSmoothed, voteLines):
                          'XX---XXXXX',
                          '-X----X-X-'
                      ]
+        disallowAmbiguity -- OPTIONAL; a boolean indicating whether to, in situations
+                             where chimerism is ambiguous and a read has no clear breakpoint,
+                             to consider it as a chimera. Default is False, i.e., ambiguous
+                             amplicons will not be considered as chimeras.
     Returns:
         isMaybeChimera -- a boolean of True if the amplicon might be chimeric, else False
     '''
@@ -309,7 +386,7 @@ def is_possible_chimera(voteSmoothed, voteLines):
             # Take the best vote at face value now - ties be damned if the above didn't solve it
             bestVote = voteNums.index(max(voteNums))
     
-    # Get the best smooted vote line
+    # Get the best smoothed vote line
     bestVoteSmoothed = voteSmoothed[bestVote]
     otherVoteSmoothed = [ voteSmoothed[i] for i in range(len(voteSmoothed)) if i != bestVote ]
     
@@ -317,57 +394,103 @@ def is_possible_chimera(voteSmoothed, voteLines):
     if not 0 in bestVoteSmoothed:
         return False
     
-    # Otherwise, see if reference switching improves the best vote line
-    bestVoteLeft = bestVoteSmoothed[0: bestVoteSmoothed.index(0)]
-    leftMaybeChimera = any([
-        len(otherVote[0: otherVote.index(0)]) > len(bestVoteLeft)
-        for otherVote in otherVoteSmoothed
-    ])
+    # Otherwise, see if reference switching at an internal cut line improves the best vote line
+    for cutIndex in range(1, len(bestVoteSmoothed) - 1):
+        bestLeft, bestRight = bestVoteSmoothed[0: cutIndex], bestVoteSmoothed[cutIndex: ]
+        for otherVote in otherVoteSmoothed:
+            otherLeft, otherRight = otherVote[0: cutIndex], otherVote[cutIndex: ]
+            
+            if disallowAmbiguity:
+                # If the other left is possibly better than the best left
+                if (0 in bestLeft and bestLeft != otherLeft and sum(otherLeft) >= sum(bestLeft)):
+                    # AND the other right is possibly worse than the best right
+                    "This fulfills our assumption of chimerism"
+                    if (0 in otherRight and bestRight != otherRight and sum(otherRight) <= sum(bestRight)):
+                        return True
+                
+                # Otherwise, if the other right is possibly better than the best right
+                elif (0 in bestRight and bestRight != otherRight and sum(otherRight) >= sum(bestRight)):
+                    # AND the other left is possibly worse than the best left
+                    "This fulfills our assumption of chimerism"
+                    if (0 in otherLeft and bestLeft != otherLeft and sum(otherLeft) <= sum(bestLeft)):
+                        return True
+            else:
+                if sum(otherLeft) > sum(bestLeft) or sum(otherRight) > sum(bestRight):
+                    return True
     
-    bestVoteRight = bestVoteSmoothed[find_last_index(bestVoteSmoothed, 0)+1: ]
-    rightMaybeChimera = any([
-        len(otherVote[find_last_index(otherVote, 0)+1: ]) > len(bestVoteRight)
-        for otherVote in otherVoteSmoothed
-    ])
-    
-    return leftMaybeChimera or rightMaybeChimera
-
-def change_point_detection(voteSmoothed):
-    '''
-    Unused - was initially experimented upon but it is not a good
-    fit for this analysis.
-    '''
-    import ruptures as rpt
-    import numpy as np
-
-    signal = np.array(voteSmoothed).T
-    algo = rpt.Binseg(model="rbf").fit(signal)
-    result = algo.predict(pen=2)
-    # rpt.display(signal, result)
-    isChimera = any([ r for r in result if r < len(signal) ])
-    return isChimera
+    # If not, just return False
+    return False
 
 def main():
-    usage = """%(prog)s will predict chimeric amplicons by ...
+    usage = """%(prog)s will predict chimeric amplicons by using MUSCLE to add them into
+    a reference alleles multiple sequence alignment. Variant sites in the reference alleles
+    are identified in the amplicon, and this information is used to determine if the amplicon
+    is chimeric or not. Reads will be output split into two FASTQ files for those reads deemed
+    to be chimeric and non-chimeric. Some notes include:
     
     1) The reference FASTA must have more than one sequence, and be 
     a multiple sequence alignment. Try to keep it to just the amplicon
     region.
-    2) The input FASTQ must have all reads in the same orientation
+    2) The input FASTQ(.gz) must have all reads in the same orientation
     as the reference sequence. You can ensure that by first running
-    unify_complement_seqs.py.
+    complement_amplicons.py.
+    3) MUSCLE parameters are user specifiable, but the defaults appear to be necessary
+    for this script to work well.
+    4) --turnOffSmoothing disables some heuristics that make the script more tolerant
+    to rare but genuine sequencing errors. Turning this off will make the script more
+    strict.
+    5) --noAmbiguity will consider any read whose chimerism is ambiguous to be a chimera.
+    In this context, ambiguous chimerism occurs when there is a breakpoint in the read where
+    the read does not match its best-matching reference allele properly, and it matches another
+    allele equally well. Hence, the read could optimally be a chimer or a non-chimer.
+    This option will make the script more strict by considering these reads as chimeras.
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-fa", dest="referenceFile",
                    required=True,
-                   help="Specify the location of the reference FASTA file")
+                   help="Specify the location of the reference FASTA MSA file")
     p.add_argument("-fq", dest="fastqFile",
                    required=True,
-                   help="Specify the location of the reads FASTQ file")
+                   help="Specify the location of the reads FASTQ(.gz) file")
     p.add_argument("-o", dest="outputDirectory",
                    required=True,
-                   help="Output directory where QC files will be written")
+                   help="Output directory where chimer/non-chimer FASTQ files will be written")
+    p.add_argument("-m", dest="muscle",
+                   required=True,
+                   help="Specify the location of the MUSCLE executable")
+    # Opts (behavioural)
+    p.add_argument("--turnOffSmoothing", dest="turnOffSmoothing",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, specify this flag to disable the smoothing
+                   of the vote data. This will produce a stricter output which is
+                   less tolerant to rare substitution errors.""",
+                   default=False)
+    p.add_argument("--noAmbiguity", dest="noAmbiguity",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, specify this flag if you'd like any reads
+                   whose chimerism is ambiguous (e.g., there is no clear breakpoint,
+                   but the read could optimally be a chimer or a non-chimer) to be
+                   considered as chimeras. This will produce a stricter output which
+                   is less tolerant to rare indel errors.""",
+                   default=False)
+    # Opts (MUSCLE)
+    p.add_argument("--gapOpen", dest="gapOpen",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the gap opening penalty MUSCLE
+                   should use when aligning an amplicon against the reference alleles
+                   MSA; default==-1, which appears to work best for this script.""",
+                   default=-1)
+    p.add_argument("--gapExtend", dest="gapExtend",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the gap extension penalty MUSCLE
+                   should use when aligning an amplicon against the reference alleles
+                   MSA; default==2, which appears to work best for this script.""",
+                   default=2)
     
     args = p.parse_args()
     validate_args(args)
@@ -400,22 +523,27 @@ def main():
     # Iterate over FASTQ reads to determine if they are chimeric
     numChimeras = 0
     numReads = 0
+    muscleObj = MinimalMUSCLE(args.muscle, args.gapOpen, args.gapExtend)
     with open_gz_file(args.fastqFile) as fileIn, open(args.chimerOut, "w") as chimeraOut, open(args.nonChimerOut, "w") as nonChimerOut:
         records = SeqIO.parse(fileIn, "fastq")
         for record in records:
             numReads += 1
-            # Align record against consensus
-            queryAlign, consensusAlign = align_record_to_consensus(record, consensusReference)
+            
+            # Align record against reference
+            queryAlign = align_record_to_reference(record, args.referenceFile,
+                                                   muscleObj)
             
             # Get the variant at all relevant positions
             readHaplotype = "".join([ queryAlign[x] for x in variantDict.keys() ])
             
             # Obtain 'vote' data structures
-            voteLines, voteSmoothed = get_vote_data(refHaplotypes, readHaplotype)
+            voteLines, voteSmoothed = get_vote_data(refHaplotypes, readHaplotype,
+                                                    turnOffSmoothing = args.turnOffSmoothing)
             
             # Use a heuristic to find if the read may be chimeric
             ## Find out which reference the amplicon primarily belongs to
-            isMaybeChimera = is_possible_chimera(voteSmoothed, voteLines)
+            isMaybeChimera = is_possible_chimera(voteSmoothed, voteLines,
+                                                 disallowAmbiguity = args.noAmbiguity)
             
             # If we have a chimera, count its existence and write to file
             if isMaybeChimera:
