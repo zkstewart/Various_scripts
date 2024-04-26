@@ -50,7 +50,6 @@ def open_gz_file(filename):
         with open(filename) as f:
             yield f
 
-
 def main():
     usage = """%(prog)s will receive a FASTQ file of amplicon reads and a reference amplicon
     sequence. It will then compare each read to the reference amplicon, and if the reverse
@@ -75,7 +74,8 @@ def main():
                    type=float,
                    help="""Optionally, specify a minimum value for the Levenshtein
                    ratio between the read and the reference amplicon. Should be
-                   a float between 0->1 (inclusive); default == 0 for no filtration""",
+                   a float between 0->1 (inclusive); default == 0 for no filtration,
+                   but a value of 0.85-0.90 might be reasonable""",
                    default=0)
     
     args = p.parse_args()
