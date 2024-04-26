@@ -166,37 +166,6 @@ def validate_ref_is_distinguishable(refHaplotypes):
         print("Program will exit now.")
         quit()
 
-def most_common_position(positions):
-    '''
-    Checks a tuple of nucleotides to find the most common one which is not
-    a gap ('-')
-    
-    Parameters:
-        positions -- a tuple with more than one nucleotide as a single character
-    Returns:
-        nucleotide -- the most common nucleotide at this position that is not a gap.
-    '''
-    # Get a set of nucleotides sans gap characters
-    positionsSet = set(positions)
-    try:
-        positionsSet.remove("-")
-    except:
-        pass
-    
-    # If there is only one nucleotide, return it here
-    if len(positionsSet) == 1:
-        return positionsSet.pop()
-    
-    # Otherwise, find the most frequent nucleotide
-    else:
-        'Ties result in the first found being the representative nucleotide'
-        mostFrequent = [0, None]
-        for position in positionsSet:
-            numOfThisPosition = positions.count(position)
-            if numOfThisPosition > mostFrequent[0]:
-                mostFrequent = [numOfThisPosition, position]
-        return mostFrequent[1]
-
 def align_record_to_reference(record, originalMSA, muscleObj):
     '''
     Peforms MAFFT L-insi --add of the record (which should be an amplicon
@@ -502,12 +471,7 @@ def main():
     variantDict = {}
     seqs = [ x.gap_seq for x in fastaObj.seqs ]
     
-    consensusReference = ""
     for index, positions in enumerate(zip(*seqs)):
-        # Generate a consensus reference sans any gaps
-        nuc = most_common_position(positions)
-        consensusReference += nuc
-        
         # Skip if there are no variants in this position
         if len(set(positions)) == 1:
             continue
