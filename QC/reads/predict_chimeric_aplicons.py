@@ -182,7 +182,8 @@ def align_record_to_reference(record, originalMSA, muscleObj):
                       the alignment of the amplicon against the consensus
     '''
     # Write the record to a temporary FASTA file
-    tmpFileName = ZS_Utility.tmp_file_name_gen("chimeras_muscle", "fasta")
+    tmpHash = ZS_SeqIO.Conversion.get_hash_for_input_sequences(record)
+    tmpFileName = ZS_Utility.tmp_file_name_gen("chimeras_muscle_" + tmpHash, "fasta")
     with open(tmpFileName, "w") as fileOut:
         SeqIO.write(record, fileOut, "fasta")
     
@@ -487,27 +488,36 @@ def main():
     # Iterate over FASTQ reads to determine if they are chimeric
     numChimeras = 0
     numReads = 0
+    cachedResults = {}
     muscleObj = MinimalMUSCLE(args.muscle, args.gapOpen, args.gapExtend)
     with open_gz_file(args.fastqFile) as fileIn, open(args.chimerOut, "w") as chimeraOut, open(args.nonChimerOut, "w") as nonChimerOut:
         records = SeqIO.parse(fileIn, "fastq")
         for record in records:
             numReads += 1
             
-            # Align record against reference
-            queryAlign = align_record_to_reference(record, args.referenceFile,
-                                                   muscleObj)
+            # If this amplicon is identical a previously processed one, use the cached result
+            if str(record.seq) in cachedResults:
+                isMaybeChimera = cachedResults[str(record.seq)]
             
-            # Get the variant at all relevant positions
-            readHaplotype = "".join([ queryAlign[x] for x in variantDict.keys() ])
-            
-            # Obtain 'vote' data structures
-            voteLines, voteSmoothed = get_vote_data(refHaplotypes, readHaplotype,
-                                                    turnOffSmoothing = args.turnOffSmoothing)
-            
-            # Use a heuristic to find if the read may be chimeric
-            ## Find out which reference the amplicon primarily belongs to
-            isMaybeChimera = is_possible_chimera(voteSmoothed, voteLines,
-                                                 disallowAmbiguity = args.noAmbiguity)
+            # Otherwise, ...
+            else:
+                # ... align record against reference
+                queryAlign = align_record_to_reference(record, args.referenceFile,
+                                                       muscleObj)
+                
+                # Get the variant at all relevant positions
+                readHaplotype = "".join([ queryAlign[x] for x in variantDict.keys() ])
+                
+                # Obtain 'vote' data structures
+                voteLines, voteSmoothed = get_vote_data(refHaplotypes, readHaplotype,
+                                                        turnOffSmoothing = args.turnOffSmoothing)
+                
+                # Use a heuristic to find if the read may be chimeric
+                isMaybeChimera = is_possible_chimera(voteSmoothed, voteLines,
+                                                    disallowAmbiguity = args.noAmbiguity)
+                
+                # Cache the result
+                cachedResults[str(record.seq)] = isMaybeChimera
             
             # If we have a chimera, count its existence and write to file
             if isMaybeChimera:
