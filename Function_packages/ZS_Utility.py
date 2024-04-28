@@ -62,6 +62,28 @@ def wsl_which(program):
                              "at the stdout '" + whichout.decode("utf-8") + "' and stderr '" + 
                              whicherr.decode("utf-8") + "' to make sense of this."))
 
+def wsl_exists(program):
+    '''
+    A function to expand upon os.path.isfile to work with WSL. Emulates its behaviour
+    by directly reaching into the WSL shell and calling the Unix 'ls' command.
+    If this program is running in Unix, then os.path.isfile will be called.
+    '''
+    if platform.system() != 'Windows':
+        return os.path.isfile(program)
+    else:
+        cmd = ["wsl", "~", "-e", "ls", program]
+        run_wsl_exists = subprocess.Popen(cmd, shell = True,
+                                         stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        existsout, existserr = run_wsl_exists.communicate()
+        if "No such file or directory" in existserr.decode("utf-8"):
+            return False
+        elif program in existsout.decode("utf-8"):
+            return True
+        else:
+            raise Exception(("wsl_exists encountered an unhandled situation; have a look " +
+                             "at the stdout '" + existsout.decode("utf-8") + "' and stderr '" + 
+                             existserr.decode("utf-8") + "' to make sense of this."))
+
 def convert_to_wsl_if_not_unix(fileLocation):
     if platform.system() != 'Windows':
         return fileLocation
