@@ -371,7 +371,7 @@ class MAFFT:
         
         return FASTA_obj
     
-    def align_as_protein(self, fasta):
+    def align_as_protein(self, fasta, strands=None, frames=None):
         '''
         Handles the execution of MAFFT alignment from start to finish, but by first
         translation nucleotides into proteins, and then de-translating them. It will:
@@ -389,6 +389,14 @@ class MAFFT:
         
         Parameters:
             fasta -- a string indicating a file path, OR an object of ZS_SeqIO.FASTA class
+            strands -- OPTIONAL; a list of integers indicating the strand(s) to use for
+                       for optimal translation of each sequence. Must be the same length
+                       as the number of sequences in the FASTA object. If not provided,
+                       the program will attempt to find the best strand for each sequence.
+            frames -- OPTIONAL; a list of integers indicating the frame(s) to use for
+                      for optimal translation of each sequence. Must be the same length
+                      as the number of sequences in the FASTA object. If not provided,
+                      the program will attempt to find the best frame for each sequence.
         Returns:
             msa -- a new ZS_SeqIO.FASTA object containing the aligned sequences if you
                    specified a file, or a modified version of the original FASTA object
@@ -404,12 +412,25 @@ class MAFFT:
             raise Exception(("ERROR: MAFFT.align_as_protein() requires a FASTA file or FASTA " + 
                              f"object as input; did not understand '{fasta}'"))
         
+        if strands != None:
+            assert len(strands) == len(FASTA_obj), \
+                "strands must be the same length as the number of sequences in the FASTA object"
+        if frames != None:
+            assert len(frames) == len(FASTA_obj), \
+                "frames must be the same length as the number of sequences in the FASTA object"
+        
         # Create a new FASTA object with our translations
         forAligningFASTA = ZS_SeqIO.FASTA(None)
-        strands, frames = [], []
-        for FastASeq_obj in FASTA_obj:
+        newStrands = []
+        newFrames = []
+        for i in range(len(FASTA_obj)):
+            FastASeq_obj = FASTA_obj.seqs[i]
+            
             # Run the translation
-            protein, _strand, _frame = FastASeq_obj.get_translation(findBestFrame=True)
+            protein, _strand, _frame = FastASeq_obj.get_translation(
+                findBestFrame=False if frames != None else True,
+                strand=None if strands == None else strands[i],
+                frame=None if frames == None else frames[i])
             
             # Modify stop codons to be "X"s
             '''
@@ -422,8 +443,8 @@ class MAFFT:
             protein = protein.replace("*", "X")
             
             # Update and store results
-            strands.append(_strand)
-            frames.append(_frame)
+            newStrands.append(_strand)
+            newFrames.append(_frame)
             forAligningFASTA.add(ZS_SeqIO.FastASeq(FastASeq_obj.id, seq=protein))
         
         # Run MAFFT alignment
@@ -441,8 +462,8 @@ class MAFFT:
         # Map back aligned proteins to their original nucleotide counterparts
         trimmedBits = []
         for i in range(len(alignedFASTA_obj)):
-            _strand = strands[i]
-            _frame = frames[i]
+            _strand = newStrands[i]
+            _frame = newFrames[i]
             nuc = FASTA_obj[i].seq if _strand == 1 else FASTA_obj[i].get_reverse_complement()
             alignedProt = alignedFASTA_obj[i].gap_seq
             
