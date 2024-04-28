@@ -10,9 +10,9 @@ from copy import deepcopy
 from Bio.Align.Applications import MafftCommandline
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from ZS_SeqIO import FASTA, Conversion
+import ZS_Utility
+import ZS_SeqIO
 from ZS_GFF3IO import Feature, GFF3
-from ZS_Utility import convert_windows_to_wsl_path, tmp_file_name_gen
 
 import parasail
 if platform.system() != 'Windows':
@@ -38,13 +38,13 @@ def _create_file_from_FASTA_object(FASTA_obj, useExistingFile=True):
         "useExistingFile value must be True or False"
     
     # Get hash string for file creation
-    tmpHash = Conversion.get_hash_for_input_sequences(FASTA_obj, randomHash=False, maxLength=20)
+    tmpHash = ZS_SeqIO.Conversion.get_hash_for_input_sequences(FASTA_obj, randomHash=False, maxLength=20)
     
     # Get our expected file name
     if useExistingFile is True:
         fastaFileName = f"alignIO_tmp_{tmpHash}.fasta"
     else:
-        fastaFileName = tmp_file_name_gen("alignIO_tmp_" + tmpHash, "fasta")
+        fastaFileName = ZS_Utility.tmp_file_name_gen("alignIO_tmp_" + tmpHash, "fasta")
     
     # If file already exists, just return that file name
     "If the file exists, that means it already exists, AND that useExistingFile is True"
@@ -60,198 +60,353 @@ def _create_file_from_FASTA_object(FASTA_obj, useExistingFile=True):
 
 class MAFFT:
     '''
-    The MAFFT Class is intended to be used alongside the ZS_SeqIO.FASTA Class to
-    handle the alignment of FASTA sequences with OOP magics. In short, it provides
-    easy access to MAFFT's E-INSi and L-INSi algorithms with default parameters
-    otherwise.
-    
-    It's primary purpose is the .run() method which receives a ZS_SeqIO.FASTA instance
-    and updates the .gap_seq attributes of its underlying ZS_SeqIO.FastASeq objects.
+    A mostly fully features wrapper program for MAFFT. Rather than allowing use of the mafft.bat
+    on Windows, this class instead assumes that MAFFT is available through WSL.
     '''
-    def __init__(self, mafftDir):
-        # Validate input type and location
-        assert isinstance(mafftDir, str)
-        assert os.path.isdir(mafftDir)
-        if platform.system() == "Windows":
-            if not os.path.isfile(os.path.join(mafftDir, "mafft.bat")):
-                raise Exception("{0} does not exist".format(os.path.join(mafftDir, "mafft.bat")))
+    ALG_CONVERT = {
+            "auto": ["--auto"],
+            "einsi": ["--genafpair"],
+            "linsi": ["--localpair"],
+            "ginsi": ["--globalpair"],
+            "fftns1": ["--retree", "1"],
+            "fftns2": ["--retree", "2"],
+            "fftnsi": None
+        }
+    ACCEPTED_ALGS = ["auto", "einsi", "linsi", "ginsi", "fftns1", "fftns2", "fftnsi"]
+    
+    def __init__(self, mafftPath, algorithm="auto", thread=1, maxiterate=0):
+        self.exe = mafftPath
+        self.algorithm = algorithm
+        self.thread = thread
+        self.maxiterate = maxiterate
+    
+    @property
+    def exe(self):
+        return self._exe
+    
+    @exe.setter
+    def exe(self, value):
+        convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
+        assert ZS_Utility.wsl_exists(convertedValue), \
+            f"MAFFT executable not found at '{convertedValue}' after WSL compatibility conversion"
+        self._exe = convertedValue
+    
+    @property
+    def algorithm(self):
+        return self._algorithm
+    
+    @algorithm.setter
+    def algorithm(self, value):
+        assert value in MAFFT.ACCEPTED_ALGS, \
+            f"algorithm '{value}' not recognized; please choose from {MAFFT.ACCEPTED_ALGS}"
+        self._algorithm = value
+    
+    @property
+    def thread(self):
+        return self._thread
+    
+    @thread.setter
+    def thread(self, value):
+        assert isinstance(value, int), "thread must be an integer"
+        assert value > 0, "thread must be greater than 0"
+        self._thread = value
+    
+    @property
+    def maxiterate(self):
+        return self._maxiterate
+    
+    @maxiterate.setter
+    def maxiterate(self, value):
+        assert isinstance(value, int), "maxiterate must be an integer"
+        assert value >= 0, "maxiterate must be greater than or equal to 0"
+        self._maxiterate = value
+    
+    def _align(self, fastaFileName, reorder=False, keeplength=False):
+        '''
+        Simple wrapper function to run MAFFT on a FASTA file and write output
+        to the specified file. For a fully-features handler of ZS_SeqIO.FASTA objects
+        and such, you should wrap something around this wrapper.
+        
+        Parameters:
+            fastaFileName -- a string indicating the location of a FASTA file to align
+            reorder -- OPTIONAL; a boolean indicating whether to pass along the --reorder
+                       arg to MAFFT. Default == False.
+            keeplength -- OPTIONAL; a boolean indicating whether to pass along the
+                          --keeplength arg to MAFFT. Default == False.
+        Returns:
+            msa -- a string indicating the multiple sequence alignment result as derived
+                   directly from MAFFT stdout
+        '''
+        assert os.path.isfile(fastaFileName), \
+            f"ERROR: MAFFT._align() could not find FASTA file '{fastaFileName}'"
+        
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(self.exe)
+        
+        # Handle algorithm specification
+        if self.algorithm != "fftnsi":
+            cmd += MAFFT.ALG_CONVERT[self.algorithm]
         else:
-            if not os.path.isfile(os.path.join(mafftDir, "mafft")) and not os.path.isfile(os.path.join(mafftDir, "mafft.exe")):
-                raise Exception("mafft or mafft.exe does not exist at {0}".format(mafftDir))
+            assert self.maxiterate >= 2, "maxiterate must be >= 2 for fftnsi"
+        cmd += ["--maxiterate", str(self.maxiterate)]
         
-        # Establish commandline function
-        if platform.system() == "Windows":
-            self.cline = MafftCommandline(os.path.join(mafftDir, "mafft.bat"))
-        else:
-            if os.path.isfile(os.path.join(mafftDir, "mafft")):
-                self.cline = MafftCommandline(os.path.join(mafftDir, "mafft"))
-            else:
-                self.cline = MafftCommandline(os.path.join(mafftDir, "mafft.exe"))
+        # Handle optional flags
+        if reorder:
+            cmd.append("--reorder")
+        if keeplength:
+            cmd.append("--keeplength")
         
-        # Set default attributes
-        self.mafftDir = mafftDir
-        self.cline.genafpair = True   # E-INSi
-        self.cline.localpair = False  # L-INSi
-        self.cline.thread = 1
+        # Handle threads and files to align
+        cmd += [
+            "--quiet", # necessary to prevent unusual MAFFT errors; see https://mafft.cbrc.jp/alignment/software/stderr.html
+            "--thread", str(self.thread),
+            ZS_Utility.convert_to_wsl_if_not_unix(fastaFileName)
+        ]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_mafft = subprocess.Popen(cmd, shell = True,
+                                     stdout = subprocess.PIPE,
+                                     stderr = subprocess.PIPE)
+        mafftout, maffterr = run_mafft.communicate()
+        
+        # Check to see if there was an error
+        if (not mafftout.decode("utf-8").startswith(">")):
+            raise Exception(("ERROR: MAFFT._align() encountered an error; have a look " +
+                            f'at the stdout ({mafftout.decode("utf-8")}) and stderr ' + 
+                            f'({maffterr.decode("utf-8")}) to make sense of this.'))
+        
+        # Parse out the MSA result
+        msa = mafftout.decode("utf-8").replace("\r", "").rstrip("\n ")
+        return msa
     
-    def use_einsi(self):
+    def align(self, fasta):
         '''
-        This is a method to toggle the use in favour of E-INSi which is equivalent
-        to setting the --genafpair value for MAFFT's command line.
-        '''
-        self.cline.genafpair = True
-        self.cline.localpair = False
-    
-    def use_linsi(self):
-        '''
-        This is a method to toggle the use in favour of L-INSi which is equivalent
-        to setting the --localpair value for MAFFT's command line.
-        '''
-        self.cline.localpair = True
-        self.cline.genafpair = False
-    
-    def set_threads(self, num):
-        '''
-        This method allows the use of multithreading by MAFFT. num should be a valid
-        integer greater than 0. Be sensible since there's no upper limit checking.
-        '''
-        assert isinstance(num, int)
-        if num < 0:
-            raise Exception("Number of threads must be more than 0")
+        Handles the execution of MAFFT alignment from start to finish. It will:
         
-        self.cline.thread = num
-        
-    def run(self, FASTA_obj):
-        '''
-        Handles the execution of MAFFT alignment from start to finish. It must:
-        
-            1) Create a temporary file for MAFFT to read from the .FASTA object
+            1) Convert the fasta value into a file to align (if you've provided 
+            a ZS_SeqIO.FASTA object)
             2) Perform the alignment with MAFFT
-            3) Parse the output file and modify the .FASTA object appropriately
-            4) Clean up temporary and output files
+            3) Parse the MSA output into a ZS_SeqIO.FASTA object to return
         
-        Before calling this, you might consider the other methods of this class e.g.,
-        set_threads() and use_linsi() if you don't want the default E-INSi behaviour.
+        Before calling this, you might consider making sure all values are set
+        appropriately e.g., algorithm, thread, and maxiterate.
         
-        Params:
-            FASTA_obj -- an object of ZS_SeqIO.FASTA class.
+        Parameters:
+            fasta -- a string indicating a file path, OR an object of ZS_SeqIO.FASTA class
+        Returns:
+            msa -- a ZS_SeqIO.FASTA object containing the aligned sequences
         '''
         # Validate input value type
-        assert type(FASTA_obj).__name__ == "FASTA" or type(FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
-                
-        # Create temporary file
-        tmpHash = sha256(bytes(str(FASTA_obj.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-        tmpFileName = tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
-        FASTA_obj.write(tmpFileName)
+        if isinstance(fasta, str):
+            assert os.path.isfile(fasta), f"ERROR: MAFFT.run() could not find the FASTA file '{fasta}'"
+            fastaFileName, fastaIsTemporary = fasta, False
+        elif hasattr(fasta, "isFASTA") and fasta.isFASTA is True:
+            fastaFileName, fastaIsTemporary = ZS_SeqIO.Conversion.get_filename_for_input_sequences(fasta)
+        else:
+            raise Exception(f"ERROR: MAFFT.run() requires a FASTA file or FASTA object as input; did not understand '{fasta}'")
         
-        # Run
-        self.cline.input = tmpFileName
-        stdout, stderr = self.cline()
-        if stdout == '':
-            raise Exception("MAFFT error text below" + str(stderr))
+        # Run MAFFT alignment
+        msaString = self._align(fastaFileName)
         
-        # Clean MAFFT output
-        stdout = stdout.split("\n")
-        while stdout[-1] == "\n" or stdout[-1] == "" or stdout[-1].startswith("Terminate batch job"):   # Remove junk
-            del stdout[-1]
-        
-        # Parse output back into the FASTA object
-        thisSeq = None
-        ongoingCount = 0
-        for line in stdout:
-            if line.startswith(">"):
-                if thisSeq == None:
-                    thisSeq = []
-                else:
-                    FASTA_obj[ongoingCount].gap_seq = "".join(thisSeq)
-                    thisSeq = []
-                    ongoingCount += 1
-            else:
-                thisSeq.append(line)
-        FASTA_obj[ongoingCount].gap_seq = "".join(thisSeq) # handle last sequence in the iteration
-        
-        # Set flag that this FASTA object has been aligned
-        FASTA_obj.isAligned = True
+        # Parse output into a FASTA object
+        FASTA_obj = ZS_SeqIO.FASTA(msaString, isAligned=True)
         
         # Clean up temporary file
-        os.unlink(tmpFileName)
-    
-    def run_nucleotide_as_protein(self, FASTA_obj, strand=None, frame=None):
-        '''
-        Refer to method header of run() for the fundamentals of this method.
-        Refer to FastASeq method header of get_translation() for descriptions
-        of the other parameters.
+        if fastaIsTemporary:
+            os.unlink(fastaFileName)
         
-        What this method does differently to run() is that it will:
+        return FASTA_obj
+    
+    def _add(self, originalFile, toAddFile, addType, reorder=False, keeplength=False):
+        '''
+        Simple wrapper function to run MAFFT to add a FASTA file into an existing alignment
+        FASTA. Intended to be wrapped by a surrounding function to handle file format conversions.
+        
+        Parameters:
+            originalFile -- a string indicating the location of the original FASTA file
+                            to have sequenced added into
+            toAddFile -- a string indicating the location of the FASTA file to add into the
+                         originalFile
+            addType -- a string indicating the type of adding to perform; must be "add", 
+                       "addfragments", or "addlong"
+            reorder -- OPTIONAL; a boolean indicating whether to pass along the --reorder
+                       arg to MAFFT. Default == False.
+            keeplength -- OPTIONAL; a boolean indicating whether to pass along the
+                          --keeplength arg to MAFFT. Default == False.
+        Returns:
+            msa -- a string indicating the multiple sequence alignment result as derived
+                   directly from MAFFT stdout
+        '''
+        assert os.path.isfile(originalFile), \
+            f"ERROR: MAFFT._add() could not find FASTA file '{originalFile}'"
+        assert os.path.isfile(toAddFile), \
+            f"ERROR: MAFFT._add() could not find FASTA file '{toAddFile}'"
+        assert addType in ["add", "addfragments", "addlong"], \
+            f"ERROR: MAFFT._add() addType '{addType}' not recognized"
+        
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(self.exe)
+        
+        # Handle algorithm specification
+        if self.algorithm != "fftnsi":
+            cmd += MAFFT.ALG_CONVERT[self.algorithm]
+        elif self.algorithm == "einsi":
+            raise NotImplementedError(("MAFFT._add() does not support E-INSi for " + 
+                                       "adding sequences since MAFFT itself does not!"))
+        else:
+            assert self.maxiterate >= 2, "maxiterate must be >= 2 for fftnsi"
+        cmd += ["--maxiterate", str(self.maxiterate)]
+        
+        # Handle optional flags
+        if reorder:
+            cmd.append("--reorder")
+        if keeplength:
+            cmd.append("--keeplength")
+        
+        # Handle threads and files to align
+        cmd += [
+            "--quiet",
+            "--thread", str(self.thread),
+            f"--{addType}", ZS_Utility.convert_to_wsl_if_not_unix(toAddFile),
+            ZS_Utility.convert_to_wsl_if_not_unix(originalFile)
+        ]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_mafft = subprocess.Popen(cmd, shell = True,
+                                     stdout = subprocess.PIPE,
+                                     stderr = subprocess.PIPE)
+        mafftout, maffterr = run_mafft.communicate()
+        
+        # Check to see if there was an error
+        if (not mafftout.decode("utf-8").startswith(">")):
+            raise Exception(("ERROR: MAFFT._add() encountered an error; have a look " +
+                            f'at the stdout ({mafftout.decode("utf-8")}) and stderr ' + 
+                            f'({maffterr.decode("utf-8")}) to make sense of this.'))
+        
+        # Parse out the MSA result
+        msa = mafftout.decode("utf-8").replace("\r", "").rstrip("\n ")
+        return msa
+    
+    def add(self, originalFasta, toAddFasta, addType, reorder=False, keeplength=False):
+        '''
+        Handles the execution of MAFFT alignment from start to finish, but with
+        the intention of adding sequences into an existing alignment. It will:
+        
+            1) Convert the fasta values into files to align (if you've provided 
+            a ZS_SeqIO.FASTA object(s))
+            2) Perform the alignment with MAFFT
+            3) Parse the MSA output into a ZS_SeqIO.FASTA object to return
+        
+        Before calling this, you might consider making sure all values are set
+        appropriately e.g., algorithm, thread, and maxiterate.
+        
+        Parameters:
+            originalFasta -- a string indicating a file path, OR an object of ZS_SeqIO.FASTA class
+                             to have sequences added into
+            toAddFasta -- a string indicating a file path, OR an object of ZS_SeqIO.FASTA class
+                          to add into the originalFasta
+            addType -- a string indicating the type of adding to perform; must be "add",
+                       "addfragments", or "addlong"
+        Returns:
+            msa -- a ZS_SeqIO.FASTA object containing the aligned sequences
+        '''
+        # Validate input value types
+        assert addType in ["add", "addfragments", "addlong"], \
+            f"ERROR: MAFFT.add() addType '{addType}' not recognized"
+        
+        if isinstance(originalFasta, str):
+            assert os.path.isfile(originalFasta), \
+                f"ERROR: MAFFT.add() could not find the FASTA file '{originalFasta}'"
+            originalFileName, originalIsTemporary = originalFasta, False
+        elif hasattr(originalFasta, "isFASTA") and originalFasta.isFASTA is True:
+            originalFileName, originalIsTemporary = ZS_SeqIO.Conversion.get_filename_for_input_sequences(originalFasta)
+        else:
+            raise Exception(f"ERROR: MAFFT.run() requires a FASTA file or FASTA object as input; did not understand '{originalFasta}'")
+        
+        try:
+            if isinstance(toAddFasta, str):
+                assert os.path.isfile(toAddFasta), \
+                    f"ERROR: MAFFT.add() could not find the FASTA file '{toAddFasta}'"
+                toAddFileName, toAddIsTemporary = toAddFasta, False
+            elif hasattr(toAddFasta, "isFASTA") and toAddFasta.isFASTA is True:
+                toAddFileName, toAddIsTemporary = ZS_SeqIO.Conversion.get_filename_for_input_sequences(toAddFasta)
+            else:
+                raise Exception(f"ERROR: MAFFT.run() requires a FASTA file or FASTA object as input; did not understand '{toAddFasta}'")
+        except Exception as e:
+            # Clean up first file conversion if necessary
+            if originalIsTemporary: 
+                os.unlink(originalFileName)
+            # Now allow error to propagate
+            raise e
+        
+        # Run MAFFT add alignment
+        try:
+            msaString = self._add(originalFileName, toAddFileName, addType, reorder, keeplength)
+        except Exception as e:
+            # Clean up file conversions if necessary
+            if originalIsTemporary: 
+                os.unlink(originalFileName)
+            if toAddIsTemporary:
+                os.unlink(toAddFileName)
+            # Now allow error to propagate
+            raise e
+        
+        # Parse output into a FASTA object
+        FASTA_obj = ZS_SeqIO.FASTA(msaString, isAligned=True)
+        
+        # Clean up temporary files
+        if originalIsTemporary: 
+            os.unlink(originalFileName)
+        if toAddIsTemporary:
+            os.unlink(toAddFileName)
+        
+        return FASTA_obj
+    
+    def align_as_protein(self, fasta):
+        '''
+        Handles the execution of MAFFT alignment from start to finish, but by first
+        translation nucleotides into proteins, and then de-translating them. It will:
         
             1) Translate nucleotides into their corresponding protein sequence
-            2) Align the protein sequences
-            3) Map the gaps in the protein alignment back to the nucleotide sequence
+            2) Convert the fasta value into a file to align (if you've provided 
+            a ZS_SeqIO.FASTA object)
+            3) Perform the alignment with MAFFT
+            4) De-translate sequences back into nucleotides
+            5) Parse the MSA output into a ZS_SeqIO.FASTA object to return
         
         In effect, it allows nucleotide sequences to be aligned as codons rather than
         as individual base pairs, which might be more biologically relevant when dealing
         with closely related sequences.
         
-        Note that findBestFrame is an implicit parameter. If strand is None or the indexed list
-        value is None, and/or the frame value is similar, then findBestFrame will be set to True
-        since we'll need to derive the appropriate strand and/or frame depending on which is None.
-        If you set both strand and frame, or the indexed list value is set, then we obviously
-        don't need to find how to translate it now do we?
-        
         Parameters:
-            findBestFrame -- a boolean indicating whether we should get the FastASeq.get_translation()
-                             function figure out the best translation.
-            strand -- one of three types; 1) an integer of 1 to get a +ve strand translation, or -1 for 
-                      a -ve strand translation, 2) None to not constrain strandedness of the translation
-                      if findBestFrame is True, or 3) a list of integers and/or None.
-            frame -- one of three types; 1) an integer in the range(0,3) corresponding to 0-based
-                     frame number, 2) None None to not constrain the frame of the translation
-                     if findBestFrame is True, or 3) a list of integers and/or None.
+            fasta -- a string indicating a file path, OR an object of ZS_SeqIO.FASTA class
+        Returns:
+            msa -- a new ZS_SeqIO.FASTA object containing the aligned sequences if you
+                   specified a file, or a modified version of the original FASTA object
+                   (if you provided such an object type)
         '''
-        # Validate input FASTA parameter
-        assert type(FASTA_obj).__name__ == "FASTA" or type(FASTA_obj).__name__ == "ZS_SeqIO.FASTA"
+        # Validate input value type
+        if isinstance(fasta, str):
+            assert os.path.isfile(fasta), f"ERROR: MAFFT.run() could not find the FASTA file '{fasta}'"
+            FASTA_obj = ZS_SeqIO.FASTA(fasta, isAligned=False)
+        elif hasattr(fasta, "isFASTA") and fasta.isFASTA is True:
+            FASTA_obj = fasta
+        else:
+            raise Exception(("ERROR: MAFFT.align_as_protein() requires a FASTA file or FASTA " + 
+                             f"object as input; did not understand '{fasta}'"))
         
-        # Validate strand parameter
-        assert isinstance(strand, int) or strand == None or isinstance(strand, list)
-        if isinstance(strand, int):
-            assert strand in [1, -1], "Strand was provided but was not an appropriate value"
-        if isinstance(strand, list):
-            for _strand in strand:
-                if isinstance(_strand, int):
-                    assert _strand in [1, -1], "Strand was provided as a list, but contains inappropriate value(s)"
-                else:
-                    assert _strand == None, "Strand was provided as a list, but contains unknown types"
-        
-        # Validate frame parameter
-        assert isinstance(frame, int) or frame == None or isinstance(frame, list)
-        if isinstance(frame, int):
-            assert frame in range(0, 3), "Frame was provided but was not an appropriate value"
-        if isinstance(frame, list):
-            for _frame in frame:
-                if isinstance(_frame, int):
-                    assert _frame in range(0,3), "Frame was provided as a list, but contains inappropriate value(s)"
-                else:
-                    assert _frame == None, "Frame was provided as a list, but contains unknown types"
-        
-        # Create a dummy FASTA object with our translations
-        dummy = deepcopy(FASTA_obj)
+        # Create a new FASTA object with our translations
+        forAligningFASTA = ZS_SeqIO.FASTA(None)
         strands, frames = [], []
-        for i in range(len(dummy)):
-            # Get the appropriate strand/frame values
-            if isinstance(strand, list):
-                _strand = strand[i]
-            else:
-                _strand = strand
-            if isinstance(frame, list):
-                _frame = frame[i]
-            else:
-                _frame = frame
-            
+        for FastASeq_obj in FASTA_obj:
             # Run the translation
-            if _strand != None and _frame != None:
-                protein, _strand, _frame = dummy.seqs[i].get_translation(False, _strand, _frame)
-            else:
-                protein, _strand, _frame = dummy.seqs[i].get_translation(True, _strand, _frame)
+            protein, _strand, _frame = FastASeq_obj.get_translation(findBestFrame=True)
             
             # Modify stop codons to be "X"s
             '''
@@ -266,18 +421,27 @@ class MAFFT:
             # Update and store results
             strands.append(_strand)
             frames.append(_frame)
-            dummy.seqs[i].seq = protein
+            forAligningFASTA.add(ZS_SeqIO.FastASeq(FastASeq_obj.id, seq=protein))
         
-        # Align it
-        self.run(dummy)
+        # Run MAFFT alignment
+        tempFasta, _ = ZS_SeqIO.Conversion.get_filename_for_input_sequences(forAligningFASTA)
+        try:
+            msaString = self._align(os.path.abspath(tempFasta))
+        except Exception as e:
+            os.unlink(tempFasta)
+            raise e
+        os.unlink(tempFasta)
+        
+        # Parse alignment back into a FASTA object
+        alignedFASTA_obj = ZS_SeqIO.FASTA(msaString, isAligned=True)
         
         # Map back aligned proteins to their original nucleotide counterparts
         trimmedBits = []
-        for i in range(len(dummy)):
+        for i in range(len(alignedFASTA_obj)):
             _strand = strands[i]
             _frame = frames[i]
             nuc = FASTA_obj[i].seq if _strand == 1 else FASTA_obj[i].get_reverse_complement()
-            alignedProt = dummy[i].gap_seq
+            alignedProt = alignedFASTA_obj[i].gap_seq
             
             # Perform mapping procedure
             alignedNuc = ""
@@ -323,101 +487,18 @@ class MAFFT:
         
         # Set flag that this FASTA object has been aligned
         FASTA_obj.isAligned = True
+        
+        return FASTA_obj
     
-    def add(self, alignedFasta, toAddFasta, reorder=True, keeplength=False):
-        '''
-        Handles the execution of MAFFT alignment, running in the mode where new sequences
-        are added into an existing alignment. This method otherwise behaves similarly to
-        the .run() method, but it:
-        
-            1) Creates TWO temporarys file for MAFFT to read from the TWO FASTA objects provided
-            2) Performs the alignment with MAFFT
-            3) Parses the output file and without modifying input FASTA objects
-            4) Cleans up temporary and output files
-        
-        Before calling this, you might consider the other methods of this class e.g.,
-        set_threads() and use_linsi() if you don't want the default E-INSi behaviour.
-        
-        Params:
-            alignedFasta -- a string indicating a file path, OR an object of ZS_SeqIO.FASTA class
-                            which has already been aligned and is to have new sequences added into it.
-            toAddFasta -- a string indicating a file path, OR an object of ZS_SeqIO.FASTA class which
-                          has not been aligned and will be added into the existing alignment
-            reorder -- OPTIONAL; a boolean indicating whether to run MAFFT with the --reorder flag to maintain
-                       the original ordering of the alignedFasta file/FASTA object.
-                       Default == True.
-            keeplength -- OPTIONAL;  a boolean indicating whether to run MAFFT with the --keeplength flag to
-                          maintain the original length of the alignedFasta file/FASTA object.
-                          Default == False.
-        Returns:
-            result_FASTA_obj -- an object of ZS_SeqIO.FASTA class which results from MAFFT
-                                adding the add_FASTA_obj into aligned_FASTA_obj
-        '''        
-        # Validate input value type
-        assert (isinstance(alignedFasta, str) and os.path.isfile(alignedFasta)) or hasattr(alignedFasta, "isFASTA") and alignedFasta.isFASTA, \
-            "alignedFasta must be a string or a FASTA object"
-        if hasattr(alignedFasta, "isFASTA"):
-            assert alignedFasta.isAligned, "alignedFasta must be aligned first!"
-        
-        assert (isinstance(toAddFasta, str) and os.path.isfile(toAddFasta)) or hasattr(toAddFasta, "isFASTA") and toAddFasta.isFASTA, \
-            "toAddFasta must be a string or a FASTA object"
-        
-        # If object type is ZS_SeqIO.FASTA, create temporary files
-        alignedIsTemporary = False
-        if hasattr(alignedFasta, "isFASTA"):
-            tmpHash = sha256(bytes(str(alignedFasta.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-            tmpAlignedFileName = tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
-            alignedFasta.write(tmpAlignedFileName, asAligned=True, withDescription=True)
-            alignedIsTemporary = True
-        else:
-            tmpAlignedFileName = alignedFasta
-        
-        toAddIsTemporary = False
-        if hasattr(toAddFasta, "isFASTA"):
-            tmpHash = sha256(bytes(str(toAddFasta.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-            tmpToAddFileName = tmp_file_name_gen("mafft_tmp" + tmpHash[0:20], "fasta")
-            toAddFasta.write(tmpToAddFileName, withDescription=True)
-            toAddIsTemporary = True
-        else:
-            tmpToAddFileName = toAddFasta
-        
-        # Generate temporary output file name
-        tmpHash = sha256(
-            bytes(
-                str(alignedFasta.fileOrder[0][0]) if hasattr(alignedFasta, "isFASTA") else alignedFasta +
-                str(toAddFasta.fileOrder[0][0]) if hasattr(toAddFasta, "isFASTA") else toAddFasta +
-                str(time.time()) +
-                str(random.randint(0, 100000)), 'utf-8'
-            )
-        ).hexdigest()
-        tmpOutputFileName = tmp_file_name_gen("mafft_output_tmp" + tmpHash[0:20], "fasta")
-        
-        # Format command for running
-        cmd = "{0}{1}{2} --thread {3} --add \"{4}\" \"{5}\" > \"{6}\"".format(
-            os.path.join(self.mafftDir, "mafft"),
-            " --reorder" if reorder else "", " --keeplength" if keeplength else "",
-            self.cline.thread,
-            tmpToAddFileName, tmpAlignedFileName, tmpOutputFileName
+    def __repr__(self):
+        return "<MAFFT(exe='{0}',algorithm='{1}',thread={2},maxiterate={3})>".format(
+            self.exe, self.algorithm, self.thread, self.maxiterate
         )
-        
-        # Run
-        run_mafft = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
-        stdout, stderr = run_mafft.communicate()
-        if "Strategy:" not in stderr.decode("utf-8"):
-            raise Exception("MAFFT error text below" + stderr.decode("utf-8"))
-        
-        # Parse output file into new FASTA object
-        result_FASTA_obj = FASTA(tmpOutputFileName, isAligned=True)
-        
-        # Clean up temporary files
-        if alignedIsTemporary:
-            os.unlink(tmpAlignedFileName)
-        if toAddIsTemporary:
-            os.unlink(tmpToAddFileName)
-        os.unlink(tmpOutputFileName)
-        
-        # Return new result
-        return result_FASTA_obj
+    
+    def __str__(self):
+        return "MAFFT(exe='{0}',algorithm='{1}',thread={2},maxiterate={3})".format(
+            self.exe, self.algorithm, self.thread, self.maxiterate
+        )
 
 class SSW_Result:
     '''
@@ -512,7 +593,7 @@ class Exonerate:
         
         if platform.system() == "Windows":
             print("Exonerate Class on Windows assumes exonerate was built using WSL; carrying on...")
-            self._exonerateExe = convert_windows_to_wsl_path(value)
+            self._exonerateExe = ZS_Utility.convert_windows_to_wsl_path(value)
         else:
             self._exonerateExe = value
     
@@ -688,8 +769,8 @@ class Exonerate:
         
         if platform.system() == "Windows":
             cmds += [
-                convert_windows_to_wsl_path(os.path.abspath(queryFile)),
-                convert_windows_to_wsl_path(os.path.abspath(targetFile))
+                ZS_Utility.convert_windows_to_wsl_path(os.path.abspath(queryFile)),
+                ZS_Utility.convert_windows_to_wsl_path(os.path.abspath(targetFile))
             ]
         else:
             cmds += [queryFile, targetFile]
@@ -707,8 +788,8 @@ class Exonerate:
                         all sequence matches reported by exonerate
         '''
         # Get file names for query and target after data type coercion
-        q, qIsTemporary = Conversion.get_filename_for_input_sequences(self.query)
-        t, tIsTemporary = Conversion.get_filename_for_input_sequences(self.target)
+        q, qIsTemporary = ZS_SeqIO.Conversion.get_filename_for_input_sequences(self.query)
+        t, tIsTemporary = ZS_SeqIO.Conversion.get_filename_for_input_sequences(self.target)
         
         # Run exonerate
         cmds = self._format_exonerate_cmd(q, t)
@@ -914,7 +995,7 @@ class GMAP:
         
         if platform.system() == "Windows":
             print("GMAP Class on Windows assumes GMAP was built using WSL; carrying on...")
-            self._gmapDir = convert_windows_to_wsl_path(value)
+            self._gmapDir = ZS_Utility.convert_windows_to_wsl_path(value)
         else:
             self._gmapDir = value
     
@@ -929,7 +1010,7 @@ class GMAP:
             "Query value type not handled by GMAP class"
         
         # Derive an existing file string, or non-existing file FASTA
-        tmpQuery, _ = Conversion._intermediate_conversion(value) # throw away tmpHash return
+        tmpQuery, _ = ZS_SeqIO.Conversion._intermediate_conversion(value) # throw away tmpHash return
         
         # If it's an existing file string, store it as-is and mark it as non-temporary
         if isinstance(tmpQuery, str): # if this is True, os.path.isfile(tmpQuery) is implicitly also True
@@ -953,7 +1034,7 @@ class GMAP:
             "Query value type not handled by GMAP class"
         
         # Derive an existing file string, or non-existing file FASTA
-        tmpTarget, _ = Conversion._intermediate_conversion(value) # throw away tmpHash return
+        tmpTarget, _ = ZS_SeqIO.Conversion._intermediate_conversion(value) # throw away tmpHash return
         
         # If it's an existing file string, store it as-is and mark it as non-temporary
         if isinstance(tmpTarget, str): # if this is True, os.path.isfile(tmpTarget) is implicitly also True
@@ -1095,12 +1176,12 @@ class GMAP:
         cmds += [
             Path(self.gmapDir, "gmap_build").as_posix(),
             
-            "-D", convert_windows_to_wsl_path(os.path.abspath(os.path.dirname(self.targetFile))) \
+            "-D", ZS_Utility.convert_windows_to_wsl_path(os.path.abspath(os.path.dirname(self.targetFile))) \
                 if platform.system() == "Windows" else os.path.dirname(self.targetFile),
             
             "-d", f"{os.path.basename(self.targetDB)}",
             
-            convert_windows_to_wsl_path(os.path.abspath(self.targetFile)) if platform.system() == "Windows" \
+            ZS_Utility.convert_windows_to_wsl_path(os.path.abspath(self.targetFile)) if platform.system() == "Windows" \
                 else self.targetFile
         ]
         
@@ -1155,7 +1236,7 @@ class GMAP:
         cmds += [
             Path(self.gmapDir, "gmap").as_posix(),
             
-            "-D", convert_windows_to_wsl_path(os.path.dirname(os.path.abspath(self.targetDB))) \
+            "-D", ZS_Utility.convert_windows_to_wsl_path(os.path.dirname(os.path.abspath(self.targetDB))) \
                 if platform.system() == "Windows" else os.path.dirname(os.path.abspath(self.targetDB)),
             
             "-d", f"{os.path.basename(self.targetDB)}",
@@ -1169,7 +1250,7 @@ class GMAP:
             
             f"--max-intronlength-ends={self.max_intronlength_ends}",
             
-            convert_windows_to_wsl_path(os.path.abspath(self.queryFile)) if platform.system() == "Windows" \
+            ZS_Utility.convert_windows_to_wsl_path(os.path.abspath(self.queryFile)) if platform.system() == "Windows" \
                 else os.path.abspath(self.queryFile)
         ]
         
@@ -1188,8 +1269,9 @@ class GMAP:
             self.gmap_build()
         
         # Get temporary results file name
-        tmpHash = Conversion.get_hash_for_input_sequences(self._queryFile + self._targetFile, randomHash=True, maxLength=20)
-        tmpResultsName = tmp_file_name_gen(f"alignIO_tmp_" + tmpHash, "gff3")
+        tmpHash = ZS_SeqIO.Conversion.get_hash_for_input_sequences(self._queryFile + self._targetFile,
+                                                                     randomHash=True, maxLength=20)
+        tmpResultsName = ZS_Utility.tmp_file_name_gen(f"alignIO_tmp_" + tmpHash, "gff3")
         
         # Get cmds and run
         cmds = self._format_search_cmd()
