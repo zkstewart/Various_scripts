@@ -145,7 +145,10 @@ class MAFFT:
             cmd += MAFFT.ALG_CONVERT[self.algorithm]
         else:
             assert self.maxiterate >= 2, "maxiterate must be >= 2 for fftnsi"
-        cmd += ["--maxiterate", str(self.maxiterate)]
+        
+        # Handle maxiterate specification
+        if self.algorithm != "auto":
+            cmd += ["--maxiterate", str(self.maxiterate)]
         
         # Handle optional flags
         if reorder:
@@ -255,7 +258,10 @@ class MAFFT:
                                        "adding sequences since MAFFT itself does not!"))
         else:
             assert self.maxiterate >= 2, "maxiterate must be >= 2 for fftnsi"
-        cmd += ["--maxiterate", str(self.maxiterate)]
+        
+        # Handle maxiterate specification
+        if self.algorithm != "auto":
+            cmd += ["--maxiterate", str(self.maxiterate)]
         
         # Handle optional flags
         if reorder:
