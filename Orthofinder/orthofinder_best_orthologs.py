@@ -7,7 +7,7 @@
 import os, argparse, sys, math, platform, re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Function_packages import ZS_BlastIO, ZS_SeqIO, ZS_AlignIO
+from Function_packages import ZS_BlastIO, ZS_SeqIO, ZS_AlignIO, ZS_Utility
 from OrthoGroups import OrthoGroups, fastaDict_formatter
 
 def validate_args(args):
@@ -21,15 +21,16 @@ def validate_args(args):
             print('I am unable to locate the FASTA directory (' + fastaDir + ')')
             print('Make sure you\'ve typed the directory name or location correctly and try again.')
             quit()
-    if platform.system() == "Windows":
-        if not os.path.isfile(os.path.join(args.mafftDir, "mafft.bat")):
-            print("{0} does not exist".format(os.path.join(args.mafftDir, "mafft.bat")))
-            print("Make sure you've indicated the correct MAFFT directory and try again.")
+    
+    # Validate MAFFT arguments
+    if args.mafft is None:
+        args.mafft = ZS_Utility.wsl_which("mafft")
+        if args.mafft is None:
+            print(f"ERROR: 'mafft' not discoverable in your system PATH and was not specified as an argument.")
             quit()
     else:
-        if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) and not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
-            print("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
-            print("Make sure you've indicated the correct MAFFT directory and try again.")
+        if not os.path.isfile(args.mafft):
+            print(f"ERROR: 'mafft' was not found at the location indicated ('{args.mafft}')")
             quit()
     
     # Clean up suffixes if needed
@@ -84,9 +85,6 @@ def main():
                    required=True,
                    nargs="+",
                    help="Specify the director(y/ies) to locate FASTA files within")
-    p.add_argument("-m", dest="mafftDir",
-                   required=True,
-                   help="Specify the directory to locate the mafft.exe or mafft.bat file within")
     p.add_argument("-o", dest="outputDirectory",
                    help="Output location for MSA files")
     p.add_argument("-s", dest="soi",
@@ -103,10 +101,16 @@ def main():
                    choices=["protein", "nucleotide"],
                    help="Specify the molecule type of the sequences in the FASTA files")
     # Optionals
+    p.add_argument("--mafft", dest="mafft",
+                   required=False,
+                   help="""Optionally, specify the mafft executable file
+                   if it is not discoverable in the path""",
+                   default=None)
     p.add_argument("--threads", dest="threads",
                    required=False,
                    type=int,
-                   help="Specify the number of BLAST threads to run; default==1",
+                   help="""Specify the number of threads to run BLAST and MAFFT;
+                   default==1""",
                    default=1)
     p.add_argument("--evalue", dest="evalue",
                    required=False,
@@ -189,8 +193,7 @@ def main():
             orthologsDict[soi].update(bestOrthologs)
     
     # Generate MSAs for each ortholog group
-    aligner = ZS_AlignIO.MAFFT(args.mafftDir)
-    aligner.set_threads(args.threads)
+    aligner = ZS_AlignIO.MAFFT(args.mafft, thread=args.threads)
     
     for soi, orthologs in orthologsDict.items():
         for queryID, bestOrthologs in orthologs.items():
@@ -227,8 +230,8 @@ def main():
             
             # Align with MAFFT (if file doesn't exist) and write to file
             if not os.path.isfile(outputFileName):
-                aligner.run(FASTA_obj)
-                FASTA_obj.write(outputFileName, asAligned = True)
+                resultFASTA_obj = aligner.align(FASTA_obj)
+                resultFASTA_obj.write(outputFileName, asAligned = True)
             else:
                 print(f"Skipping '{outputFileName}' since it already exists.")
     

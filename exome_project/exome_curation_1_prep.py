@@ -6,7 +6,7 @@
 
 import sys, argparse, os, platform
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
-from Function_packages import ZS_SeqIO, ZS_AlignIO
+from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_Utility
 
 def validate_args(args):
     # Validate input data location
@@ -24,12 +24,18 @@ def validate_args(args):
                 print('I am unable to locate the directory where the liftover files are (' + loDir + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
-    if platform.system() == "Windows":
-        if not os.path.isfile(os.path.join(args.mafftDir, "mafft.bat")):
-            raise Exception("{0} does not exist".format(os.path.join(args.mafftDir, "mafft.bat")))
+    
+    # Validate MAFFT arguments
+    if args.mafft is None:
+        args.mafft = ZS_Utility.wsl_which("mafft")
+        if args.mafft is None:
+            print(f"ERROR: 'mafft' not discoverable in your system PATH and was not specified as an argument.")
+            quit()
     else:
-        if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) and not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
-            raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
+        if not os.path.isfile(args.mafft):
+            print(f"ERROR: 'mafft' was not found at the location indicated ('{args.mafft}')")
+            quit()
+    
     # Handle file output
     if os.path.isdir(args.outputDir):
         if os.listdir(args.outputDir) != []:
@@ -93,8 +99,11 @@ def main():
                 help="Specify the directory where aligned FASTA files are located")
     p.add_argument("-m", dest="metadataFile", required=True,
                 help="Specify the metadata file location")
-    p.add_argument("-mafft", dest="mafftDir", required=True,
-                help="Specify the directory where the MAFFT executable (or .bat on Windows) is located")
+    p.add_argument("--mafft", dest="mafft",
+                   required=False,
+                   help="""Optionally, specify the mafft executable file
+                   if it is not discoverable in the path""",
+                   default=None)
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"1_prep\")",
                 default="prep")
@@ -145,7 +154,7 @@ def main():
                 add_FASTA_obj = ZS_SeqIO.FASTA(_loFile)
                 
                 # Perform MAFFT --add alignment
-                m = ZS_AlignIO.MAFFT(args.mafftDir)
+                m = ZS_AlignIO.MAFFT(args.mafft)
                 f = m.add(f, add_FASTA_obj)
         
         # Store in fasta objects list

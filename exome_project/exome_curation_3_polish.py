@@ -4,7 +4,7 @@
 # and attempts to fix indel errors present in a subset of the alignments.
 # If they all have indels, god help you since I can't.
 
-import sys, argparse, os, platform, statistics
+import sys, argparse, os, statistics
 import concurrent.futures
 import numpy as np
 from collections import Counter
@@ -12,7 +12,7 @@ from copy import deepcopy
 from itertools import repeat
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
-from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_ORF, ZS_Indel
+from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_ORF, ZS_Indel, ZS_Utility
 
 def validate_args(args):
     # Validate input data location
@@ -24,17 +24,18 @@ def validate_args(args):
         print('I am unable to locate the transcriptome file (' + args.transcriptomeFile + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isdir(args.mafftDir):
-        print('I am unable to locate the directory where the MAFFT executables are (' + args.alignmentsDir + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    
+    # Validate MAFFT arguments
+    if args.mafft is None:
+        args.mafft = ZS_Utility.wsl_which("mafft")
+        if args.mafft is None:
+            print(f"ERROR: 'mafft' not discoverable in your system PATH and was not specified as an argument.")
+            quit()
     else:
-        if platform.system() == "Windows":
-            if not os.path.isfile(os.path.join(args.mafftDir, "mafft.bat")):
-                raise Exception("{0} does not exist".format(os.path.join(args.mafftDir, "mafft.bat")))
-        else:
-            if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) and not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
-                raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
+        if not os.path.isfile(args.mafft):
+            print(f"ERROR: 'mafft' was not found at the location indicated ('{args.mafft}')")
+            quit()
+    
     # Validate numeric inputs
     if args.threads < 1:
         print("threads argument must be a positive integer greater than 0")
@@ -50,7 +51,7 @@ def validate_args(args):
         except:
             print("Wasn't able to create '{0}' directory; does '{1}' actually exist?".format(args.outputDir, os.path.dirname(args.outputDir)))
 
-def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
+def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftExe):
     '''
     Polishes a ZS_SeqIO.FASTA object to remove probable indel errors from sequences.
     It does this without genomic evidence (hence "de novo") by assessment of how
@@ -65,7 +66,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
         transcriptomeFile -- a string indicating the location of a transcriptome
                              file which we can BLAST against when solving hard
                              scenarios.
-        mafftDir -- a string indicating the location of the MAFFT executable files.
+        mafftExe -- a string indicating the location of the MAFFT executable file.
     Returns:
         result_FASTA_obj -- a new ZS_SeqIO.FASTA instance with indels polished and
                             the MSA realigned by codons.
@@ -75,8 +76,8 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
                       correspond to exon regions ordered as per _get_exon_coords().
     '''
     assert FASTA_obj[0].id == "Codons", "FASTA lacks a Codons line at its start!"
-    mafftAligner = ZS_AlignIO.MAFFT(mafftDir) # set up here for use later
-        
+    mafftAligner = ZS_AlignIO.MAFFT(mafftExe) # set up here for use later
+    
     # Get the coordinate spans of exons
     exonCoords = _get_exon_coords(FASTA_obj)
     
@@ -204,7 +205,9 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
         exonFrames.append(thisExonFrames)
         
         # Align edited exon region
-        mafftAligner.run_nucleotide_as_protein(exon_FASTA_obj, strand=1, frame=frames) # always search on strand=1 for an ORF
+        mafftAligner.align_as_protein(exon_FASTA_obj,
+                                      strand=[1 for _ in range(len(frames))], # always search on strand=1 for an ORF
+                                      frame=frames) 
         
         # Perform extra polishing after alignment
         """
@@ -217,7 +220,10 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftDir):
         if polishedSequences == True:
             solutionDict = ZS_ORF.ORF.solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
             frames, thisExonFrames = _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict)
-            mafftAligner.run_nucleotide_as_protein(exon_FASTA_obj, strand=1, frame=frames) # re-align again
+            mafftAligner.align_as_protein(
+                exon_FASTA_obj,
+                strand=[1 for _ in range(len(frames))],
+                frame=frames) # re-align again
     
     # Merge the edited exon regions back into the overall sequence
     for x in range(len(exonCoords)-1, -1, -1): # iterate backwards through coords since we know they're ordered ascendingly
@@ -518,7 +524,7 @@ def polishing_handler(args, alignFastaFile, FASTA_obj):
         return
     
     # Perform polishing procedure
-    FASTA_obj, exonFrames = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafftDir)
+    FASTA_obj, exonFrames = polish_MSA_denovo(FASTA_obj, args.transcriptomeFile, args.mafft)
     
     # Number codons
     add_codon_numbers(FASTA_obj, exonFrames)
@@ -545,8 +551,11 @@ def main():
                 help="Specify the directory where aligned FASTA files are located")
     p.add_argument("-t", dest="transcriptomeFile", required=True,
                 help="Specify the location of a single representative (protein) transcriptome file")
-    p.add_argument("-m", dest="mafftDir", required=True,
-                help="Specify the directory where MAFFT executables are located")
+    p.add_argument("--mafft", dest="mafft",
+                   required=False,
+                   help="""Optionally, specify the mafft executable file
+                   if it is not discoverable in the path""",
+                   default=None)
     p.add_argument("-o", dest="outputDir", required=True,
                 help="Output directory location (default == \"3_polish\")",
                 default="3_polish")

@@ -168,7 +168,7 @@ def validate_ref_is_distinguishable(refHaplotypes):
 
 def align_record_to_reference(record, originalMSA, muscleObj):
     '''
-    Peforms MAFFT L-insi --add of the record (which should be an amplicon
+    Peforms MUSCLE profile alignment of the record (which should be an amplicon
     sequence) against a reference MSA. Cleans up the alignment to make it
     uniform in length against the original alignment.
     

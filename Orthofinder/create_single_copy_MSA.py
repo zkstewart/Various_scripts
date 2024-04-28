@@ -5,9 +5,9 @@
 # for later phylogenetic analysis. It can also work with things
 # other than OrthoFinder output though.
 
-import sys, argparse, os, platform
+import sys, argparse, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
-from Function_packages import ZS_SeqIO, ZS_AlignIO
+from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_Utility
 
 def validate_args(args):
     # Validate input data location
@@ -15,17 +15,16 @@ def validate_args(args):
         print('I am unable to locate the directory where the single copy FASTA files are (' + args.singleCopyOrthDir + ')')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isdir(args.mafftDir):
-        print('I am unable to locate the directory where the MAFFT executables are (' + args.alignmentsDir + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    # Validate MAFFT arguments
+    if args.mafft is None:
+        args.mafft = ZS_Utility.wsl_which("mafft")
+        if args.mafft is None:
+            print(f"ERROR: 'mafft' not discoverable in your system PATH and was not specified as an argument.")
+            quit()
     else:
-        if platform.system() == "Windows":
-            if not os.path.isfile(os.path.join(args.mafftDir, "mafft.bat")):
-                raise Exception("{0} does not exist".format(os.path.join(args.mafftDir, "mafft.bat")))
-        else:
-            if not os.path.isfile(os.path.join(args.mafftDir, "mafft")) and not os.path.isfile(os.path.join(args.mafftDir, "mafft.exe")):
-                raise Exception("mafft or mafft.exe does not exist at {0}".format(args.mafftDir))
+        if not os.path.isfile(args.mafft):
+            print(f"ERROR: 'mafft' was not found at the location indicated ('{args.mafft}')")
+            quit()
     # Validate numeric inputs
     if args.threads < 1:
         print("threads arg needs to be greater than zero")
@@ -148,27 +147,44 @@ if __name__ == "__main__":
     needs to be ordered the same as the FASTA files themselves. For that matter, the FASTA files
     should ALL be ordered IDENTICALLY. It's kind of important.
     """
-
+    
     p = argparse.ArgumentParser(description=usage)
     # Required
-    p.add_argument("-i", dest="singleCopyOrthDir", required=True,
-                help="Specify the location of the directory containing single copy gene FASTA files")
-    p.add_argument("-m", dest="mafftDir", required=True,
-                help="Specify the directory where MAFFT executables are located")
-    p.add_argument("-o", dest="outputFileName", required=True,
-                help="Specify the location to write output files to; this location will be populated with orthogroup files")
+    p.add_argument("-i", dest="singleCopyOrthDir",
+                   required=True,
+                   help="Specify the location of the directory containing single copy gene FASTA files")
+    p.add_argument("-o", dest="outputFileName",
+                   required=True,
+                   help="Specify the location to write output files to; this location will be populated with orthogroup files")
     # Optional
-    p.add_argument("-t", dest="threads", type=int, default=1,
-                help="Optionally specify the number of threads to run MAFFT alignment with (default == 1).")
-    p.add_argument("--new_ids", dest="newIDsList", nargs="+", default=None,
-                help="Optionally, specify multiple space-separated IDs to rename sequences to")
-    p.add_argument("--noninfo_pct", dest="noninfo_pct", type=float, default=0.25,
-                help="""Optionally specify where trimming should occur on the basis of the
-                allowed amount of sequence that can be non-informative i.e., be gap
-                or ambiguous position (default == 0.25).""")
-    p.add_argument("--is_nucleotide", dest="is_nucleotide", action="store_true", default=False,
-                help="""Optionally provide this argument if the MSAs contain nucleotide
-                sequences; otherwise, we assume they are protein alignments""")
+    p.add_argument("--mafft", dest="mafft",
+                   required=False,
+                   help="""Optionally, specify the mafft executable file
+                   if it is not discoverable in the path""",
+                   default=None)
+    p.add_argument("-t", dest="threads",
+                   required=False,
+                   type=int,
+                   help="Optionally specify the number of threads to run MAFFT alignment with (default == 1).",
+                   default=1)
+    p.add_argument("--new_ids", dest="newIDsList",
+                   required=False,
+                   nargs="+",
+                   help="Optionally, specify multiple space-separated IDs to rename sequences to",
+                   default=None)
+    p.add_argument("--noninfo_pct", dest="noninfo_pct",
+                   required=False,
+                   type=float,
+                   help="""Optionally specify where trimming should occur on the basis of the
+                   allowed amount of sequence that can be non-informative i.e., be gap
+                   or ambiguous position (default == 0.25).""",
+                   default=0.25)
+    p.add_argument("--is_nucleotide", dest="is_nucleotide",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally provide this argument if the MSAs contain nucleotide
+                   sequences; otherwise, we assume they are protein alignments""",
+                   default=False)
     args = p.parse_args()
     validate_args(args)
     
@@ -193,10 +209,9 @@ if __name__ == "__main__":
             replace_nonstandard_aminoacids(FASTA_obj)
     
     # Align FASTA objects
-    mafftAligner = ZS_AlignIO.MAFFT(args.mafftDir) # set up here for use later
-    mafftAligner.set_threads(args.threads)
+    mafftAligner = ZS_AlignIO.MAFFT(args.mafft, thread=args.threads)
     for FASTA_obj in fastaObjs:
-        mafftAligner.run(FASTA_obj)
+        mafftAligner.align(FASTA_obj)
     
     # Perform quality trimming of MSAs
     for FASTA_obj in fastaObjs:
