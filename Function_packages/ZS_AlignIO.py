@@ -3,11 +3,8 @@
 # Contains various Classes to perform manipulations involving
 # FASTA objects that are to be aligned or have been aligned.
 
-import os, platform, sys, time, random, re, subprocess, shutil
+import os, platform, sys, re, subprocess, shutil
 from pathlib import Path
-from hashlib import sha256
-from copy import deepcopy
-from Bio.Align.Applications import MafftCommandline
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_Utility
