@@ -114,6 +114,9 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
+    aligner = ZS_AlignIO.MAFFT(args.mafft, args.algorithm,
+                               args.threads, args.maxiterate)
+    
     for fastaFile in args.fileNames:
         # Prepare output file name
         basename, fileExtension = os.path.splitext(fastaFile)
@@ -126,8 +129,6 @@ def main():
             continue
         
         # Perform MAFFT alignment
-        aligner = ZS_AlignIO.MAFFT(args.mafft, args.algorithm,
-                                   args.threads, args.maxiterate)
         resultFASTA_obj = aligner.align(fastaFile)
         
         # Write output file
