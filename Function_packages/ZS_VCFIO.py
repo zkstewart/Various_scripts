@@ -341,7 +341,10 @@ class SNPStatics:
             mrnaFeature -- a ZS_GFF3IO.Feature object representing a mRNA
             snpDict -- a dictionary with structure like:
                     {
-                        pos1: { ... } # contents of dictionary don't matter
+                        pos1: {
+                            "ref_alt": ["ref", "alt1", "alt2", ...],
+                            ... # other contents of dictionary don't matter
+                        } 
                     }
             featureType -- a string indicating the type of feature we're localising to
                         e.g., a child feature of the mRNA like "CDS" or "exon".
@@ -375,12 +378,16 @@ class SNPStatics:
                         # Modify the ref and alt alleles to be contained within the exon
                         allowedAlleleLength = childFeature.end - pos + 1
                         newRefAllele = refAllele[0:allowedAlleleLength]
-                        newGTAllele = [allele[0:allowedAlleleLength] for allele in genotypeDict["GT"]]
-                        newAltAlleles = [allele[0:allowedAlleleLength] for allele in genotypeDict["ref_alt"][1:]]
                         
                         # Update values in our dict
+                        newAltAlleles = [allele[0:allowedAlleleLength] for allele in genotypeDict["ref_alt"][1:]]
                         genotypeDict["ref_alt"] = [newRefAllele, *newAltAlleles]
-                        genotypeDict["GT"] = newGTAllele
+                        
+                        # Update other possible values in our dict
+                        "I'm not sure why I do this actually, I assume it's legacy code which I hate"
+                        if "GT" in genotypeDict:
+                            newGTAllele = [allele[0:allowedAlleleLength] for allele in genotypeDict["GT"]]
+                            genotypeDict["GT"] = newGTAllele
                     
                     # Index the alleles (after any modifications that may have occurred)
                     newSnpDict[newPos] = genotypeDict

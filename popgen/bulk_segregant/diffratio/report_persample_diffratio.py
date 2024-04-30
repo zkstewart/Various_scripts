@@ -12,7 +12,7 @@ from goatools import obo_parser
 
 # Load ZS_IO Class code
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))) # 4 dirs up is where we find Function_packages
-from Function_packages import ZS_GFF3IO, ZS_SeqIO, ZS_GO
+from Function_packages import ZS_GFF3IO, ZS_SeqIO, ZS_GO, ZS_VCFIO
 
 # Load functions from other scripts
 from filter_persample_diffratio import parse_persample_diffratio_file
@@ -144,26 +144,66 @@ def generate_bsa_proximity_dict(gff3Obj, genomeFASTA_obj, snpGenotypes):
                 else:
                     # Get the mRNA feature for this gene
                     mrnaFeature = _get_mrnaFeature_for_cds_match(matches, pos)
-                    newSnpDict = haplotypes.convert_vcf_snps_to_cds_snps(mrnaFeature, snpDict, embedOriginalPos=True)
-                    cds_FastASeq_obj, cds_featureType, cds_startingFrame = gff3Obj.retrieve_sequence_from_FASTA(genomeFASTA_obj, mrnaFeature.ID, "CDS")
                     
-                    # Just use the variant for this SNP position
+                    # Localise SNPs to the feature
+                    newSnpDict = ZS_VCFIO.SNPStatics.localise_vcf_snps_to_feature(
+                        mrnaFeature, snpDict, featureType="CDS", embedOriginalPos=True)
+                    
+                    # Obtain the CDS sequence for this gene
+                    cds_FastASeq_obj, _, _ = gff3Obj.retrieve_sequence_from_FASTA(
+                        genomeFASTA_obj, mrnaFeature.ID, "CDS", skipComplement=True)
+                    
+                    # Get the haplotype edit lists for each sample, for this SNP position
+                    haplotypeEdits = {}
                     for newPos, genotypeDict in newSnpDict.items():
+                        # Skip over all other positions until we hit our embedded original position
                         if genotypeDict["originalPos"] == pos:
-                            break # break so our variables are set
-                    del genotypeDict["originalPos"] # need this to disappear to not break code! ... ugh, this is gross
+                            for sampleID, alleles in genotypeDict.items():
+                                if sampleID in ["ref_alt", "originalPos"]:
+                                    continue
+                                # Generate a haplotypeEditList for each strand of this sample (assuming diploid!!)
+                                haplotypeEdits[sampleID] = [
+                                    [[newPos, genotypeDict["ref_alt"][0], genotypeDict["ref_alt"][alleles[0]]]],
+                                    [[newPos, genotypeDict["ref_alt"][0], genotypeDict["ref_alt"][alleles[1]]]]
+                                ] # TBD: Check what these values actually are
+                            break
                     
-                    # Get data
-                    formattedRef, formattedAlts, homozygotes, heterozygotes \
-                        = haplotypes.predict_variant(genotypeDict, newPos, cds_FastASeq_obj, mrnaFeature.strand)
+                    # Predict the variant effect by editing each sample's sequence
+                    alreadyCompleted = set()
+                    isSame = True
+                    for sampleID, haplotypeEditLists in haplotypeEdits.items():
+                        # Exit conditin if we've found that this variant changes AA sequence
+                        if isSame == False:
+                            break
+                        
+                        # Loop through the two haplotypes for this sample
+                        for haplotypeEditList in haplotypeEditLists:
+                            variant = haplotypeEditList[0][2]
+                            if variant in alreadyCompleted:
+                                continue
+                            else:
+                                # Edit the reference sequence for this sample
+                                haplotypeSequence = ZS_VCFIO.SNPStatics.edit_reference_to_haplotype_sequence(
+                                            cds_FastASeq_obj.seq[:], haplotypeEditList, mrnaFeature.strand, VALIDATE_STRICT=True)
+                                
+                                # Predict the variant effect
+                                for i in range(0, len(haplotypeSequence), 3):
+                                    originalCodon = cds_FastASeq_obj.seq[i:i+3]
+                                    haplotypeCodon  = haplotypeSequence[i:i+3]
+                                    originalAA = ZS_SeqIO.FastASeq.dna_to_protein(originalCodon)
+                                    haplotypeAA = ZS_SeqIO.FastASeq.dna_to_protein(haplotypeCodon)
+                                    
+                                    if originalAA != haplotypeAA:
+                                        isSame = False
+                                        break
+                                
+                                # Store the variant in our set for speedup
+                                alreadyCompleted.add(variant)
                     
                     # Store data in our dictionary
                     proximityDict[geneID][pos] = {
                         "location": "CDS",
-                        "ref": formattedRef,
-                        "alts": formattedAlts,
-                        "homo": homozygotes,
-                        "hetero": heterozygotes
+                        "isSame": isSame
                     }
             
             # Scenario 2: SNP located not inside, but near a gene
@@ -303,15 +343,12 @@ def format_snp_types(snpDict):
         if posDict["location"] == "CDS":
             within_pos.append(str(snp))
             
-            # Handle neutral variants
-            refAmino = posDict["ref"].split("(")[1].rstrip(")")
-            altAmino = ",".join([ alt.split("(")[1].rstrip(")") for alt in posDict["alts"] ])
-            
-            if refAmino == altAmino:
-                within_location.append("sCDS")
+            # Denote neutral variants
+            if posDict["isSame"] == True:
+                within_location.append("S")
             # Handle non-synonymous mutations
             else:
-                within_location.append(f"{refAmino}>{altAmino}")
+                within_location.append("C")
         
         # Handle intron/UTR
         elif posDict["location"] in ["UTR", "intron"]:
@@ -697,7 +734,6 @@ def main():
             "left_distance", "right_pos", "right_distance",
             "parentGT", "bulk1GT", "bulk2GT", "persnp_difference_ratio",
             "average_difference_ratio"
-            #"desirable_delta"
         ])))
         
         # Write content lines
