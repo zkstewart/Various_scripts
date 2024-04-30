@@ -330,7 +330,7 @@ class SNPStatics:
     in VCF files.
     '''
     @staticmethod
-    def localise_vcf_snps_to_feature(mrnaFeature, snpDict, featureType="CDS"):
+    def localise_vcf_snps_to_feature(mrnaFeature, snpDict, featureType="CDS", embedOriginalPos=False):
         '''
         Receives a mRNA feature and a dictionary indicating SNP locations as interpreted
         from a VCF, and alters the positions to point to locations in the CDS where edits
@@ -345,6 +345,10 @@ class SNPStatics:
                     }
             featureType -- a string indicating the type of feature we're localising to
                         e.g., a child feature of the mRNA like "CDS" or "exon".
+            embedOriginalPos -- OPTIONAL; a boolean indicating whether the original position
+                                of the SNP should be embedded in the snpDict. Default is False;
+                                this capability is only necessary to enable the shoddy implementation
+                                of snpDict subsetting in some downstream functions...
         '''
         
         assert hasattr(mrnaFeature, featureType), \
@@ -380,6 +384,8 @@ class SNPStatics:
                     
                     # Index the alleles (after any modifications that may have occurred)
                     newSnpDict[newPos] = genotypeDict
+                    if embedOriginalPos is True:
+                        newSnpDict[newPos]["originalPos"] = pos
             ongoingCount += childFeature.end - childFeature.start + 1 # feature coords are 1-based inclusive, so 1->1 is a valid coord
         return newSnpDict
     
