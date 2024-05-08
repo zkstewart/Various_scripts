@@ -18,8 +18,10 @@ def validate_args(args):
         print(f'I am unable to locate the reads FASTQ file ({args.fastqFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    
+    args.referenceAmplicon = args.referenceAmplicon.replace("-", "")
     if len(args.referenceAmplicon) < 50:
-        print(f"You've provided a reference amplicon that is very short ({len(args.referenceAmplicon)} bp)")
+        print(f"You've provided a reference amplicon that is very short ({len(args.referenceAmplicon)} bp sans any gaps)")
         print("I am assuming you've done something wrong, so I'm going to exit now.")
         quit()
     # Validate numeric arguments
