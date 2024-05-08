@@ -671,6 +671,31 @@ def mergefasta(fastaFile1, fastaFile2, outputFileName):
                         if record.description in r2only:
                                 fileOut.write(">{0}\n{1}\n".format(record.description, str(record.seq)))
 
+def echoindex(fastaFile, index):
+        # Check for file type
+        seqType = fasta_or_fastq(fastaFile)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        ongoingCount = 0
+        for record in records:
+                ongoingCount += 1
+                
+                # Extract relevant details regardless of fasta or fastq
+                if seqType == 'fasta':
+                        seq = str(record.seq)
+                else:
+                        seq, _ = fastq_format_extract(record)
+                
+                # Print the sequence if it matches the index
+                if ongoingCount == index:
+                        print(seq)
+                        # Immediately exit to prevent contamination of stdout
+                        quit()
+        
+        # If we didn't find the index, print an error message
+        raise ValueError(f"Input file '{fastaFile}' does not contain {index} sequences.")
+
 # Define general purpose functions
 def fasta_or_fastq(fastaFile):
         # Get the first letter
@@ -870,6 +895,11 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 Behaviour example: if you specify 10 chunks from a file with 8
                 sequences, only 8 output files will be created.
                 '''
+                echoindex = '''
+                The _echoindex_ function accepts a number input. This number refers to the
+                index of the sequence to be echoed to stdout. The index should be given
+                as a positive integer and will be 1-indexed.
+                '''
                 ## String input
                 rename = '''
                 The _rename_ function accepts a string input. This can behave in two ways.
@@ -966,11 +996,11 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
         # Handle output file name & possibility that we are producing both list and fasta output
-        if args.outputFileName == None:
+        if args.outputFileName == None and args.function not in ["echoindex"]:
                 print('-o argument must be provided, fix your inputs and try again.')
                 quit()
         
-        exclusions = ["explodeintocontigs"] # for these functions we don't want to alter the output file name
+        exclusions = ["explodeintocontigs", "echoindex"] # for these functions we don't want to alter the output file name
         listOutName = None
         if not args.function in exclusions:
                 outPrefix = args.outputFileName.rsplit('.', maxsplit=1)
@@ -1003,7 +1033,7 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 # Float-based functions
                 #None yet
                 # Integer-based functions
-                if args.function == 'single2multi' or args.function == 'cullbelow' or args.function == 'cullabove' or args.function == 'chunk' or args.function == 'reversecomplement2multi':
+                if args.function == 'single2multi' or args.function == 'cullbelow' or args.function == 'cullabove' or args.function == 'chunk' or args.function == 'reversecomplement2multi' or args.function == 'echoindex':
                         try:
                                 args.number = int(args.number)
                         except:
@@ -1023,7 +1053,7 @@ def main():
         
         # Function list - update as new ones are added
         stringFunctions = ['rename', 'listrename', 'appendrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
-        numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi']
+        numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi', 'echoindex']
         basicFunctions = ['ids', 'descriptions', 'lengths', 'lengths_tsv', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc', 'explodeintocontigs']
         functionList = stringFunctions + numberFunctions + basicFunctions
         
@@ -1092,6 +1122,8 @@ def main():
         ## Number functions - FAST(A/Q) compatible
         if args.function == 'chunk':
                 chunk(args.fastaFileName, args.number, args.outputFileName)
+        if args.function == 'echoindex':
+                echoindex(args.fastaFileName, args.number)
         ## Basic functions
         if args.function == 'ids':
                 ids(args.fastaFileName, args.outputFileName)
