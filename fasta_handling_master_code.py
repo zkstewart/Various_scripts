@@ -672,6 +672,9 @@ def mergefasta(fastaFile1, fastaFile2, outputFileName):
                                 fileOut.write(">{0}\n{1}\n".format(record.description, str(record.seq)))
 
 def echoindex(fastaFile, index):
+        # Validate index value
+        if index < 1:
+                raise ValueError('Index value must be 1 or greater.')
         # Check for file type
         seqType = fasta_or_fastq(fastaFile)
         # Load fast(a/q) file
