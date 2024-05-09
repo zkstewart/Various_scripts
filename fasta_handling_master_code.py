@@ -6,7 +6,7 @@
 # and manipulating FASTA files.
 
 # Load packages for main
-import os, argparse, time, re, math, textwrap
+import os, argparse, re, math, textwrap
 from Bio import SeqIO
 
 # Define functions
@@ -102,6 +102,19 @@ def q_to_a(fastqFile, outputFileName):
                 os.unlink(outputFileName)
 
 ## Fasta and fastq compatible functions
+def crispressoalleles(fastaFile):
+        # Check for file type
+        seqType = fasta_or_fastq(fastaFile)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        seqs = []
+        for record in records:
+                seqs.append(str(record.seq))
+        print(",".join(seqs))
+        # Immediately exit to prevent contamination of stdout
+        quit()
+
 def ids(fastaFile, outputFileName):
         # Check for file type
         seqType = fasta_or_fastq(fastaFile)
@@ -861,6 +874,11 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 will produce one output fasta file for each contig, with the output file name
                 being the sequence ID. The output value for this function will specify a directory.
                 '''
+                crispressoalleles = '''
+                The _crispressoalleles_ functions requires no special input. This function
+                will take a FASTA file and render into stdout a comma-delimited list of
+                alleles suitable for input to CRISPResso2.
+                '''
                 ## Number input
                 multi2single = '''
                 The _multi2single_ function requires no special input. The output is 
@@ -901,7 +919,8 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 echoindex = '''
                 The _echoindex_ function accepts a number input. This number refers to the
                 index of the sequence to be echoed to stdout. The index should be given
-                as a positive integer and will be 1-indexed.
+                as a positive integer and will be 1-indexed. The result will be printed
+                into stdout.
                 '''
                 ## String input
                 rename = '''
@@ -1057,7 +1076,7 @@ def main():
         # Function list - update as new ones are added
         stringFunctions = ['rename', 'listrename', 'appendrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
         numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi', 'echoindex']
-        basicFunctions = ['ids', 'descriptions', 'lengths', 'lengths_tsv', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc', 'explodeintocontigs']
+        basicFunctions = ['ids', 'descriptions', 'lengths', 'lengths_tsv', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc', 'explodeintocontigs', 'crispressoalleles']
         functionList = stringFunctions + numberFunctions + basicFunctions
         
         ##### USER INPUT SECTION
@@ -1150,6 +1169,8 @@ def main():
                 gc(args.fastaFileName, args.outputFileName)
         if args.function == 'explodeintocontigs':
                 explodeintocontigs(args.fastaFileName, args.outputFileName)
+        if args.function == 'crispressoalleles':
+                crispressoalleles(args.fastaFileName)
         print('Program completed successfully!')
 
 if __name__ == '__main__':
