@@ -253,7 +253,7 @@ def get_vote_data(refHaplotypes, readHaplotype, turnOffSmoothing=False):
     for i in range(len(readHaplotype)):
         nuc = readHaplotype[i]
         for x in range(len(refHaplotypes)):
-            if refHaplotypes[x][i] == nuc:
+            if refHaplotypes[x][i].upper() == nuc.upper():
                 voteLines[x] += "X"
             else:
                 voteLines[x] += '-'
