@@ -110,7 +110,7 @@ def crispressoalleles(fastaFile):
         # Perform function
         seqs = []
         for record in records:
-                seqs.append(str(record.seq))
+                seqs.append(str(record.seq).replace("-", ""))
         print(",".join(seqs))
         # Immediately exit to prevent contamination of stdout
         quit()
