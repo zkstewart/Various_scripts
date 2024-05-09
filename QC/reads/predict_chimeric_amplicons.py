@@ -529,6 +529,7 @@ def main():
     
     # Print chimera statistics then end program
     print("# predict_chimeric_amplicons output statistics")
+    print(f"# Processing of file: '{args.fastqFile}'")
     print(f"# > Of {numReads} amplicons, {numChimeras} were detected as potential chimeras")
     print(f"# > This equates to {(numChimeras / numReads) * 100}% of amplicons")
     

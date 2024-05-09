@@ -138,6 +138,7 @@ def main():
     # Print statistics then end program
     notFoundSamples = sampleIDs.difference(foundSamples)
     print("# demultiplex_cutadapt_results output statistics")
+    print(f"# Processing of files located at: '{args.fastqDirectory}'")
     print(f"# > Of {len(sampleIDs)} samples noted in your metadata file, I identified {len(foundSamples)} and copied them to your output directory")
     if len(notFoundSamples) != 0:
         print(f"# > The following samples were not found in the cutadapt output: {', '.join(notFoundSamples)}")

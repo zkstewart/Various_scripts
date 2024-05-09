@@ -119,6 +119,7 @@ def main():
     
     # Print statistics then end program
     print("# complement_amplicons output statistics")
+    print(f"# Processing of file: '{args.fastqFile}'")
     print(f"# > Of {numReads} amplicons, {numComplemented} were reverse complemented")
     print(f"# > This equates to {(numComplemented / numReads) * 100}% of amplicons")
     print(f"# > Additionally, {numSkipped} were skipped due to Levenshtein cut-off ({args.minimumLevenshtein})")
@@ -128,4 +129,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
