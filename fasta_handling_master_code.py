@@ -115,6 +115,19 @@ def crispressoalleles(fastaFile):
         # Immediately exit to prevent contamination of stdout
         quit()
 
+def crispressonames(fastaFile):
+        # Check for file type
+        seqType = fasta_or_fastq(fastaFile)
+        # Load fast(a/q) file
+        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
+        # Perform function
+        names = []
+        for record in records:
+                names.append(record.id)
+        print(",".join(names))
+        # Immediately exit to prevent contamination of stdout
+        quit()
+
 def ids(fastaFile, outputFileName):
         # Check for file type
         seqType = fasta_or_fastq(fastaFile)
@@ -876,8 +889,13 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 '''
                 crispressoalleles = '''
                 The _crispressoalleles_ functions requires no special input. This function
-                will take a FASTA file and render into stdout a comma-delimited list of
-                alleles suitable for input to CRISPResso2.
+                will take a FASTA/Q file and render into stdout a comma-delimited list of
+                allele sequences suitable for input to CRISPResso2.
+                '''
+                crispressonames = '''
+                The _crispressonames_ functions requires no special input. This function
+                will take a FASTA/Q file and render into stdout a comma-delimited list of
+                sequence IDs suitable for input to CRISPResso2.
                 '''
                 ## Number input
                 multi2single = '''
@@ -1018,11 +1036,11 @@ def validate_args(args, stringFunctions, numberFunctions, functionList):
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
         # Handle output file name & possibility that we are producing both list and fasta output
-        if args.outputFileName == None and args.function not in ["echoindex"]:
+        if args.outputFileName == None and args.function not in ["echoindex", "crispressoalleles", "crispressonames"]:
                 print('-o argument must be provided, fix your inputs and try again.')
                 quit()
         
-        exclusions = ["explodeintocontigs", "echoindex"] # for these functions we don't want to alter the output file name
+        exclusions = ["explodeintocontigs", "echoindex", "crispressoalleles", "crispressonames"] # for these functions we don't want to alter the output file name
         listOutName = None
         if not args.function in exclusions:
                 outPrefix = args.outputFileName.rsplit('.', maxsplit=1)
@@ -1076,7 +1094,7 @@ def main():
         # Function list - update as new ones are added
         stringFunctions = ['rename', 'listrename', 'appendrename', 'removeseqwstring', 'removeseqidwstring', 'retrieveseqwstring', 'retrieveseqidwstring', 'removestringfseqid', 'splitseqidatstring_start', 'splitseqidatstring_end', 'trim', 'twofastaseqidcompare', 'twofastaseqidcompare_orthofinder', 'mergefasta']
         numberFunctions = ['single2multi', 'cullbelow', 'cullabove', 'chunk', 'reversecomplement2multi', 'echoindex']
-        basicFunctions = ['ids', 'descriptions', 'lengths', 'lengths_tsv', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc', 'explodeintocontigs', 'crispressoalleles']
+        basicFunctions = ['ids', 'descriptions', 'lengths', 'lengths_tsv', 'count', 'multi2single', 'q_to_a', 'reversecomplement', 'striphyphens', 'gc', 'explodeintocontigs', 'crispressoalleles', 'crispressonames']
         functionList = stringFunctions + numberFunctions + basicFunctions
         
         ##### USER INPUT SECTION
@@ -1171,6 +1189,8 @@ def main():
                 explodeintocontigs(args.fastaFileName, args.outputFileName)
         if args.function == 'crispressoalleles':
                 crispressoalleles(args.fastaFileName)
+        if args.function == 'crispressonames':
+                crispressonames(args.fastaFileName)
         print('Program completed successfully!')
 
 if __name__ == '__main__':
