@@ -496,9 +496,6 @@ def main():
         for record in records:
             numReads += 1
             
-            #if any([ x in str(record.seq) for x in segmentsToFind ]):
-            #    stophere ## TBD resume here tomorrow, does this work properly?
-            
             # If this amplicon is identical a previously processed one, use the cached result
             if str(record.seq) in cachedResults:
                 isMaybeChimera = cachedResults[str(record.seq)]
@@ -525,8 +522,6 @@ def main():
                 elif args.mode == "complex-balanced":
                     isMaybeChimera = complex_chimera_detection(voteSmoothed,
                                                                disallowAmbiguity = True)
-                #if isMaybeChimera:
-                #    stophere
                 
                 # Cache the result
                 cachedResults[str(record.seq)] = isMaybeChimera
