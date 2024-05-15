@@ -211,7 +211,7 @@ def align_record_to_reference(record, originalMSA, muscleObj):
     
     return adjustedRecord
 
-def get_vote_data(refHaplotypes, readHaplotype, turnOffSmoothing=False):
+def get_vote_data(refHaplotypes, readHaplotype, turnOffSmoothing=True):
     '''
     Performs some data smoothing of how the read's haplotype
     relates to the reference haplotypes. Ideally, the resulting
@@ -230,8 +230,8 @@ def get_vote_data(refHaplotypes, readHaplotype, turnOffSmoothing=False):
                         vote smoothing over a sliding window should
                         be turned off. It is believed that smoothing
                         will make the algorithm more tolerant to
-                        rare substitution errors. Default is False,
-                        i.e., smoothing will be applied.
+                        rare substitution errors. Default is True,
+                        i.e., smoothing will not be applied.
     Returns:
         voteLines -- a list of strings akin to:
                      [
@@ -296,13 +296,47 @@ def get_vote_data(refHaplotypes, readHaplotype, turnOffSmoothing=False):
 def find_last_index(inputList, value):
     return len(inputList) - inputList[::-1].index(value) - 1
 
-def is_possible_chimera(voteSmoothed, voteLines, disallowAmbiguity=False):
+def simple_chimera_detection(voteSmoothed):
     '''
     Employs a relatively simple heuristic upon the smoothed vote list to
+    see if an amplicon contains variants from a mixture of different reference alleles.
+    
+    Parameters:
+        voteSmoothed -- a list of lists akin to:
+                        [
+                            [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                            [0, 1, 1, 1, 0, 0, 0, 1, 1, 1],
+                            [1, 1, 1, 1, 1, 1, 1, 1, 1, 0]
+                        ]
+    Returns:
+        isMaybeChimera -- a boolean of True if the amplicon might be chimeric, else False
+    '''
+    # Locate the best vote line
+    voteNums = [ sum(voteSmoothed[i]) for i in range(len(voteSmoothed)) ]
+    bestVote = voteNums.index(max(voteNums)) # it's okay if this has ties
+    
+    # If our best vote has no evidence of switching, return it now
+    if not 0 in voteSmoothed[bestVote]:
+        return False
+    
+    # Otherwise, see if reference switching may have occurred at a 0 position
+    for x in range(len(voteSmoothed[bestVote])):
+        # At a 0 position ...
+        if voteSmoothed[bestVote][x] == 0:
+            # ... see if the other vote lines have a 1
+            if any([ voteSmoothed[i][x] == 1 for i in range(len(voteSmoothed)) if i != bestVote ]):
+                return True
+    
+    # If not, just return False
+    return False
+
+def complex_chimera_detection(voteSmoothed, disallowAmbiguity=False):
+    '''
+    Employs a more complex heuristic upon the smoothed vote list to
     see if there may be a reference switch occurring in the amplicon sequence
     at its left and/or right sides.
     
-    This heuristic would fail to discover complex chimerism (e.g., where the middle
+    This heuristic may fail to discover complex chimerism (e.g., where the middle
     section is chimeric, but the left and right are the same reference) but, I'm
     operating under an assumption that that is exceedingly rare.
     
@@ -313,12 +347,6 @@ def is_possible_chimera(voteSmoothed, voteLines, disallowAmbiguity=False):
                             [0, 1, 1, 1, 0, 0, 0, 1, 1, 1],
                             [1, 1, 1, 1, 1, 1, 1, 1, 1, 0]
                         ]
-        voteLines -- a list of strings akin to:
-                     [
-                         '--X-XX-X-X',
-                         'XX---XXXXX',
-                         '-X----X-X-'
-                     ]
         disallowAmbiguity -- OPTIONAL; a boolean indicating whether to, in situations
                              where chimerism is ambiguous and a read has no clear breakpoint,
                              to consider it as a chimera. Default is False, i.e., ambiguous
@@ -326,42 +354,16 @@ def is_possible_chimera(voteSmoothed, voteLines, disallowAmbiguity=False):
     Returns:
         isMaybeChimera -- a boolean of True if the amplicon might be chimeric, else False
     '''
-    voteNums = [ sum(x) for x in voteSmoothed ]
-    
-    # If there are no ties, take the best vote at face value
-    if voteNums.count(max(voteNums)) == 1:
-        bestVote = voteNums.index(max(voteNums))
-    
-    # Tie break equal voteNums by voteLines
-    else:
-        voteNums = [ voteNums[i] + voteLines[i].count("X") for i in range(len(voteNums)) ]
-        
-        # If this breaks the tie, use it
-        if voteNums.count(max(voteNums)) == 1:
-            bestVote = voteNums.index(max(voteNums))
-        
-        # Tie break by left and right "X" status
-        else:
-            for x in range(0, len(voteLines[0]) - 1):
-                voteNums = [
-                    voteNums[i] +
-                        (1 if voteLines[i][x] == "X" else 0) +
-                        (1 if voteLines[i][::-1][x] == "X" else 0)
-                    for i in range(len(voteNums)) 
-                ]
-                
-                if voteNums.count(max(voteNums)) == 1:
-                    break
-            
-            # Take the best vote at face value now - ties be damned if the above didn't solve it
-            bestVote = voteNums.index(max(voteNums))
+    # Locate the best vote line
+    voteNums = [ sum(voteSmoothed[i]) for i in range(len(voteSmoothed)) ]
+    bestVote = voteNums.index(max(voteNums)) # it's okay if this has ties
     
     # Get the best smoothed vote line
     bestVoteSmoothed = voteSmoothed[bestVote]
     otherVoteSmoothed = [ voteSmoothed[i] for i in range(len(voteSmoothed)) if i != bestVote ]
     
     # If our best vote has no evidence of switching, return it now
-    if not 0 in bestVoteSmoothed:
+    if not 0 in voteSmoothed[bestVote]:
         return False
     
     # Otherwise, see if reference switching at an internal cut line improves the best vote line
@@ -396,7 +398,16 @@ def main():
     a reference alleles multiple sequence alignment. Variant sites in the reference alleles
     are identified in the amplicon, and this information is used to determine if the amplicon
     is chimeric or not. Reads will be output split into two FASTQ files for those reads deemed
-    to be chimeric and non-chimeric. Some notes include:
+    to be chimeric and non-chimeric.
+    
+    The mode to run this program in is specified by the --mode argument. The 'simple' mode
+    will utilise a coarse heuristic for chimera detection that is likely to have the best recall
+    but lowest precision. The 'complex' mode will utilise a more advanced heuristic that is likely
+    to have the lowest recall but greatest precision. The 'complex-balanced' mode will employ the
+    complex heuristic, but will also consider reads with ambiguous chimerism to be chimeras.
+    This mode is expected to have a balanced recall and precision.
+    
+    Some notes include:
     
     1) The reference FASTA must have more than one sequence, and be 
     a multiple sequence alignment. Try to keep it to just the amplicon
@@ -406,14 +417,9 @@ def main():
     complement_amplicons.py.
     3) MUSCLE parameters are user specifiable, but the defaults appear to be necessary
     for this script to work well.
-    4) --turnOffSmoothing disables some heuristics that make the script more tolerant
-    to rare but genuine sequencing errors. Turning this off will make the script more
-    strict.
-    5) --noAmbiguity will consider any read whose chimerism is ambiguous to be a chimera.
-    In this context, ambiguous chimerism occurs when there is a breakpoint in the read where
-    the read does not match its best-matching reference allele properly, and it matches another
-    allele equally well. Hence, the read could optimally be a chimer or a non-chimer.
-    This option will make the script more strict by considering these reads as chimeras.
+    4) --turnOnSmoothing enables some heuristics that make the script more tolerant
+    to rare but genuine sequencing errors. Turning this on will make the script more
+    relaxed (lower recall, more precision).
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
@@ -429,22 +435,17 @@ def main():
     p.add_argument("-m", dest="muscle",
                    required=True,
                    help="Specify the location of the MUSCLE executable")
+    p.add_argument("--mode", dest="mode",
+                   required=True,
+                   choices=["simple", "complex", "complex-balanced"],
+                   help="Indicate which mode you want to run this program in")
     # Opts (behavioural)
-    p.add_argument("--turnOffSmoothing", dest="turnOffSmoothing",
+    p.add_argument("--turnOnSmoothing", dest="turnOnSmoothing",
                    required=False,
                    action="store_true",
-                   help="""Optionally, specify this flag to disable the smoothing
-                   of the vote data. This will produce a stricter output which is
-                   less tolerant to rare substitution errors.""",
-                   default=False)
-    p.add_argument("--noAmbiguity", dest="noAmbiguity",
-                   required=False,
-                   action="store_true",
-                   help="""Optionally, specify this flag if you'd like any reads
-                   whose chimerism is ambiguous (e.g., there is no clear breakpoint,
-                   but the read could optimally be a chimer or a non-chimer) to be
-                   considered as chimeras. This will produce a stricter output which
-                   is less tolerant to rare indel errors.""",
+                   help="""Optionally, specify this flag to enable smoothing
+                   of the vote data. This will make all modes less tolerant to rare
+                   substitution errors.""",
                    default=False)
     # Opts (MUSCLE)
     p.add_argument("--gapOpen", dest="gapOpen",
@@ -495,6 +496,9 @@ def main():
         for record in records:
             numReads += 1
             
+            #if any([ x in str(record.seq) for x in segmentsToFind ]):
+            #    stophere ## TBD resume here tomorrow, does this work properly?
+            
             # If this amplicon is identical a previously processed one, use the cached result
             if str(record.seq) in cachedResults:
                 isMaybeChimera = cachedResults[str(record.seq)]
@@ -510,11 +514,19 @@ def main():
                 
                 # Obtain 'vote' data structures
                 voteLines, voteSmoothed = get_vote_data(refHaplotypes, readHaplotype,
-                                                        turnOffSmoothing = args.turnOffSmoothing)
+                                                        turnOffSmoothing = not args.turnOnSmoothing)
                 
                 # Use a heuristic to find if the read may be chimeric
-                isMaybeChimera = is_possible_chimera(voteSmoothed, voteLines,
-                                                    disallowAmbiguity = args.noAmbiguity)
+                if args.mode == "simple":
+                    isMaybeChimera = simple_chimera_detection(voteSmoothed)
+                elif args.mode == "complex":
+                    isMaybeChimera = complex_chimera_detection(voteSmoothed,
+                                                               disallowAmbiguity = False)
+                elif args.mode == "complex-balanced":
+                    isMaybeChimera = complex_chimera_detection(voteSmoothed,
+                                                               disallowAmbiguity = True)
+                #if isMaybeChimera:
+                #    stophere
                 
                 # Cache the result
                 cachedResults[str(record.seq)] = isMaybeChimera
