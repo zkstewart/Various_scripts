@@ -4,7 +4,7 @@
 # and _properly_ demultiplex the reads into separate files based on the
 # sample name.
 
-import os, argparse, shutil
+import os, argparse
 
 def validate_args(args):
     # Validate input data
@@ -17,11 +17,12 @@ def validate_args(args):
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Handle file output
-    if os.path.isdir(args.outputDirectory) and os.listdir(args.outputDirectory) != []:
+    if os.path.isdir(args.outputDirectory):
         print(f"Output directory '{args.outputDirectory}' already exists; I'll write output files here.")
-        print("But, I won't overwrite any existing files, so beware that if a previous run had issues, " +
-              "you may need to delete/move files first.")
-    if not os.path.isdir(args.outputDirectory):
+        if os.listdir(args.outputDirectory) != []:
+            print("WARNING: I won't overwrite any existing files, so beware that if a previous run had issues, " +
+                "you should have deleted or moved those files first.")
+    else:
         os.makedirs(args.outputDirectory)
         print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
 
@@ -63,7 +64,35 @@ def parse_cutadapt_metadata(metadataFile):
                 sample, forward, reverse = sl
                 metaDict.setdefault(forward, {})
                 metaDict[forward][reverse] = sample
+    
+    # Index adapters in reverse
+    reverseDict = {}
+    for forward, _revDict in metaDict.items():
+        for reverse, sample in _revDict.items():
+            if reverse in metaDict:
+                assert forward not in metaDict[reverse]
+            reverseDict.setdefault(reverse, {})
+            reverseDict[reverse][forward] = sample
+    
+    # Merge dicts together
+    metaDict.update(reverseDict)
+    
     return metaDict
+
+def write_merged_files(componentFileNames, outputFileName):
+    '''
+    Helper function to write a series of files to a single output file.
+    
+    Parameters:
+        componentFileNames -- a list of strings indicating the file names to merge together
+        outputFileName -- a string indicating the name of the output file to write to
+    '''
+    with open(outputFileName, "w") as fileOut:
+        for f in componentFileNames:
+            if os.path.isfile(f):
+                with open(f, "r") as fileIn:
+                    for line in fileIn:
+                        fileOut.write(line)
 
 def main():
     usage = """%(prog)s will receive a directory containing cutadapt's demultiplexing output.
@@ -95,55 +124,73 @@ def main():
     metaDict = parse_cutadapt_metadata(args.demultiplexingMetadata)
     sampleIDs = set([ sampleID for subdict in metaDict.values() for sampleID in subdict.values() ])
     
-    # Loop through cutadapt files to locate and copy reads files to the output dir
+    # Loop through samples and write their demultiplexed reads to file
     foundSamples = set()
-    numFiles = 0
-    unknownSamples = 0
+    knownFileSizes = 0
+    for sampleID in sampleIDs:
+        # Locate the forward and reverse adapters for the sample
+        adapters = [
+            [ forward, reverse ]
+            for forward, _revDict in metaDict.items()
+            for reverse, sample in _revDict.items()
+            if sample == sampleID
+        ]
+        
+        # Format the forward and reverse paired file names expected
+        fwdFiles = [ os.path.join(args.fastqDirectory, f"{forward}-{reverse}.1.fastq") for forward, reverse in adapters ]
+        revFiles = [ os.path.join(args.fastqDirectory, f"{forward}-{reverse}.2.fastq") for forward, reverse in adapters ]
+        
+        # Check that any pairs occur together
+        foundSomething = False
+        for fwdFile, revFile in zip(fwdFiles, revFiles):
+            if os.path.isfile(fwdFile):
+                foundSomething = True
+                knownFileSizes += os.stat(fwdFile).st_size / (1024 * 1024)
+                
+                # Make sure the reverse pair also occurs
+                assert os.path.isfile(revFile), \
+                    (f"Error: The forward file '{fwdFile}' exists, but the reverse file '{revFile}' does not; " + 
+                     "please check that your input files are correct and try again.")
+            else:
+                # Make sure the reverse pair is also absent
+                assert not os.path.isfile(revFile), \
+                    (f"Error: The reverse file '{revFile}' exists, but the forward file '{fwdFile}' does not; " +
+                     "please check that your input files are correct and try again.")
+        
+        # If no pairs occurred, continue now
+        if foundSomething == False:
+            continue
+        foundSamples.add(sampleID) # track that we found this sample
+        
+        # Otherwise, write the file(s) to the output directory
+        newFwdFile = os.path.join(args.outputDirectory, f"{sampleID}.1.fastq")
+        if os.path.isfile(newFwdFile):
+            print(f"'{newFwdFile}' already exists; skipping...")
+        else:
+            write_merged_files(fwdFiles, newFwdFile)
+        
+        newRevFile = os.path.join(args.outputDirectory, f"{sampleID}.2.fastq")
+        if os.path.isfile(newRevFile):
+            print(f"'{newRevFile}' already exists; skipping...")
+        else:
+            write_merged_files(revFiles, newRevFile)
+    
+    # Calculate the file size for all demultiplexed outputs
+    totalFileSize = 0
     for file in os.listdir(args.fastqDirectory):
-        if file.endswith(".fastq"):
-            numFiles += 1
-            
-            # Get the forward and reverse adapters
-            adapters = file.split(".")[0].split("-")
-            if len(adapters) != 2:
-                print(f"Error: The filename '{file}' does not have the expected forward-reverse adapter format; " +
-                      "please check the file and try again.""")
-                quit()
-            forward, reverse = adapters
-            
-            # Get the sample name
-            sample = metaDict.get(forward, {}).get(reverse, None)
-            if sample is None:
-                unknownSamples += 1
-                continue
-            foundSamples.add(sample)
-            
-            # Identify whether it's the forward (.1) or reverse (.2) file
-            if file.endswith(".1.fastq"):
-                directionNum = 1
-            elif file.endswith(".2.fastq"):
-                directionNum = 2
-            else:
-                print(f"Error: The filename '{file}' does not have the expected direction indicator (.1.fastq or .2.fastq); " +
-                      "please check the file and try again.")
-                quit()
-            
-            # Copy the file to the output directory
-            newFileName = os.path.join(args.outputDirectory, f"{sample}.{directionNum}.fastq")
-            if os.path.isfile(newFileName):
-                print(f"'{newFileName}' already exists; skipping...")
-            else:
-                shutil.copyfile(os.path.join(args.fastqDirectory, file), newFileName)
+        if file.endswith(".1.fastq"):
+            totalFileSize += os.stat(os.path.join(args.fastqDirectory, file)).st_size / (1024 * 1024)
     
     # Print statistics then end program
     notFoundSamples = sampleIDs.difference(foundSamples)
+    
     print("# demultiplex_cutadapt_results output statistics")
     print(f"# Processing of files located at: '{args.fastqDirectory}'")
-    print(f"# > Of {len(sampleIDs)} samples noted in your metadata file, I identified {len(foundSamples)} and copied them to your output directory")
+    print(f"# > Of {len(sampleIDs)} samples noted in your metadata file, I identified {len(foundSamples)} and wrote them to your output directory")
     if len(notFoundSamples) != 0:
         print(f"# > The following samples were not found in the cutadapt output: {', '.join(notFoundSamples)}")
-    print(f"# > Additionally, of {numFiles} cutadapt files, {len(foundSamples)} had recognised forward-reverse adapter pairings")
-    print(f"# > This leaves {unknownSamples} or {(unknownSamples / numFiles) * 100}% of demultiplexed files as being unknown")
+    print(f"# > Approximately {(knownFileSizes / totalFileSize) * 100}% of your reads were associated with known samples")
+    print(f"# > The remaining reads are considered 'unknown' by cutadapt")
     
     print("Program completed successfully!")
 
