@@ -185,49 +185,76 @@ class Feature:
             self.end = latestEnd
             self.coords[1] = latestEnd
     
-    def update_id(self, origID, newID, GFF3_obj=None):
+    def update_id(self, newID, GFF3_obj=None):
         '''
         This method assumes that this Feature object is being used in a typical fashion
         for GFF3 feature storage. This means it will have a .ID value, and its immediate
         children will have .Parent values of the same value.
         
         This method's goal is to update a Feature's .ID value such that its children
-        reflect this change. It will try to do it in a GFF3-aware style, which means that
-        a string replacement will occur recursively on children to rename all .ID values
-        e.g., in the case of features with an .ID value like ${.Parent}.exon2.
+        reflect this change in their .Parent values (if applicable).
         
         Parameters:
-            origID -- a string value indicating the original part of the ID to change
-                      to be newID
-            newID -- a string value to be used for replacing the origID part of the
-                     this and any children Feature's .ID and .Parent values.
-            GFF3_obj -- OPTIONAL; if you provide this, any references to the
-                        original ID will be deleted and this new ID will be indexed
-                        instead within the GFF3 object.
+            newID -- a string value to become the new .ID value for this Feature
+            GFF3_obj -- OPTIONAL; if you provide this, the GFF3 class will handle
+                        the change in ID for this Feature and all its children
+                        with appropriate indexing changes managed as well.
         '''
         if not isinstance(newID, str):
             raise ValueError("newID should be a string")
         
-        thisFeatureOrigID = self.ID
-        for attributeKey, attributeValue in self.__dict__.items():
-            if isinstance(attributeValue, str):
-                self.__dict__[attributeKey] = attributeValue.replace(origID, newID)
-        # self.ID = self.ID.replace(origID, newID)
-        
+        # Let GFF3 object handle the change
         if GFF3_obj != None:
-            if thisFeatureOrigID in GFF3_obj:
-                GFF3_obj.features.pop(thisFeatureOrigID)
-                GFF3_obj[self.ID] = self
-        
-        # Update children recursively
-        for childFeature in self.children:
-            childOrigID = childFeature.Parent
-            childFeature.Parent = self.ID
-            if childFeature.type.upper() == "CDS":
-                "CDS features are annoying and this is how we'll handle them; they're always childless"
-                childFeature.ID = f"{newID}.cds"
+            if self.ID in GFF3_obj:
+                GFF3_obj.update_id(self, newID)
             else:
-                childFeature.update_id(childOrigID, self.ID, GFF3_obj)
+                raise ValueError(f"Feature '{self.ID}' not found in GFF3 object")
+        # Apply change locally to this Feature
+        else:
+            self.ID = newID
+            for childFeature in self.children:
+                childFeature.Parent = self.ID
+    
+    def reformat_id(self, newID, GFF3_obj=None):
+        '''
+        Unlike update_id which merely changes the current Feature's ID value and its
+        immediate children's Parent values, this method will change the ID of this
+        Feature, and also change the ID of all its children Features recursively 
+        in a way that reflects the new ID.
+        
+        Parameters:
+            newID -- a string value to become the new .ID value for this Feature, 
+                     the .Parent ID for children, and provide the format for new
+                     child .ID values.
+            GFF3_obj -- OPTIONAL; if you provide this, the GFF3 class will handle
+                        the change in ID for this Feature and all its children
+                        with appropriate indexing changes managed as well.
+        '''
+        if not isinstance(newID, str):
+            raise ValueError("newID should be a string")
+        
+        # Let GFF3 object handle the change
+        if GFF3_obj != None:
+            if self.ID in GFF3_obj:
+                GFF3_obj.reformat_id(self, newID)
+            else:
+                raise ValueError(f"Feature '{self.ID}' not found in GFF3 object")
+        # Apply change locally to this Feature
+        else:
+            self.ID = newID
+            
+            # Update the immediate child features
+            typesCount = {}
+            for childFeature in self.children:
+                typesCount.setdefault(childFeature.type, 1)
+                childFeature.Parent = self.ID
+                
+                # Format the new ID
+                newID = f"{newID}.{childFeature.type}{typesCount[childFeature.type]}"
+                typesCount[childFeature.type] += 1
+                
+                # Recursively update children
+                childFeature.reformat_id(newID)
     
     def __getitem__(self, key):
         return self.retrieve_child(key)
@@ -945,9 +972,11 @@ class GFF3:
         '''
         
         if feature.type.upper() != "CDS":
-            # Integrate this Feature
+            # Add the Feature type if it's new
             if not hasattr(feature, "Parent"):
                 self.parentTypes.add(feature.type)
+            
+            # Integrate this Feature
             self.features[feature.ID] = feature
             self.types.setdefault(feature.type, [])
             self.types[feature.type].append(feature)
@@ -958,6 +987,68 @@ class GFF3:
         else:
             self.types.setdefault("CDS", [])
             self.types["CDS"].append(feature)
+    
+    def update_id(self, feature, newID):
+        '''
+        This method's goal is to update a Feature's .ID value alongside its children's
+        .Parent values.
+        
+        Parameters:
+            feature -- a Feature part of this GFF3 object
+            newID -- a string value to be used for replacing the original ID
+                     of the featue and any child .ID and .Parent values.
+        '''
+        if not isinstance(newID, str):
+            raise ValueError("newID should be a string")
+        if not feature in self:
+            raise ValueError(f"Feature with ID '{feature.ID}' not found in this GFF3 object")
+        origFeatureID = feature.ID
+        
+        # Update this particular feature's ID
+        feature.ID = newID
+        
+        # Re-index the feature
+        self._reindex_feature(origFeatureID, feature)
+        
+        # Update child .Parent values
+        for childFeature in feature.children:
+            childFeature.Parent = feature.ID
+    
+    def reformat_id(self, feature, newID):
+        '''
+        This method's goal is to update a Feature's .ID value such that its children's
+        .Parent values reflect this, as well as reformatting the child's ID value to
+        reflect the new parent ID.
+        
+        Parameters:
+            feature -- a Feature part of this GFF3 object
+            newID -- a string value to be used for replacing the original ID
+                     of the featue and any child .ID and .Parent values.
+        '''
+        if not isinstance(newID, str):
+            raise ValueError("newID should be a string")
+        if not feature in self:
+            raise ValueError(f"Feature with ID '{feature.ID}' not found in this GFF3 object")
+        origFeatureID = feature.ID
+        
+        # Update this particular feature's ID
+        feature.ID = newID
+        
+        # Re-index the feature
+        self._reindex_feature(origFeatureID, feature)
+        
+        # Update the immediate child features
+        typesCount = {}
+        for childFeature in feature.children:
+            typesCount.setdefault(childFeature.type, 1)
+            childFeature.Parent = feature.ID
+            
+            # Format the new child ID
+            childID = f"{newID}.{childFeature.type}{typesCount[childFeature.type]}"
+            typesCount[childFeature.type] += 1
+            
+            # Recursively update children
+            self.reformat_id(childFeature, childID)
     
     def _get_artifacts_as_vcfDict(self):
         '''
@@ -991,6 +1082,23 @@ class GFF3:
             value.sort(key = lambda x: ([-x[0][0], -x[0][1]]))
         
         return vcfDict
+    
+    def _reindex_feature(self, origID, feature):
+        '''
+        Hidden helper to reindex a feature after a change in ID. It will specifically
+        update the .features dictionary and the .types dictionary.
+        
+        Parameters:
+            origID -- a string indicating the original ID of the feature
+            feature -- a Feature object that has had its ID changed
+        '''
+        # Clear reference to the original ID
+        self.features.pop(origID)
+        self.types[feature.type].remove(origID)
+        
+        # Add reference to the new ID
+        self.features[feature.ID] = feature
+        self.types[feature.type].append(feature)
     
     def _index_products(self, feature):
         '''
@@ -1094,7 +1202,7 @@ class GFF3:
         return iter(self.features)
     
     def __contains__(self, item):
-        return item in self.features
+        return item.ID in self.features
     
     def has_key(self, key):
         return key in self.features

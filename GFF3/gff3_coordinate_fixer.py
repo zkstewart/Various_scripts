@@ -612,18 +612,18 @@ def fix_genes_by_renaming(problemIDs, GFF3_obj, cdsFASTA_obj, genomeFASTA_obj, i
             
             # ... but, if it hasn't been fixed, let's just swap them
             "This might fix both models, but if it doesn't we'll get to it later"
-            GFF3_obj[problemSeqID].update_id(problemSeqID, "tmp_problem_seq_id", GFF3_obj)
-            GFF3_obj[matchID].update_id(matchID, "tmp_match_seq_id", GFF3_obj)
+            GFF3_obj[problemSeqID].update_id("tmp_problem_seq_id", GFF3_obj)
+            GFF3_obj[matchID].update_id("tmp_match_seq_id", GFF3_obj)
             
-            GFF3_obj["tmp_problem_seq_id"].update_id("tmp_problem_seq_id", matchID, GFF3_obj)
-            GFF3_obj["tmp_match_seq_id"].update_id("tmp_match_seq_id", problemSeqID, GFF3_obj)
+            GFF3_obj["tmp_problem_seq_id"].update_id(matchID, GFF3_obj)
+            GFF3_obj["tmp_match_seq_id"].update_id(problemSeqID, GFF3_obj)
         
         # If we have a good match and it isn't in the CDS file...
         else:
             "If we get here, we know it ISN'T in the CDS file"
             # ... just replace the model
             del GFF3_obj[problemSeqID]
-            GFF3_obj[matchID].update_id(matchID, problemSeqID, GFF3_obj)
+            GFF3_obj[matchID].update_id(problemSeqID, GFF3_obj)
         
         # Note it as fixed and continue
         fixedIDs.append(problemSeqID)

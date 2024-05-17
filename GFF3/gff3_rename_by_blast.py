@@ -138,7 +138,7 @@ def main():
         bestID += f"_{idsCount[bestID]}"
         
         # Update this gene feature and all child features
-        geneFeature.update_id(geneFeature.ID, bestID)
+        geneFeature.reformat_id(bestID, gff3Obj)
     
     # Write output file
     with open(args.outputFileName, "w") as fileOut:

@@ -123,34 +123,21 @@ def main():
             if parentFeature.ID not in orthologsDict:
                 continue
             
+            # Delete any transcript children features
+            "I can't remember why this is necessary. I'll leave it as-is for now."
+            if hasattr(parentFeature, "transcript"):
+                transcriptIDs = [ transcriptFeature.ID for transcriptFeature in parentFeature.transcript ]
+                for transcriptID in transcriptIDs:
+                    del gff3Obj[transcriptID]
+            
             # Generate a new ID for this gene
             idForRenaming = orthologsDict[parentFeature.ID]
             geneCounts.setdefault(idForRenaming, 0)
             geneCounts[idForRenaming] += 1
-            
             newParentID = f"{idForRenaming}.copy{geneCounts[idForRenaming]}"
-            parentFeature.update_id(parentFeature.ID, newParentID, gff3Obj)
             
-            # Delete any transcript children features
-            if hasattr(parentFeature, "transcript"):
-                transcriptIDs = [ transcriptFeature.ID for transcriptFeature in parentFeature.transcript ]
-                for transcriptID in transcriptIDs:
-                    parentFeature.del_child(transcriptID, "transcript")
-            
-            # Update the children features more directly
-            for index, childFeature in enumerate(parentFeature.children):
-                newChildID = f"{newParentID}.{childFeature.type}{index+1}"
-                childFeature.update_id(childFeature.ID, newChildID, gff3Obj)
-                
-                if hasattr(childFeature, "CDS"):
-                    for cdsIndex, cdsFeature in enumerate(childFeature.CDS):
-                        newCDSID = f"{newChildID}.CDS{cdsIndex+1}"
-                        cdsFeature.update_id(cdsFeature.ID, newCDSID, gff3Obj)
-                
-                if hasattr(childFeature, "exon"):
-                    for exonIndex, exonFeature in enumerate(childFeature.exon):
-                        newExonID = f"{newChildID}.exon{exonIndex+1}"
-                        exonFeature.update_id(exonFeature.ID, newExonID, gff3Obj)
+            # Reformat the feature ID and all its children's too
+            parentFeature.reformat_id(newParentID, gff3Obj)
     
     # Write the updated GFF3 file
     gff3Obj.write(args.outputFileName)
