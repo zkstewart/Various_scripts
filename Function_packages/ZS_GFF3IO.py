@@ -1008,7 +1008,7 @@ class GFF3:
         feature.ID = newID
         
         # Re-index the feature
-        self._reindex_feature(origFeatureID, feature)
+        self.reindex_feature(origFeatureID, feature)
         
         # Update child .Parent values
         for childFeature in feature.children:
@@ -1035,7 +1035,7 @@ class GFF3:
         feature.ID = newID
         
         # Re-index the feature
-        self._reindex_feature(origFeatureID, feature)
+        self.reindex_feature(origFeatureID, feature)
         
         # Update the immediate child features
         typesCount = {}
@@ -1083,21 +1083,32 @@ class GFF3:
         
         return vcfDict
     
-    def _reindex_feature(self, origID, feature):
+    def reindex_feature(self, origID, feature):
         '''
-        Hidden helper to reindex a feature after a change in ID. It will specifically
+        Function to reindex a feature after a change in ID. It will specifically
         update the .features dictionary and the .types dictionary.
         
         Parameters:
             origID -- a string indicating the original ID of the feature
             feature -- a Feature object that has had its ID changed
         '''
-        # Clear reference to the original ID
-        self.features.pop(origID)
-        self.types[feature.type].remove(origID)
+        # Clear .features of the feature indexed by ID
+        if feature.type != "CDS":
+            self.features.pop(origID) # CDS features are not indexed in the .features dictionary
         
-        # Add reference to the new ID
-        self.features[feature.ID] = feature
+        # Clear .types of the feature object
+        indexToRemove = [
+            index
+            for index, f in enumerate(self.types[feature.type])
+            if f.ID == origID
+        ]
+        assert len(indexToRemove) == 1, \
+            f"reindex_feature ERROR: Found {len(indexToRemove)} instances of '{origID}' in '{feature.type}' type"
+        del self.types[feature.type][indexToRemove[0]]
+        
+        # Add references to the new ID
+        if feature.type != "CDS":
+            self.features[feature.ID] = feature
         self.types[feature.type].append(feature)
     
     def _index_products(self, feature):
@@ -1120,26 +1131,18 @@ class GFF3:
             self.types.setdefault("product", [])
             self.types["product"].append(feature)
     
-    def _eliminate_feature(self, thisFeature, isInRecursion=False):
+    def eliminate_feature(self, thisFeature, isInRecursion=False):
         '''
         When we're eliminating a feature, there's a few places we need
         to look for references. At a whole class level, the GFF3 object will
         index anything other than CDS in the .feature dictionary. That's an
         easy target. It will also store everything in the .types dictionary,
         which itself indexes the various feature types alongside a list of
-        every feature of that type. That's more difficult, since those
-        values do not have keys.
-        
-        Otherwise, we need to consider the Feature class. It can contain
-        various references to a given feature. We expect this to be in
-        the .children value, as well as any values indexed within
-        self.types. Importantly, we need to do this recursively since
-        the feature whose ID is being given to this method might have
-        a child, which has a child, which has a child... and on and on.
-        All of those children need to be eliminated at the GFF3 class level,
-        and also within their own Feature attributes.
+        every feature of that type. It's less efficient to do this since
+        they do not have keys, but it's still doable.
         
         Parameters:
+            thisFeature -- the feature to remove from this GFF3 object
             isInRecursion -- a boolean that you shouldn't touch. It will
                              let this method know if it's being called
                              from within a recursion or not. If it is
@@ -1148,39 +1151,36 @@ class GFF3:
                              method call that will escalate elimination
                              up to the Parent if applicable
         '''
-        thisFeatureID = thisFeature.ID
-        thisFeatureType = thisFeature.type
-        
         # Recurse into this feature's children first (depth-first deletion)
         for childFeature in thisFeature.children:
-            self._eliminate_feature(childFeature, isInRecursion=True)
+            self.eliminate_feature(childFeature, isInRecursion=True)
         
-        # GFF3 elimination: .features
-        if thisFeatureID in self.features:
-            del self.features[thisFeatureID]
+        # Eliminate from .features
+        if thisFeature.ID in self.features:
+            del self.features[thisFeature.ID]
         
-        # GFF3 elimination: .types
-        typeIndices = [i for i in range(len(self.types[thisFeatureType])) if self.types[thisFeatureType][i].ID == thisFeatureID]
-        for index in reversed(typeIndices):
-            del self.types[thisFeatureType][index]
-        if thisFeatureType in self.types and len(self.types[thisFeatureType]) == 0: # if the GFF3 overall no longer has objects of this type
-            del self.types[thisFeatureType]
+        # Eliminate from .types
+        indexToRemove = [
+            index
+            for index, f in enumerate(self.types[thisFeature.type])
+            if f.ID == thisFeature.ID
+        ]
+        assert len(indexToRemove) == 1, \
+            f"eliminate_feature ERROR: Found {len(indexToRemove)} instances of '{thisFeature.ID}' in '{thisFeature.type}' type"
+        del self.types[thisFeature.type][indexToRemove[0]]
         
-        # Feature elimination: delete from this feature
-        thisFeature.children = None
-        for _type in thisFeature.types.keys():
-            thisFeature.__dict__[_type] = None
-        thisFeature.types = None
+        # Eliminate the type if it's now empty
+        if len(self.types[thisFeature.type]) == 0:
+            del self.types[thisFeature.type]
         
-        # Feature handling: delete from the parent
+        # Eliminate from the parent
         if isInRecursion is False and hasattr(thisFeature, "Parent"):
             parentFeature = self[thisFeature.Parent]
-            parentFeature.del_child(thisFeatureID, thisFeatureType)
-        
-        # GFF3 handling: delete parent if it's now child free
-        if isInRecursion is False and hasattr(thisFeature, "Parent"):
-            if len(self[thisFeature.Parent].children) == 0:
-                self._eliminate_feature(self[thisFeature.Parent])
+            parentFeature.del_child(thisFeature.ID, thisFeature.type)
+            
+            # Eliminate parent feature if it's now child free
+            if len(parentFeature.children) == 0:
+                self.eliminate_feature(self[thisFeature.Parent])
     
     def __getitem__(self, key):
         return self.features[key]
@@ -1196,7 +1196,7 @@ class GFF3:
             raise ValueError(f"'{key}' not found in this GFF3 object")
         else:
             featureToBeDeleted = self.features[key]
-            self._eliminate_feature(featureToBeDeleted)
+            self.eliminate_feature(featureToBeDeleted)
     
     def __iter__(self):
         return iter(self.features)
