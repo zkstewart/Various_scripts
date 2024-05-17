@@ -297,6 +297,92 @@ class GFF3:
                 longestMrna = [mrnaFeature, mrnaLen]
         return longestMrna[0]
     
+    @staticmethod
+    def _recursively_write_feature_details(feature, fileHandle):
+        '''
+        Hidden helper to use recursion for writing GFF3 features to file
+        '''
+        # Write parent details
+        fileHandle.write(feature.format_as_gff3() + "\n")
+        
+        # Iteratively write children details
+        for childFeature in sorted(feature.children, key = lambda x: x.start):
+            GFF3._recursively_write_feature_details(childFeature, fileHandle)
+    
+    @staticmethod
+    def _get_contig_as_FastASeq(contigSequences, contigID):
+        '''
+        Hidden helper method of retrieve_sequence_from_FASTA(). Intended to work with
+        many different object types i.e., a FASTA, FastASeq, or Biopython sequence.
+        '''
+        sequence = GFF3._get_contig_as_string(contigSequences, contigID)
+        
+        # Create a FastASeq object to return
+        outputSeq = FastASeq(id=contigID, seq=sequence)
+        return outputSeq
+    
+    @staticmethod
+    def _get_contig_as_string(contigSequences, contigID):
+        '''
+        Hidden helper method of retrieve_sequence_from_FASTA(). Intended to work with
+        many different object types i.e., a FASTA, FastASeq, or Biopython sequence.
+        '''
+        # Handle Biopython dict type
+        if type(contigSequences).__name__ == "dict":
+            if contigID not in contigSequences:
+                raise KeyError("'{0}' does not exist within the dictionary contig sequences object".format(contigID))
+            if type(contigSequences[contigID]).__name__ != "SeqRecord":
+                raise TypeError("contigSequences is a dictionary, but values aren't Biopython SeqRecords? Can't handle.")
+            sequence = str(contigSequences[contigID].seq)
+        
+        # Handle ZS_SeqIO.FASTA type
+        elif hasattr(contigSequences, "isFASTA") and contigSequences.isFASTA is True:
+            try:
+                sequence = contigSequences[contigID].seq
+            except:
+                raise KeyError("'{0}' does not exist within the FASTA object".format(contigID))
+        
+        # Handle ZS_SeqIO.FastASeq type
+        elif hasattr(contigSequences, "isFastASeq") and contigSequences.isFastASeq is True:
+            if contigID != contigSequences.id and contigID != contigSequences.alt:
+                raise ValueError("'{0}' contig does not match the provided FastASeq object".format(contigID))
+            sequence = contigSequences.seq
+        
+        # Handle pyfaidx.Fasta type
+        elif type(contigSequences) == Fasta:
+            if contigID not in contigSequences:
+                raise KeyError("'{0}' does not exist within the pyfaidx.Fasta sequences object".format(contigID))
+            sequence = str(contigSequences[contigID])
+        
+        # Throw error for unhandled types
+        else:
+            raise TypeError("Unrecognised data type '{0}' for contig string retrieval".format(type(contigSequences).__name__))
+        
+        # Return the sequence as a string
+        return sequence
+    
+    @staticmethod
+    def _get_feature_coords(feature, exonOrCDS):
+        '''
+        Hidden function of retrieve_sequence_from_FASTA() to retrieve sorted
+        coordinates lists for the exon or CDS features associated with what
+        should be an mRNA feature. If it's not it'll probably crash, hence why
+        this is a private method since I know exactly how it'll be used.
+        '''
+        coords = [f.coords for f in feature.__dict__[exonOrCDS]]
+        frames = [f.frame for f in feature.__dict__[exonOrCDS]]
+        forSorting = list(zip(coords, frames))
+        
+        if feature.strand == '+':
+            forSorting.sort(key = lambda x: (int(x[0][0]), int(x[0][1])))
+        else:
+            forSorting.sort(key = lambda x: (-int(x[0][0]), -int(x[0][1])))
+        
+        coords = [c for c, f in forSorting]
+        frames = [f for c, f in forSorting]
+        
+        return coords, frames
+    
     def parse_gff3(self, strict_parse=True, fix_duplicated_ids=False, full_warning=False, slim_index=False):
         '''
         Parameters:
@@ -665,113 +751,6 @@ class GFF3:
         # Return list
         return features
     
-    @staticmethod
-    def _get_contig_as_FastASeq(contigSequences, contigID):
-        '''
-        Hidden helper method of retrieve_sequence_from_FASTA(). Intended to work with
-        many different object types i.e., a FASTA, FastASeq, or Biopython sequence.
-        '''
-        sequence = GFF3._get_contig_as_string(contigSequences, contigID)
-        
-        # Create a FastASeq object to return
-        outputSeq = FastASeq(id=contigID, seq=sequence)
-        return outputSeq
-    
-    @staticmethod
-    def _get_contig_as_string(contigSequences, contigID):
-        '''
-        Hidden helper method of retrieve_sequence_from_FASTA(). Intended to work with
-        many different object types i.e., a FASTA, FastASeq, or Biopython sequence.
-        '''
-        # Handle Biopython dict type
-        if type(contigSequences).__name__ == "dict":
-            if contigID not in contigSequences:
-                raise KeyError("'{0}' does not exist within the dictionary contig sequences object".format(contigID))
-            if type(contigSequences[contigID]).__name__ != "SeqRecord":
-                raise TypeError("contigSequences is a dictionary, but values aren't Biopython SeqRecords? Can't handle.")
-            sequence = str(contigSequences[contigID].seq)
-        
-        # Handle ZS_SeqIO.FASTA type
-        elif hasattr(contigSequences, "isFASTA") and contigSequences.isFASTA is True:
-            try:
-                sequence = contigSequences[contigID].seq
-            except:
-                raise KeyError("'{0}' does not exist within the FASTA object".format(contigID))
-        
-        # Handle ZS_SeqIO.FastASeq type
-        elif hasattr(contigSequences, "isFastASeq") and contigSequences.isFastASeq is True:
-            if contigID != contigSequences.id and contigID != contigSequences.alt:
-                raise ValueError("'{0}' contig does not match the provided FastASeq object".format(contigID))
-            sequence = contigSequences.seq
-        
-        # Handle pyfaidx.Fasta type
-        elif type(contigSequences) == Fasta:
-            if contigID not in contigSequences:
-                raise KeyError("'{0}' does not exist within the pyfaidx.Fasta sequences object".format(contigID))
-            sequence = str(contigSequences[contigID])
-        
-        # Throw error for unhandled types
-        else:
-            raise TypeError("Unrecognised data type '{0}' for contig string retrieval".format(type(contigSequences).__name__))
-        
-        # Return the sequence as a string
-        return sequence
-    
-    @staticmethod
-    def _get_feature_coords(feature, exonOrCDS):
-        '''
-        Hidden function of retrieve_sequence_from_FASTA() to retrieve sorted
-        coordinates lists for the exon or CDS features associated with what
-        should be an mRNA feature. If it's not it'll probably crash, hence why
-        this is a private method since I know exactly how it'll be used.
-        '''
-        coords = [f.coords for f in feature.__dict__[exonOrCDS]]
-        frames = [f.frame for f in feature.__dict__[exonOrCDS]]
-        forSorting = list(zip(coords, frames))
-        
-        if feature.strand == '+':
-            forSorting.sort(key = lambda x: (int(x[0][0]), int(x[0][1])))
-        else:
-            forSorting.sort(key = lambda x: (-int(x[0][0]), -int(x[0][1])))
-        
-        coords = [c for c, f in forSorting]
-        frames = [f for c, f in forSorting]
-        
-        return coords, frames
-    
-    def _get_artifacts_as_vcfDict(self):
-        '''
-        Hidden function which enables quick retrieval of recognised insertion, deletions,
-        and substitution artifact entries from this GFF3. It will return an object
-        VCF-like dictionary format which can be used for editing a sequence object.
-        
-        Returns:
-            vcfDict -- a dictionary with structure like:
-                       {
-                           contigID1: [
-                               [[start1, end1], artifact_type, residue],
-                               ...
-                           ],
-                           ...
-                       }
-        '''
-        ACCEPTED_INDEL_SUB_TYPES = ["deletion_artifact", "substitution_artifact", "insertion_artifact"]
-        
-        vcfDict = {}
-        for artifactType in ACCEPTED_INDEL_SUB_TYPES:
-            if artifactType in self.types:
-                for artifactFeature in self.types[artifactType]:
-                    vcfDict.setdefault(artifactFeature.contig, [])
-                    residue = "." if not hasattr(artifactFeature, "residues") else artifactFeature.residues
-                    vcfDict[artifactFeature.contig].append([
-                        artifactFeature.coords, artifactFeature.type, residue
-                    ])
-        
-        for value in vcfDict.values():
-            value.sort(key = lambda x: ([-x[0][0], -x[0][1]]))
-        
-        return vcfDict
-    
     def retrieve_coords(self, feature_or_featureID, sequenceType):
         '''
         Using this GFF3 instance, retrieve the exon or CDS coordinates for the corresponding
@@ -924,18 +903,6 @@ class GFF3:
         FastASeq_obj = FastASeq(id=featureID, seq=sequence)
         return FastASeq_obj, featureType, startingFrame
     
-    @staticmethod
-    def _recursively_write_feature_details(feature, fileHandle):
-        '''
-        Hidden helper to use recursion for writing GFF3 features to file
-        '''
-        # Write parent details
-        fileHandle.write(feature.format_as_gff3() + "\n")
-        
-        # Iteratively write children details
-        for childFeature in sorted(feature.children, key = lambda x: x.start):
-            GFF3._recursively_write_feature_details(childFeature, fileHandle)
-    
     def write(self, outputFileName, force=False, parentTypesToSkip=[]):
         '''
         Writes the GFF3 object out to file at the location provided. Formatting will be done
@@ -992,6 +959,39 @@ class GFF3:
             self.types.setdefault("CDS", [])
             self.types["CDS"].append(feature)
     
+    def _get_artifacts_as_vcfDict(self):
+        '''
+        Hidden function which enables quick retrieval of recognised insertion, deletions,
+        and substitution artifact entries from this GFF3. It will return an object
+        VCF-like dictionary format which can be used for editing a sequence object.
+        
+        Returns:
+            vcfDict -- a dictionary with structure like:
+                       {
+                           contigID1: [
+                               [[start1, end1], artifact_type, residue],
+                               ...
+                           ],
+                           ...
+                       }
+        '''
+        ACCEPTED_INDEL_SUB_TYPES = ["deletion_artifact", "substitution_artifact", "insertion_artifact"]
+        
+        vcfDict = {}
+        for artifactType in ACCEPTED_INDEL_SUB_TYPES:
+            if artifactType in self.types:
+                for artifactFeature in self.types[artifactType]:
+                    vcfDict.setdefault(artifactFeature.contig, [])
+                    residue = "." if not hasattr(artifactFeature, "residues") else artifactFeature.residues
+                    vcfDict[artifactFeature.contig].append([
+                        artifactFeature.coords, artifactFeature.type, residue
+                    ])
+        
+        for value in vcfDict.values():
+            value.sort(key = lambda x: ([-x[0][0], -x[0][1]]))
+        
+        return vcfDict
+    
     def _index_products(self, feature):
         '''
         Hidden helper for indexing features with the .product attribute. These are found in
@@ -1011,15 +1011,6 @@ class GFF3:
             self.features[feature.product] = feature
             self.types.setdefault("product", [])
             self.types["product"].append(feature)
-    
-    def __getitem__(self, key):
-        return self.features[key]
-    
-    def __setitem__(self, key, item):
-        self.features[key] = item
-    
-    def __len__(self):
-        return len(self.features)
     
     def _eliminate_feature(self, thisFeature, isInRecursion=False):
         '''
@@ -1082,6 +1073,15 @@ class GFF3:
         if isInRecursion is False and hasattr(thisFeature, "Parent"):
             if len(self[thisFeature.Parent].children) == 0:
                 self._eliminate_feature(self[thisFeature.Parent])
+    
+    def __getitem__(self, key):
+        return self.features[key]
+    
+    def __setitem__(self, key, item):
+        self.features[key] = item
+    
+    def __len__(self):
+        return len(self.features)
     
     def __delitem__(self, key):
         if key not in self.features:
