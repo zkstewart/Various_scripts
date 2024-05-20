@@ -1002,13 +1002,9 @@ class GFF3:
             raise ValueError("newID should be a string")
         if not feature in self:
             raise ValueError(f"Feature with ID '{feature.ID}' not found in this GFF3 object")
-        origFeatureID = feature.ID
-        
-        # Update this particular feature's ID
-        feature.ID = newID
         
         # Re-index the feature
-        self.reindex_feature(origFeatureID, feature)
+        self.reindex_feature(feature, newID)
         
         # Update child .Parent values
         for childFeature in feature.children:
@@ -1027,15 +1023,11 @@ class GFF3:
         '''
         if not isinstance(newID, str):
             raise ValueError("newID should be a string")
-        if not feature in self:
+        if (feature.type != "CDS") and (not feature in self):
             raise ValueError(f"Feature with ID '{feature.ID}' not found in this GFF3 object")
-        origFeatureID = feature.ID
-        
-        # Update this particular feature's ID
-        feature.ID = newID
         
         # Re-index the feature
-        self.reindex_feature(origFeatureID, feature)
+        self.reindex_feature(feature, newID)
         
         # Update the immediate child features
         typesCount = {}
@@ -1083,33 +1075,23 @@ class GFF3:
         
         return vcfDict
     
-    def reindex_feature(self, origID, feature):
+    def reindex_feature(self, feature, newID):
         '''
         Function to reindex a feature after a change in ID. It will specifically
         update the .features dictionary and the .types dictionary.
         
         Parameters:
-            origID -- a string indicating the original ID of the feature
-            feature -- a Feature object that has had its ID changed
+            feature -- a Feature object to have its ID changes
+            newID -- a string indicating what the new feature.ID value should be
         '''
         # Clear .features of the feature indexed by ID
-        if feature.type != "CDS":
-            self.features.pop(origID) # CDS features are not indexed in the .features dictionary
+        if feature.type != "CDS": # CDS features are not indexed in the .features dictionary
+            self.features.pop(feature.ID)
         
-        # Clear .types of the feature object
-        indexToRemove = [
-            index
-            for index, f in enumerate(self.types[feature.type])
-            if f.ID == origID
-        ]
-        assert len(indexToRemove) == 1, \
-            f"reindex_feature ERROR: Found {len(indexToRemove)} instances of '{origID}' in '{feature.type}' type"
-        del self.types[feature.type][indexToRemove[0]]
-        
-        # Add references to the new ID
+        # Index the feature with its new ID
+        feature.ID = newID
         if feature.type != "CDS":
             self.features[feature.ID] = feature
-        self.types[feature.type].append(feature)
     
     def _index_products(self, feature):
         '''
