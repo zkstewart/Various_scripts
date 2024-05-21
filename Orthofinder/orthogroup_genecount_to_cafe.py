@@ -35,12 +35,6 @@ if __name__ == "__main__":
                    help="""Specify the location to write output files to; this
                    location will be populated with orthogroup files""")
     # Optional
-    p.add_argument("-t", dest="threads",
-                   required=False,
-                   type=int,
-                   help="""Optionally specify the number of threads to run
-                   MAFFT alignment with (default == 1).""",
-                   default=1)
     p.add_argument("--new_ids", dest="newIDsList",
                    required=False,
                    nargs="+",
