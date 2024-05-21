@@ -209,20 +209,22 @@ if __name__ == "__main__":
             replace_nonstandard_aminoacids(FASTA_obj)
     
     # Align FASTA objects
-    mafftAligner = ZS_AlignIO.MAFFT(args.mafft, thread=args.threads)
+    mafftAligner = ZS_AlignIO.MAFFT(args.mafft, thread=args.threads,
+                                    algorithm="einsi", maxiterate=5)
+    alignedFastaObjs = []
     for FASTA_obj in fastaObjs:
-        mafftAligner.align(FASTA_obj)
+        alignedFastaObjs.append(mafftAligner.align(FASTA_obj))
     
     # Perform quality trimming of MSAs
-    for FASTA_obj in fastaObjs:
+    for FASTA_obj in alignedFastaObjs:
         trim_noninformative_flanks(FASTA_obj, isNucleotide=args.is_nucleotide, ALLOWED_NONINFO_PCT=args.noninfo_pct)
     
     # Concatenate FASTA objects
-    for x in range(1, len(fastaObjs)):
-        fastaObjs[0].concat(fastaObjs[x]) # it all gets concatenated into the first FASTA object
+    for x in range(1, len(alignedFastaObjs)):
+        alignedFastaObjs[0].concat(alignedFastaObjs[x]) # it all gets concatenated into the first FASTA object
     
     # Write output
-    fastaObjs[0].write(args.outputFileName, asAligned=True)
+    alignedFastaObjs[0].write(args.outputFileName, asAligned=True)
     
     # Done!
     print('Program completed successfully!')
