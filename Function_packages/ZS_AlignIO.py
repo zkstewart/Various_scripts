@@ -374,7 +374,7 @@ class MAFFT:
     def align_as_protein(self, fasta, strands=None, frames=None):
         '''
         Handles the execution of MAFFT alignment from start to finish, but by first
-        translation nucleotides into proteins, and then de-translating them. It will:
+        translating nucleotides into proteins, and then de-translating them. It will:
         
             1) Translate nucleotides into their corresponding protein sequence
             2) Convert the fasta value into a file to align (if you've provided 

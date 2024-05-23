@@ -60,7 +60,13 @@ def main():
     usage = """%(prog)s will receive one or more input FASTA files, specified as individual file
     paths or as directories to scan through for files with the indicated suffix(es). It will then
     perform a multiple sequence alignment using MAFFT for each file, and write the output to the
-    specified output directory.
+    specified output directory. Some notes for use:
+    
+    1) --codons will align by codon, by first translating sequences into their +ve strand, frame 0
+    protein sequences. The input sequences should thus be CDS' that match this assumption.
+    2) --maxiterate can be set to a very high value, but the MAFFT documentation suggests that most
+    improvement occurs within the first few iterations, so take that into consideration (e.g.,
+    maybe set it to 5 or 10 if you're in a hurry, or 100+ if it needs to be perfection).
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
@@ -96,6 +102,12 @@ def main():
                    default == 1""",
                    default=1)
     # Opts (program behaviour)
+    p.add_argument("--codons", dest="codons",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, specify this flag if your input sequences are nucleotides
+                   that you would like to align by codon.""",
+                   default=False)
     p.add_argument("--suffix", dest="suffix",
                    required=False,
                    help="""Optionally, specify a suffix to add to each FASTA file name prior to the
@@ -129,7 +141,16 @@ def main():
             continue
         
         # Perform MAFFT alignment
-        resultFASTA_obj = aligner.align(fastaFile)
+        if args.codons:
+            numSeqs = sum([1 for _ in SeqIO.parse(fastaFile, "fasta")])
+            
+            resultFASTA_obj = aligner.align_as_protein(
+                fastaFile,
+                strands=[1 for _ in range(numSeqs)],
+                frames=[0 for _ in range(numSeqs)]
+            )
+        else:
+            resultFASTA_obj = aligner.align(fastaFile)
         
         # Write output file
         resultFASTA_obj.write(outName, asAligned=True)
@@ -138,4 +159,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
