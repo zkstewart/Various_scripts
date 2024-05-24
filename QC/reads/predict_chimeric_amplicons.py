@@ -168,14 +168,16 @@ def validate_ref_is_distinguishable(refHaplotypes):
         print("Program will exit now.")
         quit()
 
-def align_record_to_reference(record, originalMSA, muscleObj):
+def trim_amplicon_insertions(amplicon, originalMSA, muscleObj):
     '''
-    Peforms MUSCLE profile alignment of the record (which should be an amplicon
-    sequence) against a reference MSA. Cleans up the alignment to make it
-    uniform in length against the original alignment.
+    Peforms MUSCLE profile alignment of an amplicon sequence 
+    against a reference MSA. Cleans up the alignment to make it
+    uniform in length against the original alignment, most notably
+    by removing insertions in the amplicon relative to the full
+    reference MSA.
     
     Parameters:
-        record -- a SeqIO.SeqRecord object with a nucleotide amplicon read
+        amplicon -- a string of nucleotides corresponding to an amplicon read
         originalMSA -- a string indicating the file location of the original
                        reference alleles MSA file.
         muscleObj -- a MinimalMUSCLE object for aligning sequences
@@ -184,10 +186,10 @@ def align_record_to_reference(record, originalMSA, muscleObj):
                       the alignment of the amplicon against the consensus
     '''
     # Write the record to a temporary FASTA file
-    tmpHash = ZS_SeqIO.Conversion.get_hash_for_input_sequences(record)
+    tmpHash = ZS_SeqIO.Conversion.get_hash_for_input_sequences(amplicon)
     tmpFileName = ZS_Utility.tmp_file_name_gen("chimeras_muscle_" + tmpHash, "fasta")
     with open(tmpFileName, "w") as fileOut:
-        SeqIO.write(record, fileOut, "fasta")
+        fileOut.write(f">{tmpHash}\n{amplicon}\n")
     
     # Run MUSCLE to add the record to the reference MSA
     msa = muscleObj.add(originalMSA, tmpFileName)
@@ -199,8 +201,8 @@ def align_record_to_reference(record, originalMSA, muscleObj):
     alignedFASTA = ZS_SeqIO.FASTA(msa, isAligned=True)
     
     # Drop any positions that don't have a residue in the original MSA
-    refSeqs = [ x.gap_seq for x in alignedFASTA.seqs if x.id != record.id ]
-    recordSeq = alignedFASTA[record.id].gap_seq
+    refSeqs = [ x.gap_seq for x in alignedFASTA.seqs if x.id != tmpHash ]
+    recordSeq = alignedFASTA[tmpHash].gap_seq
     
     adjustedRefs = [ "" for x in refSeqs ]
     adjustedRecord = ""
@@ -213,17 +215,16 @@ def align_record_to_reference(record, originalMSA, muscleObj):
     
     return adjustedRecord
 
-def align_record_to_best_match(record, alleleSeqs, originalMSA, muscleObj):
+def align_amplicon_to_best_match(amplicon, alleleSeqs, originalMSA, muscleObj):
     '''
     Similar to align_record_to_reference(), this peforms MUSCLE profile alignment
-    of the record (which should be an amplicon sequence), but it aligns instead
-    against the best matching reference sequence. This may help to address the
-    arbitrariness of some gap positions in the alignment. Aftewards, it will 
-    clean up the alignment to make it uniform in length against the reference
-    sequence.
+    of an amplicon sequence, but it aligns instead against the best matching
+    reference sequence. This may help to address the arbitrariness of some gap
+    positions in the alignment. Aftewards, it will  clean up the alignment to make
+    it uniform in length against the reference sequence.
     
     Parameters:
-        record -- a SeqIO.SeqRecord object with a nucleotide amplicon read
+        amplicon -- a string of nucleotides corresponding to an amplicon read
         alleleSeqs -- a dictionary with structure like:
                       {
                           0: ['referenceAlleleSequence0', 'fileLocation0'],
@@ -239,16 +240,16 @@ def align_record_to_best_match(record, alleleSeqs, originalMSA, muscleObj):
                       the alignment of the amplicon against the consensus
     '''
     # Write the record to a temporary FASTA file
-    tmpHash = ZS_SeqIO.Conversion.get_hash_for_input_sequences(record)
+    tmpHash = ZS_SeqIO.Conversion.get_hash_for_input_sequences(amplicon)
     tmpFileName = ZS_Utility.tmp_file_name_gen("chimeras_muscle_" + tmpHash, "fasta")
     with open(tmpFileName, "w") as fileOut:
-        SeqIO.write(record, fileOut, "fasta")
+        fileOut.write(f">{tmpHash}\n{amplicon}\n")
     
     # Find the best matching reference sequence
     bestMatch = [inf, None]
     for index, alleleSeqPair in alleleSeqs.items():
         alleleSeq, alleleFile = alleleSeqPair
-        seqDistance = distance(str(record.seq), alleleSeq)
+        seqDistance = distance(amplicon, alleleSeq)
         if seqDistance < bestMatch[0]:
             bestMatch = [seqDistance, alleleFile]
     
@@ -266,8 +267,8 @@ def align_record_to_best_match(record, alleleSeqs, originalMSA, muscleObj):
     #fullFASTA.add(alignedFASTA[record.id], isAligned=True)
     
     # Drop any positions that don't have a residue in the original MSA
-    refSeqs = [ x.gap_seq for x in alignedFASTA.seqs if x.id != record.id ]
-    recordSeq = alignedFASTA[record.id].gap_seq
+    refSeqs = [ x.gap_seq for x in alignedFASTA.seqs if x.id != tmpHash ]
+    recordSeq = alignedFASTA[tmpHash].gap_seq
     
     adjustedRefs = [ "" for x in refSeqs ]
     adjustedRecord = ""
@@ -596,8 +597,8 @@ def main():
             # Otherwise:
             else:
                 # Align record against reference
-                queryAlign = align_record_to_best_match(record, alleleSeqs,
-                                                        args.referenceFile, muscleObj)
+                queryAlign = align_amplicon_to_best_match(str(record.seq), alleleSeqs,
+                                                          args.referenceFile, muscleObj)
                 
                 # Get the variant at all relevant positions
                 readHaplotype = get_read_haplotype(queryAlign, variantDict)
