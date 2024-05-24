@@ -9,6 +9,8 @@
 import os, argparse, sys, gzip, subprocess, platform
 from contextlib import contextmanager
 from Bio import SeqIO
+from Levenshtein import distance
+from math import inf
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from Function_packages import ZS_SeqIO, ZS_Utility
@@ -211,6 +213,73 @@ def align_record_to_reference(record, originalMSA, muscleObj):
     
     return adjustedRecord
 
+def align_record_to_best_match(record, alleleSeqs, originalMSA, muscleObj):
+    '''
+    Similar to align_record_to_reference(), this peforms MUSCLE profile alignment
+    of the record (which should be an amplicon sequence), but it aligns instead
+    against the best matching reference sequence. This may help to address the
+    arbitrariness of some gap positions in the alignment. Aftewards, it will 
+    clean up the alignment to make it uniform in length against the reference
+    sequence.
+    
+    Parameters:
+        record -- a SeqIO.SeqRecord object with a nucleotide amplicon read
+        alleleSeqs -- a dictionary with structure like:
+                      {
+                          0: ['referenceAlleleSequence0', 'fileLocation0'],
+                          1: ['referenceAlleleSequence1', 'fileLocation1'],
+                          ...
+                      }
+        originalMSA -- a string indicating the file location of the original
+                       reference alleles MSA file from which the alleleSeqs
+                       object was created
+        muscleObj -- a MinimalMUSCLE object for aligning sequences
+    Returns:
+        queryAlign -- a string with gaps indicated where relevant for
+                      the alignment of the amplicon against the consensus
+    '''
+    # Write the record to a temporary FASTA file
+    tmpHash = ZS_SeqIO.Conversion.get_hash_for_input_sequences(record)
+    tmpFileName = ZS_Utility.tmp_file_name_gen("chimeras_muscle_" + tmpHash, "fasta")
+    with open(tmpFileName, "w") as fileOut:
+        SeqIO.write(record, fileOut, "fasta")
+    
+    # Find the best matching reference sequence
+    bestMatch = [inf, None]
+    for index, alleleSeqPair in alleleSeqs.items():
+        alleleSeq, alleleFile = alleleSeqPair
+        seqDistance = distance(str(record.seq), alleleSeq)
+        if seqDistance < bestMatch[0]:
+            bestMatch = [seqDistance, alleleFile]
+    
+    # Run MUSCLE to add the record to the best matching reference sequence MSA
+    msa = muscleObj.add(bestMatch[1], tmpFileName)
+    
+    # Clean up the temporary file
+    os.remove(tmpFileName)
+    
+    # Parse the MUSCLE MSA into a FASTA object
+    alignedFASTA = ZS_SeqIO.FASTA(msa, isAligned=True)
+    
+    # Add the MUSCLE aligned sequence into the full MSA
+    #fullFASTA = ZS_SeqIO.FASTA(originalMSA, isAligned=True)
+    #fullFASTA.add(alignedFASTA[record.id], isAligned=True)
+    
+    # Drop any positions that don't have a residue in the original MSA
+    refSeqs = [ x.gap_seq for x in alignedFASTA.seqs if x.id != record.id ]
+    recordSeq = alignedFASTA[record.id].gap_seq
+    
+    adjustedRefs = [ "" for x in refSeqs ]
+    adjustedRecord = ""
+    for posIndex in range(len(recordSeq)):
+        refResidues = set([ x[posIndex] for x in refSeqs ])
+        if refResidues != {"-"}:
+            for i in range(len(refSeqs)):
+                adjustedRefs[i] += refSeqs[i][posIndex]
+            adjustedRecord += recordSeq[posIndex]
+    
+    return adjustedRecord
+
 def get_vote_data(refHaplotypes, readHaplotype, turnOffSmoothing=True):
     '''
     Performs some data smoothing of how the read's haplotype
@@ -393,6 +462,23 @@ def complex_chimera_detection(voteSmoothed, disallowAmbiguity=False):
     # If not, just return False
     return False
 
+def get_read_haplotype(sequence, variantDict):
+    '''
+    Parameters:
+        sequence -- a string of nucleotides
+        variantDict -- a dictionary with structure like:
+                       {
+                           pos1: ['nuc1', 'nuc2', 'nuc3'],
+                           pos2: ['nuc1', 'nuc2', 'nuc3'],
+                           ...
+                       }
+    Returns:
+        readHaplotype -- a string of nucleotides akin to 'C---GCAACT'
+                         indicating the haplotype of the read at each variant
+                         position
+    '''
+    return "".join([ sequence[x] for x in variantDict.keys() ])
+
 def main():
     usage = """%(prog)s will predict chimeric amplicons by using MUSCLE to add them into
     a reference alleles multiple sequence alignment. Variant sites in the reference alleles
@@ -486,6 +572,13 @@ def main():
     refHaplotypes = get_ref_haplotype_code(fastaObj, variantDict)
     validate_ref_is_distinguishable(refHaplotypes)
     
+    # Establish quick access to individual reference allele sequences and files
+    alleleSeqs = {}
+    for index, FastASeq_obj in enumerate(fastaObj.seqs):
+        alleleSeqs[index] = [ FastASeq_obj.gap_seq.upper(), os.path.join(args.outputDirectory, f"ref_{index}.fasta") ]
+        with open(alleleSeqs[index][1], "w") as fileOut:
+            fileOut.write(f">{FastASeq_obj.id}\n{FastASeq_obj.gap_seq}\n")
+    
     # Iterate over FASTQ reads to determine if they are chimeric
     numChimeras = 0
     numReads = 0
@@ -500,14 +593,14 @@ def main():
             if str(record.seq) in cachedResults:
                 isMaybeChimera = cachedResults[str(record.seq)]
             
-            # Otherwise, ...
+            # Otherwise:
             else:
-                # ... align record against reference
-                queryAlign = align_record_to_reference(record, args.referenceFile,
-                                                       muscleObj)
+                # Align record against reference
+                queryAlign = align_record_to_best_match(record, alleleSeqs,
+                                                        args.referenceFile, muscleObj)
                 
                 # Get the variant at all relevant positions
-                readHaplotype = "".join([ queryAlign[x] for x in variantDict.keys() ])
+                readHaplotype = get_read_haplotype(queryAlign, variantDict)
                 
                 # Obtain 'vote' data structures
                 voteLines, voteSmoothed = get_vote_data(refHaplotypes, readHaplotype,
@@ -533,6 +626,11 @@ def main():
             # If we don't have a chimera, write to its respective file
             else:
                 nonChimerOut.write(record.format("fastq"))
+    
+    # Clean up the reference allele files
+    for alleleFile in [ alleleSeqPair[1] for alleleSeqPair in alleleSeqs.values() ]:
+        if os.path.isfile(alleleFile):
+            os.remove(alleleFile)
     
     # Print chimera statistics then end program
     print("# predict_chimeric_amplicons output statistics")
