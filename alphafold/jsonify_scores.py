@@ -63,7 +63,7 @@ if __name__ == '__main__':
     
     # Locate input files
     pdbFiles = [
-        f
+        os.path.join(args.modelPath, f)
         for f in os.listdir(args.modelPath)
         if f.startswith("ranked_") and f.endswith(".pdb")
     ]
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     
     # Locate model pickle files
     pklFiles = [
-        f
+        os.path.join(args.modelPath, f)
         for f in os.listdir(args.modelPath)
         if f.startswith("result_model_") and (f.endswith(".pkl") or f.endswith(".pkl.gz"))
     ]
