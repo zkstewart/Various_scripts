@@ -76,7 +76,7 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idDict
     # Report details re: foundList
     foundSet = set(foundList)
     idSet = set(idDict)
-    if foundSet == idSet:
+    if len(foundSet) == len(idSet):
         print('All values in the ID list were successfully ' + behaviour + 'd.')
     else:
         print('Not all values in the ID list were found within the FASTA file.')
@@ -84,7 +84,7 @@ def fasta_retrieve_remove_tofile(fastaRecords, longIndex, outputFileName, idDict
         if len(foundSet) < len(idSet):
             print('We found ' + str(difference) + ' fewer entries than expected. These include:')
             for entry in idSet:
-                if entry not in foundSet:
+                if entry not in foundSet and entry not in effortPairs:
                     print(entry)
         else:
             print('We found ' + str(difference) + ' more entries than expected. This probably means your FASTA file has duplicate entries. If that is correct, no worries; if not, look into what might be wrong with your FASTA.')
