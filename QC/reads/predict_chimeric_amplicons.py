@@ -215,7 +215,7 @@ def trim_amplicon_insertions(amplicon, originalMSA, muscleObj):
     
     return adjustedRecord
 
-def align_amplicon_to_best_match(amplicon, alleleSeqs, originalMSA, muscleObj):
+def align_amplicon_to_best_match(amplicon, alleleSeqs, muscleObj):
     '''
     Similar to align_record_to_reference(), this peforms MUSCLE profile alignment
     of an amplicon sequence, but it aligns instead against the best matching
@@ -231,9 +231,6 @@ def align_amplicon_to_best_match(amplicon, alleleSeqs, originalMSA, muscleObj):
                           1: ['referenceAlleleSequence1', 'fileLocation1'],
                           ...
                       }
-        originalMSA -- a string indicating the file location of the original
-                       reference alleles MSA file from which the alleleSeqs
-                       object was created
         muscleObj -- a MinimalMUSCLE object for aligning sequences
     Returns:
         queryAlign -- a string with gaps indicated where relevant for
@@ -259,25 +256,40 @@ def align_amplicon_to_best_match(amplicon, alleleSeqs, originalMSA, muscleObj):
     # Clean up the temporary file
     os.remove(tmpFileName)
     
-    # Parse the MUSCLE MSA into a FASTA object
+    # Parse the MUSCLE MSA into a FASTA object and extract sequences
     alignedFASTA = ZS_SeqIO.FASTA(msa, isAligned=True)
-    
-    # Add the MUSCLE aligned sequence into the full MSA
-    #fullFASTA = ZS_SeqIO.FASTA(originalMSA, isAligned=True)
-    #fullFASTA.add(alignedFASTA[record.id], isAligned=True)
-    
-    # Drop any positions that don't have a residue in the original MSA
-    refSeqs = [ x.gap_seq for x in alignedFASTA.seqs if x.id != tmpHash ]
+    refSeq = [ x.gap_seq for x in alignedFASTA.seqs if x.id != tmpHash ][0].upper()
     recordSeq = alignedFASTA[tmpHash].gap_seq
     
-    adjustedRefs = [ "" for x in refSeqs ]
+    # Parse in the original reference FASTA sequence
+    origRefSeq = ZS_SeqIO.FASTA(bestMatch[1], isAligned=True)[0].gap_seq.upper()
+    
+    # Drop any positions that don't have a residue in the original MSA
+    """
+    This algorithm works on the basis of recognising when the aligned reference
+    and original reference differ from each other. A difference implies that
+    there is an insertion in the amplicon sequence that is not present in the original
+    references MSA, which would have induced a gap in the aligned sequence. Having
+    the two indexes iterating asynchronously lets us scan through the sequences
+    and only add residues that are present in the original reference.
+    """
+    refIndex = 0
     adjustedRecord = ""
     for posIndex in range(len(recordSeq)):
-        refResidues = set([ x[posIndex] for x in refSeqs ])
-        if refResidues != {"-"}:
-            for i in range(len(refSeqs)):
-                adjustedRefs[i] += refSeqs[i][posIndex]
+        
+                
+        # Get the position in the original and aligned reference
+        origRefResidue = origRefSeq[refIndex]
+        alignedRefResidue = refSeq[posIndex]
+        
+        # Handle equivalence
+        if origRefResidue == alignedRefResidue:
             adjustedRecord += recordSeq[posIndex]
+            refIndex += 1
+            
+            # Exit if we've reached the end of the original reference
+            if refIndex == len(origRefSeq):
+                break
     
     return adjustedRecord
 
@@ -598,7 +610,7 @@ def main():
             else:
                 # Align record against reference
                 queryAlign = align_amplicon_to_best_match(str(record.seq), alleleSeqs,
-                                                          args.referenceFile, muscleObj)
+                                                          muscleObj)
                 
                 # Get the variant at all relevant positions
                 readHaplotype = get_read_haplotype(queryAlign, variantDict)
