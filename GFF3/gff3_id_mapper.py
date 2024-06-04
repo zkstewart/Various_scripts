@@ -80,7 +80,7 @@ def gff3_id_mapper(forEach, map, to, gff3Obj, TOLERANT=False, UNIQUE=False):
                 (f"'{toKey}' -to key does not exist within one or more features; "
                 f"valid keys include '{list(feature.__dict__.keys())}'; check that "
                 f"letters have correct upper/lower casing for {feature}")
-            toDetails.append(urllib.parse.unquote(feature.__dict__[toKey]))
+            toDetails.append(urllib.parse.unquote(str(feature.__dict__[toKey])))
         
         if skip is True:
             continue
@@ -104,7 +104,7 @@ def gff3_id_mapper(forEach, map, to, gff3Obj, TOLERANT=False, UNIQUE=False):
     
     return mapping
 
-if __name__ == "__main__":
+def main():
     # User input
     usage = """%(prog)s accepts a GFF3 file and provides a simple way to format
     a statement that will extract relevant information mappings in a TSV output file.
@@ -122,33 +122,46 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=usage)
     # Reqs
     ## Logical structure parameters
-    p.add_argument("-forEach", dest="forEach", required=True,
-        help="""
-            The value here should relate to any feature type in column 3 of the GFF3;
-            examples include gene or mRNA.
-        """)
-    p.add_argument("-map", dest="map", required=True,
-        help="""
-            The value here should relate to any valid key that will be the left-most column
-            of the output and serve as the anchor for other details.
-        """)
-    p.add_argument("-to", dest="to", required=True, nargs="+",
-        help="One or more valid keys separated with a space.")
+    p.add_argument("-forEach", dest="forEach",
+                   required=True,
+                   help="""The value here should relate to any feature type in column 3 of
+                   the GFF3; examples include gene or mRNA.""")
+    p.add_argument("-map", dest="map",
+                   required=True,
+                   help="""The value here should relate to any valid key that will be the
+                   left-most column of the output and serve as the anchor for other details.""")
+    p.add_argument("-to", dest="to",
+                   required=True,
+                   nargs="+",
+                   help="One or more valid keys separated with a space.")
     ## File I/O parameters
-    p.add_argument("-g", dest="gff3File", required=True,
-                help="Specify the location of the GFF3 file")
-    p.add_argument("-o", dest="outputFileName", required=True,
-                help="Specify the name and location for the output file")
+    p.add_argument("-g", dest="gff3File",
+                   required=True,
+                   help="Specify the location of the GFF3 file")
+    p.add_argument("-o", dest="outputFileName",
+                   required=True,
+                   help="Specify the name and location for the output file")
     # Opts
-    p.add_argument("--tolerant", dest="tolerant", action="store_true",
-                help="""Optionally specify if tolerant parsing should be
-                employed i.e., if features which lack the provided -to key
-                should be entirely skipped over.""", default=False)
-    p.add_argument("--unique", dest="unique", action="store_true",
-                help="""Optionally specify if redundancy should be eliminated
-                when multiple identical mappings occur. If an identical -map key
-                has different -to keys, however, an error will still occur""",
-                default=False)
+    p.add_argument("--noHeader", dest="noHeader",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally specify if you'd like the output file to not
+                   contain a header line.""",
+                   default=False)
+    p.add_argument("--tolerant", dest="tolerant",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally specify if tolerant parsing should be
+                   employed i.e., if features which lack the provided -to key
+                   should be entirely skipped over.""",
+                   default=False)
+    p.add_argument("--unique", dest="unique",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally specify if redundancy should be eliminated
+                   when multiple identical mappings occur. If an identical -map key
+                   has different -to keys, however, an error will still occur""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -157,12 +170,17 @@ if __name__ == "__main__":
     gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, False) # non-strict parsing
     
     # Obtain data linkings
-    mapping = gff3_id_mapper(args.forEach, args.map, args.to, gff3Obj, args.tolerant, args.unique)
+    mapping = gff3_id_mapper(args.forEach, args.map, args.to,
+                             gff3Obj, args.tolerant, args.unique)
     
     # Write output file
     with open(args.outputFileName, "w") as fileOut:
-        fileOut.write("#{0}\t{1}\n".format(args.map, "\t".join(args.to))) # header
+        if not args.noHeader:
+            fileOut.write("#{0}\t{1}\n".format(args.map, "\t".join(args.to))) # header
         for row in mapping:
             fileOut.write("{0}\n".format("\t".join(row)))
     
     print("Program completed successfully!")
+
+if __name__ == "__main__":
+    main()
