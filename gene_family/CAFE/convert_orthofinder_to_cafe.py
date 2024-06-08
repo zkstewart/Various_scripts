@@ -2,10 +2,9 @@
 # convert_orthofinder_to_cafe.py
 # Script to take the OrthoFinder output file 
 # (Orthogroups.GeneCount.tsv) and make it amenable
-# to CAFE operations.
+# to CAFE (or other gene family history reconstruction) operations.
 
 import os, argparse
-from Bio import SeqIO
 
 # Define functions
 def validate_args(args):
@@ -20,44 +19,48 @@ def validate_args(args):
         print('Make sure you specify a unique file name and try again.')
         quit()
 
-def convert_orthofinder_genecount_to_cafe(genecountFileName):
-    '''
-    Returns:
-        cafeLinesList -- a list of lines to be written to an output file
-    '''
-    firstLine = True
-    cafeLinesList = []
-    with open(genecountFileName, "r") as fileIn:
-        for line in fileIn:
-            sl = line.rstrip("\r\n").split("\t")
-            if firstLine == True:
-                cafeLinesList.append("Desc\tFamily ID\t{0}".format("\t".join(sl[1:-1]))) # drop the Total column at end
-                firstLine = False
-            else:
-                familyID, counts = sl[0], sl[1:-1] # drop the Total column at end
-                desc = "(null)"
-                cafeLinesList.append("{0}\t{1}\t{2}".format(desc, familyID, "\t".join(counts)))
-    return cafeLinesList
-
 def main():
     # User input
     usage = """%(prog)s reads in the Orthogroups.GeneCount.tsv file producted by OrthoFinder
-    and reformats it for use by CAFE5.
+    and reformats it for use by CAFE5 or DupliPHY-ML.
     """
+    ## Reqs
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-t", dest="tsvFileName", required=True,
-        help="Input Orthogroups.GeneCount.tsv file location")
-    p.add_argument("-o", dest="outputFileName", required=True,
-        help="Output file name for the modified tsv file")
+    p.add_argument("-t", dest="tsvFileName",
+                   required=True,
+                   help="Input Orthogroups.GeneCount.tsv file location")
+    p.add_argument("-o", dest="outputFileName",
+                   required=True,
+                   help="Output file name for the modified tsv file")
+    ## Opts
+    p.add_argument("--dupliphy", dest="dupliphyFormat",
+                   required=False,
+                   action="store_true",
+                   help="Optionally specify if you'd like the output to be in DupliPHY-ML format",
+                   default=False)
     args = p.parse_args()
     validate_args(args)
-
-    # Parse OrthoFinder file
-    cafeLinesList = convert_orthofinder_genecount_to_cafe(args.tsvFileName)
-
+    
     # Produce output file
-    with open(args.outputFileName, "w") as fileOut:
-        fileOut.write("\n".join(cafeLinesList))
+    with open(args.tsvFileName, "r") as fileIn, open(args.outputFileName, "w") as fileOut:
+        firstLine = True
+        for line in fileIn:
+            sl = line.rstrip("\r\n").split("\t")
+            
+            # Handle header line
+            if firstLine == True:
+                if args.dupliphyFormat:
+                    fileOut.write("FAMILY\t{0}".format("\t".join(sl[1:-1]))) # drop the Total column at end
+                else:
+                    fileOut.write("Desc\tFamily ID\t{0}".format("\t".join(sl[1:-1])))
+                firstLine = False
+            # Handle content lines
+            else:
+                familyID, counts = sl[0], sl[1:-1] # drop the Total column at end
+                if args.dupliphyFormat:
+                    fileOut.write("{0}\t{1}".format(familyID, "\t".join(counts)))
+                else:
+                    fileOut.write("(null)\t{0}\t{1}".format(familyID, "\t".join(counts)))
     
     print("Program completed successfully!")
 
