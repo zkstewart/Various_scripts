@@ -2,7 +2,7 @@
 # orthogroup_genecount_to_cafe.py
 # Script intended to take the Orthogroups.GeneCount.tsv file
 # from OrthoFinder and modify its format to be suitable for
-# input to CAFE5.
+# input to CAFE5 / DupliPHY-ML.
 
 import argparse, os
 
@@ -20,7 +20,7 @@ def validate_args(args):
 if __name__ == "__main__":
     #### USER INPUT SECTION
     usage = """%(prog)s will take the Orthogroups.GeneCount.tsv file produced
-    by OrthoFinder and modify it for use by CAFE5. This involves light reformatting
+    by OrthoFinder and modify it for use by CAFE5 or DupliPHY. This involves light reformatting
     of the original file including appending a new 'Desc' column which will be
     populated with '(null)' values.
     """
@@ -40,6 +40,11 @@ if __name__ == "__main__":
                    nargs="+",
                    help="Optionally, specify multiple space-separated IDs to rename headers to",
                    default=None)
+    p.add_argument("--dupliphy", dest="dupliphyFormat",
+                   required=False,
+                   action="store_true",
+                   help="Optionally specify if you'd like the output to be in DupliPHY-ML format",
+                   default=False)
     args = p.parse_args()
     validate_args(args)
     
@@ -58,15 +63,25 @@ if __name__ == "__main__":
                     sampleIDs = args.newIDsList
                 
                 # Write header line to file
-                fileOut.write("Desc\tFamily ID\t{0}\n".format(
-                    "\t".join(sampleIDs)
-                ))
+                if args.dupliphyFormat:
+                    fileOut.write("FAMILY\t{0}\n".format(
+                        "\t".join(sampleIDs)
+                    ))
+                else:
+                    fileOut.write("Desc\tFamily ID\t{0}\n".format(
+                        "\t".join(sampleIDs)
+                    ))
             
             # Handle body lines
             else:
-                fileOut.write("(null)\t{0}\n".format(
-                    "\t".join(sl[:-1]) # omit last ('Total') value
-                ))
+                if args.dupliphyFormat:
+                    fileOut.write("{0}\n".format(
+                        "\t".join(sl[:-1]) # omit last ('Total') value
+                    ))
+                else:
+                    fileOut.write("(null)\t{0}\n".format(
+                        "\t".join(sl[:-1])
+                    ))
     
     # Done!
     print('Program completed successfully!')
