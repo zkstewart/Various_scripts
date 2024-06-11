@@ -67,7 +67,7 @@ class StandardProgramRunners:
             raise Exception(("ERROR: bgzip_file encountered an error; have a look " +
                             f'at the stdout ({bgzipout.decode("utf-8")}) and stderr ' + 
                             f'({bgziperr.decode("utf-8")}) to make sense of this.'))
-
+    
     @staticmethod
     def tabix_file(fileName, tabixPath):
         '''
@@ -132,7 +132,7 @@ class StandardProgramRunners:
             raise Exception(("ERROR: whatshap_phase encountered an error; have a look " +
                             f'at the stdout ({phaseout.decode("utf-8")}) and stderr ' + 
                             f'({phaseerr.decode("utf-8")}) to make sense of this.'))
-
+    
     @staticmethod
     def whatshap_polyphase(vcfFile, fastaFile, bamFiles, outputFile, whatshapPath, ploidy=2):
         '''
@@ -168,7 +168,7 @@ class StandardProgramRunners:
             raise Exception(("ERROR: whatshap_polyphase encountered an error; have a look " +
                             f'at the stdout ({polyout.decode("utf-8")}) and stderr ' + 
                             f'({polyerr.decode("utf-8")}) to make sense of this.'))
-
+    
     @staticmethod
     def bcftools_mpileup(bamFiles, fastaFile, outputFile, bcftoolsPath, regions=None):
         '''
@@ -218,21 +218,98 @@ class StandardProgramRunners:
             raise Exception(("ERROR: bcftools_mpileup encountered an error; have a look " +
                             f'at the stdout ({mpileupout.decode("utf-8")}) and stderr ' + 
                             f'({mpileuperr.decode("utf-8")}) to make sense of this.'))
-
+    
     @staticmethod
-    def bcftools_call(mpileupFile, outputFile, bcftoolsPath):
+    def _check_for_writeindex(bcftoolsPath, bcftoolsFunction):
+        '''
+        A helper function to determine whether the --write-index option is available
+        in the bcftools version being used.
+        
+        Parameters:
+            bcftoolsPath -- a string indicating the location of the bcftools executable
+            bcftoolsFunction -- a string indicating what function to use as the second
+                                argument to bcftools (e.g., "mpileup", "call", "norm")
+        Returns:
+            canWriteIndex -- a boolean indicating whether the --write-index option is available
+        '''
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
+        cmd += [bcftoolsFunction]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_bcftools_help = subprocess.Popen(cmd, shell = True,
+                                             stdout = subprocess.PIPE,
+                                             stderr = subprocess.PIPE)
+        helpout, helperr = run_bcftools_help.communicate()
+        if not helperr.decode("utf-8").startswith("bcftools"):
+            raise Exception(("ERROR: encountered an error when checking to see if bcftools " +
+                             "was capable of the --write-index option or not; have a look " +
+                            f'at the stdout ({helpout.decode("utf-8")}) and stderr ' + 
+                            f'({helperr.decode("utf-8")}) to make sense of this.'))
+        
+        # Determine whether we can use --write-index
+        canWriteIndex = "--write-index" in helperr.decode("utf-8")
+        return canWriteIndex
+    
+    @staticmethod
+    def bcftools_index(bgzipFile, bcftoolsPath):
         '''
         Parameters:
-            mpileupFile -- a string indicating the result of bcftools mpileup
-            outputFile -- a string indicating the location to write the VCF result to
+            bgzipFile -- a string indicating the result of a bgzip'd VCF/BCF file
             bcftoolsPath -- a string indicating the location of the bcftools executable
         '''
         BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
         
         # Construct the cmd for subprocess
         cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
+        cmd += [ "index",  ZS_Utility.convert_to_wsl_if_not_unix(bgzipFile) ]
+        
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_bcftools_index = subprocess.Popen(cmd, shell = True,
+                                              stdout = subprocess.PIPE,
+                                              stderr = subprocess.PIPE)
+        indexout, indexerr = run_bcftools_index.communicate()
+        
+        # Handle 'not BGZF compressed' error
+        if "the file is not bgzf compressed" in indexerr.decode("utf-8").lower():
+            raise Exception(("ERROR: bcftools_index encountered an error because bcftools says " +
+                            f"that your file '{bgzipFile}' is not BGZF compressed using bgzip; " + 
+                            "make sure to remedy this situation before trying again."))
+        
+        # Handle other errors
+        elif indexout.decode("utf-8") != "":
+            print("WARNING: bcftools_index may have encountered an error, since the stdout is not empty as expected. " +
+                f'Please check the stdout for more information ({indexout.decode("utf-8")})')
+        elif not indexerr.decode("utf-8").startswith("bcftools") or any([ bw in indexerr.decode("utf-8").lower() for bw in BAD_WORDS ]):
+            raise Exception(("ERROR: bcftools_index encountered an error; have a look " +
+                            f'at the stdout ({indexout.decode("utf-8")}) and stderr ' + 
+                            f'({indexerr.decode("utf-8")}) to make sense of this.'))
+    
+    @staticmethod
+    def bcftools_call(mpileupFile, outputFile, bcftoolsPath):
+        '''
+        Parameters:
+            mpileupFile -- a string indicating the result of bcftools mpileup file
+            outputFile -- a string indicating the location to write the VCF result to
+            bcftoolsPath -- a string indicating the location of the bcftools executable
+        '''
+        BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
+        
+        # Determine whether we can use --write-index
+        canWriteIndex = StandardProgramRunners._check_for_writeindex(bcftoolsPath, "call")
+        
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
+        cmd += [ "call", "-m", "-v", "-Oz" ]
+        if canWriteIndex:
+            cmd += [ "--write-index" ]
         cmd += [
-            "call", "-m", "-v", "-Oz", "--write-index",
             "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
             ZS_Utility.convert_to_wsl_if_not_unix(mpileupFile)
         ]
@@ -245,6 +322,8 @@ class StandardProgramRunners:
                                             stdout = subprocess.PIPE,
                                             stderr = subprocess.PIPE)
         callout, callerr = run_bcftools_call.communicate()
+        
+        # Handle errors
         if callout.decode("utf-8") != "" and (not any([ bw in callerr.decode("utf-8").lower() for bw in BAD_WORDS ])):
             print("WARNING: bcftools_call may have encountered an error, since the stdout is not empty as expected. " +
                 f'Please check the stdout for more information ({callout.decode("utf-8")})')
@@ -252,7 +331,17 @@ class StandardProgramRunners:
             raise Exception(("ERROR: bcftools_call encountered an error; have a look " +
                             f'at the stdout ({callout.decode("utf-8")}) and stderr ' + 
                             f'({callerr.decode("utf-8")}) to make sense of this.'))
-
+        
+        # Index the output if --write-index was not available
+        if not canWriteIndex:
+            try:
+                StandardProgramRunners.bcftools_index(outputFile, bcftoolsPath)
+            except Exception as e:
+                print(f"ERROR: after successfully running bcftools_call, " +
+                      "I encountered an error when trying to index the output file with " +
+                      "bcftools_index; I will rethrow the exception from that now.")
+                raise e
+    
     @staticmethod
     def bcftools_norm_multiallelics(vcfFile, outputFile, bcftoolsPath):
         '''
@@ -263,11 +352,15 @@ class StandardProgramRunners:
         '''
         BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
         
+        # Determine whether we can use --write-index
+        canWriteIndex = StandardProgramRunners._check_for_writeindex(bcftoolsPath, "norm")
+        
         # Construct the cmd for subprocess
         cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
+        cmd += [ "norm", "-m", "+any", "-Oz" ]
+        if canWriteIndex:
+            cmd += [ "--write-index" ]
         cmd += [
-            "norm", "-m", "+any",
-            "-Oz", "--write-index",
             "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
             ZS_Utility.convert_to_wsl_if_not_unix(vcfFile)
         ]
@@ -280,6 +373,8 @@ class StandardProgramRunners:
                                             stdout = subprocess.PIPE,
                                             stderr = subprocess.PIPE)
         normout, normerr = run_bcftools_norm_m.communicate()
+        
+        # Handle errors
         if normout.decode("utf-8") != "" and (not any([ bw in normerr.decode("utf-8") for bw in BAD_WORDS ])):
             print("WARNING: bcftools_norm_multiallelics may have encountered an error, since the stdout is not empty as expected. " +
                 f'Please check the stdout for more information ({normout.decode("utf-8")})')
@@ -287,7 +382,17 @@ class StandardProgramRunners:
             raise Exception(("ERROR: bcftools_norm_multiallelics encountered an error; have a look " +
                             f'at the stdout ({normout.decode("utf-8")}) and stderr ' + 
                             f'({normerr.decode("utf-8")}) to make sense of this.'))
-
+        
+        # Index the output if --write-index was not available
+        if not canWriteIndex:
+            try:
+                StandardProgramRunners.bcftools_index(outputFile, bcftoolsPath)
+            except Exception as e:
+                print(f"ERROR: after successfully running bcftools_norm_multiallelics, " +
+                      "I encountered an error when trying to index the output file with " +
+                      "bcftools_index; I will rethrow the exception from that now.")
+                raise e
+    
     @staticmethod
     def bcftools_norm_leftalign(vcfFile, fastaFile, outputFile, bcftoolsPath):
         '''
@@ -299,11 +404,15 @@ class StandardProgramRunners:
         '''
         BAD_WORDS = ["failed", "error", "warning", "abort", "exception", "fatal", "fail", "unrecogni"]
         
+        # Determine whether we can use --write-index
+        canWriteIndex = StandardProgramRunners._check_for_writeindex(bcftoolsPath, "norm")
+        
         # Construct the cmd for subprocess
         cmd = ZS_Utility.base_subprocess_cmd(bcftoolsPath)
+        cmd += [ "norm", "-f", ZS_Utility.convert_to_wsl_if_not_unix(fastaFile), "-Oz" ]
+        if canWriteIndex:
+            cmd += [ "--write-index" ]
         cmd += [
-            "norm", "-f", ZS_Utility.convert_to_wsl_if_not_unix(fastaFile),
-            "-Oz", "--write-index",
             "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFile),
             ZS_Utility.convert_to_wsl_if_not_unix(vcfFile)
         ]
@@ -316,6 +425,8 @@ class StandardProgramRunners:
                                             stdout = subprocess.PIPE,
                                             stderr = subprocess.PIPE)
         normout, normerr = run_bcftools_norm_left.communicate()
+        
+        # Handle errors
         if normout.decode("utf-8") != "" and (not any([ bw in normerr.decode("utf-8").lower() for bw in BAD_WORDS ])):
             print("WARNING: run_bcftools_norm_left may have encountered an error, since the stdout is not empty as expected. " +
                 f'Please check the stdout for more information ({normout.decode("utf-8")})')
@@ -323,6 +434,16 @@ class StandardProgramRunners:
             raise Exception(("ERROR: run_bcftools_norm_left encountered an error; have a look " +
                             f'at the stdout ({normout.decode("utf-8")}) and stderr ' + 
                             f'({normerr.decode("utf-8")}) to make sense of this.'))
+        
+        # Index the output if --write-index was not available
+        if not canWriteIndex:
+            try:
+                StandardProgramRunners.bcftools_index(outputFile, bcftoolsPath)
+            except Exception as e:
+                print(f"ERROR: after successfully running bcftools_norm_leftalign, " +
+                      "I encountered an error when trying to index the output file with " +
+                      "bcftools_index; I will rethrow the exception from that now.")
+                raise e
 
 class SNPStatics:
     '''
