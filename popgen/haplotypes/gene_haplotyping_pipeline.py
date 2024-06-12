@@ -713,7 +713,7 @@ def main():
         if not os.path.exists(f"{bamFile}.bai"):
             ZS_BAMIO.StandardProgramRunners.samtools_index_bam(bamFile, args.samtools)
         else:
-            print(f"Indexed BAM file '{outputFile}' already exists; skipping.")
+            print(f"Indexed BAM file '{bamFile}' already exists; skipping.")
     
     # Run bcftools mpileup
     mpileupFileName = os.path.join(bcfDir, "bcftools.mpileup")
