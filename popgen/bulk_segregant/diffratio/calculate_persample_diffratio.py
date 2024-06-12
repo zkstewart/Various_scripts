@@ -105,7 +105,7 @@ def calculate_snp_indices(b1Gt, b2Gt):
     if b2Sum == 0:
         b2RefIndex = "."
     else:
-        b2RefIndex = b1Count[0] / b2Sum
+        b2RefIndex = b2Count[0] / b2Sum
     
     # Calculate the delta reference index if possible
     if b1RefIndex == "." or b2RefIndex == ".":
