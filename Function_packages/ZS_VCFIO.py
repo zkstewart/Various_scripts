@@ -244,11 +244,16 @@ class StandardProgramRunners:
                                              stdout = subprocess.PIPE,
                                              stderr = subprocess.PIPE)
         helpout, helperr = run_bcftools_help.communicate()
+        
+        # Handle errors
         if not "usage" in helperr.decode("utf-8").lower():
-            raise Exception(("ERROR: encountered an error when checking to see if bcftools " +
-                             "was capable of the --write-index option or not; have a look " +
-                            f'at the stdout ({helpout.decode("utf-8")}) and stderr ' + 
-                            f'({helperr.decode("utf-8")}) to make sense of this.'))
+            print(f"WARNING: I wasn't able to determine whether 'bcftools {bcftoolsFunction}' was capable of the " + 
+                  "--write-index option or not. I will assume that it is not available and continue.")
+            # raise Exception(("ERROR: encountered an error when checking to see if bcftools " +
+            #                  "was capable of the --write-index option or not; have a look " +
+            #                 f'at the stdout ({helpout.decode("utf-8")}) and stderr ' + 
+            #                 f'({helperr.decode("utf-8")}) to make sense of this.'))
+            return False
         
         # Determine whether we can use --write-index
         canWriteIndex = "--write-index" in helperr.decode("utf-8")
