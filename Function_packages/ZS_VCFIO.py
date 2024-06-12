@@ -244,7 +244,7 @@ class StandardProgramRunners:
                                              stdout = subprocess.PIPE,
                                              stderr = subprocess.PIPE)
         helpout, helperr = run_bcftools_help.communicate()
-        if not helperr.decode("utf-8").startswith("bcftools"):
+        if not "usage" in helperr.decode("utf-8").lower():
             raise Exception(("ERROR: encountered an error when checking to see if bcftools " +
                              "was capable of the --write-index option or not; have a look " +
                             f'at the stdout ({helpout.decode("utf-8")}) and stderr ' + 
