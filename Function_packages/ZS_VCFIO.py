@@ -5,8 +5,10 @@
 # and filtering a VCF in a performant but high-memory
 # use way.
 
-import os, codecs, gzip, subprocess, platform
+import os, codecs, gzip, subprocess, platform, sys
 from contextlib import contextmanager
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_SeqIO import FastASeq
 import ZS_Utility
 
