@@ -24,7 +24,7 @@ def validate_args(args):
         quit()
     fasta_or_fastq(args.fastaFileName)
     # Validate sequence ID arguments
-    if args.idString == None and args.textFileName == None:
+    if (args.idString == None or args.idString == []) and args.textFileName == None:
         print('You must specify at least one argument for -t OR -s fields; this will give us a list of sequence IDs to retrieve or remove.')
         print('Fix your inputs and try again.')
         quit()
@@ -231,7 +231,8 @@ def main():
                    help="Optionally specify the name of a text file listing sequence IDs")
     p.add_argument("-s", "-string", dest="idString",
                    nargs = "+",
-                   help="Optionally input sequence IDs as text here; entries will be separated at space characters")
+                   help="Optionally input sequence IDs as text here; entries will be separated at space characters",
+                   default=[])
     p.add_argument("-e", "-effort", dest="effort",
                    action = "store_true",
                    default = False,
@@ -273,7 +274,7 @@ def main():
     seqIDs = {} # use a dict to prevent duplication and keep insertion order
     if args.textFileName != None:
         seqIDs = text_file_to_dict(args.textFileName)
-    if args.idString != None and args.idString == []:
+    if args.idString != None and args.idString != []:
         for idValue in args.idString:
             idValue = idValue.lstrip(">")
             if idValue != "":
