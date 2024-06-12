@@ -291,7 +291,7 @@ class StandardProgramRunners:
         elif indexout.decode("utf-8") != "":
             print("WARNING: bcftools_index may have encountered an error, since the stdout is not empty as expected. " +
                 f'Please check the stdout for more information ({indexout.decode("utf-8")})')
-        elif not indexerr.decode("utf-8").startswith("bcftools") or any([ bw in indexerr.decode("utf-8").lower() for bw in BAD_WORDS ]):
+        elif any([ bw in indexerr.decode("utf-8").lower() for bw in BAD_WORDS ]):
             raise Exception(("ERROR: bcftools_index encountered an error; have a look " +
                             f'at the stdout ({indexout.decode("utf-8")}) and stderr ' + 
                             f'({indexerr.decode("utf-8")}) to make sense of this.'))
@@ -338,7 +338,7 @@ class StandardProgramRunners:
                             f'({callerr.decode("utf-8")}) to make sense of this.'))
         
         # Index the output if --write-index was not available
-        if not canWriteIndex:
+        if (not canWriteIndex) and (not os.path.exists(f"{outputFile}.csi")):
             try:
                 StandardProgramRunners.bcftools_index(outputFile, bcftoolsPath)
             except Exception as e:
@@ -389,7 +389,7 @@ class StandardProgramRunners:
                             f'({normerr.decode("utf-8")}) to make sense of this.'))
         
         # Index the output if --write-index was not available
-        if not canWriteIndex:
+        if (not canWriteIndex) and (not os.path.exists(f"{outputFile}.csi")):
             try:
                 StandardProgramRunners.bcftools_index(outputFile, bcftoolsPath)
             except Exception as e:
@@ -441,7 +441,7 @@ class StandardProgramRunners:
                             f'({normerr.decode("utf-8")}) to make sense of this.'))
         
         # Index the output if --write-index was not available
-        if not canWriteIndex:
+        if (not canWriteIndex) and (not os.path.exists(f"{outputFile}.csi")):
             try:
                 StandardProgramRunners.bcftools_index(outputFile, bcftoolsPath)
             except Exception as e:
