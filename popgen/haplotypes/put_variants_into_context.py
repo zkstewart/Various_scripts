@@ -81,7 +81,7 @@ def main():
     # Parse VCF and iteratively produce output
     with ZS_VCFIO.open_vcf_file(args.vcf) as fileIn, open(args.outputFileName, "w") as fileOut:
         # Write header line
-        fileOut.write("#contig\tposition\tref\talt\location\n")
+        fileOut.write("#contig\tposition\tref\talt\tlocation\n")
         # Iterate through VCF
         for line in fileIn:
             # Skip header lines
