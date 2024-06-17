@@ -37,20 +37,29 @@ def determine_snp_location_from_matches(pos, matches):
     Returns:
         location -- a string indicating where the SNP is located
                     i.e., "CDS", "UTR", "intron", or "intergenic".
-    '''    
+        geneID -- a string indicating the gene ID of the gene that
+                  the SNP is located in; if the SNP is intergenic,
+                  this value is None.
+    '''
     if matches == []:
-        return "intergenic"
+        return ["intergenic", None]
     else:
-        bestMatch = "intron"
+        bestMatch = ["intron", None]
         for geneFeature in matches:
+            # Default condition for gene feature
+            "If we don't find a CDS or exon overlap in this gene, that means it must be an intron"
+            if bestMatch[0] == "intron" and bestMatch[1] == None:
+                bestMatch = ["intron", geneFeature.ID]
+            
+            # Updating condition based on overlap position
             for childFeature in geneFeature.retrieve_all_children():
                 if int(pos) >= childFeature.start and int(pos) <= childFeature.end:
                     # Update best match according to feature type
                     if childFeature.type == "CDS":
-                        bestMatch = "CDS"
+                        bestMatch = ["CDS", geneFeature.ID]
                     elif childFeature.type == "exon":
-                        if bestMatch != "CDS":
-                            bestMatch = "UTR"
+                        if bestMatch[0] != "CDS":
+                            bestMatch = ["UTR", geneFeature.ID]
     return bestMatch
 
 ## Main
@@ -81,7 +90,7 @@ def main():
     # Parse VCF and iteratively produce output
     with ZS_VCFIO.open_vcf_file(args.vcf) as fileIn, open(args.outputFileName, "w") as fileOut:
         # Write header line
-        fileOut.write("#contig\tposition\tref\talt\tlocation\n")
+        fileOut.write("#contig\tposition\tref\talt\tlocation\tgene_id\n")
         # Iterate through VCF
         for line in fileIn:
             # Skip header lines
@@ -95,11 +104,11 @@ def main():
                 
                 # Identify SNP location in genomic context
                 matches = gff3Obj.ncls_finder(pos, pos, "contig", chrom)
-                snpLocation = determine_snp_location_from_matches(pos, matches)
+                snpLocation, geneID = determine_snp_location_from_matches(pos, matches)
                 
                 # Write output
-                fileOut.write("{0}\t{1}\t{2}\t{3}\t{4}\n".format(
-                    chrom, pos, ref, alt, snpLocation
+                fileOut.write("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n".format(
+                    chrom, pos, ref, alt, snpLocation, geneID if geneID != None else "."
                 ))
     
     print("Program completed successfully!")
