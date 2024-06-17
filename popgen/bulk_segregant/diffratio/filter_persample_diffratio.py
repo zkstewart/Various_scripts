@@ -97,7 +97,7 @@ def parse_persample_diffratio_file(diffratioFile):
                 
                 # Store in dictionary
                 snpIndexDict.setdefault(chrom, {})
-                snpIndexDict[chrom][pos] = {
+                snpIndexDict[chrom][int(pos)] = {
                     "variant": variantType,
                     "bulk1_alleles": int(bulk1_alleles),
                     "bulk2_alleles": int(bulk2_alleles),
@@ -247,7 +247,7 @@ def main():
             for pos, variantDict in contigSnpsDict.items():
                 fileOut.write(
                     "{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}\t{7}\t{8}\n".format(
-                        contigID, pos, variantDict["variant"],
+                        contigID, str(pos), variantDict["variant"],
                         variantDict["bulk1_alleles"], variantDict["bulk2_alleles"],
                         variantDict["bulk1_refIndex"], variantDict["bulk2_refIndex"],
                         variantDict["delta_refIndex"], variantDict["differenceRatio"]
