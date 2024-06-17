@@ -24,246 +24,35 @@ import haplotypes
 # Define functions
 def validate_args(args):
     # Validate input file locations
+    if not os.path.isfile(args.diffratioFile):
+        print(f'I am unable to locate the difference ratio file ({args.diffratioFile})')
+        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        quit()
     if not os.path.isfile(args.annotFile):
-        print(f'I am unable to locate the GOextended annotation file ({args.annotFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
-    if not os.path.isfile(args.vcfFile):
-        print(f'I am unable to locate the VCF file ({args.vcfFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
-    if not os.path.isfile(args.metadataFile):
-        print(f'I am unable to locate the metadata file ({args.metadataFile})')
+        print(f'I am unable to locate the annotation file ({args.annotFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     if not os.path.isfile(args.gff3File):
         print(f'I am unable to locate the GFF3 file ({args.gff3File})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.fastaFile):
-        print(f'I am unable to locate the FASTA file ({args.fastaFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
     if not os.path.isfile(args.goOboFile):
         print(f'I am unable to locate the GO .obo file ({args.goOboFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
+    # Validate numeric arguments
+    if 0 > args.differenceRatio or 1 < args.differenceRatio:
+        print("--differenceRatio must be in the range 0 (no filtering) to 1 " + 
+                "(retain only variants that completely segregate between the two populations)")
+        quit()
+    if args.radiusSize < 1:
+        print("--radiusSize must be a positive integer")
         quit()
     # Validate output file location
-    if os.path.isfile(args.outputFileName):
-        print(f'File already exists at output location ({args.outputFileName})')
-        print('Make sure you specify a unique file name and try again.')
-        quit()
-
-def parse_pops_metadata(metadataFile):
-    # Parse file
-    metadataDict = {}
-    with open(metadataFile, "r") as fileIn:
-        for line in fileIn:
-            sl = line.rstrip("\r\n ").split("\t")
-            if sl == []:
-                continue
-            else:
-                sample, pop = sl
-                metadataDict.setdefault(pop, set())
-                metadataDict[pop].add(sample)
-    
-    # Make sure it's valid for this script
-    if len(metadataDict) == 2:
-        assert all([ pop in ['bulk1', 'bulk2'] for pop in metadataDict.keys() ]), \
-            "ERROR: Metadata file should have 2 or 3 populations: bulk1, bulk2, and (optionally) parent!"
-    elif len(metadataDict) == 3:
-        assert all([ pop in ['bulk1', 'bulk2', 'parent'] for pop in metadataDict.keys() ]), \
-            "ERROR: Metadata file should have 2 or 3 populations: bulk1, bulk2, and (optionally) parent!"
-    else:
-        print("ERROR: Metadata file should have 2 or 3 populations: bulk1, bulk2, and (optionally) parent!")
-        quit()
-    
-    return metadataDict
-
-def generate_bsa_proximity_dict(gff3Obj, genomeFASTA_obj, snpGenotypes):
-    '''
-    Reads in a GFF3 and locates SNPs in relation to gene features.
-    Unlike the functions in snp_proximity_report.py, this function
-    returns a different output which is somewhat of an amalgamation
-    of the SNP and gene-centric reports. In reality, if this works
-    I'll likely move it over there and just import it here!
-    
-    Parameters:
-        gff3Obj -- a ZS_GFF3IO.GFF3 object with NCLS indexing of the gene features
-        snpGenotypes -- a dictionary as produced by get_genotyped_snps_for_genes()
-                        with structure like:
-                        {
-                            'contig1': {
-                                pos1: {
-                                    'ref_alt': ['nucleotide1', 'nucleotide2'],
-                                    'sample1': [allele1, allele2],
-                                    'sample2': [...],
-                                    ...
-                                },
-                                pos2: { ... },
-                                ...
-                            }
-                            'contig2': ...,
-                            ...
-                        }
-    Returns:
-        proximityDict -- a dictionary with structure like:
-                         {
-                             'gene1': {
-                                 'contig': 'contigID',
-                                 'coords': 'start-end',
-                                 'within': [ snpData1, snpData2, ... ],
-                                 'left_of': [  snpData1, snpData2, ... ],
-                                 'right_of': [  snpData1, snpData2, ... ],
-                                 'samples': [ sample1_GT, sample2_GT, ...]
-                             },
-                             'gene2': {
-                                 ...
-                             },
-                             ...
-                         }
-    '''
-    proximityDict = {}
-    
-    for contig, snpDict in snpGenotypes.items():
-        for pos in snpDict.keys():
-            # Scenario 1: SNP located within a gene
-            matches = gff3Obj.ncls_finder(pos, pos, "contig", contig)
-            if matches != []: # i.e., if the SNP is located within a gene
-                snpLocation, geneID = windows.locate_snp_within_gene(matches, pos)
-                
-                # Set default value for gene
-                _setdefault_proximity(proximityDict, geneID, gff3Obj)
-                
-                # For non-CDS locations, just store data in dict
-                if snpLocation != "CDS":
-                    proximityDict[geneID][pos] = {
-                        "location": snpLocation
-                    }
-                # For CDS locations, predict its effect (if any)
-                else:
-                    # Get the mRNA feature for this gene
-                    mrnaFeature = _get_mrnaFeature_for_cds_match(matches, pos)
-                    
-                    # Localise SNPs to the feature
-                    newSnpDict = ZS_VCFIO.SNPStatics.localise_vcf_snps_to_feature(
-                        mrnaFeature, snpDict, featureType="CDS", embedOriginalPos=True)
-                    
-                    # Obtain the CDS sequence for this gene
-                    cds_FastASeq_obj, _, _ = gff3Obj.retrieve_sequence_from_FASTA(
-                        genomeFASTA_obj, mrnaFeature.ID, "CDS", skipComplement=True)
-                    
-                    # Get the haplotype edit lists for each sample, for this SNP position
-                    haplotypeEdits = {}
-                    for newPos, genotypeDict in newSnpDict.items():
-                        # Skip over all other positions until we hit our embedded original position
-                        if genotypeDict["originalPos"] == pos:
-                            for sampleID, alleles in genotypeDict.items():
-                                if sampleID in ["ref_alt", "originalPos"]:
-                                    continue
-                                # Generate a haplotypeEditList for each strand of this sample (assuming diploid!!)
-                                haplotypeEdits[sampleID] = [
-                                    [[newPos, genotypeDict["ref_alt"][0], genotypeDict["ref_alt"][alleles[0]]]],
-                                    [[newPos, genotypeDict["ref_alt"][0], genotypeDict["ref_alt"][alleles[1]]]]
-                                ] # TBD: Check what these values actually are
-                            break
-                    
-                    # Predict the variant effect by editing each sample's sequence
-                    alreadyCompleted = set()
-                    isSame = True
-                    for sampleID, haplotypeEditLists in haplotypeEdits.items():
-                        # Exit conditin if we've found that this variant changes AA sequence
-                        if isSame == False:
-                            break
-                        
-                        # Loop through the two haplotypes for this sample
-                        for haplotypeEditList in haplotypeEditLists:
-                            variant = haplotypeEditList[0][2]
-                            if variant in alreadyCompleted:
-                                continue
-                            else:
-                                # Edit the reference sequence for this sample
-                                haplotypeSequence = ZS_VCFIO.SNPStatics.edit_reference_to_haplotype_sequence(
-                                            cds_FastASeq_obj.seq[:], haplotypeEditList, mrnaFeature.strand, VALIDATE_STRICT=True)
-                                
-                                # Predict the variant effect
-                                for i in range(0, len(haplotypeSequence), 3):
-                                    originalCodon = cds_FastASeq_obj.seq[i:i+3]
-                                    haplotypeCodon  = haplotypeSequence[i:i+3]
-                                    originalAA = ZS_SeqIO.FastASeq.dna_to_protein(originalCodon)
-                                    haplotypeAA = ZS_SeqIO.FastASeq.dna_to_protein(haplotypeCodon)
-                                    
-                                    if originalAA != haplotypeAA:
-                                        isSame = False
-                                        break
-                                
-                                # Store the variant in our set for speedup
-                                alreadyCompleted.add(variant)
-                    
-                    # Store data in our dictionary
-                    proximityDict[geneID][pos] = {
-                        "location": "CDS",
-                        "isSame": isSame
-                    }
-            
-            # Scenario 2: SNP located not inside, but near a gene
-            else:
-                nearestLeft, nearestRight = windows.locate_genes_near_snp(gff3Obj, contig, pos, mrnaIndexing=False) # NCLS has gene indexing
-                if nearestLeft[1] != None:
-                    distance, geneID = nearestLeft
-                    
-                    # Set default value for gene
-                    _setdefault_proximity(proximityDict, geneID, gff3Obj)
-                    
-                    # Store data in dict
-                    proximityDict[geneID][pos] = {
-                        "location": "right", # gene is left of snp; hence snp is right of gene
-                        "distance": distance
-                    }
-                
-                if nearestRight[1] != None:
-                    distance, geneID = nearestRight
-                    
-                    # Set default value for gene
-                    _setdefault_proximity(proximityDict, geneID, gff3Obj)
-                    
-                    # Store data in dict
-                    proximityDict[geneID][pos] = {
-                        "location": "left", # gene is right of snp; hence snp is left of gene
-                        "distance": distance
-                    }
-    
-    return proximityDict
-
-def _setdefault_proximity(proximityDict, geneID, gff3Obj):
-    # Get gene feature from GFF3
-    feature = gff3Obj[geneID]
-    
-    # Get representative mRNA feature
-    mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(feature)
-    
-    # Setdefault in dict
-    proximityDict.setdefault(geneID, {
-        "contig": feature.contig,
-        "strand": feature.strand,
-        "mRNA": mrnaFeature.ID,
-        "start": feature.start,
-        "end": feature.end
-    })
-
-def _get_mrnaFeature_for_cds_match(matches, snpPos):
-    for feature in matches:
-        # Look for CDS overlap
-        if hasattr(feature, "mRNA"):
-            for mrnaFeature in feature.mRNA:
-                for cdsFeature in mrnaFeature.CDS:
-                    if cdsFeature.start <= snpPos and snpPos <= cdsFeature.end: # if it overlaps...
-                        return mrnaFeature
-        elif hasattr(feature, "CDS"):
-            for cdsFeature in feature.CDS:
-                if cdsFeature.start <= snpPos and snpPos <= cdsFeature.end: # if it overlaps...
-                    return feature
-    return None
+    for outputSuffix in [".gene_report.tsv", ".variant_report.tsv"]:
+        if os.path.isfile(args.outputPrefix + outputSuffix):
+            print(f'File already exists at output location ({args.outputPrefix + outputSuffix})')
+            print('Make sure you specify a unique file name and try again.')
+            quit()
 
 def parse_annot_file(annotFile, idsDict, proximityDict):
     '''
@@ -309,6 +98,159 @@ def parse_annot_file(annotFile, idsDict, proximityDict):
                 }
     return annotDict
 
+def determine_snp_proximity_from_matches(pos, matches):
+    '''
+    Parameters:
+        pos -- an integer indicating the position of a SNP in the genome
+        matches -- list containing ZS_GFF3IO.Feature objects that are
+                   the result of a NCLS search for a SNP position; the
+                   NCLS search is assumed to have been performed over
+                   the "gene" feature type.
+    Returns:
+        proximalGene -- a string indicating the gene ID of the nearest gene
+        location -- a string indicating where the SNP was located
+                    i.e., "CDS", "UTR", "intron", or "intergenic".
+    '''
+    if matches == []:
+        return "intergenic"
+    else:
+        bestMatch = "intron"
+        for geneFeature in matches:
+            for childFeature in geneFeature.retrieve_all_children():
+                if int(pos) >= childFeature.start and int(pos) <= childFeature.end:
+                    # Update best match according to feature type
+                    if childFeature.type == "CDS":
+                        bestMatch = "CDS"
+                    elif childFeature.type == "exon":
+                        if bestMatch != "CDS":
+                            bestMatch = "UTR"
+    return bestMatch
+
+def generate_proximity_dicts(gff3Obj, snpsDict, radiusSize=50000):
+    '''
+    Parameters:
+        gff3Obj -- a ZS_GFF3IO.GFF3 object with NCLS indexing performed on
+                   gene features.
+        snpsDict -- a dict with structure like:
+                    {
+                        'contig1': {
+                            pos1: < contents don't matter >,
+                            pos2: ...,
+                            ...
+                        },
+                        'contig2': { ... },
+                        ...
+                    }
+        radiusSize -- [OPTIONAL] an integer indicating the radius surrounding a gene that
+                      you want to consider as being 'proximal' to a gene; default
+                      == 50,000 bp.
+    Returns:
+        snpDict -- a dictionary with structure like:
+                   {
+                       'contig1': {
+                           pos1: {
+                               'left_of': [ 'geneID1', 'geneID2', ... ],
+                               'left_dist': [ distance1, distance2, ... ],
+                               'right_of': [ 'geneID1', 'geneID2', ... ],
+                               'right_dist': [ distance1, distance2, ... ]
+                           },
+                           pos2: { ... },
+                           ...
+                       },
+                       'contig2': { ... },
+                   }
+        geneDict -- a dictionary with structure like:
+                    {
+                        'contig1': {
+                            'geneID1': {
+                                'left_snp': [ pos1, pos2, ... ],
+                                'left_dist': [ distance1, distance2, ... ],
+                                'right_snp': [ pos1, pos2, ... ],
+                                'right_dist': [ distance1, distance2, ... ]
+                            },
+                            'geneID2': { ... },
+                            ...
+                        },
+                        'contig2': { ... },
+                    }
+    '''
+    def setdefault_snp(snpDict, contig, pos):
+        snpDict.setdefault(contig, {})
+        snpDict[contig].setdefault(pos, {
+            "within": [],
+            "within_type": [],
+            "left_of": [],
+            "left_dist": [],
+            "right_of": [],
+            "right_dist": []
+        })
+    
+    def setdefault_gene(geneDict, contig, geneID):
+        geneDict.setdefault(contig, {})
+        geneDict[contig].setdefault(geneID, {
+            "within_snp": [],
+            "within_type": [],
+            "left_snp": [],
+            "left_dist": [],
+            "right_snp": [],
+            "right_dist": []
+        })
+    
+    snpDict = {}
+    geneDict = {}
+    for contig, posDict in snpsDict.items():
+        for pos, _data in posDict.items():
+            pos = int(pos) # just for testing
+            
+            # Locate the SNP in relation to gene features
+            matches = gff3Obj.ncls_finder(pos, pos, "contig", contig)
+            
+            # Handle scenario where SNP is located within a gene
+            if matches != []:
+                location, geneID = haplotypes.determine_snp_location_from_matches(pos, matches)
+                
+                # Store data in SNP dict
+                setdefault_snp(snpDict, contig, pos)
+                snpDict[contig][pos]["within"].append(geneID)
+                snpDict[contig][pos]["within_type"].append(location)
+                
+                # Store data in gene dict
+                setdefault_gene(geneDict, contig, geneID)
+                geneDict[contig][geneID]["within_snp"].append(pos)
+                geneDict[contig][geneID]["within_type"].append(location)
+                
+            # Handle scenario where SNP is (potentially) located near a gene
+            else:
+                nearestLeft, nearestRight = windows.locate_genes_near_snp(gff3Obj, contig, pos,
+                                                                          radiusSize=radiusSize,
+                                                                          mrnaIndexing=False) # NCLS has gene indexing
+                if nearestLeft[1] != None: # gene is left of snp; hence snp is right of gene
+                    distance, geneID = nearestLeft
+                    
+                    # Store data in SNP dict
+                    setdefault_snp(snpDict, contig, pos)
+                    snpDict[contig][pos]["right_of"].append(geneID)
+                    snpDict[contig][pos]["right_dist"].append(str(distance))
+                    
+                    # Store data in gene dict
+                    setdefault_gene(geneDict, contig, geneID)
+                    geneDict[contig][geneID]["right_snp"].append(pos)
+                    geneDict[contig][geneID]["right_dist"].append(distance)
+                
+                if nearestRight[1] != None: # gene is right of snp; hence snp is left of gene
+                    distance, geneID = nearestRight
+                    
+                    # Store data in SNP dict
+                    setdefault_snp(snpDict, contig, pos)
+                    snpDict[contig][pos]["left_of"].append(geneID)
+                    snpDict[contig][pos]["left_dist"].append(str(distance))
+                    
+                    # Store data in gene dict
+                    setdefault_gene(geneDict, contig, geneID)
+                    geneDict[contig][geneID]["left_snp"].append(pos)
+                    geneDict[contig][geneID]["left_dist"].append(distance)
+    return snpDict, geneDict
+
 def format_snp_types(snpDict):
     '''
     Helper function for formatting SNP data into within/left/right categories.
@@ -316,379 +258,145 @@ def format_snp_types(snpDict):
     Parameters:
         snpDict -- a dictionary with structure like:
                    {
-                       'contig': 'contig_id',
-                       'strand': '+', # or '-'
-                       ... ,
-                       snpPos1: { 'location': 'left/right/CDS', 'distance': intValue },
-                       snpPos2: { ... },
-                       ...
+                       'within_snp': [ pos1, pos2, ... ],
+                       'within_type': [ "UTR", "CDS", "intron", ... ],
+                       'left_snp': [ pos1, pos2, ... ],
+                       'left_dist': [ distance1, distance2, ... ],
+                       'right_snp': [ pos1, pos2, ... ],
+                       'right_dist': [ distance1, distance2, ... ]
                    }
     Returns:
         snpDetails -- a dictionary with structure like:
                       {
-                          'within_pos': '', # "; " separated list of values in [sCDS, UTR, T>G, etc.]
-                          'within_location': '.', # numeric list of SNP positions
-                          'left': '4095701', # numeric list of SNP positions
-                          'left_dist': '23043', # numeric list of distances of SNP from nearest gene
-                          'right': '.', # numeric list of SNP positions
-                          'right_dist': '.' # numeric list of distances of SNP from nearest gene
+                          < same keys as input, with string formatted outputs ... >
                       }
     '''
-    orderedSNPs = sorted([x for x in snpDict.keys() if isinstance(x, int)])
-    within_pos, within_location, left, left_dist, right, right_dist = [], [], [], [], [], []
-    
-    for snp in orderedSNPs:
-        posDict = snpDict[snp]
-        # Handle CDS
-        if posDict["location"] == "CDS":
-            within_pos.append(str(snp))
-            
-            # Denote neutral variants
-            if posDict["isSame"] == True:
-                within_location.append("S")
-            # Handle non-synonymous mutations
-            else:
-                within_location.append("C")
-        
-        # Handle intron/UTR
-        elif posDict["location"] in ["UTR", "intron"]:
-            within_pos.append(str(snp))
-            within_location.append(posDict["location"])
-        
-        # Handle left/right
-        elif posDict["location"] == "left":
-            left.append(str(snp))
-            left_dist.append(str(posDict["distance"]))
-        elif posDict["location"] == "right":
-            right.append(str(snp))
-            right_dist.append(str(posDict["distance"]))
-    
+    WTYPE_ORDER = ["CDS", "UTR", "intron"]
+    wTypes = set(snpDict["within_type"])
     return {
-        "within_pos": "; ".join(within_pos) if within_pos != [] else ".",
-        "within_location": "; ".join(within_location) if within_location != [] else ".",
-        "left": "; ".join(left) if left != [] else ".",
-        "left_dist": "; ".join(left_dist) if left_dist != [] else ".",
-        "right": "; ".join(right) if right != [] else ".",
-        "right_dist": "; ".join(right_dist) if right_dist != [] else "."
+        "within_pos": len(snpDict["within_snp"]) if snpDict["within_snp"] != [] else ".",
+        "within_type": ",".join(
+            [ f'{wType}={snpDict["within_type"].count(wType)}'
+            for wType in WTYPE_ORDER
+            if wType in wTypes])
+            if snpDict["within_type"] != [] else ".",
+        "left": len(snpDict["left_snp"]) if snpDict["left_snp"] != [] else ".",
+        "left_dist": sum(snpDict["left_dist"]) / len(snpDict["left_dist"]) if snpDict["left_dist"] != [] else ".",
+        "right": len(snpDict["right_snp"]) if snpDict["right_snp"] != [] else ".",
+        "right_dist": sum(snpDict["right_dist"]) / len(snpDict["right_dist"]) if snpDict["right_dist"] != [] else "."
     }
 
-def format_genotypes(snpGenotypes, snpDetails, contigID, metadataDict):
+def format_difference_ratios(diffratioDict, contigID, snpDict):
     '''
-    Parameters:
-        snpGenotypes -- a dictionary as produced by get_genotyped_snps_for_genes()
-                        with structure like:
-                        {
-                            'contig1': {
-                                pos1: {
-                                    'ref_alt': ['nucleotide1', 'nucleotide2'],
-                                    'sample1': [allele1, allele2],
-                                    'sample2': [...],
-                                    ...
-                                },
-                                pos2: { ... },
-                                ...
-                            }
-                            'contig2': ...,
-                            ...
-                        }
-        snpDetails -- a dictionary as produced by format_snp_types() with structure like:
-                      {
-                          'within_pos': '', # "; " separated list of values in [sCDS, UTR, T>G, etc.]
-                          'within_location': '.', # numeric list of SNP positions
-                          'left': '4095701', # numeric list of SNP positions
-                          'left_dist': '23043', # numeric list of distances of SNP from nearest gene
-                          'right': '.', # numeric list of SNP positions
-                          'right_dist': '.' # numeric list of distances of SNP from nearest gene
-                      }
-        contigID -- a string indicating which contig the SNP is located on.
-        metadataDict -- a dictionary with structure like:
-                        {
-                            'parent': set(['parent1']),
-                            'bulk1': set(['b1sample1', 'b1sample2', ...]),
-                            'bulk2': set(['b2sample1', b2sample2', ...])
-                        }
-    Returns:
-        snpGtFormat -- a list with three values, with structure like:
-                       [
-                           'parental GT per SNP',
-                           'bulk1 GT per SNP',
-                           'bulk2 GT per SNP'
-                       ]
-                       Note that the format for each string value is akin to:
-                            "snpPosition: 0/0=11,1/1=5,0/1=2"
-                       The snpPosition is a numeric value. All present genotypes
-                       and their tallies are presented as shown above with comma
-                       separation.
-    '''
-    KEYS_TO_SKIP = ["ref_alt", "originalPos"]
+    Helper function to format difference ratios for eventual output in tabular format.
     
-    # Get SNP positions from snpDetails dict
-    snpNumbers = [
-        int(position)
-            for key in ["within_pos", "left", "right"]
-                for position in snpDetails[key].split("; ")
-                    if position != "."
+    Parameters:
+        diffratioDict -- a dictionary resulting from parse_persample_diffratio_file()
+        contigID -- a string indicating the contig ID of the SNPs being considered
+        snpDict -- a dictionary with structure like:
+                   {
+                       'within_snp': [ pos1, pos2, ... ],
+                       'within_type': [ "UTR", "CDS", "intron", ... ],
+                       'left_snp': [ pos1, pos2, ... ],
+                       'left_dist': [ distance1, distance2, ... ],
+                       'right_snp': [ pos1, pos2, ... ],
+                       'right_dist': [ distance1, distance2, ... ]
+                   }
+    Returns:
+        formatDict -- a dictionary with structure like:
+                      {
+                          'left': ( _min, _max, _mean ),
+                          'right': ( _min, _max, _mean ),
+                          'within': ( _min, _max, _mean ),
+                          'total': mean of all SNPs
+                      }
+    '''
+    leftDiff = [
+        diffratioDict[contigID][pos]["differenceRatio"]
+        for pos in snpDict["left_snp"]
     ]
-    
-    # Format data pertaining to this SNP
-    snpGtDict = {}
-    for pos in snpNumbers:
-        # Figure out what genotypes exist for each SNP position
-        gtDict = snpGenotypes[contigID][pos]
-        gts = set([ "/".join(map(str, v)) for k,v in gtDict.items() if not k in KEYS_TO_SKIP ])
-        
-        # Set up for data storage of this SNP
-        snpGtDict[pos] = {}
-        for pop in metadataDict.keys():
-            snpGtDict[pos][pop] = { gt:0 for gt in gts}
-        
-        # Tally genotypes for each population
-        anyFound = False
-        for key, value in gtDict.items():
-            if key in KEYS_TO_SKIP:
-                continue
-            else:
-                # Figure out what population this sample belongs to
-                pop = [ k for k,v in metadataDict.items() if key in v ]
-                
-                if len(pop) != 1:
-                    continue
-                else:
-                    anyFound = True
-                
-                pop = pop[0]
-                
-                # Figure out and store this genotype
-                gt = "/".join(map(str, value))
-                snpGtDict[pos][pop][gt] += 1
-        if anyFound == False:
-            print("ERROR: Issue in format_genotypes; your metadata file doesn't match your VCF")
-            print("In other words, we failed to find ANY samples from your metadata file in the VCF")
-            print("This is an irreconcilable error and we must exit out now...")
-            quit()
-    
-    # Reformat in sorted order of allele frequency
-    """
-    This format will directly correspond to something that can be tabulated. Hence,
-    it will have 3 columns for each population group (parents, bulk1, bulk2).
-    """
-    snpGtFormat = [[], [], []]
-    for pos, gtDict in snpGtDict.items():
-        # Handle parent
-        if "parent" in gtDict:
-            parentGTs = sorted(gtDict["parent"].items(), key = lambda item: -item[1])
-            parentGTs = ",".join([ f"{gt}={count}" for gt,count in parentGTs if count > 0])
-        else:
-            parentGTs = "."
-        
-        # Handle bulk1
-        bulk1GTs = sorted(gtDict["bulk1"].items(), key = lambda item: -item[1])
-        bulk1GTs = ",".join([ f"{gt}={count}" for gt,count in bulk1GTs if count > 0])
-        bulk1GTs = "." if bulk1GTs == "" else bulk1GTs
-        
-        # Handle bulk2
-        bulk2GTs = sorted(gtDict["bulk2"].items(), key = lambda item: -item[1])
-        bulk2GTs = ",".join([ f"{gt}={count}" for gt,count in bulk2GTs if count > 0])
-        bulk2GTs = "." if bulk2GTs == "" else bulk2GTs
-        
-        # Store into formatting list
-        snpGtFormat[0].append(f"{pos}: {parentGTs}")
-        snpGtFormat[1].append(f"{pos}: {bulk1GTs}")
-        snpGtFormat[2].append(f"{pos}: {bulk2GTs}")
-    
-    snpGtFormat[0] = "; ".join(snpGtFormat[0])
-    snpGtFormat[1] = "; ".join(snpGtFormat[1])
-    snpGtFormat[2] = "; ".join(snpGtFormat[2])
-    
-    return snpGtFormat
+    rightDiff = [
+        diffratioDict[contigID][pos]["differenceRatio"]
+        for pos in snpDict["right_snp"]
+    ]
+    withinDiff = [
+        diffratioDict[contigID][pos]["differenceRatio"]
+        for pos in snpDict["within_snp"]
+    ]
+    totalAvg = (sum(leftDiff) + sum(rightDiff) + sum(withinDiff)) / (len(leftDiff) + len(rightDiff) + len(withinDiff))
+    return {
+        "left": get_diffratio_distribution(leftDiff),
+        "right": get_diffratio_distribution(rightDiff),
+        "within": get_diffratio_distribution(withinDiff),
+        "total": totalAvg
+    }
 
-def calculate_difference_ratio(original_b1, original_b2):
-    GT_REGEX = re.compile(r"\d/\d")
-    
-    original_b1Alleles = original_b1.split("; ") # can be multiple SNP positions separated by "; "
-    original_b2Alleles = original_b2.split("; ")
-    
-    # Loop through each allele separately to hackily get results
-    ratios = []
-    for b1, b2 in zip(original_b1Alleles, original_b2Alleles):
-        position = b1.split(": ")[0]
-        
-        b1Alleles = [b1]
-        b2Alleles = [b2]
-        
-        # See if we have any multiallelic variant
-        genotypes = set(GT_REGEX.findall(b1)).union(set(GT_REGEX.findall(b2)))
-        alleles = sorted(list(set([ a for gt in genotypes for a in gt.split("/") ]))) # sort should be fine if single digit
-        thisAlleles = {
-            "b1": [0 for allele in alleles],
-            "b2": [0 for allele in alleles]
-        }
-        
-        # Handle identical allele compositions
-        "If everything is 0/0 or 1/1, we know the ratio == 0.0; stop here to prevent bugs"
-        if len(alleles) == 1:
-            ratios.append(f"{position}: 0.0")
-            continue
-        
-        # Tally alleles at this locus
-        for x in range(len(b1Alleles)):
-            # Get alleles at this position
-            b1x = b1Alleles[x]
-            b2x = b2Alleles[x]
-            
-            # Skip tallying if it's not possible at this locus
-            if "." in b1x or "." in b2x:
-                continue
-            
-            # Tally for bulk 1
-            for b1xAllele in b1x.split(","):
-                b1xAllele = b1xAllele.split(": ")[-1]
-                gt, count = b1xAllele.split("=")
-                for gtValue in gt.split("/"):
-                    alleleIndex = alleles.index(gtValue)
-                    thisAlleles["b1"][alleleIndex] += int(count)
-            
-            # Tally for bulk 2
-            for b2xAllele in b2x.split(","):
-                b2xAllele = b2xAllele.split(": ")[-1]
-                gt, count = b2xAllele.split("=")
-                for gtValue in gt.split("/"):
-                    alleleIndex = alleles.index(gtValue)
-                    thisAlleles["b2"][alleleIndex] += int(count)
-        
-        # Calculate the proportions of each allele for this locus
-        b1Sum = sum(thisAlleles["b1"])
-        b2Sum = sum(thisAlleles["b2"])
-        
-        if b1Sum == 0 or b2Sum == 0: # if this happens, we can't meaningfully calculate anything
-            ratios.append(f"{position}: .")
-            continue
-        
-        thisProportion = {
-            "b1": [ alleleCount / b1Sum for alleleCount in thisAlleles["b1"] ],
-            "b2": [ alleleCount / b2Sum for alleleCount in thisAlleles["b2"] ]
-        }
-        
-        # Derive our difference ratio value
-        proportionCommon = sum([
-            min(thisProportion["b1"][x], thisProportion["b2"][x])
-            for x in range(len(thisProportion["b1"]))
-        ])
-        differenceRatio = 1 - proportionCommon
-        
-        ratios.append(f"{position}: {differenceRatio}")
-    return ratios
-
-def format_difference_ratio(snpGtFormat):
+def get_diffratio_distribution(diffRatioList):
     '''
-    Parameters:
-        snpGtFormat -- a list with three values, with structure like:
-                       [
-                           'parental GT per SNP',
-                           'bulk1 GT per SNP',
-                           'bulk2 GT per SNP'
-                       ]
-                       Note that the format for each string value is akin to:
-                            "snpPosition: 0/0=11,1/1=5,0/1=2"
-                       The snpPosition is a numeric value. All present genotypes
-                       and their tallies are presented as shown above with comma
-                       separation.
-    Returns:
-        differenceRatio -- a string representing a ratio from 0->1, where 1 indicates
-                           entirely different allele composition, and 0 indicates
-                           identical alleles in the two populations. In short, close to 1
-                           gives us interesting regions, and close to 0 should be
-                           ignored when doing a BSA-like inspection.
-    '''
-    # Extract relevant bits of data from snpGtFormat
-    b1 = snpGtFormat[1] # we don't care about the parent for this index
-    b2 = snpGtFormat[2]
-    
-    ratios = calculate_difference_ratio(b1, b2)
-    
-    # Calculate the average ratio for this gene
-    NUM_REGEX = re.compile(r"\d\.\d+")
-    numbers = NUM_REGEX.findall(" ".join(ratios))
-    try:
-        totalRatio = sum(map(float, numbers)) / len(numbers)
-    except:
-        totalRatio = "."
-    
-    # Return formatted result
-    return ["; ".join(ratios), str(totalRatio)]
-
-def diffratio_to_snpPositions(diffratioDict):
-    '''
-    Converts a difference ratio dictionary into a SNP positions dictionary.
+    Helper function to get the distribution of difference ratios in terms
+    of their min, max, and median.
     
     Parameters:
-        diffratioDict -- a dict with structure like:
-                      {
-                          'contig1': {
-                              pos1: {"variant": ___, "bulk1_depth": ___, ...},
-                              pos2: { ... },
-                              ...
-                          },
-                          'contig2': ...,
-                          ...
-                      }
+        diffRatioList -- a list of difference ratios.
     Returns:
-        snpPositions -- a dict with structure like:
-                        {
-                            'contig1': set( pos1, pos2, ... ),
-                            'contig2': ...,
-                            ...
-                        }
+        _min -- the minimum difference ratio in the list.
+        _max -- the maximum difference ratio in the list.
+        _mean -- the mean difference ratio in the list.
     '''
-    snpPositions = {}
-    for contig, posDict in diffratioDict.items():
-        snpPositions.setdefault(contig, {})
-        for pos, dataDict in posDict.items():
-            snpPositions[contig][int(pos)] = dataDict["differenceRatio"]
-    return snpPositions
+    _min = min(diffRatioList) if diffRatioList != [] else "."
+    _max = max(diffRatioList) if diffRatioList != [] else "."
+    _mean = sum(diffRatioList) / len(diffRatioList) if diffRatioList != [] else "."
+    return _min, _max, _mean
 
 def main():
     # User input
     usage = """%(prog)s receives several files associated with a per-sample SNP
     prediction project dealing with two segregating populations. It combines relevant
-    information into a comprehensive report TSV file.
+    information into two comprehensive report TSV files. The first file is gene-centric
+    and provides one output row per gene with information on all the SNPs proximal to it.
+    The second file is variant-centric and provides one output row per SNP with information
+    on which gene(s) it is proximal to.
     
     Required input files are:
-    1) difference ratio TSV file from calculate_persample_diffratio.py.
-    2) GOextended annotation table from annotation_table_extend_GOs.py.
-    3) VCF containing variant calls for multiple samples belonging to two segregating phenotype
-    groups (optionally, can include parents).
-    4) Gene annotation GFF3 file.
-    5) Genome FASTA file.
-    6) GO .obo file.
+    1) Difference ratio TSV file from calculate_persample_diffratio.py.
+    2) GOextended annotation table from annotation_table_extend_GOs.py or BINge's
+    generate_annotation_table.py.
+    3) A GFF3 file with gene annotations.
+    4) A GO .obo file.
     """
     
     # Required
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-diffratio", dest="diffratioFile",
+    p.add_argument("-d", dest="diffratioFile",
                    required=True,
                    help="Specify the difference ratio TSV file name")
-    p.add_argument("-annot", dest="annotFile",
+    p.add_argument("-a", dest="annotFile",
                    required=True,
-                   help="Specify the GOextended annotation file name")
-    p.add_argument("-vcf", dest="vcfFile",
-                   required=True,
-                   help="Specify the VCF file name")
-    p.add_argument("-meta", dest="metadataFile",
-                   required=True,
-                   help="Specify the metadata file name")
-    p.add_argument("-gff", dest="gff3File",
+                   help="Specify the annotation table file name")
+    p.add_argument("-g", dest="gff3File",
                    required=True,
                    help="Specify the genome annotation GFF3 file name")
-    p.add_argument("-fasta", dest="fastaFile",
-                   required=True,
-                   help="Specify the genome FASTA file name")
     p.add_argument("-obo", dest="goOboFile",
                    required=True,
                    help="Specify the GO .obo file name")
-    p.add_argument("-o", dest="outputFileName",
+    p.add_argument("-out", dest="outputPrefix",
                    required=True,
-                   help="Specify the output file name")
+                   help="Specify the prefix for the two output files")
+    # Optional
+    p.add_argument("--differenceRatio", dest="differenceRatio",
+                   type=float,
+                   required=False,
+                   help="""Optionally, only report a gene if it is proximal to
+                   at least one SNP with >= the indicated difference ratio value, or
+                   a SNP if it has >= the difference ratio; default
+                   == 0 (i.e., no filtering occurs, all results are reported)""",
+                   default=0)
+    p.add_argument("--radius", dest="radiusSize",
+                   type=int,
+                   required=False,
+                   help="""Optionally, specify the radius surrounding a gene that you
+                   want to consider as being 'proximal' to a gene; default == 50000 bp""",
+                   default=50000)
     
     args = p.parse_args()
     validate_args(args)
@@ -696,105 +404,167 @@ def main():
     # Parse GO.obo
     go = obo_parser.GODag(args.goOboFile)
     
-    # Parse metadata file
-    metadataDict = parse_pops_metadata(args.metadataFile)
-    
     # Parse difference ratio file
     diffratioDict = parse_persample_diffratio_file(args.diffratioFile)
-    
-    # Convert difference ratio dict into a snpPositions dict for filtering
-    snpPositions = diffratio_to_snpPositions(diffratioDict)
-    
-    # Parse VCF data for SNP genotypes
-    snpGenotypes = haplotypes.get_genotypes_from_vcf(args.vcfFile, snpPositions=snpPositions, imputeMissing=False)
     
     # Parse GFF3 with NCLS indexing
     gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False)
     gff3Obj.create_ncls_index(typeToIndex="gene")
     
-    # Parse FASTA file
-    genomeFASTA_obj = ZS_SeqIO.FASTA(args.fastaFile)
-    
-    # Get the proximity reporting dict (including effects prediction)
-    proximityDict = generate_bsa_proximity_dict(gff3Obj, genomeFASTA_obj, snpGenotypes)
+    # Produce proximity dicts
+    snpDict, geneDict = generate_proximity_dicts(gff3Obj, diffratioDict, args.radiusSize)
     
     # Parse annotation file for relevant entries
-    mrnaDict = { proximityDict[key]["mRNA"]: key for key in proximityDict.keys() }
-    annotDict = parse_annot_file(args.annotFile, mrnaDict, proximityDict)
+    mrnaDict = {
+        mrnaFeature.ID : geneID
+        for geneData in geneDict.values()
+        for geneID in geneData.keys()
+        for mrnaFeature in gff3Obj[geneID].mRNA
+    }
+    annotDict = parse_annot_file(args.annotFile, mrnaDict, set(mrnaDict.values()))
     
-    # Combine everything into a table output
+    # Write gene-centric output
     queriedGOs = {}
     needsReplace = set()
-    with open(args.outputFileName, "w") as fileOut:
+    with open(args.outputPrefix + ".gene_report.tsv", "w") as fileOut:
         # Write header line
         fileOut.write("{0}\n".format("\t".join([
-            "#contig", "gene_ID", "mRNA_ID", "strand",
+            "#contig", "gene_ID", "strand",
             "coords", "gene_name", "GO_IDs", "GO_names",
-            "within_pos", "within_location", "left_pos",
-            "left_distance", "right_pos", "right_distance",
-            "parentGT", "bulk1GT", "bulk2GT", "persnp_difference_ratio",
-            "average_difference_ratio"
+            "within_num_snps", "within_types", "left_num_snps",
+            "left_avg_distance", "right_num_snps", "right_avg_distance",
+            "left_diff_min", "left_diff_max", "left_diff_mean",
+            "right_diff_min", "right_diff_max", "right_diff_mean",
+            "within_diff_min", "within_diff_max", "within_diff_mean",
+            "total_diff_mean"
         ])))
         
         # Write content lines
-        for geneID, snpDict in proximityDict.items():
-            annot = annotDict[geneID]
-            
-            # Get GO names from IDs
-            if annot["gos"] == ".":
-                goNames = "."
-            else:
-                # Fix obsoletions in GO terms
-                replacedGOs = ZS_GO.fix_obsoletions(annot["gos"].split("; "), go, queriedGOs)
+        for contigID, geneData in geneDict.items():
+            for geneID, snpData in geneData.items():
+                annot = annotDict[geneID]
                 
-                # Get the GO names now
-                goNames = []
-                for term in replacedGOs:
-                    try:
-                        goNames.append(go.get(term).name)
-                    except:
-                        needsReplace.add(term)
-                goNames = "; ".join(goNames)
-            
-            # Format SNP details
-            snpDetails = format_snp_types(snpDict)
-            
-            # Format genotype info
-            snpGtFormat = format_genotypes(snpGenotypes, snpDetails, snpDict["contig"], metadataDict)
-            
-            # Calculate difference ratio
-            perDiff, totalDiff = format_difference_ratio(snpGtFormat)
-            
-            # Format output line
-            outputLine = "{contig}\t{geneID}\t{mrnaID}\t{strand}\t{coords}\t{geneName}\
-\t{gos}\t{goNames}\t{within_pos}\t{within_location}\t{left}\
+                # Skip if this gene does not meet our --differenceRatio threshold
+                meetsThreshold = any([
+                    diffratioDict[contigID][pos]["differenceRatio"] >= args.differenceRatio
+                    for snpKey in ["left_snp", "right_snp"]
+                    for pos in snpData[snpKey]
+                ])
+                if not meetsThreshold:
+                    continue
+                
+                # Get GO names from IDs
+                if annot["gos"] == ".":
+                    goNames = "."
+                else:
+                    # Fix obsoletions in GO terms
+                    replacedGOs = ZS_GO.fix_obsoletions(annot["gos"].split("; "), go, queriedGOs)
+                    
+                    # Get the GO names now
+                    goNames = []
+                    for term in replacedGOs:
+                        try:
+                            goNames.append(go.get(term).name)
+                        except:
+                            needsReplace.add(term)
+                    goNames = "; ".join(goNames)
+                
+                # Format SNP details
+                snpDetails = format_snp_types(snpData)
+                
+                # Obtain difference ratio values
+                formattedRatios = format_difference_ratios(diffratioDict, contigID, snpData)
+                
+                # Format output line
+                outputLine = "{contig}\t{geneID}\t{strand}\t{coords}\t{geneName}\
+\t{gos}\t{goNames}\t{within_pos}\t{within_type}\t{left}\
 \t{left_dist}\t{right}\t{right_dist}\
-\t{gtFormat}\t{persnpDifferenceRatio}\t{totalDifferenceRatio}\n".format(
-                contig = snpDict["contig"],
-                geneID = geneID,
-                mrnaID = snpDict["mRNA"],
-                strand = snpDict["strand"],
-                coords = "{0}-{1}".format(snpDict["start"], snpDict["end"]),
-                geneName = annot["name"],
-                gos = annot["gos"],
-                goNames = goNames,
-                within_pos = snpDetails["within_pos"],
-                within_location = snpDetails["within_location"],
-                left = snpDetails["left"],
-                left_dist = snpDetails["left_dist"],
-                right = snpDetails["right"],
-                right_dist = snpDetails["right_dist"],
-                gtFormat = "\t".join(snpGtFormat),
-                persnpDifferenceRatio = perDiff,
-                totalDifferenceRatio = totalDiff
-            )
-            
-            # Write output row as line
-            fileOut.write(outputLine)
+\t{left_diff_min}\t{left_diff_max}\t{left_diff_mean}\
+\t{right_diff_min}\t{right_diff_max}\t{right_diff_mean}\
+\t{within_diff_min}\t{within_diff_max}\t{within_diff_mean}\t{total_diff_mean}\n".format(
+                    contig = contigID,
+                    geneID = geneID,
+                    strand = gff3Obj[geneID].strand,
+                    coords = "{0}-{1}".format(*gff3Obj[geneID].coords),
+                    geneName = annot["name"],
+                    gos = annot["gos"],
+                    goNames = goNames,
+                    within_pos = snpDetails["within_pos"],
+                    within_type = snpDetails["within_type"],
+                    left = snpDetails["left"],
+                    left_dist = snpDetails["left_dist"],
+                    right = snpDetails["right"],
+                    right_dist = snpDetails["right_dist"],
+                    left_diff_min = formattedRatios["left"][0],
+                    left_diff_max = formattedRatios["left"][1],
+                    left_diff_mean = formattedRatios["left"][2],
+                    right_diff_min = formattedRatios["right"][0],
+                    right_diff_max = formattedRatios["right"][1],
+                    right_diff_mean = formattedRatios["right"][2],
+                    within_diff_min = formattedRatios["within"][0],
+                    within_diff_max = formattedRatios["within"][1],
+                    within_diff_mean = formattedRatios["within"][2],
+                    total_diff_mean = formattedRatios["total"]
+                )
+                
+                # Write output line
+                fileOut.write(outputLine)
     
     if len(needsReplace) != 0:
-        print("Some GOs were not found in the .obo file and need to be replaced.")
+        print("Some GOs were not found in the .obo file and need to be replaced for the gene-centric report.")
         print(f"These are: {needsReplace}")
+    
+    # Write variant-centric output
+    with open(args.outputPrefix + ".variant_report.tsv", "w") as fileOut:
+        # Write header line
+        fileOut.write("{0}\n".format("\t".join([
+            "#contig", "position", "variant", "left_of", "right_of",
+            "within", "within_type", "bulk1_alleles", "bulk2_alleles",
+            "difference_ratio"
+        ])))
+        
+        # Write content lines
+        for contigID, snpData in snpDict.items():
+            for pos, snpDetails in snpData.items():
+                # Get difference ratio
+                diffData = diffratioDict[contigID][pos]
+                
+                # Skip if this SNP does not meet our --differenceRatio threshold
+                meetsThreshold = diffData["differenceRatio"] >= args.differenceRatio
+                if not meetsThreshold:
+                    continue
+                
+                # Format gene names
+                withinName = "." # set default condition
+                for geneID in snpDetails["within"]: # there's only ever 1 value in this list
+                    annot = annotDict[geneID]
+                    withinName = f'{geneID} ({annot["name"]})'
+                leftName = "."
+                for geneID in snpDetails["left_of"]: # iterating thru is just a convenience
+                    annot = annotDict[geneID]
+                    leftName = f'{geneID} ({annot["name"]})'
+                rightName = "."
+                for geneID in snpDetails["right_of"]:
+                    annot = annotDict[geneID]
+                    rightName = f'{geneID} ({annot["name"]})'
+                
+                # Format output line
+                outputLine = "{contig}\t{position}\t{variant}\t{left}\t{right}\
+\t{within}\t{withinTypes}\t{bulk1Alleles}\t{bulk2Alleles}\t{differenceRatio}\n".format(
+                    contig = contigID,
+                    position = str(pos),
+                    variant = diffData["variant"],
+                    left = leftName,
+                    right = rightName,
+                    within = withinName,
+                    withinTypes = snpDetails["within_type"][0] if snpDetails["within_type"] != [] else ".",
+                    bulk1Alleles = diffData["bulk1_alleles"],
+                    bulk2Alleles = diffData["bulk2_alleles"],
+                    differenceRatio = diffData["differenceRatio"]
+                )
+                
+                # Write output line
+                fileOut.write(outputLine)
     
     print("Program completed successfully!")
 
