@@ -526,14 +526,15 @@ class SNPStatics:
     
     @staticmethod
     def edit_reference_to_haplotype_sequence(referenceSeq, haplotypeEditList,
-                                         strand, VALIDATE_STRICT=False):
+                                             strand, VALIDATE_STRICT=False):
         '''
         This function will take in a reference nucleotide sequence, typically representing
         a CDS for a gene in either +ve or -ve strand, and generates the haplotype version
         of that sequence.
         
         Parameters:
-            referenceSeq -- the sequence as a string prior to any editing
+            referenceSeq -- the sequence as a string prior to any editing, and in the +ve
+                            strand orientation of the genome
             haplotypeEditList -- a list with structure like:
                                 [
                                     [pos1, "ref", "allele"],
