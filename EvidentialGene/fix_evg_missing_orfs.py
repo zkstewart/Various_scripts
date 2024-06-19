@@ -1,8 +1,9 @@
 #! python3
 # fix_evg_missing_orfs.py
-
-# Script to take in the aa and cds output files from EvidentialGene
-# and fix any issues with missing main ORFs for sequences.
+# Script to take in the output files from EvidentialGene
+# and fix any issues relating to how utrorf IDs are handled
+# and how some CDS' are in the dropset despite their main 
+# mRNA transcript being emitted as 'okay' or 'okay-alt'.
 
 import os, argparse
 from Bio import SeqIO
@@ -29,7 +30,7 @@ def validate_args(args):
     # Validate output file location
     args.outputPrefix = args.outputPrefix.rstrip("._ ")
     args.outputFileNames = []
-    for suffix in [".aa", ".cds", ".fixed_ids"]:
+    for suffix in [".aa", ".cds", ".fasta", ".fixed_ids"]:
         outFileName = args.outputPrefix + suffix
         if os.path.isfile(outFileName):
             print(f'File already exists at output location ({outFileName})')
@@ -72,7 +73,7 @@ def main():
         for record in fastaRecords:
             transIDs.add(record.id)
     
-    # Locate all coding IDs which have a default ORF (not utrorf)
+    # Locate all coding IDs which have a default ORF
     seqIDs = set()
     with open(args.aaFile, "r") as fileIn:
         aaRecords = SeqIO.parse(fileIn, "fasta")
@@ -80,16 +81,22 @@ def main():
             if not "utrorf" in record.id:
                 seqIDs.add(record.id)
     
-    # Locate sequences which have a utrorf but not a default ORF
+    # Locate sequences which have a utrorf
     missingIDs = set()
+    utrorfIDs = set()
     with open(args.aaFile, "r") as fileIn:
         aaRecords = SeqIO.parse(fileIn, "fasta")
         for record in aaRecords:
             baseID = record.id.split("utrorf")[0]
+            # Note sequences which have a utrorf but NOT a default ORF
             if ("utrorf" in record.id and baseID not in seqIDs) or baseID not in transIDs:
                 missingIDs.add(baseID)
+            # Note utrorfs
+            if "utrorf" in record.id:
+                utrorfIDs.add(baseID)
     
-    print(f"Note: Identified {len(missingIDs)} missing sequences.")
+    print(f"# Identified {len(missingIDs)} missing sequences.")
+    print(f"# Identified {len(utrorfIDs)} sequences with utrorfs.")
     
     # Create new .aa and .cds files containing the missing ORFs from the dropset
     suffixes = [".aa", ".cds"]
@@ -125,10 +132,26 @@ def main():
                     foundSequences += 1
                     fileOut.write(f">{record.description}\n{str(record.seq)}\n")
     
-    print(f"Note: Restored {foundSequences} missing sequences.")
+    print(f"# Restored {foundSequences} missing sequences.")
+    
+    # Also write out a new .fasta file with duplication of utrorf sequences for ID equality
+    duplicatedSequences = 0
+    with open(args.fastaFile, "r") as fileIn, open(args.outputFileNames[-2], "w") as fileOut: # second last is .fasta file
+        records = SeqIO.parse(fileIn, "fasta")
+        for record in records:
+            # Write the plain record
+            fileOut.write(f">{record.description}\n{str(record.seq)}\n")
+            
+            # Write out a duplicate if it has a utrorf
+            if record.id in utrorfIDs:
+                newDescription = record.id + "utrorf " + record.description.split(" ", maxsplit=1)[1]
+                fileOut.write(f">{newDescription}\n{str(record.seq)}\n")
+                duplicatedSequences += 1
+    
+    print(f"# Duplicated {duplicatedSequences} sequences to have utrorf versions.")
     
     # Write out the .fixed_ids file to allow any other potential fixes to occur
-    with open(args.outputFileNames[-1], "w") as fileOut:
+    with open(args.outputFileNames[-1], "w") as fileOut: # last is .fixed_ids file
         for seqID in missingIDs:
             fileOut.write(f"{seqID}\n")
     
