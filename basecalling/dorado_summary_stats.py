@@ -99,8 +99,8 @@ def main():
     print('Median: ' + medianStat)
     print('Mean: ' + meanStat)
     # File output
-    if args.output != False:
-        with open(args.output, 'w') as output:
+    if args.outputFileName != False:
+        with open(args.outputFileName, 'w') as output:
             output.write('Total amount of sequence (bp): ' + totalSize + '\n')
             output.write('Number of reads: ' + numSeqs + '\n')
             output.write('Shortest reads: ' + shortest + '\n')
