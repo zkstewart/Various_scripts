@@ -92,8 +92,8 @@ def main():
     # Print statistics
     print('Total amount of sequence (bp): ' + totalSize)
     print('Number of reads: ' + numSeqs)
-    print('Shortest reads: ' + shortest)
-    print('Longest reads: ' + longest)
+    print('Shortest read: ' + shortest)
+    print('Longest read: ' + longest)
     print('')
     print('N50: ' + n50)
     print('Median: ' + medianStat)
@@ -103,8 +103,8 @@ def main():
         with open(args.outputFileName, 'w') as output:
             output.write('Total amount of sequence (bp): ' + totalSize + '\n')
             output.write('Number of reads: ' + numSeqs + '\n')
-            output.write('Shortest reads: ' + shortest + '\n')
-            output.write('Longest reads: ' + longest + '\n')
+            output.write('Shortest read: ' + shortest + '\n')
+            output.write('Longest read: ' + longest + '\n')
             output.write('\n')
             output.write('N50: ' + n50 + '\n')
             output.write('Median: ' + medianStat + '\n')
