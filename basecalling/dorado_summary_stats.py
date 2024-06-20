@@ -44,7 +44,7 @@ def N50(numlist):
         if s <= limit: 
             return l
 
-def main(args):
+def main():
     # Argparse handling
     usage = """%(prog)s reads in a dorado summary TSV file and calculates a handful
     of statistics, including the number of reads, the size distribution of reads
