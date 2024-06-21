@@ -1005,8 +1005,8 @@ def main():
         for phasedFile in os.listdir(phasingOutputDir):
             if phasedFile.endswith(".fasta"):
                 # Get the file names
-                phasedFileName = os.path.join(phasingOutputDir, f"{phasedFile}.fasta")
-                msaFileName = os.path.join(msaOutputDir, f"{phasedFile}.fasta")
+                phasedFileName = os.path.join(phasingOutputDir, phasedFile)
+                msaFileName = os.path.join(msaOutputDir, phasedFile)
                 
                 # Skip if the MSA already exists
                 if os.path.exists(msaFileName):
