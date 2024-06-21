@@ -6,9 +6,10 @@
 import os, argparse, sys, shutil
 from intervaltree import IntervalTree
 from pyfaidx import Fasta
+from Bio import SeqIO
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find GFF3IO
-from Function_packages import ZS_GFF3IO, ZS_Utility, ZS_VCFIO, ZS_SeqIO, ZS_BAMIO
+from Function_packages import ZS_GFF3IO, ZS_Utility, ZS_VCFIO, ZS_SeqIO, ZS_BAMIO, ZS_AlignIO
 
 # Define functions
 def validate_args(args):
@@ -90,10 +91,23 @@ def validate_args(args):
     else:
         if not os.path.isfile(args.tabix):
             _not_found_error("tabix", args.tabix)
+    
+    if args.mafft is None:
+        args.mafft = ZS_Utility.wsl_which("mafft")
+        if args.mafft is None:
+            _not_specified_error("mafft")
+    else:
+        if not os.path.isfile(args.mafft):
+            _not_found_error("mafft", args.mafft)
+    
     # Validate numeric inputs
     if 0 > args.plusMinus:
         print("--plusMinus should be 0 or greater")
         quit()
+    if 1 > args.threads:
+        print("--threads should be 1 or greater")
+        quit()
+    
     # Validate output file location
     if os.path.isdir(args.outputDirectory) and os.listdir(args.outputDirectory) != []:
         print(f"Output directory '{args.outputDirectory}' already exists; I'll write output files here.")
@@ -575,7 +589,18 @@ def main():
                    help="""Optionally, specify the tabix executable file
                    if it is not discoverable in the path""",
                    default=None)
+    p.add_argument("--mafft", dest="mafft",
+                   required=False,
+                   help="""Optionally, specify the MAFFT executable file
+                   if it is not discoverable in the path""",
+                   default=None)
     # Opts (behavioural)
+    p.add_argument("--threads", dest="threads",
+                   type=int,
+                   required=False,
+                   help="""Optionally, specify how many CPUs you can use for any
+                   multithreadable operations; default == 1""",
+                   default=1)
     p.add_argument("--featureType", dest="featureType",
                    required=False,
                    choices=["exon", "CDS"],
@@ -637,6 +662,9 @@ def main():
     
     phasingOutputDir = os.path.join(args.outputDirectory, "phasing")
     os.makedirs(phasingOutputDir, exist_ok=True)
+    
+    msaOutputDir = os.path.join(args.outputDirectory, "msas")
+    os.makedirs(msaOutputDir, exist_ok=True)
     
     # Index the FASTA file
     if not os.path.exists(f"{args.fastaFile}.fai"):
@@ -809,19 +837,16 @@ def main():
     else:
         print(f"whatshap VCF has already been tabix indexed; skipping.")
     
-    # Parse the VCF
-    phasedVCF_obj = ZS_VCFIO.PhasedVCF(compressedWhatsHapName)
-    phasedVCF_obj.parse_whatshap_vcf()
-    
     # Generate phased gene sequences for each sample
-    FASTA_obj = Fasta(args.fastaFile)
-    
-    # Skip if we've completed this already
-    if os.path.exists(os.path.join(args.outputDirectory, f"fasta_phasing_was_successful.flag")):
-        print("Phased FASTA files have already been generated; skipping.")
-    
-    # Otherwise, generate the phased FASTA files for each gene
-    else:
+    if not os.path.exists(os.path.join(args.outputDirectory, f"fasta_phasing_was_successful.flag")):
+        # Parse the phased VCF
+        phasedVCF_obj = ZS_VCFIO.PhasedVCF(compressedWhatsHapName)
+        phasedVCF_obj.parse_whatshap_vcf()
+        
+        # Parse the genome FASTA
+        FASTA_obj = Fasta(args.fastaFile)
+        
+        # Phase each gene while writting logging information
         with open(os.path.join(args.outputDirectory, "haplotyping_results.tsv"), "w") as logOut:
             # Write log file header
             logOut.write("GeneID\thas_snps\t{0}\n".format("\t".join( [ f"{sid}_haplotype1\t{sid}_haplotype2" for sid in phasedVCF_obj.samples ])))
@@ -831,11 +856,8 @@ def main():
                 for parentFeature in gff3Obj.types[parentType]:
                     mrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(parentFeature)
                     
-                    # Get the output file name and skip if it exists
+                    # Get the output file name
                     fastaFileName = os.path.join(phasingOutputDir, f"{parentFeature.ID}.fasta")
-                    if os.path.isfile(fastaFileName):
-                        print(f"'{parentFeature.ID}' FASTA file has already been generated; skipping.")
-                        continue
                     
                     # Skip if there are no SNPs on this contig
                     if not parentFeature.contig in phasedVCF_obj:
@@ -967,6 +989,42 @@ def main():
                         logOut.write("{0}\tyes\t{1}\n".format(parentFeature.ID, "\t".join(sampleLoggingInfo)))
         
         open(os.path.join(args.outputDirectory, "fasta_phasing_was_successful.flag"), "w").close()
+    else:
+        print("Phased FASTA files have already been generated; skipping.")
+    
+    # Align the phased FASTA files
+    if not os.path.exists(os.path.join(args.outputDirectory, "alignment_was_successful.flag")):
+        # Set up MAFFT aligner
+        aligner = ZS_AlignIO.MAFFT(args.mafft, "einsi", # E-insi algorithm
+                                   args.threads, 5) # 5 maxiterate
+        
+        # Iterate through phased FASTA files
+        for phasedFile in os.listdir(phasingOutputDir):
+            if phasedFile.endswith(".fasta"):
+                # Get the file names
+                phasedFileName = os.path.join(phasingOutputDir, f"{phasedFile}.fasta")
+                msaFileName = os.path.join(msaOutputDir, f"{phasedFile}.fasta")
+                
+                # Skip if the MSA already exists
+                if os.path.exists(msaFileName):
+                    print(f"MSA file '{msaFileName}' already exists; skipping.")
+                    continue
+                
+                # Perform MAFFT codon alignment
+                numSeqs = sum([1 for _ in SeqIO.parse(phasedFileName, "fasta")])
+
+                resultFASTA_obj = aligner.align_as_protein(
+                    phasedFileName,
+                    strands=[1 for _ in range(numSeqs)], # do this to prevent best ORF
+                    frames=[0 for _ in range(numSeqs)]   # detection; we expect the CDS to be in frame
+                )
+                
+                # Write output file
+                resultFASTA_obj.write(msaFileName, asAligned=True)
+        
+        open(os.path.join(args.outputDirectory, "alignment_was_successful.flag"), "w").close()
+    else:
+        print(f"Phased sequence MSA has already been performed; skipping.")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
