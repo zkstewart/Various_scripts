@@ -55,6 +55,79 @@ def _create_file_from_FASTA_object(FASTA_obj, useExistingFile=True):
 
 ##############################
 
+class MSA:
+    '''
+    A namespace for containing static methods that are useful for manipulating
+    multiple sequence alignments. It is expected that most functions will receive
+    a FASTA file or ZS_SeqIO.FASTA object as input and return a ZS_SeqIO.FASTA
+    object as output.
+    '''
+    @staticmethod
+    def locate_variants_from_msa(FASTA_obj, isNucleotide, asCodons):
+        '''
+        Parameters:
+            FASTA_obj -- a ZS_SeqIO.FASTA object containing aligned sequences
+            isNucleotide -- a boolean indicating whether the sequences are nucleotide
+                            (True) or protein (False)
+            asCodons -- a boolean indicating whether to consider codons as the unit of
+                        comparison for nucleotide sequences; only relevant if isNucleotide
+                        is True.
+        Returns:
+            variantDict -- a dictionary with structure like:
+                        {
+                            positionNumber: {
+                                "consensus": "consensusResidue",
+                                "variants": {
+                                    "variantResidue1": ["seqID1", "seqID2", ...],
+                                    "variantResidue2": ["seqID3", "seqID4", ...],
+                                    ...
+                                }
+                            }
+                        }
+        '''
+        def translate_codon(codon):
+            'Private function of this method to translate a codon into a protein residue'
+            residue = ZS_SeqIO.FastASeq.dna_to_protein(codon.rstrip("-"))
+            if residue == "": # this might happen if the codon is incomplete and doesn't translate
+                residue = "-"
+            return residue
+        
+        if asCodons:
+            assert isNucleotide, "locate_variants_from_msa: asCodons should only be True if isNucleotide is True"
+        
+        variantDict = {}
+        
+        # Generate a consensus sequence
+        consensusSeq = FASTA_obj.generate_consensus(asCodons=asCodons)
+
+        # Iterate over positions in the alignment to locate variants
+        stepSize = 3 if asCodons else 1
+        for i in range(0, len(consensusSeq), stepSize):
+            # Get the codon-normalised position index
+            positionNumber = int(i / stepSize)
+            
+            # Obtain the consensus residue at this position for comparison
+            consensusResidue = consensusSeq[i:i+stepSize]
+            consensusResidue = consensusResidue if not (isNucleotide and asCodons) \
+                                else translate_codon(consensusResidue)
+            
+            # Iterate over each sequence in the alignment and look at this position
+            for FastASeq_obj in FASTA_obj.seqs:
+                residue = FastASeq_obj.gap_seq[i:i+stepSize]
+                residue = residue if not (isNucleotide and asCodons) \
+                            else translate_codon(residue)
+                
+                # Store data if a variant exists
+                if residue != consensusResidue:
+                    variantDict.setdefault(positionNumber, {
+                        "consensus": consensusResidue,
+                        "variants": {}
+                    })
+                    variantDict[positionNumber]["variants"].setdefault(residue, [])
+                    variantDict[positionNumber]["variants"][residue].append(FastASeq_obj.id)
+        
+        return variantDict
+
 class MAFFT:
     '''
     A mostly fully features wrapper program for MAFFT. Rather than allowing use of the mafft.bat
