@@ -387,7 +387,7 @@ class FastASeq:
                              the longest translation for the sequence. This is relevant
                              when you don't know what frame the sequence is in. On short
                              sequences without any stop codons this might not work well.
-                             If set, strand and frame arguments will be ignored.
+                             This parameter is incompatible with strand and frame.
             strand -- an integer indicating the strand the translation should occur on;
                       a positive 1 indicates forward (+ve) strand, and negative 1 is reverse
                       (-ve) strand. Only set this if you know you need a specific strand.
@@ -1338,12 +1338,16 @@ class FASTA:
         for FastASeq_obj in self.seqs:
             FastASeq_obj.make_uppercase()
     
-    def generate_consensus(self):
+    def generate_consensus(self, asCodons=False):
         '''
         This method produces a very basic consensus sequence through a voting mechanism
         whereby the most common nucleotide/amino acid will be the representative. This
         might not be biologically valid, but it provides a metric by which human investigations
         can occur especially via calculation of variable site statistics.
+        
+        Parameters:
+            asCodons -- a Boolean indicating whether the consensus should be generated
+                        as codons. This is only relevant if the sequences are nucleotides.
         
         Method sets self.consensus, but also returns:
             consensus -- A string of the consensus sequence including gaps
@@ -1365,10 +1369,11 @@ class FASTA:
         
         # Generate consensus sequence
         self.consensus = ""
-        for i in range(prevLength):
+        stepSize = 3 if asCodons else 1
+        for i in range(0, prevLength, stepSize):
             positionList = []
             for x in range(len(self.seqs)):
-                positionList.append(self.seqs[x].gap_seq[i])
+                positionList.append(self.seqs[x].gap_seq[i:i+stepSize])
             positionCount = Counter(positionList)
             self.consensus += positionCount.most_common(1)[0][0] # most_common(1) gives a list with (residue, count) tuple
         
@@ -1443,6 +1448,64 @@ class FASTA:
             return 0
         else:
             return sum(shared) / len(shared)
+    
+    def translate(self):
+        '''
+        Takes the sequences in this FASTA object and translates them into protein sequences.
+        This assumes that the sequences are nucleotides, and will not validate them for you.
+        So, you should be sure that the sequences are nucleotides before running this method.
+        This will perform a very naive translation, and will not attempt to predict ORFs.
+        It will also translate .gap_seq values if they exist, but will require that alignment
+        occurred as codons i.e., gaps are in multiples of 3 and no codon is split across a gap.
+        
+        Parameters:
+            strands -- OPTIONAL; a list of integers indicating the strand(s) to use for
+                       for optimal translation of each sequence. Must be the same length
+                       as the number of sequences in this FASTA object. If not provided,
+                       the program will attempt to find the best strand for each sequence.
+            frames -- OPTIONAL; a list of integers indicating the frame(s) to use for
+                      for optimal translation of each sequence. Must be the same length
+                      as the number of sequences in the FASTA object. If not provided,
+                      the program will attempt to find the best frame for each sequence.
+        Returns:
+            translatedFASTA -- a new ZS_SeqIO.FASTA object containing the same sequences as the original
+                               but translated into protein sequences. If sequences were originally provided
+                               aligned, the new sequences will be aligned as well.
+        '''
+        # Create a new FASTA object with our translations
+        translatedFASTA = FASTA(None)
+        for FastASeq_obj in self.seqs:
+            # Translate the gap sequence if it exists
+            if FastASeq_obj.gap_seq != None:
+                translatedFASTA.isAligned = True # make sure the output FASTA is marked as aligned
+                
+                gapProtein = ""
+                for i in range(0, len(FastASeq_obj.gap_seq), 3):
+                    codon = FastASeq_obj.gap_seq[i:i+3]
+                    
+                    if "-" in codon:
+                        "Use len(set()) as it 1) identifies mixes of gaps and nucleotides and 2) handles truncated codons"
+                        assert len(set(codon)) == 1, f"Codon '{codon}' cannot translate as it contains gaps"
+                        gapProtein += "-"
+                    else:
+                        gapProtein += FastASeq.TRANSLATION_TABLE[codon.upper()]
+            else:
+                gapProtein = None
+            
+            # Run the translation on the raw sequence
+            if gapProtein == None:
+                protein = ""
+                for i in range(0, len(FastASeq_obj.seq), 3):
+                    codon = FastASeq_obj.seq[i:i+3]
+                    protein += FastASeq.TRANSLATION_TABLE[codon.upper()]
+            else:
+                protein = gapProtein.replace("-", "") # can borrow the gapProtein since its done the legwork
+            
+            # Update and store results
+            translatedFASTA.add(FastASeq(FastASeq_obj.description, seq=protein, gapSeq=gapProtein))
+        
+        # Return the translated FASTA object
+        return translatedFASTA
     
     def _validate_write_params(self, withAlt, withDescription, asAligned, withConsensus):
         '''
