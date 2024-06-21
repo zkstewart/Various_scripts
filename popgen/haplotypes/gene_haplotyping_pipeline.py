@@ -663,8 +663,11 @@ def main():
     phasingOutputDir = os.path.join(args.outputDirectory, "phasing")
     os.makedirs(phasingOutputDir, exist_ok=True)
     
-    msaOutputDir = os.path.join(args.outputDirectory, "msas")
+    msaOutputDir = os.path.join(args.outputDirectory, "nucleotide_msas")
     os.makedirs(msaOutputDir, exist_ok=True)
+    
+    proteinOutputDir = os.path.join(args.outputDirectory, "protein_msas")
+    os.makedirs(proteinOutputDir, exist_ok=True)
     
     # Index the FASTA file
     if not os.path.exists(f"{args.fastaFile}.fai"):
@@ -1007,7 +1010,7 @@ def main():
                 
                 # Skip if the MSA already exists
                 if os.path.exists(msaFileName):
-                    print(f"MSA file '{msaFileName}' already exists; skipping.")
+                    print(f"Nucleotide MSA file '{msaFileName}' already exists; skipping.")
                     continue
                 
                 # Perform MAFFT codon alignment
@@ -1024,7 +1027,70 @@ def main():
         
         open(os.path.join(args.outputDirectory, "alignment_was_successful.flag"), "w").close()
     else:
-        print(f"Phased sequence MSA has already been performed; skipping.")
+        print(f"Phased nucleotide MSAs have already been generated; skipping.")
+    
+    # Translate the nucleotide MSAs to protein MSAs
+    if not os.path.exists(os.path.join(args.outputDirectory, "translation_was_successful.flag")):
+        # Iterate through nucleotide MSAs
+        for msaFile in os.listdir(msaOutputDir):
+            if msaFile.endswith(".fasta"):
+                # Get the file names
+                msaFileName = os.path.join(msaOutputDir, msaFile)
+                proteinFileName = os.path.join(proteinOutputDir, msaFile)
+                
+                # Skip if the MSA already exists
+                if os.path.exists(proteinFileName):
+                    print(f"Protein MSA file '{proteinFileName}' already exists; skipping.")
+                    continue
+                
+                # Load the nucleotide MSA as a FASTA object
+                FASTA_obj = ZS_SeqIO.FASTA(msaFileName, isAligned=True)
+                
+                # Translate the MSA
+                translatedFASTA_obj = FASTA_obj.translate()
+                
+                # Write output file
+                translatedFASTA_obj.write(proteinFileName, asAligned=True)
+        
+        open(os.path.join(args.outputDirectory, "translation_was_successful.flag"), "w").close()
+    else:
+        print(f"Protein MSAs have already been generated; skipping.")
+    
+    # Generate a variant report for the MSAs
+    "This borrows from the process seen in msa_variant_report.py"
+    variantReportName = os.path.join(args.outputDirectory, "variant_report.tsv")
+    if not os.path.exists(variantReportName) and not \
+        os.path.exists(os.path.join(args.outputDirectory, "report_was_successful.flag")):
+            # Iterate through each protein file and store variants
+            variantDict = {}
+            for proteinFile in os.listdir(proteinOutputDir):
+                if proteinFile.endswith(".fasta"):
+                    filePrefix = os.path.splitext(os.path.basename(proteinFile))[0]
+                    
+                    # Load in the aligned FASTA file
+                    FASTA_obj = ZS_SeqIO.FASTA(proteinFile, isAligned=True)
+                    FASTA_obj.make_uppercase() # make sure comparison isn't case-sensitive
+                    
+                    # Locate variants in this MSA file
+                    variantDict[filePrefix] = ZS_AlignIO.MSA.locate_variants_from_msa(
+                        FASTA_obj, isNucleotide=False, asCodons=False
+                    )
+            
+            # Write report file
+            with open(variantReportName, "w") as fileOut:
+                # Write header
+                fileOut.write("#gene\tposition_number\tconsensus_residue\tvariant_residue\tseqs_with_variant\n")
+                
+                # Write content lines
+                for geneID, positionDict in variantDict.items():
+                    for position, detailsDict in positionDict.items():
+                        for variantResidue, seqList in detailsDict["variants"].items():
+                            fileOut.write(f"{geneID}\t{position+1}\t{detailsDict['consensus']}\t" +
+                                        f"{variantResidue}\t{', '.join(seqList)}\n")
+                        
+            open(os.path.join(args.outputDirectory, "report_was_successful.flag"), "w").close()
+    else:
+        print(f"Variant report has already been generated; skipping.")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
