@@ -704,10 +704,11 @@ def main():
     
     # Update read groups if necessary
     if args.setRG:
-        if not os.path.exists(os.path.join(args.outputDirectory, "readgroups_were_set.flag")):
-            for bamFile in subsetBamFiles:
-                assert os.path.exists(bamFile), f"Subset BAM file '{bamFile}' not found; this is unexpected."
-                
+        for bamFile in subsetBamFiles:
+            assert os.path.exists(bamFile), f"Subset BAM file '{bamFile}' not found; this is unexpected."
+            
+            rgCompleteFlag = f"{bamFile}.rg.flag"
+            if not os.path.exists(rgCompleteFlag):
                 try:
                     # Move the original file
                     tmpFile = f"{bamFile}.tmp"
@@ -723,6 +724,9 @@ def main():
                     
                     # Clean up tmp file
                     os.remove(tmpFile)
+                    
+                    # Write flag
+                    open(rgCompleteFlag, "w").close()
                 except Exception as e:
                     # Clean up
                     if os.path.exists(tmpFile):
@@ -733,18 +737,15 @@ def main():
                     
                     # Propagate error
                     raise e
-            
-            # Set a flag to indicate that we've updated read groups
-            open(os.path.join(args.outputDirectory, "readgroups_were_set.flag"), "w").close()
-        else:
-            print("Read groups have already been set for these BAM files; skipping.")
+            else:
+                print(f"Read groups for '{bamFile}' already set; skipping.")
     
     # Index BAMs
     for bamFile in subsetBamFiles:
         if not os.path.exists(f"{bamFile}.bai"):
             ZS_BAMIO.StandardProgramRunners.samtools_index_bam(bamFile, args.samtools)
         else:
-            print(f"Indexed BAM file '{bamFile}' already exists; skipping.")
+            print(f"Indexed BAM file '{bamFile}.bai' already exists; skipping.")
     
     # Run bcftools mpileup
     mpileupFileName = os.path.join(bcfDir, "bcftools.mpileup")
