@@ -1067,9 +1067,10 @@ def main():
             for proteinFile in os.listdir(proteinOutputDir):
                 if proteinFile.endswith(".fasta"):
                     filePrefix = os.path.splitext(os.path.basename(proteinFile))[0]
+                    proteinFileName = os.path.join(proteinOutputDir, proteinFile)
                     
                     # Load in the aligned FASTA file
-                    FASTA_obj = ZS_SeqIO.FASTA(proteinFile, isAligned=True)
+                    FASTA_obj = ZS_SeqIO.FASTA(proteinFileName, isAligned=True)
                     FASTA_obj.make_uppercase() # make sure comparison isn't case-sensitive
                     
                     # Locate variants in this MSA file
