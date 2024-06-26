@@ -1488,7 +1488,7 @@ class FASTA:
                         assert len(set(codon)) == 1, f"Codon '{codon}' cannot translate as it contains gaps"
                         gapProtein += "-"
                     else:
-                        gapProtein += FastASeq.TRANSLATION_TABLE[codon.upper()]
+                        gapProtein += FastASeq.TRANSLATION_TABLE[codon.upper()] if codon.upper() in FastASeq.TRANSLATION_TABLE else "X"
             else:
                 gapProtein = None
             
@@ -1497,7 +1497,7 @@ class FASTA:
                 protein = ""
                 for i in range(0, len(FastASeq_obj.seq), 3):
                     codon = FastASeq_obj.seq[i:i+3]
-                    protein += FastASeq.TRANSLATION_TABLE[codon.upper()]
+                    protein += FastASeq.TRANSLATION_TABLE[codon.upper()] if codon.upper() in FastASeq.TRANSLATION_TABLE else "X"
             else:
                 protein = gapProtein.replace("-", "") # can borrow the gapProtein since its done the legwork
             
