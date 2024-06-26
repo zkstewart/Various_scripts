@@ -1449,7 +1449,7 @@ class FASTA:
         else:
             return sum(shared) / len(shared)
     
-    def translate(self):
+    def translate(self, strict=False):
         '''
         Takes the sequences in this FASTA object and translates them into protein sequences.
         This assumes that the sequences are nucleotides, and will not validate them for you.
@@ -1459,14 +1459,9 @@ class FASTA:
         occurred as codons i.e., gaps are in multiples of 3 and no codon is split across a gap.
         
         Parameters:
-            strands -- OPTIONAL; a list of integers indicating the strand(s) to use for
-                       for optimal translation of each sequence. Must be the same length
-                       as the number of sequences in this FASTA object. If not provided,
-                       the program will attempt to find the best strand for each sequence.
-            frames -- OPTIONAL; a list of integers indicating the frame(s) to use for
-                      for optimal translation of each sequence. Must be the same length
-                      as the number of sequences in the FASTA object. If not provided,
-                      the program will attempt to find the best frame for each sequence.
+            strict -- OPTIONAL; a boolean indicating whether you would like to raise an error
+                      if a codon cannot be translated. If False, the codon will be translated
+                      as "X" (unknown).
         Returns:
             translatedFASTA -- a new ZS_SeqIO.FASTA object containing the same sequences as the original
                                but translated into protein sequences. If sequences were originally provided
@@ -1485,8 +1480,13 @@ class FASTA:
                     
                     if "-" in codon:
                         "Use len(set()) as it 1) identifies mixes of gaps and nucleotides and 2) handles truncated codons"
-                        assert len(set(codon)) == 1, f"Codon '{codon}' cannot translate as it contains gaps"
-                        gapProtein += "-"
+                        if len(set(codon)) != 1:
+                            if strict:
+                                raise ValueError(f"Codon '{codon}' cannot translate as it contains gaps")
+                            else:
+                                gapProtein += "X"
+                        else:
+                            gapProtein += "-"
                     else:
                         gapProtein += FastASeq.TRANSLATION_TABLE[codon.upper()] if codon.upper() in FastASeq.TRANSLATION_TABLE else "X"
             else:
