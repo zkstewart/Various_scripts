@@ -27,6 +27,10 @@ def validate_args(args):
             print('I am unable to locate the subset file (' + args.subsetFile + ')')
             print('Make sure you\'ve typed the file name or location correctly and try again.')
             quit()
+    # Validate numeric arguments
+    if args.minimumOccurrence < 1:
+        print("The minimum number of annotation term occurrences must be 1 or greater.")
+        quit()
     # Handle file overwrites
     if os.path.exists(args.outputFileName):
         print(f"{args.outputDirectory} already exists, and I will not overwrite it.")
@@ -98,11 +102,15 @@ def enrichment_analysis(annotDict, selectedIDs):
                        annotDict which are expanded/contracted/expressed/
                       "special" in some way.
     Returns:
-        enrichmentResults -- a list with format: [[term, p_value, over_or_under_represented], ...]
+        enrichmentResults -- a list with format:
+                       [[term, p_value, selected_occurring, over_or_under_represented], ...]
                        where the over_or_under_represented value is a string
                        equal to "over" when the term is enriched, or "under" when
                        it is depleted relative to what we'd expect in a balanced
                        scenario. The p_value can be used for downstream FDR correction.
+                       The selected_occurring value can be used to filter results to e.g.,
+                       only consider over-representation/enrichment in terms that occur some
+                       minimum number of times.
     '''
     # Drop all keys that have no annotations
     annotDict = { key: value for key, value in annotDict.items() if value != set() }
@@ -146,7 +154,7 @@ def enrichment_analysis(annotDict, selectedIDs):
         # Run Fisher's exact test
         statistic, p = fisher_exact(contingencyTable)
         
-        # Figure out if it's over or underrepresented from chi-squared analysis
+        # Figure out if it's over or underrepresented
         selectedRatio = selectedOccurring / len(selectedIDs)
         remainingRatio = remainingOccurring / len(remainingIDs)
         
@@ -156,29 +164,27 @@ def enrichment_analysis(annotDict, selectedIDs):
             representation = "under"
         
         # Store result
-        testResults.append([term, p, representation])
+        testResults.append([term, p, selectedOccurring, representation])
     
     return testResults
 
-def FDR_correction(testResults, ALPHA=0.05):
+def FDR_correction(testResults, pvalueIndex, ALPHA=0.05):
     '''
     Function to receive statistical testing results e.g., from enrichment_analysis()
     and determine which results are significant at the provided cut-off value.
     
     Parameters:
-        testResults -- a list with format:
-                            [[term, p_value, over_or_under_represented], ...]
-                       ... where the over_or_under_represented value is a string
-                       equal to "over" when the term is enriched, or "under" when
-                       it is depleted relative to what we'd expect in a balanced
-                       scenario.
+        testResults -- a list of sublists containing results of a statistical test
+                       where at least one value is the P-value outcome.
+        pvalueIndex -- an integer indicating which 0-based index in the sublists of
+                       testResults contains the P-value.
         ALPHA -- a float value indicating what P-value to use as a significance threshold.
     Returns:
         significantResults -- the same list as the input parameter, but excluding
                               any values that are not significant after FDR correction.
     '''
     # Perform FDR correction
-    significantPvals = lsu(np.array([p for _, p, _ in testResults]), q=ALPHA)
+    significantPvals = lsu(np.array([p[pvalueIndex] for p in testResults]), q=ALPHA)
     
     # Retain only significant results
     significantResults = []
@@ -187,16 +193,6 @@ def FDR_correction(testResults, ALPHA=0.05):
             significantResults.append(testResults[x])
     
     return significantResults
-
-def write_chi2_results(chi2Results, outputFileName):
-    if os.path.isfile(outputFileName):
-        print("I refuse to overwrite '{0}'".format(outputFileName))
-    else:
-        chi2Results.sort(key = lambda x: (x[2], x[1])) # sort results for better interpretation
-        with open(outputFileName, "w") as fileOut:
-            fileOut.write("term\tP_value\trepresented\n")
-            for result in chi2Results:
-                fileOut.write("{0}\n".format("\t".join(map(str, result))))
 
 def main():
     # User input
@@ -224,6 +220,13 @@ def main():
                    the keys in the first column with all other columns being ignored (TSV file is
                    assumed to contain a header row but text file is not - make note of this!)""",
                    default=None)
+    p.add_argument("--minimum", dest="minimumOccurrence",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify how many times an annotation term must
+                   occur in the selected keys to be considered for enrichment analysis;
+                   default == 1""",
+                   default=1)
     # Opts (file format)
     p.add_argument("--delimiter", dest="annotationDelimiter",
                    required=False,
@@ -261,41 +264,21 @@ def main():
     enrichmentResults = enrichment_analysis(annotDict, selectedIDs)
     
     # Perform FDR correction to obtain significant results from all comparisons
-    correctedSelfResults = {}
-    for i in range(len(nodeNames)):
-        sp = nodeNames[i]
-        if sp.startswith("<"):
-            continue
-        
-        spSelfResult = selfResults[sp]
-        correctedSpSelfResult = FDR_correction(spSelfResult)
-        correctedSelfResults[sp] = correctedSpSelfResult
+    correctedResults = FDR_correction(enrichmentResults, 1)
     
-    correctedExclusiveResults = {}
-    for i in range(len(nodeNames)):
-        sp = nodeNames[i]
-        if sp.startswith("<"):
-            continue
-        
-        spExclusiveResult = exclusiveResults[sp]
-        correctedSpExclusiveResult = FDR_correction(spExclusiveResult)
-        correctedExclusiveResults[sp] = correctedSpExclusiveResult
+    # Drop any results that don't meet the minimum occurrence threshold
+    correctedResults = [
+        x
+        for x in correctedResults
+        if x[3] == "over" and x[2] >= args.minimumOccurrence
+    ]
     
     # Write outputs to file
-    for i in range(len(nodeNames)):
-        sp = nodeNames[i]
-        if sp.startswith("<"):
-            continue
-        
-        # Find the results again
-        _selfResult = correctedSelfResults[sp]
-        _exclusiveResult = correctedExclusiveResults[sp]
-        
-        # Get a nice file name and write it!
-        sp = sp.split("<")[0] # drop the node identifier now
-        write_chi2_results(_selfResult, "{0}.{1}.self.tsv".format(args.outputFilePrefix, sp))
-        write_chi2_results(_exclusiveResult, "{0}.{1}.exclusive.tsv".format(args.outputFilePrefix, sp))
-        
+    with open(args.outputFileName, "w") as fileOut:
+        fileOut.write("term\tpvalue\tnum_occurrences\trepresentation\n")
+        for result in correctedResults:
+            fileOut.write("\t".join(map(str, result)) + "\n")
+    
     print("Program completed successfully!")
     
 if __name__ == "__main__":
