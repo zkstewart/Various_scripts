@@ -36,7 +36,7 @@ class GO:
             dags.append(obo_parser.GODag(obo))
         return dags
     
-    def convert_codes_to_names(self, goTerms):
+    def convert_codes_to_names(self, goTerms, delimiter="; "):
         '''
         Receives the input goTerms object and converts all GO codes to their respective names.
         The input object can be flexibly specified as a string, a list, or a list of lists.
@@ -47,6 +47,9 @@ class GO:
         Parameters:
             goTerms -- a flexible object that can be a string of a single GO code,
                        a list of GO codes, or list of lists containing GO codes
+            delimiter -- OPTIONAL; a string representing the delimiter used to separate GO codes
+                         in the instance that multiple results are returned e.g., for replacements
+                         of obsoleted terms; default == "; "
         Returns
             goNames -- an output whose format mimics the input, but with terms converted
                        to names where possible
@@ -70,7 +73,15 @@ class GO:
                 # Handle list returns
                 elif type(gos) == list:
                     "This happens when the GO term is obsolete and we found replacement(s)"
-                    return goNames
+                    returnNames = []
+                    for go in gos:
+                        try:
+                            returnNames.append(self[go].name)
+                        except:
+                            raise KeyError((f"GO term '{goTerms}' had a replacement '{go}' that was not found in the " + 
+                                           "parsed obo files; try to load in the most recent GO.obo possible"))
+                    
+                    return delimiter.join(returnNames)
                 
                 # Handle single returns
                 else:
