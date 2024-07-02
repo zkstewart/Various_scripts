@@ -270,7 +270,7 @@ def main():
     correctedResults = [
         x
         for x in correctedResults
-        if x[3] == "over" and x[2] >= args.minimumOccurrence
+        if x[3] == "under" or x[2] >= args.minimumOccurrence
     ]
     
     # Write outputs to file
