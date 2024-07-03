@@ -19,7 +19,7 @@ def validate_args(args):
         quit()
     # Handle file overwrites
     if os.path.exists(args.outputFileName):
-        print(f"{args.outputDirectory} already exists, and I will not overwrite it.")
+        print(f"{args.outputFileName} already exists, and I will not overwrite it.")
         print("Delete/move whatever exists here, or specify a different output name when you try again.")
         quit()
 
