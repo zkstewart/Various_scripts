@@ -6,8 +6,10 @@
 # to the one in question.
 
 import sys, argparse, os, requests, re, pickle
+from Bio import SeqIO
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
-from Function_packages import ZS_SeqIO, ZS_BlastIO
+from Function_packages import ZS_BlastIO
 
 API_PICKLE_FILE = ".kegg_api_data.pkl" # global this for convenience
 BRITE_REGEX = re.compile(r"BRITE(.+?)(POSITION|MOTIF)", re.DOTALL) # sometimes POSITION isn't present
@@ -39,9 +41,11 @@ def validate_args(args):
         args.keggID = keggID # this will be case-corrected
     # Validate numeric inputs
     if args.threads < 1:
-        print("Threads argument must be a positive integer greater than 0")
+        print("--threads must be a positive integer greater than 0")
     if not 0 <= args.identity <= 100:
-        print("Identity argument must be a positive float in the range 0->100 (inclusive)")
+        print("--identity must be a positive float in the range 0->100 (inclusive)")
+    if args.evalue < 0:
+        print("--evalue must be an integer >= 0")
     # Handle file output
     outputSuffixes = ["_keggmap.tsv", "_keggnames.tsv"]
     for suffix in outputSuffixes:
@@ -94,31 +98,31 @@ def download_ncbi_protein_to_kegg_gene_map(keggID):
         proteinMapDict[ncbiID] = keggID
     
     return proteinMapDict
-    
-def download_kegg_gene_to_kegg_pathway_map(organismID):
+
+def download_kegg_gene_to_kegg_ko_map(organismID):
     '''
     Parameters:
         organismID -- a string with appropriate case indicating the KEGG organism ID
     Returns:
-        keggPathwayMap -- a dictionary with structure like:
+        keggKoMap -- a dictionary with structure like:
                             {
-                                kegg_gene_ID: kegg_pathway_ID,
+                                kegg_gene_ID: kegg_KO_id,
                                 ...
                             }
     '''
-    api_url = "https://rest.kegg.jp/link/pathway/{0}".format(organismID)
-    keggPathwayMap = {}
+    api_url = "https://rest.kegg.jp/link/ko/{0}".format(organismID)
+    keggKoMap = {}
     
     response = requests.get(api_url)
     for line in response.text.split("\n"):
         if line == "": # skip empty lines
             continue
-        keggGeneID, keggPathwayID = line.split("\t")
+        keggGeneID, keggKO = line.split("\t")
         keggGeneID = keggGeneID.split(":")[1]
-        keggPathwayID = keggPathwayID.split(":")[1]
-        keggPathwayMap[keggGeneID] = keggPathwayID
+        keggKO = keggKO.split(":")[1]
+        keggKoMap[keggGeneID] = keggKO
     
-    return keggPathwayMap
+    return keggKoMap
 
 def download_species_pathway_to_KO_information(pathwayID):
     '''
@@ -153,48 +157,173 @@ def download_species_pathway_to_KO_information(pathwayID):
     
     return koPathwayID, koName, koDescription
 
-def download_ko_information(organismID, geneID):
+def parse_ko_get_response(responseText):
     '''
     Parameters:
-        organismID -- a string with appropriate case indicating the KEGG organism ID.
-        geneID -- a string indicating the KEGG gene ID for the species in question
-                  (e.g., it might be "122074887").
+        responseText -- a string containing the response from a KEGG API query
     Returns:
-        kos -- a list containing lists with structure like:
-                [
-                    [koNumber, koName],
-                    ...
-                ]
+        responseDict -- a dictionary with structure attempting to render the API
+                        response into something JSON-like. It should look like:
+                        {
+                            "ENTRY": "K00001",
+                            "SYMBOL": "adh",
+                            "NAME": "alcohol dehydrogenase [EC: ...],
+                            "PATHWAY": ["map00010", "Glycolysis / Gluconeogenesis"],
+                            "BRITE": [
+                                ["09130", "Environmental Information Processing"],
+                                ["09131", "Membrane transport"],
+                                [ ... ],
+                                ...
+                            ]
+                        }
     '''
-    api_url = "https://rest.kegg.jp/get/{0}:{1}".format(organismID, geneID)
-    koBlockRegex = re.compile(r"KEGG Orthology \(KO\)(.+?)" + geneID, re.DOTALL)
-    kos = []
+    splitter = re.compile(r"\s+")
+    briteRegex = re.compile(r"\d{5}\s")
+    responseDict = {}
+    
+    # Iterate through response text by line and parse out the data
+    lastParentKey = None
+    for line in responseText.rstrip("\n ").split("\n"):
+        if line.startswith("///"):
+            break
+        
+        key, value = splitter.split(line, maxsplit=1)
+        value = " ".join(value.split()) # trim whitespace
+        
+        # Handle new parent keys
+        if line[0] != " ":
+            # Index parent keys by type
+            if key == "ENTRY":
+                responseDict[key] = value.split(" ")[0] # remove the KO at the end
+            elif key == "SYMBOL":
+                responseDict[key] = value # no changes needed
+            elif key == "NAME":
+                responseDict[key] = value.split(" [EC")[0] # remove the enzyme code
+            elif key == "PATHWAY":
+                responseDict[key] = [value.split(" ", maxsplit=1)]
+            elif key == "MODULE":
+                responseDict[key] = [value.split(" ", maxsplit=1)]
+            elif key == "REACTION":
+                try:
+                    reactionKey, reactionValue = value.split(" ", maxsplit=1)
+                except:
+                    reactionKey, reactionValue = value, "."
+                responseDict[key] = [[reactionKey, reactionValue]]
+            elif key == "DISEASE":
+                try:
+                    diseaseKey, diseaseValue = value.split(" ", maxsplit=1)
+                except:
+                    diseaseKey, diseaseValue = value, "."
+                responseDict[key] = [[diseaseKey, diseaseValue]]
+            elif key == "BRITE":
+                responseDict[key] = []
+            elif key == "DBLINKS":
+                responseDict[key] = {}
+            elif key == "GENES":
+                responseDict[key] = {}
+            elif key == "REFERENCE":
+                responseDict.setdefault(key, [])
+                responseDict[key].append({})
+                if value != "" and ":" in value:
+                    refKey, refValue = value.split(":", maxsplit=1)
+                    responseDict[key].append({ refKey : refValue })
+            else:
+                raise NotImplementedError(f"Unrecognized key '{key}' in KEGG API response for '{responseDict['ENTRY']}'")
+            
+            # Hold onto which parent we're indexing
+            lastParentKey = key
+        # Handle child keys
+        else:
+            # Handle PATHWAY entries
+            if lastParentKey == "PATHWAY":
+                pathwayKey, pathwayValue = value.split(" ", maxsplit=1)
+                responseDict[lastParentKey].append([pathwayKey, pathwayValue])
+            
+            # Handle MODULE entries
+            elif lastParentKey == "MODULE":
+                moduleKey, moduleValue = value.split(" ", maxsplit=1)
+                responseDict[lastParentKey].append([moduleKey, moduleValue])
+            
+            # Handle REACTION entries
+            elif lastParentKey == "REACTION":
+                try:
+                    reactionKey, reactionValue = value.split(" ", maxsplit=1)
+                    responseDict[lastParentKey].append([reactionKey, reactionValue])
+                except:
+                    "This can happen when a reaction doesn't have an associated name, just a code"
+                    reactionKey = value
+                    responseDict[lastParentKey].append([reactionKey, "."])
+            
+            # Handle DISEASE entries
+            elif lastParentKey == "DISEASE":
+                try:
+                    diseaseKey, diseaseValue = value.split(" ", maxsplit=1)
+                    responseDict[lastParentKey].append([diseaseKey, diseaseValue])
+                except:
+                    "This can happen when a disease doesn't have an associated name, just a code"
+                    diseaseKey = value
+                    responseDict[lastParentKey].append([diseaseKey, "."])
+            
+            # Handle BRITE entries
+            elif lastParentKey == "BRITE":
+                if not briteRegex.match(value): # skip over non-BRITE entries
+                    continue
+                value = value.split(" ", maxsplit=1)
+                
+                if value[1] == "Brite Hierarchies": # irrelevant value
+                    continue
+                
+                responseDict[lastParentKey].append(value)
+            
+            # Handle DBLINKS entries
+            elif lastParentKey == "DBLINKS":
+                dbKey, dbValue = value.split(": ", maxsplit=1)
+                responseDict[lastParentKey].setdefault(dbKey, set())
+                responseDict[lastParentKey][dbKey].add(dbValue)
+            
+            # Handle GENES entries
+            elif lastParentKey == "GENES":
+                geneKey, geneValue = value.split(": ", maxsplit=1)
+                
+                responseDict[lastParentKey].setdefault(geneKey, [])
+                responseDict[lastParentKey][geneKey].append(geneValue)
+            
+            # Handle REFERENCE entries
+            elif lastParentKey == "REFERENCE":
+                try:
+                    refKey, refValue = value.split(" ", maxsplit=1)
+                    responseDict[lastParentKey][-1][refKey] = refValue
+                except: # handle tagger-onners like DOIs for the JOURNAL section
+                    if type(responseDict[lastParentKey][-1][refKey]) == str:
+                        responseDict[lastParentKey][-1][refKey] = [responseDict[lastParentKey][-1][refKey]]
+                    responseDict[lastParentKey][-1][refKey].append(value)
+            else:
+                raise NotImplementedError(f"Unrecognized child key '{key}' in KEGG API response for '{responseDict['ENTRY']}'")
+    return responseDict
+
+def download_ko_information(koID):
+    '''
+    Parameters:
+        koID -- a string indicating the KO to query.
+    Returns:
+        responseDict -- a dictionary with structure attempting to render the API
+                        response into something JSON-like. Same output as given
+                        by parse_ko_get_response().
+    '''
+    api_url = f"https://rest.kegg.jp/get/{koID}"
     
     # Get the response
     response = requests.get(api_url)
     
-    # Parse out the gene-level orthology
-    geneOrthology = ORTHO_REGEX.findall(response.text)
-    assert len(geneOrthology) == 1 # for debugging, make sure there's no outliers
+    # Handle empty response value
+    "This probably means the KEGG database has a mistake between protein map and kegg map data"
+    if response.text == "":
+        return None
     
-    geneOrthology = list(map(list, geneOrthology))
-    geneOrthology[0][1] = geneOrthology[0][1].split(" [EC")[0] # remove the ugly enzyme code
+    # Parse response into dictionary
+    responseDict = parse_ko_get_response(response.text)
     
-    kos.append(geneOrthology[0])
-    
-    # Parse out the block of text containing BRITE information
-    briteTextBlock = BRITE_REGEX.findall(response.text)[0][0].strip(" ")
-    
-    # Get the segment containing just KO values
-    if "KEGG Orthology (KO)" in briteTextBlock:
-        koTextBlock = koBlockRegex.findall(briteTextBlock)[0]
-        
-        # Parse out the KOs from this segment
-        briteKOs = KO_REGEX.findall(koTextBlock)
-        for briteKO in briteKOs:
-            kos.append(list(briteKO)) # just in case list matters versus tuple
-        
-    return kos
+    return responseDict
 
 def save_pickle(queriedAccs):
     if queriedAccs != {}:
@@ -204,8 +333,8 @@ def save_pickle(queriedAccs):
 def main():
     usage = """%(prog)s receives an input FASTA containing protein sequences, and
     uses BLAST to map annotations to these sequences based on the best hit against
-    an official KEGG annotated protein FASTA. This is useful when using a newer genome
-    that hasn't had a KEGG annotation performed for it already!
+    an official KEGG annotated protein FASTA. You can provide pre-computed BLAST results
+    throuhg --blastFile, but you still need to provide the -i and -t files.
     
     The output will be two TSV files. The first has goseq formatting i.e., "geneID\tkeggID"
     or "geneID\t0" when a hit was not found. The second relates KEGG orthology IDs to their
@@ -213,26 +342,68 @@ def main():
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-i", dest="inputFastaFile", required=True,
-                help="Specify the location of the input gene files FASTA")
-    p.add_argument("-t", dest="targetFastaFile", required=True,
-                help="""Specify the location of the target gene files FASTA that
-                KEGG annotations are being retrieved from.""")
-    p.add_argument("-k", dest="keggID", required=True,
-                help="Specify the ID of the KEGG organism mappings are being retrieved from (e.g., T07436)")
-    p.add_argument("-o", dest="outputFilePrefix", required=True,
-                help="Output file prefix for KEGG mapping TSV and KEGG description TSV files")
+    p.add_argument("-i", dest="inputFastaFile",
+                   required=True,
+                   help="Specify the location of the input gene files FASTA")
+    p.add_argument("-t", dest="targetFastaFile",
+                   required=True,
+                   help="""Specify the location of the target gene files FASTA that
+                   KEGG annotations are being retrieved from.""")
+    p.add_argument("-k", dest="keggID",
+                   required=True,
+                   help="Specify the ID of the KEGG organism mappings are being retrieved from (e.g., T07436)")
+    p.add_argument("-o", dest="outputFilePrefix",
+                   required=True,
+                   help="Output file prefix for KEGG mapping TSV and KEGG description TSV files")
     # Opts
-    p.add_argument("--threads", dest="threads", required=False, type=int,
-                help="Optionally, specify how many threads to run BLAST with (default==\"1\")",
-                default="1")
-    p.add_argument("--identity", dest="identity", required=False, type=float,
-                help="Optionally, specify the minimum identity percent allowed for a mapping to occur (default==\"90.0\")",
-                default="90.0")
-    p.add_argument("--blastFile", dest="blastFile", required=False,
-                help="Optionally, specify an already existing outfmt6 file containing BLAST results")
+    p.add_argument("--threads", dest="threads",
+                   required=False,
+                   type=int,
+                   help="Optionally, specify how many threads to run BLAST with (default==1)",
+                   default=1)
+    p.add_argument("--identity", dest="identity",
+                   required=False,
+                   type=float,
+                   help="""Optionally, specify the minimum identity percent necessary for a
+                   mapping to occur (default==90.0)""",
+                   default=90.0)
+    p.add_argument("--evalue", dest="evalue",
+                   required=False,
+                   type=float,
+                   help="""Optionally, specify the minimum evalue necessary for a
+                   mapping to occur (default==1e-3)""",
+                   default=1e-3)
+    p.add_argument("--blastFile", dest="blastFile",
+                   required=False,
+                   help="""Optionally, specify an already existing outfmt6 file containing
+                   BLAST results""")
     args = p.parse_args()
     validate_args(args)
+    
+    # Query KEGG API for mapping information
+    proteinMapDict = download_ncbi_protein_to_kegg_gene_map(args.keggID)
+    keggKoMap = download_kegg_gene_to_kegg_ko_map(args.keggID)
+    
+    # Obtain target sequence IDs
+    targetIDs = set()
+    with open(args.targetFastaFile, "r") as fileIn:
+        records = SeqIO.parse(fileIn, "fasta")
+        for record in records:
+            targetIDs.add(record.id)
+    
+    # Check that the target IDs are in the proteinMapDict
+    "If this isn't true, the target file is incorrect or maybe has isoform IDs"
+    overlap = targetIDs.intersection(set(proteinMapDict.keys()))
+    if len(overlap) == 0:
+        print(f"# ERROR: No sequence IDs in '{args.targetFastaFile}' overlap with the KEGG " + 
+              f"protein mapping dictionary for '{args.keggID}'")
+        print("# Your target file may have isoform IDs, the KEGG ID may be incorrect, or " +
+              "something else may be wrong.")
+        print("# Please try to figure this out and then try again.")
+        quit()
+    else:
+        print(f"# Note: {len(overlap)} out of {len(targetIDs)} sequence IDs in " + 
+              f"'{args.targetFastaFile}' have protein mappings for '{args.keggID}'")
     
     # Set up our BLAST handler
     blaster = ZS_BlastIO.BLAST(args.inputFastaFile, args.targetFastaFile, "blastp")
@@ -244,12 +415,8 @@ def main():
         blastDict, _ = blaster.get_blast_results() # throw away the blastFileName return since it will be None
     else:
         blastResults = ZS_BlastIO.BLAST_Results(args.blastFile)
-        blastResults.parse_blast_hit_coords()
+        blastResults.parse()
         blastDict = blastResults.results
-    
-    # Query KEGG API for mapping information
-    proteinMapDict = download_ncbi_protein_to_kegg_gene_map(args.keggID)
-    keggPathwayMap = download_kegg_gene_to_kegg_pathway_map(args.keggID)
     
     # Load in any API queries that may have been performed already
     if os.path.isfile(API_PICKLE_FILE):
@@ -258,62 +425,69 @@ def main():
     else:
         apiDict = {}
     
-    # Map input FASTA IDs to KEGG information
-    inputFasta = ZS_SeqIO.FASTA(args.inputFastaFile)
-    inputMapDict = {}
-    nameDict = {}
+    # Obtain query sequence IDs
+    queryIDs = set()
+    with open(args.inputFastaFile, "r") as fileIn:
+        records = SeqIO.parse(fileIn, "fasta")
+        for record in records:
+            queryIDs.add(record.id)
+    
+    # Map query IDs to KEGG information
+    keggmapDict = {}
+    keggnamesDict = {}
     try:
-        for FastASeq_obj in inputFasta:
-            inputID = FastASeq_obj.id
-            
+        for inputID in queryIDs:            
             # If there's no BLAST hit, no mapping can commence
             if inputID not in blastDict:
-                inputMapDict[inputID] = "0"
+                keggmapDict[inputID] = "0"
                 continue
             
             # Retrieve the best hit, and skip if it's not good enough
             bestID, identity, qstart, qend, tstart, tend, evalue = blastDict[inputID][0]
-            if identity < args.identity: # if it's not a good enough hit, skip it
-                inputMapDict[inputID] = "0"
+            if identity < args.identity or evalue > args.evalue:
+                keggmapDict[inputID] = "0"
                 continue
             
-            # If there's no protein ID mapping, we can't proceed
-            bestID = bestID.rsplit(".", maxsplit=1)[0] # correct isoform IDs
+            # Identify protein mapping
             if bestID not in proteinMapDict:
-                inputMapDict[inputID] = "0"
+                keggmapDict[inputID] = "0" # can't proceed without a KEGG gene ID
                 continue
-            
-            # If we can't map the KEGG gene ID to its pathway, we can't proceed
-            '''
-            I'm running under an assumption I believe holds true: if a gene does not
-            have a pathway mapping, it will not have any KO terms associated to it.
-            '''
             bestKeggID = proteinMapDict[bestID]
-            if bestKeggID not in keggPathwayMap:
-                inputMapDict[inputID] = "0"
-                continue
             
-            # If we can do the mapping, grab all relevant information for this gene
+            # Identify KO mapping
+            if bestKeggID not in keggKoMap:
+                keggmapDict[inputID] = "0" # can't proceed without a KEGG KO
+                continue
+            bestKO = keggKoMap[bestKeggID]
+            
+            # Obtain data via API (if not already done so)
+            if bestKO in apiDict:
+                koData = apiDict[bestKO]
             else:
-                # Skip API calls if this pathway has already been queried
-                if bestKeggID in apiDict:
-                    kos = apiDict[bestKeggID]
-                # Otherwise, make the API call
+                koData = download_ko_information(bestKO)
+                if koData == None: # this can happen if the KEGG database has a mistake
+                    keggmapDict[inputID] = "0" # can't proceed without KO data
+                    continue
                 else:
-                    kos = download_ko_information(args.keggID, bestKeggID)
-                    apiDict[bestKeggID] = kos
-                
-                # Associate results to our relevant dictionaries
-                inputMapDict[inputID] = [pair[0] for pair in kos]
-                for pair in kos:
-                    nameDict[pair[0]] = pair[1]
+                    apiDict[bestKO] = koData
+            
+            # Store keggmap and keggnames data
+            keggmapDict[inputID] = set()
+            
+            for parentKey in ["PATHWAY", "BRITE"]:
+                if parentKey in koData:
+                    for mapping, name in koData[parentKey]:
+                        keggmapDict[inputID].add(mapping)
+                        keggnamesDict[mapping] = name
+    
     # If program is ending unsuccessfuly, save any API queries now and provide debug info
-    except:
+    except Exception as e:
         save_pickle(apiDict)
         
         print("## DEBUG:")
         print("## Program broke on sequence ID={0}".format(inputID))
-        print("## Best KEGG ID = {0}".format(bestKeggID))
+        print("## Best KO = {0}".format(bestKO))
+        print(f"## Exception message is '{str(e)}'")
         
         print("Program ended after failing =(")
         quit()
@@ -323,12 +497,12 @@ def main():
     
     # Write output KEGG pathway mapping
     with open(args.outputFilePrefix + "_keggmap.tsv", "w") as fileOut:
-        for key, value in inputMapDict.items():
+        for key, value in keggmapDict.items():
             fileOut.write("{0}\t{1}\n".format(key, "; ".join(value)))
     
     # Wrie output KEGG description and name mapping
     with open(args.outputFilePrefix + "_keggnames.tsv", "w") as fileOut:
-        for key, value in nameDict.items():
+        for key, value in keggnamesDict.items():
             fileOut.write("{0}\t{1}\n".format(key, value))
     
     print("Program completed successfully!")
