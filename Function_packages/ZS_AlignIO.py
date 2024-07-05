@@ -63,7 +63,7 @@ class MSA:
     object as output.
     '''
     @staticmethod
-    def locate_variants_from_msa(FASTA_obj, isNucleotide, asCodons):
+    def locate_variants_from_msa(FASTA_obj, isNucleotide, asCodons, reportUntilStop=False):
         '''
         Parameters:
             FASTA_obj -- a ZS_SeqIO.FASTA object containing aligned sequences
@@ -72,6 +72,10 @@ class MSA:
             asCodons -- a boolean indicating whether to consider codons as the unit of
                         comparison for nucleotide sequences; only relevant if isNucleotide
                         is True.
+            reportUntilStop -- OPTIONAL; a boolean indicating whether to report variants
+                               after a stop codon is encountered. Default == False i.e.,
+                               variants will be reported for a sequence even after a stop
+                               codon has been encountered.
         Returns:
             variantDict -- a dictionary with structure like:
                         {
@@ -101,6 +105,7 @@ class MSA:
         consensusSeq = FASTA_obj.generate_consensus(asCodons=asCodons)
 
         # Iterate over positions in the alignment to locate variants
+        seqsToSkip = set()
         stepSize = 3 if asCodons else 1
         for i in range(0, len(consensusSeq), stepSize):
             # Get the codon-normalised position index
@@ -113,6 +118,9 @@ class MSA:
             
             # Iterate over each sequence in the alignment and look at this position
             for FastASeq_obj in FASTA_obj.seqs:
+                if FastASeq_obj.id in seqsToSkip:
+                    continue
+                
                 residue = FastASeq_obj.gap_seq[i:i+stepSize]
                 residue = residue if not (isNucleotide and asCodons) \
                             else translate_codon(residue)
@@ -125,6 +133,10 @@ class MSA:
                     })
                     variantDict[positionNumber]["variants"].setdefault(residue, [])
                     variantDict[positionNumber]["variants"][residue].append(FastASeq_obj.id)
+                
+                # If we're not reporting after stop codons, check if we've hit one
+                if residue == "*" and reportUntilStop:
+                    seqsToSkip.add(FastASeq_obj.id)
         
         return variantDict
 
