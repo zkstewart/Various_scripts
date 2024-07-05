@@ -533,6 +533,69 @@ def merge_whatshap_vcfs(vcfFile, phaseDict, polyDict, outputFile):
             newLine = "\t".join(sl[:8] + [":".join(formatList)] + rowSampleData) + "\n"
             vcfOut.write(newLine)
 
+def report_per_variant(proteinOutputDir, variantReportName):
+    # Iterate through each protein file and store variants
+    variantDict = {}
+    for proteinFile in os.listdir(proteinOutputDir):
+        if proteinFile.endswith(".fasta"):
+            filePrefix = os.path.splitext(os.path.basename(proteinFile))[0]
+            proteinFileName = os.path.join(proteinOutputDir, proteinFile)
+            
+            # Load in the aligned FASTA file
+            FASTA_obj = ZS_SeqIO.FASTA(proteinFileName, isAligned=True)
+            FASTA_obj.make_uppercase() # make sure comparison isn't case-sensitive
+            
+            # Locate variants in this MSA file
+            variantDict[filePrefix] = ZS_AlignIO.MSA.locate_variants_from_msa(
+                FASTA_obj, isNucleotide=False, asCodons=False, reportUntilStop=True
+            )
+    
+    # Write report file
+    with open(variantReportName, "w") as fileOut:
+        # Write header
+        fileOut.write("#gene\tposition_number\tconsensus_residue\tvariant_residue\tseqs_with_variant\n")
+        
+        # Write content lines
+        for geneID, positionDict in variantDict.items():
+            for position, detailsDict in positionDict.items():
+                for variantResidue, seqList in detailsDict["variants"].items():
+                    fileOut.write(f"{geneID}\t{position+1}\t{detailsDict['consensus']}\t" +
+                                f"{variantResidue}\t{', '.join(seqList)}\n")
+
+def report_per_sequence(proteinOutputDir, reportOutputDir):
+    # Iterate through each protein file and write per-sequence reports
+    for proteinFile in os.listdir(proteinOutputDir):
+        if proteinFile.endswith(".fasta"):
+            filePrefix = os.path.splitext(os.path.basename(proteinFile))[0]
+            proteinFileName = os.path.join(proteinOutputDir, proteinFile)
+            
+            # Load in the aligned FASTA file
+            FASTA_obj = ZS_SeqIO.FASTA(proteinFileName, isAligned=True)
+            FASTA_obj.make_uppercase() # make sure comparison isn't case-sensitive
+            
+            # Locate variants in this MSA file
+            variantDict = ZS_AlignIO.MSA.locate_variants_from_msa(
+                FASTA_obj, isNucleotide=False, asCodons=False, reportUntilStop=True
+            )
+            
+            # Reformat variants for per-sequence reporting
+            reformattedDict = { x.id : [] for x in FASTA_obj.seqs }
+            for position, detailsDict in variantDict.items():
+                for variantResidue, seqList in detailsDict["variants"].items():
+                    for seqID in seqList:
+                        reformattedDict[seqID].append(f"{position+1}:{detailsDict['consensus']}:{variantResidue}")
+            
+            # Write report file
+            reportFileName = os.path.join(reportOutputDir, f"{filePrefix}.report.tsv")
+            with open(reportFileName, "w") as fileOut: # we will allow overwrites to occur since to do otherwise would be a pain
+                # Write header
+                fileOut.write("#sequence_id\tvariants\n")
+                
+                # Write content lines
+                for seqID, variantList in reformattedDict.items():
+                    variants = ", ".join(variantList) if variantList != [] else "."
+                    fileOut.write(f"{seqID}\t{variants}\n")
+
 ## Main
 def main():
     # User input
@@ -630,6 +693,12 @@ def main():
                    action='store_true',
                    help="""Optionally specify whether we should use relaxed GFF3 parsing.""",
                    default=False)
+    p.add_argument("--reportFormat", dest="reportFormat",
+                   required=False,
+                   choices=["per_variant", "per_sequence"],
+                   help="""Optionally specfify the format of the output report file(s);
+                   default == 'per_sequence'""",
+                   default="per_sequence")
     # Opts (read groups)
     p.add_argument("--rgLB", dest="rgLB",
                    required=False,
@@ -1058,41 +1127,27 @@ def main():
         print(f"Protein MSAs have already been generated; skipping.")
     
     # Generate a variant report for the MSAs
-    "This borrows from the process seen in msa_variant_report.py"
-    variantReportName = os.path.join(args.outputDirectory, "variant_report.tsv")
-    if not os.path.exists(variantReportName) and not \
-        os.path.exists(os.path.join(args.outputDirectory, "report_was_successful.flag")):
-            # Iterate through each protein file and store variants
-            variantDict = {}
-            for proteinFile in os.listdir(proteinOutputDir):
-                if proteinFile.endswith(".fasta"):
-                    filePrefix = os.path.splitext(os.path.basename(proteinFile))[0]
-                    proteinFileName = os.path.join(proteinOutputDir, proteinFile)
-                    
-                    # Load in the aligned FASTA file
-                    FASTA_obj = ZS_SeqIO.FASTA(proteinFileName, isAligned=True)
-                    FASTA_obj.make_uppercase() # make sure comparison isn't case-sensitive
-                    
-                    # Locate variants in this MSA file
-                    variantDict[filePrefix] = ZS_AlignIO.MSA.locate_variants_from_msa(
-                        FASTA_obj, isNucleotide=False, asCodons=False
-                    )
+    if args.reportFormat == "per_variant":
+        "This produces a report similar to that seen in msa_variant_report.py"
+        variantReportName = os.path.join(args.outputDirectory, "variant_report.tsv")
+        if not os.path.exists(variantReportName) and not \
+            os.path.exists(os.path.join(args.outputDirectory, "report_per_variant_was_successful.flag")):
+                report_per_variant(proteinOutputDir, variantReportName)
+                open(os.path.join(args.outputDirectory, "report_per_variant_was_successful.flag"), "w").close()
+        else:
+            print(f"Variant report has already been generated; skipping.")
+    elif args.reportFormat == "per_sequence":
+        "This is a format developed for this pipeline particularly"
+        if not os.path.exists(os.path.join(args.outputDirectory, "report_per_sequence_was_successful.flag")):
+            # Create output directory for this reporting format
+            reportOutputDir = os.path.join(args.outputDirectory, "per_sequence_reports")
+            os.makedirs(reportOutputDir, exist_ok=True)
             
-            # Write report file
-            with open(variantReportName, "w") as fileOut:
-                # Write header
-                fileOut.write("#gene\tposition_number\tconsensus_residue\tvariant_residue\tseqs_with_variant\n")
-                
-                # Write content lines
-                for geneID, positionDict in variantDict.items():
-                    for position, detailsDict in positionDict.items():
-                        for variantResidue, seqList in detailsDict["variants"].items():
-                            fileOut.write(f"{geneID}\t{position+1}\t{detailsDict['consensus']}\t" +
-                                        f"{variantResidue}\t{', '.join(seqList)}\n")
-                        
-            open(os.path.join(args.outputDirectory, "report_was_successful.flag"), "w").close()
-    else:
-        print(f"Variant report has already been generated; skipping.")
+            # Generate the report and set flag when done
+            report_per_sequence(proteinOutputDir, reportOutputDir)
+            open(os.path.join(args.outputDirectory, "report_per_sequence_was_successful.flag"), "w").close()
+        else:
+            print(f"Variant report has already been generated; skipping.")
     
     # Let user know everything went swimmingly
     print("Program completed successfully!")
