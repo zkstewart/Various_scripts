@@ -62,11 +62,16 @@ def wsl_which(program):
                              "at the stdout '" + whichout.decode("utf-8") + "' and stderr '" + 
                              whicherr.decode("utf-8") + "' to make sense of this."))
 
-def wsl_exists(program):
+def wsl_exists(program, isFolder=False):
     '''
     A function to expand upon os.path.isfile to work with WSL. Emulates its behaviour
     by directly reaching into the WSL shell and calling the Unix 'ls' command.
     If this program is running in Unix, then os.path.isfile will be called.
+    
+    Parameters:
+        program -- a string indicating the full path to the program of interest.
+        isFolder -- OPTIONAL; a boolean indicating whether the program is a folder
+                    or not. Default is False (i.e., a file or program).
     '''
     if platform.system() != 'Windows':
         return os.path.isfile(program)
@@ -77,7 +82,9 @@ def wsl_exists(program):
         existsout, existserr = run_wsl_exists.communicate()
         if "No such file or directory" in existserr.decode("utf-8"):
             return False
-        elif program in existsout.decode("utf-8"):
+        elif (not isFolder) and program in existsout.decode("utf-8"):
+            return True
+        elif isFolder:
             return True
         else:
             raise Exception(("wsl_exists encountered an unhandled situation; have a look " +
