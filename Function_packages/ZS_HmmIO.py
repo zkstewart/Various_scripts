@@ -3,202 +3,166 @@
 # Contains various Classes to perform manipulations involving
 # HMMs and FASTA files using HMMER
 
-import os, subprocess, inspect, sys, hashlib, time, random
+import os, subprocess, inspect, sys, hashlib, time, random, platform
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from ZS_SeqIO import FASTA
-from ZS_Utility import tmp_file_name_gen
+import ZS_Utility, ZS_SeqIO
 from domtblout_handling import hmmer_parse, nhmmer_parse # Make these available to things loading HmmIO
 
 class HMM:
     '''
-    This Class provides methods for creating a HMM file from FASTA files or ZS_SeqIO.FASTA
-    objects. Alternatively, you can point it to the location of an existing HMM file.
-    The HMMER Class then makes use of HMM instances to perform various HMMER operations.
+    This Class provides methods for creating a HMM file from a FASTA file or ZS_SeqIO.FASTA
+    object. It is intended for Linux and WSL use. The native Windows executables
+    are not supported; you should compile through WSL and use the executables from there.
     
-    If you build a HMM using this class from a FASTA file, it MUST already be aligned. This
-    Class is dumb and assumes any FASTA file is aligned. If you provide it a ZS_SeqIO.FASTA
-    instance, it will check to see if the .isAligned flag was set and raise errors if not.
-    
-    Pay attention to .isNucleotide! It defaults to False since most HMMs are proteins, but
-    occasionally you'll have a nucleotide HMM and this field is important when used alongside
-    the HMMER Class!
+    Parameters:
+        hmmerDir -- a string indicating the location of the HMMER executables including 'hmmpress'
+                    and 'hmmbuild'.
     '''
     def __init__(self, hmmerDir, isNucleotide=False):
-        # Validate input type and location
-        assert isinstance(hmmerDir, str)
-        assert os.path.isdir(hmmerDir)
-        
-        # Validate that all necessary HMMER executables can be located
-        for exe in ["hmmpress", "hmmbuild", "hmmsearch"]:
-            if not os.path.isfile(os.path.join(hmmerDir, exe)) and not os.path.isfile(os.path.join(hmmerDir, exe + ".exe")):
-                raise Exception("{0} does not exist at {1}".format(exe, hmmerDir))
-        
-        # Set attributes
         self.hmmerDir = hmmerDir
-        self.isNucleotide = isNucleotide # Flag to specify whether the HMM is based on nucleotide or protein sequence
-        self.FASTA = None # Stores a string or ZS_SeqIO.FASTA object
-        self.FASTA_is_file = False # Flag so we know if .FASTA is a string file location
-        self.FASTA_is_obj = False # Flag so we know if .FASTA is a ZS_SeqIO.FASTA object
-        self.useAlts = False # Flag relevant when FASTA_is_obj for temp file creation
-        self.hmmFile = None
+        self.isNucleotide = isNucleotide
     
-    def load_FASTA_from_file(self, fastaFile):
+    @property
+    def hmmerDir(self):
+        return self._hmmerDir
+    
+    @hmmerDir.setter
+    def hmmerDir(self, value):
+        convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
+        assert ZS_Utility.wsl_exists(convertedValue, isFolder=True), \
+            f"hmmer folder not found at '{convertedValue}' after WSL compatibility conversion"
+        self._hmmerDir = convertedValue
+        self.hmmpress = value + "/hmmpress"
+        self.hmmbuild = value + "/hmmbuild"
+    
+    @property
+    def hmmpress(self):
+        return self._hmmpress
+    
+    @hmmpress.setter
+    def hmmpress(self, value):
+        convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
+        assert ZS_Utility.wsl_exists(convertedValue), \
+            f"hmmpress executable not found at '{convertedValue}' after WSL compatibility conversion"
+        self._hmmpress = convertedValue
+    
+    @property
+    def hmmbuild(self):
+        return self._hmmbuild
+    
+    @hmmbuild.setter
+    def hmmbuild(self, value):
+        convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
+        assert ZS_Utility.wsl_exists(convertedValue), \
+            f"hmmbuild executable not found at '{convertedValue}' after WSL compatibility conversion"
+        self._hmmbuild = convertedValue
+    
+    def create(self, inputFasta, outputFileName, isNucleotide=False):
         '''
-        This method receives a FASTA file name and, if it's locateable, will store
-        the location of our FASTA file for future use.
+        This method will handle the creation of a HMM file using hmmbuild and hmmpress.
         
         Params:
-            fastaFile -- a string indicating the location of a FASTA file relative
-                         to the current working dir (or just give the full path).
+            inputFasta -- a string indicating the location of a FASTA file OR a ZS_SeqIO.FASTA object
+                          OR a string pointing to an existing HMM file.
+            outputFileName -- a string providing the file name for our created HMM. This can include
+                              the path to where you want the file to be written
+            isNucleotide -- OPTIONAL; a boolean to indicate whether the provided FASTA contains nucleotide
+                            sequences or not. Default == False i.e., FASTA contains protein sequences.
         '''
-        # Validate input type and location
-        assert isinstance(fastaFile, str)
-        if not os.path.isfile(fastaFile):
-            raise Exception("{0} is not a file or does not exist".format(fastaFile))
+        # Validate input value type
+        if isinstance(inputFasta, str):
+            assert os.path.isfile(inputFasta), f"ERROR: HMM.create() could not find the FASTA file '{inputFasta}'"
+            fastaFileName, fastaIsTemporary = inputFasta, False
+        elif hasattr(inputFasta, "isFASTA") and inputFasta.isFASTA is True:
+            fastaFileName, fastaIsTemporary = ZS_SeqIO.Conversion.get_filename_for_input_sequences(inputFasta)
+        else:
+            raise Exception(f"ERROR: HMM.create() requires a FASTA file or FASTA object as input; did not understand '{inputFasta}'")
         
-        self.FASTA = fastaFile
-        self.FASTA_is_file = True
-    
-    def load_FASTA_from_object(self, FASTA_obj, useAlts=False):
-        '''
-        This method receives a ZS_SeqIO.FASTA object for storage prior to HMM conversion.
-        
-        Params:
-            FASTA_obj -- a ZS_SeqIO.FASTA instance of an aligned file.
-            useAlts -- a boolean to indicate whether you want the FASTA object to rely upon
-                       its alt IDs or use the default IDs.
-        '''
-        # Validate input type and location
-        assert isinstance(FASTA_obj, FASTA)
-        if not FASTA_obj.isAligned:
-            raise Exception("FASTA object .isAligned flag is not set")
-        
-        self.FASTA = FASTA_obj
-        self.FASTA_is_obj = True
-        self.useAlts = useAlts
-    
-    def create_HMM(self, hmmName, hmmBuildExtraArgs=""):
-        '''
-        Once the .FASTA attribute is set via loading a FASTA, this method will handle the
-        creation of a HMM file using hmmbuild and hmmpress.
-        
-        Params:
-            hmmName -- a string providing the file name for our created HMM. This can include
-                       the path to where you want the file to be written
-            hmmBuildExtraArgs -- a string that optionally allows you to add extra arguments 
-                                 to the command e.g., "--dna" may be needed for hmmbuild to 
-                                 work successfully.
-        '''
-        # Validate input type and location
-        assert isinstance(hmmBuildExtraArgs, str)
-        assert isinstance(hmmName, str)
-        if os.path.isfile(hmmName):
-            raise Exception(inspect.cleandoc("""
-                            {0} already exists so it won't be overwritten. Maybe try using
-                            .load_HMM_file() if you want to make use of an already existing
-                            HMM""".format(hmmName)))
-            
-        if os.path.dirname(hmmName) != "":
-            if not os.path.isdir(os.path.dirname(hmmName)):
-                raise Exception(inspect.cleandoc("""
-                                {0} does not exist, and therefore we won't write a file into
-                                a non-existing directory. Maybe try creating this directory first
-                                or specifying a location that already exists
-                                """.format(os.path.dirname(hmmName))))
-        
-        # Create a temporary file if .FASTA is an object
-        fileName = self.FASTA # If not self.FASTA_is_obj, then this remains our default value
-        if self.FASTA_is_obj:
-            tmpHash = hashlib.sha256(bytes(str(hmmName) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-            fileName = tmp_file_name_gen("hmmbuild_tmp" + tmpHash[0:20], "fasta") # Overwrite the default fileName here
-            self.FASTA.write(fileName, withAlt = self.useAlts, asAligned = True) # Always write asAligned since it should be an MSA
+        # Validate that output file does not already exist
+        assert not os.path.exists(outputFileName), f"ERROR: HMM.create() will not overwrite existing file '{outputFileName}'"
         
         # Run hmmbuild & hmmpress
-        self.hmmbuild(fileName, hmmName, extraArgs=hmmBuildExtraArgs)
-        self.hmmpress(hmmName)
-        self.hmmFile = hmmName # Sets our instance attribute so we know the HMM file exists
+        HMM.hmmbuild(self.hmmbuild, fastaFileName, outputFileName, isNucleotide)
+        HMM.hmmpress(self.hmmpress, outputFileName)
         
         # Clean up temporary file if relevant
-        if self.FASTA_is_obj:
-            os.unlink(fileName)
+        if fastaIsTemporary:
+            os.unlink(fastaFileName)
     
-    def load_HMM_file(self, hmmName):
+    @staticmethod
+    def hmmbuild(hmmbuildExe, fastaFileName, outputFileName, isNucleotide=False):
         '''
-        This method allows us to bypass the HMM creation stage if it's already been done before.
-        In these cases, you'll want to run this method first before using a HMM instance by the
-        HMMER Class.
-        
-        Params:
-            hmmName -- a string providing the file name for our created HMM. This can include
-                       the path to where you want the file to be written
-        '''
-        # Validate input type and location
-        assert isinstance(hmmName, str)
-        if not os.path.isfile(hmmName):
-            raise Exception("{0} is not a file or does not exist".format(hmmName))
-        
-        # Check if we need to run hmmpress
-        if not os.path.isfile(hmmName + '.h3f') and not os.path.isfile(hmmName + '.h3i') and not os.path.isfile(hmmName + '.h3m') and not os.path.isfile(hmmName + '.h3p'):
-            self.hmmpress(hmmName)
-        
-        # Store prepared file
-        self.hmmFile = hmmName # Sets our instance attribute so we know the HMM file exists
-    
-    def hmmbuild(self, fastaFile, outputFileName, extraArgs=""):
-        '''
-        This method isn't intended to be called directly by users, but is written static-like in case
-        you want access to this method without going through the fuss of working with this Class "properly".
-        By writing it like this, you at least need to specify the location of the HMMER executables first.
-        
-        Params:
-            fastaFile -- a string indicating the location of a FASTA file to be hmmbuild-ed.
+        Parameters:
+            hmmbuildExe -- a string indicating the location of the hmmbuild executable.
+            fastaFileName -- a string indicating the location of a FASTA file to be hmmbuild-ed.
             outputFileName -- a string indicating the name and, optionally, the path of the HMM file to be created.
-            extraArgs -- a string that optionally allows you to add extra arguments to the command
-                         e.g., "--dna" may be needed for hmmbuild to work successfully.
+            isNucleotide -- OPTIONAL; a boolean to indicate whether the provided FASTA contains nucleotide
+                            sequences or not. Default == False i.e., FASTA contains protein sequences.
         '''
-        # Validate input type and location
-        assert isinstance(extraArgs, str)
-        assert isinstance(fastaFile, str)
-        if not os.path.isfile(fastaFile):
-            raise Exception("{0} is not a file or does not exist".format(fastaFile))
+        assert os.path.isfile(fastaFileName), \
+            f"ERROR: HMM.hmmbuild() could not find FASTA file '{fastaFileName}'"
         
-        assert isinstance(outputFileName, str)
-        if os.path.isfile(outputFileName):
-            raise Exception(inspect.cleandoc("""
-                            {0} already exists so it won't be overwritten. Maybe try using
-                            .load_HMM_file() if you want to make use of an already existing 
-                            HMM""".format(outputFileName)))
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(hmmbuildExe)
         
-        cmd = "{0} {3} \"{1}\" \"{2}\"".format(os.path.join(self.hmmerDir, "hmmbuild"),  outputFileName, fastaFile, extraArgs)
-        run_hmmbuild = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
-        _, hmmerr = run_hmmbuild.communicate()
-        if hmmerr.decode("utf-8") != '':
-            raise Exception(inspect.cleandoc("""
-                            hmmbuild error text below\n{0}\nProgram crashed when processing {1}
-                            """.format(str(hmmerr.decode("utf-8")), outputFileName)))
+        # Handle nucleotide sequences
+        if isNucleotide:
+            cmd += ["--dna"]
+        
+        # Set input and output file arguments
+        cmd += [
+            ZS_Utility.convert_to_wsl_if_not_unix(outputFileName), # output comes first, it's weird
+            ZS_Utility.convert_to_wsl_if_not_unix(fastaFileName)
+        ]
+        
+        # Format commands for Linux
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_build = subprocess.Popen(cmd, shell = True,
+                                     stdout = subprocess.PIPE,
+                                     stderr = subprocess.PIPE)
+        buildout, builderr = run_build.communicate()
+        
+        # Check to see if there was an error
+        if builderr.decode("utf-8") != "":
+            raise Exception(("ERROR: HMM.hmmbuild() encountered an error; have a look " +
+                            f'at the stdout ({buildout.decode("utf-8")}) and stderr ' + 
+                            f'({builderr.decode("utf-8")}) to make sense of this.'))
     
-    def hmmpress(self, hmmFile):
+    @staticmethod
+    def hmmpress(hmmpressExe, hmmFileName):
         '''
-        This method isn't intended to be called directly by users, but is written static-like in case
-        you want access to this method without going through the fuss of working with this Class "properly".
-        By writing it like this, you at least need to specify the location of the HMMER executables first.
-        
-        Params:
-            hmmFile -- a string indicating the location of a HMM file to be hmmpress-ed.
+        Parameters:
+            hmmpressExe -- a string indicating the location of the hmmpress executable.
+            hmmFileName -- a string indicating the location of a HMM file to be hmmpress-ed.
         '''
-        # Validate input type and location
-        assert isinstance(hmmFile, str)
-        if not os.path.isfile(hmmFile):
-            raise Exception("{0} is not a file or does not exist".format(hmmFile))
+        assert os.path.isfile(hmmFileName), \
+            f"ERROR: HMM.hmmpress() could not find HMM file '{hmmFileName}'"
         
-        cmd = "{0} -f \"{1}\"".format(os.path.join(self.hmmerDir, "hmmpress"),  hmmFile)
-        run_hmmpress = subprocess.Popen(cmd, stdout = subprocess.DEVNULL, stderr = subprocess.PIPE, shell = True)
-        _, hmmerr = run_hmmpress.communicate()
-        if hmmerr.decode("utf-8") != '':
-            raise Exception(inspect.cleandoc("""
-                            hmmpress error text below\n{0}\nProgram crashed when processing {1}
-                            """.format(str(hmmerr.decode("utf-8")), hmmFile)))
+        # Construct the cmd for subprocess
+        cmd = ZS_Utility.base_subprocess_cmd(hmmpressExe)
+        
+        # Set input file argument
+        cmd += ["-f", ZS_Utility.convert_to_wsl_if_not_unix(hmmFileName)] # -f flag will force overwrite
+        
+        # Format commands for Linux
+        if platform.system() != "Windows":
+            cmd = " ".join(cmd)
+        
+        # Run the command
+        run_press = subprocess.Popen(cmd, shell = True,
+                                     stdout = subprocess.PIPE,
+                                     stderr = subprocess.PIPE)
+        pressout, presserr = run_press.communicate()
+        
+        # Check to see if there was an error
+        if presserr.decode("utf-8") != "":
+            raise Exception(("ERROR: HMM.hmmpress() encountered an error; have a look " +
+                            f'at the stdout ({pressout.decode("utf-8")}) and stderr ' + 
+                            f'({presserr.decode("utf-8")}) to make sense of this.'))
 
 class HMMER:
     '''
@@ -328,7 +292,7 @@ class HMMER:
         fileName = self.FASTA # If not self.FASTA_is_obj, then this remains our default value
         if self.FASTA_is_obj:
             tmpHash = hashlib.sha256(bytes(str(self.FASTA.fileOrder[0][0]) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-            fileName = tmp_file_name_gen("hmmsearch_tmp" + tmpHash[0:20], "fasta") # Overwrite the default fileName here
+            fileName = ZS_Utility.tmp_file_name_gen("hmmsearch_tmp" + tmpHash[0:20], "fasta") # Overwrite the default fileName here
             self.FASTA.write(fileName, withAlt = self.useAlts, asAligned = False) # As a target file we don't need gaps
         
         # Run hmmsearch
