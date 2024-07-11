@@ -5,6 +5,7 @@
 
 import os, platform, sys, re, subprocess, shutil
 from pathlib import Path
+from copy import deepcopy
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_Utility
@@ -139,7 +140,133 @@ class MSA:
                     seqsToSkip.add(FastASeq_obj.id)
         
         return variantDict
+    
+    def trim(FASTA_obj, pctTrim=0.70):
+        '''
+        Receives an aligned ZS_SeqIO.FASTA object and trims the sequences by removing columns
+        from the start and end of the alignment where the proportion of sequences with a residue
+        present is less than the pctTrim threshold, stopping when the threshold is met.
+        
+        Parameters:
+            FASTA_obj -- a ZS_SeqIO.FASTA object containing aligned sequences.
+            pctTrim -- OPTIONAL; a float from 0->1 exclusive indicating the minimum proportion
+                       of sequences that must have a residue present in a single column
+                       for that column to be used as the left and right borders of the MSA;
+                       default == 0.70 i.e., 70% of sequences must have a residue present.
+        Returns:
+            trimmedFASTA_obj -- a NEW ZS_SeqIO.FASTA object containing the sequences after trimming.
+        '''
+        assert FASTA_obj.isAligned, "ERROR: MSA.trim() cannot trim input FASTA object since .isAligned is False"
+        assert 0 < pctTrim < 1, "ERROR: MSA.trim() pctTrim must be a float between 0 and 1 exclusive"
+        
+        # Find the start point where pctTrim is satisfied
+        for startIndex in range(len(FASTA_obj.seqs[0].gap_seq)): # all seqs should be same length
+            columnResidues = [ FastASeq_obj.gap_seq[startIndex] for FastASeq_obj in FASTA_obj.seqs ]
+            pctResidues = 1 - (columnResidues.count('-') / len(columnResidues))
+            if pctResidues <= pctTrim:
+                continue
+            break
+        
+        # Find the end point similarly
+        for endIndex in range(len(FASTA_obj.seqs[0].gap_seq)-1, 0, -1):
+            columnResidues = [ FastASeq_obj.gap_seq[endIndex] for FastASeq_obj in FASTA_obj.seqs ]
+            pctResidues = 1 - (columnResidues.count('-') / len(columnResidues))
+            if pctResidues <= pctTrim:
+                continue
+            break
+        
+        # Check our values to ensure they're sensible
+        if startIndex >= endIndex: # if we'd trim everything
+            raise Exception("ERROR: MSA.trim() pctTrim is too high; would trim all sequences")
+        
+        # Trim our FASTA object
+        trimmedFASTA_obj = FASTA_obj.slice_cols(startIndex, endIndex)
+        
+        return trimmedFASTA_obj
+    
+    def drop_gappy_seqs(FASTA_obj, allowedGappiness=0.50, inPlace=False):
+        '''
+        Receives an aligned ZS_SeqIO.FASTA object and drops sequences that have a proportion
+        of gaps above the allowedGappiness threshold. The threshold is calculated relative to
+        the consensus sequence of the alignment.
+        
+        Parameters:
+            FASTA_obj -- a ZS_SeqIO.FASTA object containing aligned sequences.
+            allowedGappiness -- OPTIONAL; a float from 0->1 (but less than 1) indicating the maximum allowed
+                                proportion of residues that can be gaps before a sequence will be dropped; value
+                                is calculated relative to the consensus sequence of the alignment; default == 0.50
+                                i.e., up to 50% of residues can be gaps with any excess causing dropping.
+            inPlace -- OPTIONAL; a boolean indicating whether to modify the input FASTA object
+                       (True) or return a new FASTA object with the empty columns removed (False);
+                       default == False.
+        Returns:
+            prunedFASTA_obj -- a new or modified ZS_SeqIO.FASTA object with sequences potentially dropped if they
+                               did not meet the gappyPct threshold; whether it's new or modified depends on inPlace.
+        '''
+        assert FASTA_obj.isAligned, "ERROR: MSA.drop_gappy_seqs() cannot process input FASTA object since .isAligned is False"
+        assert 0 <= allowedGappiness < 1, "ERROR: MSA.drop_gappy_seqs() gappyPct must be a float >=0 and <1"
+        
+        # Create a deepcopy of the FASTA object to work with
+        prunedFASTA_obj = deepcopy(FASTA_obj)
+        
+        # Generate a consensus sequence
+        consensusSeq = prunedFASTA_obj.generate_consensus()
+        
+        # Check each sequence against the consensus for gappiness
+        toDelete = []
+        for index, FastASeq_obj in enumerate(prunedFASTA_obj.seqs):
+            nonGapResidues = sum([1 for i in range(len(FastASeq_obj.gap_seq)) if FastASeq_obj.gap_seq[i] != "-"])
+            gappyPct = 1 - (nonGapResidues / len(FastASeq_obj.gap_seq))
+            if gappyPct > allowedGappiness:
+                toDelete.append(index)
+        
+        # Check our values to ensure they're sensible
+        if len(toDelete) == len(prunedFASTA_obj): # if we'd drop everything
+            raise Exception("ERROR: MSA.drop_gappy_seqs() allowedGappiness is too low; would drop all sequences")
+        
+        # Drop the sequences that didn't meet the threshold
+        for index in toDelete[::-1]: # reverse order to avoid index shifting
+            del prunedFASTA_obj.seqs[index]
+        
+        # If we dropped sequences, make sure we don't have any blank columns now
+        if toDelete != []:
+            prunedFASTA_obj = MSA.drop_empty_columns(prunedFASTA_obj, inPlace=True)
+        
+        return prunedFASTA_obj
 
+    def drop_empty_columns(FASTA_obj, inPlace=False):
+        '''
+        Parameters:
+            FASTA_obj -- a ZS_SeqIO.FASTA object containing aligned sequences.
+            inPlace -- OPTIONAL; a boolean indicating whether to modify the input FASTA object
+                       (True) or return a new FASTA object with the empty columns removed (False);
+                       default == False.
+        Returns:
+            cleanedFASTA_obj -- a new or modified ZS_SeqIO.FASTA object with any empty columns removed from each
+                                FastASeq's .gap_seq attribute; whether it's new or modified depends on inPlace.
+        '''
+        assert FASTA_obj.isAligned, "ERROR: MSA.drop_empty_columns() cannot process input FASTA object since .isAligned is False"
+        
+        # Create a deepcopy of the FASTA object to work with (if applicable)
+        if inPlace == False:
+            cleanedFASTA_obj = deepcopy(FASTA_obj)
+        else:
+            cleanedFASTA_obj = FASTA_obj
+        
+        # Find empty columns
+        colsToDelete = []
+        for index in range(len(cleanedFASTA_obj.seqs[0].gap_seq)):
+            columnResidues = [ FastASeq_obj.gap_seq[index] for FastASeq_obj in cleanedFASTA_obj.seqs ]
+            if set(columnResidues) == {"-"}:
+                colsToDelete.append(index)
+        
+        # Fix the sequences
+        for index in colsToDelete[::-1]: # reverse order to avoid index shifting
+            for FastASeq_obj in cleanedFASTA_obj.seqs:
+                FastASeq_obj.gap_seq = FastASeq_obj.gap_seq[:index] + FastASeq_obj.gap_seq[index+1:]
+        
+        return cleanedFASTA_obj
+    
 class MAFFT:
     '''
     A mostly fully features wrapper program for MAFFT. Rather than allowing use of the mafft.bat
