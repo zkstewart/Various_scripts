@@ -95,7 +95,9 @@ def convert_to_wsl_if_not_unix(fileLocation):
     if platform.system() != 'Windows':
         return fileLocation
     else:
-        if is_unix_path(fileLocation):
+        if os.path.basename(fileLocation) == fileLocation: # WSL won't interpret relative paths correctly
+            return convert_windows_to_wsl_path(os.path.abspath(fileLocation))
+        elif is_unix_path(fileLocation):
             return fileLocation
         else:
             return convert_windows_to_wsl_path(fileLocation)
