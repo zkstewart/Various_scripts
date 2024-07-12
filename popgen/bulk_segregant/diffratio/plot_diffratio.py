@@ -5,6 +5,7 @@
 
 import os, argparse, math, re, pickle
 import matplotlib.pyplot as plt
+import numpy as np
 from Bio import SeqIO
 
 def validate_args(args):
@@ -98,15 +99,15 @@ def get_diffratio_density(diffratioFile, lengthsDict, windowSize=100000, stepSiz
                 chrom, pos, ratio = sl[chromIndex], sl[posIndex], sl[ratioIndex]
                 
                 # Set up data storage bins for this chromosome if it doesn't exist
-                ratioDict.setdefault(chrom, {
-                    "indices": [ 0
-                        for windowChunk in range(math.ceil(lengthsDict[chrom] / stepSize))
-                    ],
-                    "counts": [ 0
-                        for windowChunk in range(math.ceil(lengthsDict[chrom] / stepSize))
-                    ],
+                if chrom not in ratioDict:
+                    ratioDict[chrom] = {
+                        "indices": np.array([ 0.0
+                            for windowChunk in range(math.ceil(lengthsDict[chrom] / stepSize))
+                        ]),
+                        "counts": np.array([ 0
+                            for windowChunk in range(math.ceil(lengthsDict[chrom] / stepSize))
+                        ]),
                     }
-                )
                 
                 # Add difference ratio into any bins it belongs within
                 "As determined by step size and window size; windowSize > stepSize will lead to bin overlap"
@@ -147,15 +148,14 @@ def get_diffratio_density(diffratioFile, lengthsDict, windowSize=100000, stepSiz
                             break
     
     # Average the difference ratio per window
+    ## See https://stackoverflow.com/questions/26248654/how-to-return-0-with-divide-by-zero/37977222#37977222
     densityDict = {}
     for chrom in ratioDict.keys():
         densityDict.setdefault(chrom, [])
-        for windowChunkIndex in range(len(ratioDict[chrom]["indices"])):
-            try:
-                average = ratioDict[chrom]["indices"][windowChunkIndex] / ratioDict[chrom]["counts"][windowChunkIndex]
-            except:
-                average = 0.0
-            densityDict[chrom].append(average)
+        a = ratioDict[chrom]["indices"]
+        b = ratioDict[chrom]["counts"]
+        average = np.divide(a, b, out=np.zeros_like(a), where=b!=0)
+        densityDict[chrom] = list(average)
     
     return densityDict
 
