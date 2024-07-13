@@ -37,6 +37,9 @@ def validate_args(args):
     if args.height < 0:
         print("height must be a positive integer")
         quit()
+    if args.linewidth < 1:
+        print("linewidth must be an integer >= 1")
+        quit()
     if args.reportAboveCutoff != None:
         if 0 < args.reportAboveCutoff > 1:
             print("reportAboveCutoff must be a float value between 0 and 1")
@@ -159,7 +162,56 @@ def get_diffratio_density(diffratioFile, lengthsDict, windowSize=100000, stepSiz
     
     return densityDict
 
-def plot_per_contig(lengthsDict, densityDict, minimumContigSize, windowSize, stepSize, width, height, outputDirectory, plotPDF=False):
+def get_diffratio_for_dotting(diffratioFile, stepSize=100000):
+    '''
+    Parameters:
+        diffratioFile -- a string pointing to the difference ratio file
+                         containing relevant statistics
+        stepSize -- OPTIONAL; an integer value indicating the step size to move across the genome
+                    (default=100000)
+    Returns:
+        dotsX -- a dict pairing chromosome IDs (keys) to a list of integers indicating
+                 the step index for each SNP (values)
+        dotsY -- a dict pairing chromosome IDs (keys) to a list of floats indicating the
+                 difference ratio for each SNP (values)
+    '''
+    HEADER_VALUES = ["CHROM", "POSI", "differenceRatio"]
+    dotsX, dotsY = {}, {}
+    with open(diffratioFile, "r") as fileIn:
+        firstLine = True
+        for line in fileIn:
+            sl = line.rstrip("\r\n ").split("\t")
+            
+            # Handle header lines
+            if firstLine:
+                assert all([ hv in sl for hv in HEADER_VALUES ]), "Header line doesn't contain expected values!"
+                
+                chromIndex = sl.index(HEADER_VALUES[0])
+                posIndex = sl.index(HEADER_VALUES[1])
+                ratioIndex = sl.index(HEADER_VALUES[2])
+                
+                firstLine = False
+            
+            # Handle content lines
+            else:
+                # Parse out relevant details from this line
+                chrom, pos, ratio = sl[chromIndex], sl[posIndex], sl[ratioIndex]
+                
+                # Get the position in terms of the step size
+                stepIndex = int(pos) / stepSize # don't math.floor here, we want the exact index
+                
+                # Store data
+                if not chrom in dotsX:
+                    dotsX[chrom] = []
+                    dotsY[chrom] = []
+                
+                dotsX[chrom].append(stepIndex)
+                dotsY[chrom].append(float(ratio))
+    
+    return dotsX, dotsY
+
+def plot_per_contig(lengthsDict, densityDict, minimumContigSize, windowSize, stepSize, width, height, outputDirectory,
+                    plotPDF=False, dotsX=None, dotsY=None, linewidth=1):
     '''
     Parameters:
         lengthsDict -- a dictionary with structure like:
@@ -184,6 +236,11 @@ def plot_per_contig(lengthsDict, densityDict, minimumContigSize, windowSize, ste
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
+        dotsX -- OPTIONAL; a dictionary linking chromosome IDs (keys) to lists of integers
+                 indicating the step position where a dot is located OR None for no dots
+        dotsY -- OPTIONAL; a dictionary linking chromosome IDs (keys) to lists of floats
+                 indicating the difference ratio value for each dot OR None for no dots
+        linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
     '''
     numContigsProcessed = 0
     numContigsPlotted = 0
@@ -207,9 +264,12 @@ def plot_per_contig(lengthsDict, densityDict, minimumContigSize, windowSize, ste
             # Get density values
             densityList = densityDict[contigID]
             
-            # Smooth the curve for better visualisation
-            "Smoothing the plot is probably a mistake, it's better to change the window size to emulate this effect"
-            smoothedDensityList = densityList
+            # Get the dots (if applicable)
+            if dotsX != None and contigID in dotsX:
+                dotsXList = dotsX[contigID]
+                dotsYList = dotsY[contigID]
+            else:
+                dotsXList, dotsYList = None, None
             
             # Configure plot
             kbpWindowSize = round(windowSize / 1000, 2)
@@ -222,14 +282,20 @@ def plot_per_contig(lengthsDict, densityDict, minimumContigSize, windowSize, ste
             ax.set_ylabel("Mean difference ratio", fontweight="bold")
             ax.set_title(f"{contigID} difference ratio plot", fontweight="bold")
             
-            ax.plot(smoothedDensityList)
+            # Plot dots (if applicable)
+            if dotsXList != None and dotsYList != None:
+                ax.scatter(dotsXList, dotsYList, color="red", s=3, alpha=0.5, zorder=0)
+            
+            # Plot line
+            ax.plot(densityList, zorder=1, linewidth=linewidth)
             
             # Save output file
             plt.savefig(fileOut)
             numContigsPlotted += 1
     return numContigsProcessed, numContigsPlotted
 
-def plot_once(lengthsDict, densityDict, minimumContigSize, windowSize, stepSize, width, height, outputDirectory, plotPDF=False):
+def plot_once(lengthsDict, densityDict, minimumContigSize, windowSize, stepSize, width, height, outputDirectory,
+              plotPDF=False, dotsX=None, dotsY=None, linewidth=1):
     '''
     Parameters:
         lengthsDict -- a dictionary with structure like:
@@ -254,6 +320,11 @@ def plot_once(lengthsDict, densityDict, minimumContigSize, windowSize, stepSize,
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
+        dotsX -- OPTIONAL; a dictionary linking chromosome IDs (keys) to lists of integers
+                 indicating the step position where a dot is located OR None for no dots
+        dotsY -- OPTIONAL; a dictionary linking chromosome IDs (keys) to lists of floats
+                 indicating the difference ratio value for each dot OR None for no dots
+        linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
     '''
     numContigsProcessed = 0
     numContigsPlotted = 0
@@ -284,8 +355,15 @@ def plot_once(lengthsDict, densityDict, minimumContigSize, windowSize, stepSize,
                       "with it; skipping...")
                 continue
             
+            # Get the dots for this contig (if applicable)
+            if dotsX != None and contigID in dotsX:
+                dotsXList = dotsX[contigID]
+                dotsYList = dotsY[contigID]
+            else:
+                dotsXList, dotsYList = None, None
+            
             # Store density values
-            plotData.append([densityDict[contigID], contigID])
+            plotData.append([densityDict[contigID], contigID, dotsXList, dotsYList])
             numContigsPlotted += 1
     
     # Format a single joined plot
@@ -300,9 +378,16 @@ def plot_once(lengthsDict, densityDict, minimumContigSize, windowSize, stepSize,
     fig.supylabel("Mean difference ratio", fontweight="bold")
     
     ## Plot the data into each axis
-    for ax, (densityList, contigID) in zip(axes, plotData):
-        ax.plot(densityList)
+    for ax, (densityList, contigID, dotsXList, dotsYList) in zip(axes, plotData):
         ax.set_title(contigID)
+        
+        ### Plot dots (if applicable)
+        if dotsXList != None and dotsYList != None:
+            ax.scatter(dotsXList, dotsYList, color="red", s=3, alpha=0.5, zorder=0)
+        
+        ### Plot line
+        ax.plot(densityList, zorder=1, linewidth=linewidth)
+    
     for ax in fig.get_axes():
         ax.label_outer()
     
@@ -311,7 +396,8 @@ def plot_once(lengthsDict, densityDict, minimumContigSize, windowSize, stepSize,
     
     return numContigsProcessed, numContigsPlotted
 
-def plot_regions(densityDict, regions, windowSize, stepSize, width, height, outputDirectory, plotPDF=False):
+def plot_regions(densityDict, regions, windowSize, stepSize, width, height, outputDirectory,
+                 plotPDF=False, dotsX=None, dotsY=None, linewidth=1):
     '''
     Parameters:
         densityDict -- a dictionary with structure like:
@@ -330,6 +416,11 @@ def plot_regions(densityDict, regions, windowSize, stepSize, width, height, outp
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
+        dotsX -- OPTIONAL; a dictionary linking chromosome IDs (keys) to lists of integers
+                 indicating the step position where a dot is located OR None for no dots
+        dotsY -- OPTIONAL; a dictionary linking chromosome IDs (keys) to lists of floats
+                 indicating the difference ratio value for each dot OR None for no dots
+        linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
     '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
@@ -363,6 +454,25 @@ def plot_regions(densityDict, regions, windowSize, stepSize, width, height, outp
         xList = [ i for i in range(startStep, endStep+1) ]
         yList = densityDict[contigID][startStep:endStep+1]
         
+        # Get the dots for this region (if applicable)
+        if dotsX != None and contigID in dotsX:
+            dotsXList = dotsX[contigID]
+            dotsYList = dotsY[contigID]
+            
+            # Subset to the region of interest
+            regionDots = [
+                (x, y)
+                for x, y in zip(dotsXList, dotsYList)
+                if x >= startStep and x <= endStep
+            ]
+            
+            # Unpack the region dots back into X and Y lists
+            dotsXList = [ x for x, y in regionDots ]
+            dotsYList = [ y for x, y in regionDots ]
+        
+        else:
+            dotsXList, dotsYList = None, None
+        
         # Configure plot
         kbpWindowSize = round(windowSize / 1000, 2)
         kbpStepSize = round(stepSize / 1000, 2)
@@ -374,7 +484,12 @@ def plot_regions(densityDict, regions, windowSize, stepSize, width, height, outp
         ax.set_ylabel("Mean difference ratio", fontweight="bold")
         ax.set_title(f"{contigID} difference ratio plot", fontweight="bold")
         
-        ax.plot(xList, yList)
+        # Plot dots (if applicable)
+        if dotsXList != None and dotsYList != None:
+            ax.scatter(dotsXList, dotsYList, color="red", s=3, alpha=0.5, zorder=0)
+        
+        # Plot line
+        ax.plot(xList, yList, zorder=1, linewidth=linewidth)
         
         # Save output file
         plt.savefig(fileOut)
@@ -422,6 +537,17 @@ def main():
                    required=False,
                    help="""Optionally, specify the output plot height (default=6)""",
                    default=6)
+    p.add_argument("--showDots", dest="showDots",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, provide this flag if you want plots to show dots
+                   of each data point in addition to the line plot""",
+                   default=False)
+    p.add_argument("--linewidth", dest="linewidth",
+                   type=int,
+                   required=False,
+                   help="""Optionally, specify the line width (default=1)""",
+                   default=1)
     # Opts (statistical behaviour)
     p.add_argument("--window_size", dest="windowSize",
                    type=int,
@@ -504,22 +630,31 @@ def main():
                     windowEnd = (windowIndex * args.stepSize) + (args.windowSize / 2)
                     print(f"# > Window index {windowIndex} from {windowStart} to {windowEnd} on '{chrom}' has a difference ratio of {diffratio}")
     
+    # Parse data for dotting (if applicable)
+    if args.showDots:
+        dotsX, dotsY = get_diffratio_for_dotting(args.diffratioFile, args.stepSize)
+    else:
+        dotsX, dotsY = None, None
+    
     # Create plots
     if args.onePlot:
         numContigsProcessed, numContigsPlotted = plot_once(lengthsDict, densityDict, args.minimumContigSize,
                                                            args.windowSize, args.stepSize,
                                                            args.width, args.height,
-                                                           args.outputDirectory, args.plotPDF)
+                                                           args.outputDirectory, args.plotPDF,
+                                                           dotsX, dotsY, args.linewidth)
     elif args.regions != []:
         numContigsProcessed, numContigsPlotted = plot_regions(densityDict, args.regions,
                                                               args.windowSize, args.stepSize,
                                                               args.width, args.height,
-                                                              args.outputDirectory, args.plotPDF)
+                                                              args.outputDirectory, args.plotPDF,
+                                                              dotsX, dotsY, args.linewidth)
     else:
         numContigsProcessed, numContigsPlotted = plot_per_contig(lengthsDict, densityDict, args.minimumContigSize,
                                                                  args.windowSize, args.stepSize,
                                                                  args.width, args.height,
-                                                                 args.outputDirectory, args.plotPDF)
+                                                                 args.outputDirectory, args.plotPDF,
+                                                                 dotsX, dotsY, args.linewidth)
     
     # Raise relevant warnings
     if numContigsProcessed == 0:
