@@ -91,14 +91,9 @@ def main():
     they belong to; the TSV should contain no header, and have two columns, the first
     indicating the sample ID and the second indicating whether it's part of "bulk1"
     or "bulk2". It produces an output file similar to what's seen with QTL-Seq, but
-    with differences being: *_refIndex is the proportion of alleles in a bulk which
-    match the reference allele; delta_refIndex is the difference between the two
-    *_refIndex values; and differenceRatio is (essentially) the proportion of alleles
-    which differ between the two bulks and it ranges from 0 to 1, with 0 indicating
-    complete similarity and 1 indicating complete dissimilarity in the allele profiles
-    of the two populations.
+    with the difference being that Euclidean distance is calculated between bulks
+    rather than SNP-index.
     """
-    
     # Required
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-vcf", dest="vcfFile",
@@ -110,6 +105,14 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Specify the output file name")
+    # Opts
+    p.add_argument("--ignoreIdentical", dest="ignoreIdentical",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, provide this flag if you'd like variants where
+                   both bulks are identical to be ignored; this can occur when both bulks
+                   have the same variant with respect to the reference genome""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -174,6 +177,14 @@ def main():
                 # Calculate difference ratio
                 bulk1_alleles, bulk2_alleles, \
                     euclideanDist = calculate_snp_ed(bulk1, bulk2)
+                
+                # Skip if both bulks are identical
+                if args.ignoreIdentical and euclideanDist == 0:
+                    bulk1Dedup = set(( tuple(x) for x in bulk1 ))
+                    bulk2Dedup = set(( tuple(x) for x in bulk2 ))
+                    "if both have set len==1, are the same, and have 0 Euclidean distance, they are identical non-reference alleles"
+                    if len(bulk1Dedup) == 1 and bulk1Dedup == bulk2Dedup:
+                        continue
                 
                 # Format and write output line
                 outputLine = f"{contig}\t{pos}\t{variant}\t{bulk1_alleles}\t" + \
