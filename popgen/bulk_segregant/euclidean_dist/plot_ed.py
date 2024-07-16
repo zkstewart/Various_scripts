@@ -3,7 +3,7 @@
 # Script to create visualisations of the difference ratio statistics
 # for assessing hypotheses of variant segregation along chromosomes.
 
-import os, argparse, sys, re, pickle
+import os, argparse, sys, re, pickle, math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -83,8 +83,8 @@ def validate_args(args):
         if args.binSize < 1:
             eprint("binSize must be an integer >= 1")
             quit()
-        if 0 > args.binThreshold or args.binThreshold > 1:
-            eprint("binThreshold must be a float value >=0 and <=1")
+        if args.binThreshold <= 0:
+            eprint("binThreshold must be a float value >0")
             quit()
 
 def get_edist_for_dotting(edistFile, bulkAlleles=[], bulkOccurrence=None):
@@ -597,14 +597,14 @@ def main():
                             type=int,
                             required=False,
                             help="""Optionally, specify the bin size to count variants
-                            within (default=1000)""",
+                            within (default=10000)""",
                             default=10000)
     histoparser.add_argument("--binThreshold", dest="binThreshold",
                             type=float,
                             required=False,
-                            help="""Optionally, specify the bin size to count variants
-                            within (default=1000)""",
-                            default=10000)
+                            help="""Optionally, specify the Euclidean distance threshold
+                            to set for counting a SNP (default=0.4)""",
+                            default=0.4)
     
     args = subParentParser.parse_args()
     validate_args(args)
@@ -640,14 +640,14 @@ def main():
     lengthsDict = { record.id:len(record) for record in genomeRecords }
     
     # Drop any contigs which don't meet our length cutoff
-    for record in genomeRecords:
-        if len(record) < args.minimumContigSize:
-            print(f"NOTE: '{record.id}' is below the minimum contig size and will be skipped")
+    for contigID, length in lengthsDict.items():
+        if length < args.minimumContigSize:
+            print(f"NOTE: '{contigID}' is below the minimum contig size and will be skipped")
             try:
-                del dotsX[record.id]
-                del powerY[record.id]
+                del dotsX[contigID]
+                del powerY[contigID]
             except:
-                raise ValueError(f"ERROR: '{record.id}' was not found in the Euclidean distance file but " +
+                raise ValueError(f"ERROR: '{contigID}' was not found in the Euclidean distance file but " +
                                  "was found in the genome FASTA file; this is unexpected and suggests " +
                                  "a mismatch between the two files")
     
@@ -659,11 +659,11 @@ def main():
     
     # Split into mode-specific functions
     if args.mode == "line":
-        linemain(args, dotsX, powerY, lengthsDict)
+        linemain(args, dotsX, powerY)
     elif args.mode == "histogram":
         histomain(args, dotsX, powerY, lengthsDict)
     
-def linemain(args, dotsX, powerY, lengthsDict):
+def linemain(args, dotsX, powerY):
     # Report any variants above the cutoff
     if args.reportAboveCutoff != None:
         print(f"# Euclidean distance >= {args.reportAboveCutoff} report:")
@@ -698,7 +698,36 @@ def linemain(args, dotsX, powerY, lengthsDict):
     print("Program completed successfully!")
 
 def histomain(args, dotsX, powerY, lengthsDict):
-    raise NotImplementedError("Histogram mode is not yet implemented")
+    # Bin data into histograms
+    histoDict = {}
+    for contigID in get_sorted_contig_ids(dotsX.keys()):
+        histoDict[contigID] = np.array([ 0
+                for windowChunk in range(math.ceil(lengthsDict[contigID] / args.binSize))
+            ])
+        for x, y in zip(dotsX[contigID], powerY[contigID]):
+            binIndex = x // args.binSize
+            if y >= args.binThreshold:
+                histoDict[contigID][binIndex] += 1
+    
+    # Report any bins above the cutoff
+    if args.reportAboveCutoff != None:
+        print(f"# Bin containing distance >= {args.binThreshold} report:")
+        for contigID, binCounts in histoDict.items():
+            for i, count in enumerate(binCounts):
+                if count >= args.reportAboveCutoff:
+                    print(f"# {contigID}:{i*args.binSize}-{(i+1)*args.binSize} = {count}")
+    
+    # Create plots
+    raise NotImplementedError("Histogram mode is not yet implemented!")
+    ## TBD ...
+    
+    # Raise errors if necessary
+    if numContigsPlotted == 0:
+        raise ValueError("ERROR: We ended up skipping every contig! This means the program has " + 
+                         "already run to completion previously. Hence, no new output files have been " +
+                         "generated! Maybe you should delete the existing files to restart?")
+    
+    print("Program completed successfully!")
 
 if __name__ == "__main__":
     main()
