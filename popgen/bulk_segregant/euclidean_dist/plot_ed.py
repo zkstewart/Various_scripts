@@ -3,85 +3,88 @@
 # Script to create visualisations of the difference ratio statistics
 # for assessing hypotheses of variant segregation along chromosomes.
 
-import os, argparse, math, re, pickle
+import os, argparse, sys, re, pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from Bio import SeqIO
 
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
 def validate_args(args):
     # Validate input data locations
     if not os.path.isfile(args.edistFile):
-        print(f'I am unable to locate the euclidean distance file ({args.edistFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        eprint(f'I am unable to locate the euclidean distance file ({args.edistFile})')
+        eprint('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     if not os.path.isfile(args.genomeFasta):
-        print(f'I am unable to locate the input genome FASTA file ({args.genomeFasta})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
+        eprint(f'I am unable to locate the input genome FASTA file ({args.genomeFasta})')
+        eprint('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     # Handle numeric parameters
     if args.width < 0:
-        print("width must be a positive integer")
+        eprint("width must be a positive integer")
         quit()
     if args.height < 0:
-        print("height must be a positive integer")
+        eprint("height must be a positive integer")
         quit()
     if args.power < 1:
-        print("power must be an integer >= 1")
+        eprint("power must be an integer >= 1")
         quit()
     if args.bulkAlleles != []:
         if len(args.bulkAlleles) != 2:
-            print("bulkAlleles must be a list of two integers")
+            eprint("bulkAlleles must be a list of two integers")
             quit()
         if any([ not val >= 2 for val in args.bulkAlleles ]):
-            print("bulkAlleles values must be integers >= 2")
+            eprint("bulkAlleles values must be integers >= 2")
             quit()
     if args.bulkOccurrence != None:
         if 0 < args.bulkOccurrence >= 1:
-            print("bulkOccurrence must be a float value >0 and <=1")
+            eprint("bulkOccurrence must be a float value >0 and <=1")
     if args.reportAboveCutoff != None:
         if 0 < args.reportAboveCutoff >= 1:
-            print("reportAboveCutoff must be a float value >0 and <=1")
+            eprint("reportAboveCutoff must be a float value >0 and <=1")
             quit()
     # Check for conflicting arguments
     if args.onePlot and args.regions != []:
-        print("You can't provide both --onePlot and --regions; please choose one and try again.")
+        eprint("You can't provide both --onePlot and --regions; please choose one and try again.")
         quit()
     if args.bulkAlleles != [] and args.bulkOccurrence == None:
-        print("You must provide a --bulkOccurrence value if you provide --bulkAlleles; please try again.")
+        eprint("You must provide a --bulkOccurrence value if you provide --bulkAlleles; please try again.")
         quit()
     if args.bulkAlleles == [] and args.bulkOccurrence != None:
-        print("You must provide --bulkAlleles if you provide --bulkOccurrence; please try again.")
+        eprint("You must provide --bulkAlleles if you provide --bulkOccurrence; please try again.")
         quit()
     # Handle regions
     for region in args.regions:
         if not re.match(r"^.+:\d+:\d+$", region):
-            print(f"Region '{region}' is not in the expected format (contig:start:end)")
-            print("Please provide regions in the format 'contig:start:end' and try again.")
+            eprint(f"Region '{region}' is not in the expected format (contig:start:end)")
+            eprint("Please provide regions in the format 'contig:start:end' and try again.")
             quit()
     # Handle file output
     if os.path.isdir(args.outputDirectory) and os.listdir(args.outputDirectory) != []:
-        print(f"Output directory '{args.outputDirectory}' already exists; I'll write output files here.")
-        print("But, I won't overwrite any existing files, so beware that if a previous run had issues, " +
+        eprint(f"Output directory '{args.outputDirectory}' already exists; I'll write output files here.")
+        eprint("But, I won't overwrite any existing files, so beware that if a previous run had issues, " +
               "you may need to delete/move files first.")
     if not os.path.isdir(args.outputDirectory):
         os.makedirs(args.outputDirectory)
-        print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
+        eprint(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
     
     # Handle mode-specific arguments
     if args.mode == "line":
         if args.wmaSize < 1:
-            print("wmaSize must be an integer >= 1")
+            eprint("wmaSize must be an integer >= 1")
             quit()
         if args.linewidth < 1:
-            print("linewidth must be an integer >= 1")
+            eprint("linewidth must be an integer >= 1")
             quit()
     elif args.mode == "histogram":
         if args.binSize < 1:
-            print("binSize must be an integer >= 1")
+            eprint("binSize must be an integer >= 1")
             quit()
         if 0 > args.binThreshold or args.binThreshold > 1:
-            print("binThreshold must be a float value >=0 and <=1")
+            eprint("binThreshold must be a float value >=0 and <=1")
             quit()
 
 def get_edist_for_dotting(edistFile, bulkAlleles=[], bulkOccurrence=None):
@@ -221,9 +224,8 @@ def WMA(s, period):
         return None
     return pd.Series(sw)
 
-def lineplot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
-                        width, height, power, outputDirectory,
-                        plotPDF=False, showDots=True, linewidth=1):
+def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height, power,
+                        outputDirectory, plotPDF=False, showDots=True, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -231,14 +233,6 @@ def lineplot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
                  indicating the euclidean distance value for each dot; can have
                  had power transformation applied in advance
-        lengthsDict -- a dictionary with structure like:
-                       {
-                            'contig1': intLength1,
-                            'contig2': intLength2,
-                            ...
-                       }
-        minimumContigSize -- an integer value indicating the minimum size a contig must be
-                             to be considered for plotting
         wmaSize -- an integer value indicating the number of previous values to consider
                    during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
@@ -251,59 +245,54 @@ def lineplot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
                     in addition to the line plot (default=True)
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
     '''
-    numContigsProcessed = 0
     numContigsPlotted = 0
-    for contigID, length in lengthsDict.items():
-        if length >= minimumContigSize:
-            numContigsProcessed += 1
-            
-            # Derive our output file name and skip if already existing
-            fileSuffix = "pdf" if plotPDF else "png"
-            fileOut = os.path.join(outputDirectory, f"{contigID}.{fileSuffix}")
-            if os.path.isfile(fileOut):
-                print(f"WARNING: Plot for '{contigID}' already found in output directory; skipping...")
-                continue
-            
-            # Skip if we found no SNPs on this contig
-            if not contigID in dotsY:
-                print(f"WARNING: '{contigID}' is in the Euclidean distance file but has no SNPs associated " +
-                      "with it; skipping...")
-                continue
-            
-            # Get plotting values
-            x = np.array(dotsX[contigID]) / 1000000 # convert to Mbp
-            y = np.array(dotsY[contigID])
-            smoothedY = WMA(y, wmaSize)
-            
-            # Skip plotting if smoothing fails
-            "This probably means there are not enough data points to smooth"
-            if smoothedY is None:
-                print(f"WARNING: '{contigID}' has too few data points to smooth; skipping...")
-                continue
-            
-            # Configure plot
-            fig = plt.figure(figsize=(width, height))
-            ax = plt.axes()
-            
-            ax.set_xlabel(f"Chromosomal position (Mbp)", fontweight="bold")
-            ax.set_ylabel(f"Euclidean distance (to power {power})", fontweight="bold")
-            ax.set_title(f"{contigID} Euclidean distance plot", fontweight="bold")
-            
-            # Plot dots (if applicable)
-            if showDots:
-                ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
-            
-            # Plot line
-            ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
-            
-            # Save output file
-            plt.savefig(fileOut)
-            numContigsPlotted += 1
-    return numContigsProcessed, numContigsPlotted
+    for contigID in dotsX.keys():
+        # Derive our output file name and skip if already existing
+        fileSuffix = "pdf" if plotPDF else "png"
+        fileOut = os.path.join(outputDirectory, f"{contigID}.{fileSuffix}")
+        if os.path.isfile(fileOut):
+            print(f"WARNING: Plot for '{contigID}' already found in output directory; skipping...")
+            continue
+        
+        # Skip if we found no SNPs on this contig
+        if not contigID in dotsY:
+            print(f"WARNING: '{contigID}' is in the Euclidean distance file but has no SNPs associated " +
+                    "with it; skipping...")
+            continue
+        
+        # Get plotting values
+        x = np.array(dotsX[contigID]) / 1000000 # convert to Mbp
+        y = np.array(dotsY[contigID])
+        smoothedY = WMA(y, wmaSize)
+        
+        # Skip plotting if smoothing fails
+        "This probably means there are not enough data points to smooth"
+        if smoothedY is None:
+            print(f"WARNING: '{contigID}' has too few data points to smooth; skipping...")
+            continue
+        
+        # Configure plot
+        fig = plt.figure(figsize=(width, height))
+        ax = plt.axes()
+        
+        ax.set_xlabel(f"Chromosomal position (Mbp)", fontweight="bold")
+        ax.set_ylabel(f"Euclidean distance (to power {power})", fontweight="bold")
+        ax.set_title(f"{contigID} Euclidean distance plot", fontweight="bold")
+        
+        # Plot dots (if applicable)
+        if showDots:
+            ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+        
+        # Plot line
+        ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
+        
+        # Save output file
+        plt.savefig(fileOut)
+        numContigsPlotted += 1
+    return numContigsPlotted
 
-def lineplot_horizontal(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
-                        width, height, power, outputDirectory,
-                        plotPDF=False, showDots=True, linewidth=1):
+def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height, power,
+                        outputDirectory, plotPDF=False, showDots=True, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -311,14 +300,6 @@ def lineplot_horizontal(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
                  indicating the euclidean distance value for each dot; can have
                  had power transformation applied in advance
-        lengthsDict -- a dictionary with structure like:
-                       {
-                            'contig1': intLength1,
-                            'contig2': intLength2,
-                            ...
-                       }
-        minimumContigSize -- an integer value indicating the minimum size a contig must be
-                             to be considered for plotting
         wmaSize -- an integer value indicating the number of previous values to consider
                    during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
@@ -331,7 +312,6 @@ def lineplot_horizontal(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
                     in addition to the line plot (default=True)
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
     '''
-    numContigsProcessed = 0
     numContigsPlotted = 0
     
     # Derive our output file name and error if already existing
@@ -341,36 +321,32 @@ def lineplot_horizontal(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
         raise FileExistsError(f"'onePlot.{fileSuffix}' already found in output directory")
     
     # Get the ordered contig IDs
-    contigIDs = get_sorted_contig_ids(lengthsDict.keys())
+    contigIDs = get_sorted_contig_ids(dotsX.keys())
     
     # Get each contigs' plot data
     plotData = []
     for contigID in contigIDs:
-        length = lengthsDict[contigID]
-        if length >= minimumContigSize:
-            numContigsProcessed += 1
-            
-            # Skip if we found no SNPs on this contig
-            if not contigID in dotsY:
-                print(f"WARNING: '{contigID}' is in the Euclidean distance file but has no SNPs associated " +
-                      "with it; skipping...")
-                continue
-            
-            # Get plotting values
-            x = np.array(dotsX[contigID]) / 1000000 # convert to Mbp
-            y = np.array(dotsY[contigID])
-            smoothedY = WMA(y, wmaSize)
-            
-            # Skip plotting if smoothing fails
-            "This probably means there are not enough data points to smooth"
-            if smoothedY is None:
-                print(f"WARNING: '{contigID}' has too few data points to smooth; skipping...")
-                continue
-            
-            # Store dot values
-            plotData.append([contigID, x, y, smoothedY])
-            numContigsPlotted += 1
-    
+        # Skip if we found no SNPs on this contig
+        if not contigID in dotsY:
+            print(f"WARNING: '{contigID}' is in the Euclidean distance file but has no SNPs associated " +
+                    "with it; skipping...")
+            continue
+        
+        # Get plotting values
+        x = np.array(dotsX[contigID]) / 1000000 # convert to Mbp
+        y = np.array(dotsY[contigID])
+        smoothedY = WMA(y, wmaSize)
+        
+        # Skip plotting if smoothing fails
+        "This probably means there are not enough data points to smooth"
+        if smoothedY is None:
+            print(f"WARNING: '{contigID}' has too few data points to smooth; skipping...")
+            continue
+        
+        # Store dot values
+        plotData.append([contigID, x, y, smoothedY])
+        numContigsPlotted += 1
+
     # Produce the figure axes
     fig = plt.figure(figsize=(width, height), constrained_layout=True)
     gs = fig.add_gridspec(1, len(plotData), hspace=0)
@@ -399,7 +375,7 @@ def lineplot_horizontal(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
     # Save output file
     plt.savefig(fileOut)
     
-    return numContigsProcessed, numContigsPlotted
+    return numContigsPlotted
 
 def lineplot_regions(dotsX, dotsY, regions, wmaSize,
                      width, height, power, outputDirectory,
@@ -411,12 +387,6 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
                  indicating the euclidean distance value for each dot; can have
                  had power transformation applied in advance
-        densityDict -- a dictionary with structure like:
-                       {
-                           'contig1': [ floatDensity1, floatDensity2, ... ],
-                           'contig2': [ floatDensity1, floatDensity2, ... ],
-                       }, where each list contains a number of float values equal to
-                       the length of the contig divided by its step size
         regions -- a list of strings indicating regions to plot in greater detail with format
                    'contigID:startPos:endPos'
         wmaSize -- an integer value indicating the number of previous values to consider
@@ -439,10 +409,7 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
     
     # Plot each region
     numContigsPlotted = 0
-    numContigsProcessed = 0
-    for contigID, start, end in regions:
-        numContigsProcessed += 1
-        
+    for contigID, start, end in regions:        
         # Derive our output file name and skip if already existing
         fileSuffix = "pdf" if plotPDF else "png"
         fileOut = os.path.join(outputDirectory, f"{contigID}.{start}_to_{end}.{fileSuffix}")
@@ -486,7 +453,7 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
         # Save output file
         plt.savefig(fileOut)
         numContigsPlotted += 1
-    return numContigsProcessed, numContigsPlotted
+    return numContigsPlotted
 
 def get_sorted_contig_ids(idsList):
     # Sort contig IDs by their numerical value (if possible)
@@ -551,9 +518,8 @@ def main():
     p.add_argument("--minimum_contig", dest="minimumContigSize",
                     type=int,
                     required=False,
-                    help="""Optionally, specify the minimum size of contigs which
-                    should have plots created for (default=200000)"; this value
-                    must exceed --window_size by at least 2x""",
+                    help="""Optionally, specify the minimum size of contig to
+                    create plots for (default=200000 i.e., 2Mb)""",
                     default=200000)
     p.add_argument("--power", dest="power",
                     type=int,
@@ -643,10 +609,6 @@ def main():
     args = subParentParser.parse_args()
     validate_args(args)
     
-    # Get contig lengths from genome FASTA
-    genomeRecords = SeqIO.parse(open(args.genomeFasta, 'r'), "fasta")
-    lengthsDict = { record.id:len(record) for record in genomeRecords }   
-    
     # Figure out what our pickle file should be called
     pickleFile = os.path.join(
         args.outputDirectory,
@@ -673,6 +635,28 @@ def main():
         y = np.array(dotsY[contigID])**args.power
         powerY[contigID] = y
     
+    # Get contig lengths from genome FASTA
+    genomeRecords = SeqIO.parse(open(args.genomeFasta, 'r'), "fasta")
+    lengthsDict = { record.id:len(record) for record in genomeRecords }
+    
+    # Drop any contigs which don't meet our length cutoff
+    for record in genomeRecords:
+        if len(record) < args.minimumContigSize:
+            print(f"NOTE: '{record.id}' is below the minimum contig size and will be skipped")
+            try:
+                del dotsX[record.id]
+                del powerY[record.id]
+            except:
+                raise ValueError(f"ERROR: '{record.id}' was not found in the Euclidean distance file but " +
+                                 "was found in the genome FASTA file; this is unexpected and suggests " +
+                                 "a mismatch between the two files")
+    
+    # Check that we still have contigs to plot
+    if dotsX == {}:
+        raise ValueError("ERROR: We didn't find any contigs which matched or exceeded the minimum size. " +
+                         "Hence, no output files have been generated! Maybe you should fix your " +
+                         "--minimum_contig value?")
+    
     # Split into mode-specific functions
     if args.mode == "line":
         linemain(args, dotsX, powerY, lengthsDict)
@@ -690,31 +674,26 @@ def linemain(args, dotsX, powerY, lengthsDict):
     
     # Create plots
     if args.onePlot:
-        numContigsProcessed, numContigsPlotted = lineplot_horizontal(dotsX, powerY, lengthsDict,
-                                                           args.minimumContigSize, args.wmaSize,
-                                                           args.width, args.height, args.power,
-                                                           args.outputDirectory, args.plotPDF,
-                                                           args.showDots, args.linewidth)
+        numContigsPlotted = lineplot_horizontal(dotsX, powerY, args.wmaSize,
+                                                args.width, args.height, args.power,
+                                                args.outputDirectory, args.plotPDF,
+                                                args.showDots, args.linewidth)
     elif args.regions != []:
-        numContigsProcessed, numContigsPlotted = lineplot_regions(dotsX, powerY, args.regions,
-                                                                  args.wmaSize,
-                                                                  args.width, args.height, args.power,
-                                                                  args.outputDirectory, args.plotPDF,
-                                                                  args.showDots, args.linewidth)
+        numContigsPlotted = lineplot_regions(dotsX, powerY, args.regions, args.wmaSize,
+                                             args.width, args.height, args.power,
+                                             args.outputDirectory, args.plotPDF,
+                                             args.showDots, args.linewidth)
     else:
-        numContigsProcessed, numContigsPlotted = lineplot_per_contig(dotsX, powerY, lengthsDict,
-                                                                     args.minimumContigSize, args.wmaSize,
-                                                                     args.width, args.height, args.power,
-                                                                     args.outputDirectory, args.plotPDF,
-                                                                     args.showDots, args.linewidth)
+        numContigsPlotted = lineplot_per_contig(dotsX, powerY, args.wmaSize,
+                                                args.width, args.height, args.power,
+                                                args.outputDirectory, args.plotPDF,
+                                                args.showDots, args.linewidth)
     
-    # Raise relevant warnings
-    if numContigsProcessed == 0:
-        print(f"WARNING: We didn't find any contigs which exceeded {args.minimumContigSize}bp in size")
-        print("Hence, no output files have been generated! Maybe you should fix your --minimum_contig value?")
-    elif numContigsPlotted == 0:
-        print("WARNING: We ended up skipping every contig! This means the program has already run to completion previously.")
-        print("Hence, no new output files have been generated! Maybe you should delete the existing files to restart?")
+    # Raise errors if necessary
+    if numContigsPlotted == 0:
+        raise ValueError("ERROR: We ended up skipping every contig! This means the program has " + 
+                         "already run to completion previously. Hence, no new output files have been " +
+                         "generated! Maybe you should delete the existing files to restart?")
     
     print("Program completed successfully!")
 
