@@ -26,14 +26,8 @@ def validate_args(args):
     if args.height < 0:
         print("height must be a positive integer")
         quit()
-    if args.linewidth < 1:
-        print("linewidth must be an integer >= 1")
-        quit()
     if args.power < 1:
         print("power must be an integer >= 1")
-        quit()
-    if args.wmaSize < 1:
-        print("wmaSize must be an integer >= 1")
         quit()
     if args.bulkAlleles != []:
         if len(args.bulkAlleles) != 2:
@@ -73,6 +67,22 @@ def validate_args(args):
     if not os.path.isdir(args.outputDirectory):
         os.makedirs(args.outputDirectory)
         print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
+    
+    # Handle mode-specific arguments
+    if args.mode == "line":
+        if args.wmaSize < 1:
+            print("wmaSize must be an integer >= 1")
+            quit()
+        if args.linewidth < 1:
+            print("linewidth must be an integer >= 1")
+            quit()
+    elif args.mode == "histogram":
+        if args.binSize < 1:
+            print("binSize must be an integer >= 1")
+            quit()
+        if 0 > args.binThreshold or args.binThreshold > 1:
+            print("binThreshold must be a float value >=0 and <=1")
+            quit()
 
 def get_edist_for_dotting(edistFile, bulkAlleles=[], bulkOccurrence=None):
     '''
@@ -211,9 +221,9 @@ def WMA(s, period):
         return None
     return pd.Series(sw)
 
-def plot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
-                    width, height, power, outputDirectory,
-                    plotPDF=False, showDots=True, linewidth=1):
+def lineplot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
+                        width, height, power, outputDirectory,
+                        plotPDF=False, showDots=True, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -291,9 +301,9 @@ def plot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
             numContigsPlotted += 1
     return numContigsProcessed, numContigsPlotted
 
-def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
-              width, height, power, outputDirectory,
-              plotPDF=False, showDots=True, linewidth=1):
+def lineplot_horizontal(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
+                        width, height, power, outputDirectory,
+                        plotPDF=False, showDots=True, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -391,9 +401,9 @@ def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
     
     return numContigsProcessed, numContigsPlotted
 
-def plot_regions(dotsX, dotsY, regions, wmaSize,
-                 width, height, power, outputDirectory,
-                 showDots=True, plotPDF=False, linewidth=1):
+def lineplot_regions(dotsX, dotsY, regions, wmaSize,
+                     width, height, power, outputDirectory,
+                     showDots=True, plotPDF=False, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -497,103 +507,140 @@ def main():
     Note that step size dictates where the centre of each window will be,
     with the window size dictating the size of the window.
     """
-    # Reqs
+    # Establish main parser
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-d", dest="edistFile",
-                   required=True,
-                   help="Specify the location of the input euclidean distance file")
-    p.add_argument("-f", dest="genomeFasta",
-                   required=True,
-                   help="Specify the location of the genome FASTA file")
-    p.add_argument("-o", dest="outputDirectory",
-                   required=True,
-                   help="Output directory where plot files will be written")
-    # Opts (metadata behaviour)
-    p.add_argument("--bulkAlleles", dest="bulkAlleles",
-                   required=False,
-                   nargs="+",
-                   type=int,
-                   help="""Optionally, indicate the number of maximum possible alleles
-                   in each bulk in order to calculate the occurrence fraction for
-                   filtering""",
-                   default=[])
-    p.add_argument("--bulkOccurrence", dest="bulkOccurrence",
-                   type=float,
-                   required=False,
-                   help="""Optionally, specify the minimum fraction of occurrence
-                   for one of the two bulks to be considered for plotting""",
-                   default=None)
-    # Opts (plotting behaviour)
-    p.add_argument("--width", dest="width",
-                   type=int,
-                   required=False,
-                   help="""Optionally, specify the output plot width (default=10)""",
-                   default=10)
-    p.add_argument("--height", dest="height",
-                   type=int,
-                   required=False,
-                   help="""Optionally, specify the output plot height (default=6)""",
-                   default=6)
-    p.add_argument("--showDots", dest="showDots",
-                   required=False,
-                   action="store_true",
-                   help="""Optionally, provide this flag if you want plots to show dots
-                   of each data point in addition to the line plot""",
-                   default=False)
-    p.add_argument("--linewidth", dest="linewidth",
-                   type=int,
-                   required=False,
-                   help="""Optionally, specify the line width (default=1)""",
-                   default=1)
-    # Opts (statistical behaviour)
-    p.add_argument("--minimum_contig", dest="minimumContigSize",
-                   type=int,
-                   required=False,
-                   help="""Optionally, specify the minimum size of contigs which
-                   should have plots created for (default=200000)"; this value
-                   must exceed --window_size by at least 2x""",
-                   default=200000)
-    p.add_argument("--power", dest="power",
-                   type=int,
-                   required=False,
-                   help="""Optionally, specify the power to raise euclidean distances to
-                   reduce noise (default=4)""",
-                   default=4)
-    p.add_argument("--wmaSize", dest="wmaSize",
-                   type=int,
-                   required=False,
-                   help="""Optionally, specify the number of previous values to consider
-                   during weighted moving average calculation (default=5)""",
-                   default=5)
-    # Opts (output)
-    p.add_argument("--regions", dest="regions",
-                   required=False,
-                   nargs="+",
-                   help="""Optionally, indicate one or more regions to plot in greater detail
-                   by providing the contig ID and start and end positions in bp (e.g.
-                   contig1:10000:20000)""",
-                   default=[])
-    p.add_argument("--onePlot", dest="onePlot",
-                   required=False,
-                   action="store_true",
-                   help="""Optionally, provide this flag if you want a single plot to be
-                   produced with all chromosomes positioned horizontally""",
-                   default=False)
-    p.add_argument("--pdf", dest="plotPDF",
-                   required=False,
-                   action="store_true",
-                   help="""Optionally, provide this flag if you want outputs to be
-                   in PDF format instead of PNG format""",
-                   default=False)
-    p.add_argument("--reportAboveCutoff", dest="reportAboveCutoff",
-                   required=False,
-                   type=float,
-                   help="""Optionally, indicate a cutoff value for which any variant with a
-                   power-transformed difference ratio above this value will
-                   be reported to the console""",
-                   default=None)
     
-    args = p.parse_args()
+    # Set arguments shared by subparsers
+    ## Required arguments
+    p.add_argument("-d", dest="edistFile",
+                    required=True,
+                    help="Specify the location of the input euclidean distance file")
+    p.add_argument("-f", dest="genomeFasta",
+                    required=True,
+                    help="Specify the location of the genome FASTA file")
+    p.add_argument("-o", dest="outputDirectory",
+                    required=True,
+                    help="Output directory where plot files will be written")
+    ## Opts (metadata behaviour)
+    p.add_argument("--bulkAlleles", dest="bulkAlleles",
+                    required=False,
+                    nargs="+",
+                    type=int,
+                    help="""Optionally, indicate the number of maximum possible alleles
+                    in each bulk in order to calculate the occurrence fraction for
+                    filtering""",
+                    default=[])
+    p.add_argument("--bulkOccurrence", dest="bulkOccurrence",
+                    type=float,
+                    required=False,
+                    help="""Optionally, specify the minimum fraction of occurrence
+                    for one of the two bulks to be considered for plotting""",
+                    default=None)
+    ## Opts (plotting behaviour)
+    p.add_argument("--width", dest="width",
+                    type=int,
+                    required=False,
+                    help="""Optionally, specify the output plot width (default=10)""",
+                    default=10)
+    p.add_argument("--height", dest="height",
+                    type=int,
+                    required=False,
+                    help="""Optionally, specify the output plot height (default=6)""",
+                    default=6)
+    ## Opts (statistical behaviour)
+    p.add_argument("--minimum_contig", dest="minimumContigSize",
+                    type=int,
+                    required=False,
+                    help="""Optionally, specify the minimum size of contigs which
+                    should have plots created for (default=200000)"; this value
+                    must exceed --window_size by at least 2x""",
+                    default=200000)
+    p.add_argument("--power", dest="power",
+                    type=int,
+                    required=False,
+                    help="""Optionally, specify the power to raise euclidean distances to
+                    reduce noise (default=4)""",
+                    default=4)
+    ## Opts (output)
+    p.add_argument("--regions", dest="regions",
+                    required=False,
+                    nargs="+",
+                    help="""Optionally, indicate one or more regions to plot in greater detail
+                    by providing the contig ID and start and end positions in bp (e.g.
+                    contig1:10000:20000)""",
+                    default=[])
+    p.add_argument("--onePlot", dest="onePlot",
+                    required=False,
+                    action="store_true",
+                    help="""Optionally, provide this flag if you want a single plot to be
+                    produced with all chromosomes positioned horizontally""",
+                    default=False)
+    p.add_argument("--pdf", dest="plotPDF",
+                    required=False,
+                    action="store_true",
+                    help="""Optionally, provide this flag if you want outputs to be
+                    in PDF format instead of PNG format""",
+                    default=False)
+    p.add_argument("--reportAboveCutoff", dest="reportAboveCutoff",
+                    required=False,
+                    type=float,
+                    help="""Optionally, indicate a cutoff value for which any power-transformed
+                    variant ('line' mode) or bin quantity ('histogram' mode) above this value will
+                    be reported to the console""",
+                    default=None)
+    
+    # Establish subparsers
+    subParentParser = argparse.ArgumentParser()
+    subparsers = subParentParser.add_subparsers(dest="mode",
+                                                required=True)
+    
+    lineparser = subparsers.add_parser("line",
+                                       parents=[p],
+                                       add_help=False,
+                                       help="Create line plots of euclidean distances")
+    lineparser.set_defaults(func=linemain)
+    
+    histoparser = subparsers.add_parser("histogram",
+                                        aliases=["histo"],
+                                        parents=[p],
+                                        add_help=False,
+                                        help="Create histograms of euclidean distances")
+    histoparser.set_defaults(func=histomain)
+    
+    # Line-subparser arguments
+    lineparser.add_argument("--wmaSize", dest="wmaSize",
+                            type=int,
+                            required=False,
+                            help="""Optionally, specify the number of previous values to consider
+                            during weighted moving average calculation (default=5)""",
+                            default=5)
+    lineparser.add_argument("--linewidth", dest="linewidth",
+                            type=int,
+                            required=False,
+                            help="""Optionally, specify the line width (default=1)""",
+                            default=1)
+    lineparser.add_argument("--showDots", dest="showDots",
+                            required=False,
+                            action="store_true",
+                            help="""Optionally, provide this flag if you want plots to show dots
+                            of each data point in addition to the line plot""",
+                            default=False)
+    
+    # Histogram-subparser arguments
+    histoparser.add_argument("--binSize", dest="binSize",
+                            type=int,
+                            required=False,
+                            help="""Optionally, specify the bin size to count variants
+                            within (default=1000)""",
+                            default=10000)
+    histoparser.add_argument("--binThreshold", dest="binThreshold",
+                            type=float,
+                            required=False,
+                            help="""Optionally, specify the bin size to count variants
+                            within (default=1000)""",
+                            default=10000)
+    
+    args = subParentParser.parse_args()
     validate_args(args)
     
     # Get contig lengths from genome FASTA
@@ -626,6 +673,13 @@ def main():
         y = np.array(dotsY[contigID])**args.power
         powerY[contigID] = y
     
+    # Split into mode-specific functions
+    if args.mode == "line":
+        linemain(args, dotsX, powerY, lengthsDict)
+    elif args.mode == "histogram":
+        histomain(args, dotsX, powerY, lengthsDict)
+    
+def linemain(args, dotsX, powerY, lengthsDict):
     # Report any variants above the cutoff
     if args.reportAboveCutoff != None:
         print(f"# Euclidean distance >= {args.reportAboveCutoff} report:")
@@ -636,23 +690,23 @@ def main():
     
     # Create plots
     if args.onePlot:
-        numContigsProcessed, numContigsPlotted = plot_once(dotsX, powerY, lengthsDict,
+        numContigsProcessed, numContigsPlotted = lineplot_horizontal(dotsX, powerY, lengthsDict,
                                                            args.minimumContigSize, args.wmaSize,
                                                            args.width, args.height, args.power,
                                                            args.outputDirectory, args.plotPDF,
                                                            args.showDots, args.linewidth)
     elif args.regions != []:
-        numContigsProcessed, numContigsPlotted = plot_regions(dotsX, powerY, args.regions,
-                                                              args.wmaSize,
-                                                              args.width, args.height, args.power,
-                                                              args.outputDirectory, args.plotPDF,
-                                                              args.showDots, args.linewidth)
+        numContigsProcessed, numContigsPlotted = lineplot_regions(dotsX, powerY, args.regions,
+                                                                  args.wmaSize,
+                                                                  args.width, args.height, args.power,
+                                                                  args.outputDirectory, args.plotPDF,
+                                                                  args.showDots, args.linewidth)
     else:
-        numContigsProcessed, numContigsPlotted = plot_per_contig(dotsX, powerY, lengthsDict,
-                                                                 args.minimumContigSize, args.wmaSize,
-                                                                 args.width, args.height, args.power,
-                                                                 args.outputDirectory, args.plotPDF,
-                                                                 args.showDots, args.linewidth)
+        numContigsProcessed, numContigsPlotted = lineplot_per_contig(dotsX, powerY, lengthsDict,
+                                                                     args.minimumContigSize, args.wmaSize,
+                                                                     args.width, args.height, args.power,
+                                                                     args.outputDirectory, args.plotPDF,
+                                                                     args.showDots, args.linewidth)
     
     # Raise relevant warnings
     if numContigsProcessed == 0:
@@ -663,6 +717,9 @@ def main():
         print("Hence, no new output files have been generated! Maybe you should delete the existing files to restart?")
     
     print("Program completed successfully!")
+
+def histomain(args, dotsX, powerY, lengthsDict):
+    raise NotImplementedError("Histogram mode is not yet implemented")
 
 if __name__ == "__main__":
     main()
