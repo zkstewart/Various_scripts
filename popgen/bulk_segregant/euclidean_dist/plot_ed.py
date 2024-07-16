@@ -6,6 +6,7 @@
 import os, argparse, math, re, pickle
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from Bio import SeqIO
 
 def validate_args(args):
@@ -30,6 +31,9 @@ def validate_args(args):
         quit()
     if args.power < 1:
         print("power must be an integer >= 1")
+        quit()
+    if args.wmaSize < 1:
+        print("wmaSize must be an integer >= 1")
         quit()
     if args.bulkAlleles != []:
         if len(args.bulkAlleles) != 2:
@@ -144,9 +148,22 @@ def get_edist_for_dotting(edistFile, bulkAlleles=[], bulkOccurrence=None):
     
     return dotsX, dotsY
 
+def lowess_smoothing(x, y, frac=0.3, it=1, delta=0.01):
+    """
+    Slower and less effective than WMA() for our purposes, so I'm keeping this here
+    for reference but not using it in the main program.
+    """
+    from statsmodels.nonparametric.smoothers_lowess import lowess
+    smoothedY = lowess(y, x, frac=frac, it=it, delta=delta,
+                       is_sorted=True, return_sorted=False)
+    return smoothedY
+
 def smoothTriangle(data, degree):
     """
-    See https://plotly.com/python/smoothing/
+    See https://plotly.com/python/smoothing/.
+    Slower than WMA() and provides very similar output, so I've opted for that instead.
+    But I am keeping this here since it's a good implementation of a triangle smoothing function
+    and I might want to use it in the future.
     """
     triangle=np.concatenate((np.arange(degree + 1), np.arange(degree)[::-1])) # up then down
     smoothed=[]
@@ -164,101 +181,46 @@ def smoothTriangle(data, degree):
         smoothed.append(smoothed[-1])
     return smoothed
 
-def weightedmovingaverage(Data, period):
-    weighted = []
-    Data = np.array(Data)
-    for i in range(len(Data)):
-            try:
-                total = np.arange(1, period + 1, 1) # weight matrix
-                matrix = Data[i - period + 1: i + 1]#, 3:4]
-                matrix = np.ndarray.flatten(matrix)
-                matrix = total * matrix # multiplication
-                wma = (matrix.sum()) / (total.sum()) # WMA
-                weighted = np.append(weighted, wma) # add to array
-            except ValueError:
-                pass
-    return weighted
-
 def WMA(s, period):
-    import pandas as pd
+    """
+    See https://stackoverflow.com/questions/74518386/improving-weighted-moving-average-performance
+    
+    Parameters:
+        s -- a numpy array of values to smooth
+        period -- an integer value indicating the number of previous values to consider
+                  during weighted moving average calculation
+    Returns:
+        sw -- a pandas Series of the smoothed values
+    """
     w = np.arange(period)+1
-    w_s = w.sum()   
-    swv = np.lib.stride_tricks.sliding_window_view(s.flatten(), window_shape=period)
+    w_s = w.sum()
+    
+    try:
+        swv = np.lib.stride_tricks.sliding_window_view(s.flatten(), window_shape=period)
+    except ValueError:
+        "Less data points than period size causes this error"
+        return None
     sw = (swv * w).sum(axis=1) / w_s
     
     # Need to now return it as a normal series
     sw = np.concatenate((np.full(period - 1, np.nan), sw))
-    sw[0:period] = s[0:period]
+    try:
+        sw[0:period] = sw[period] # set first n=period values to be same as first smoothed value
+    except:
+        "len(sw)==1 causes this error"
+        return None
     return pd.Series(sw)
 
-def loess_smoothing(x, y, degree=1, frac=0.5):
-    from loess.loess_1d import loess_1d
-    xout, yout, wout = loess_1d(x, y, xnew=None, degree=degree, #frac=frac,
-                                npoints=10000, rotate=False, sigy=None)
-    return yout
-
-def lowess_smoothing(x, y, frac=0.2, it=1, delta=10000):
-    from statsmodels.nonparametric.smoothers_lowess import lowess
-    smoothedY = lowess(y, x,
-                    frac=frac, it=it,
-                    delta=delta,
-                    is_sorted=True, return_sorted=False)
-    return smoothedY
-
-def pygam_smoothing(x, y, npoints=1000):
-    from pygam import LinearGAM, s, f
-    gam = LinearGAM(s(0) ).fit(np.array(x), np.array(y))
-    xout = gam.generate_X_grid(term=0, n=npoints).flatten()
-    yout = gam.predict(xout)
-    return xout, yout
-
-def pygam_expectiles(x, y, npoints=1000):
-    from pygam import ExpectileGAM
-    x = np.array(x)
-    x = x.reshape(len(x), 1)
-    gam = ExpectileGAM(expectile=0.5).gridsearch(x, np.array(y))
-    
-    lam = gam.lam
-    
-    gam95 = ExpectileGAM(expectile=0.95, lam=lam).fit(x, np.array(y))
-    gam75 = ExpectileGAM(expectile=0.75, lam=lam).fit(x, np.array(y))
-    gam25 = ExpectileGAM(expectile=0.25, lam=lam).fit(x, np.array(y))
-    gam05 = ExpectileGAM(expectile=0.05, lam=lam).fit(x, np.array(y))
-    
-    XX = gam.generate_X_grid(term=0, n=500)
-    
-    plt.scatter(x, y, c='k', alpha=0.2)
-    plt.plot(XX, gam95.predict(XX), label='0.95')
-    plt.plot(XX, gam75.predict(XX), label='0.75')
-    plt.plot(XX, gam.predict(XX), label='0.50')
-    plt.plot(XX, gam25.predict(XX), label='0.25')
-    plt.plot(XX, gam05.predict(XX), label='0.05')
-    plt.legend()
-    
-    xout = gam.generate_X_grid(term=0, n=npoints).flatten()
-    yout = gam.predict(xout)
-    return xout, yout
-
-def alr(x, y):
-    import sys
-    sys.path.append(r"C:\bio\ALR\src")
-    from ALR import Automated_Loess_Regression
-    x, y = xList, yList
-    
-    alrResult = Automated_Loess_Regression(np.array(x), np.array(y), err_y=0, deg=2, alpha=0,
-                                           outliers_det=False, n_sims=1000, average=True, verbose=False)
-
-def plot_per_contig(dotsX, dotsY, powerY, lengthsDict, minimumContigSize, width, height, outputDirectory,
+def plot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
+                    width, height, power, outputDirectory,
                     plotPDF=False, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
                  indicating the position where a dot is located
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
-                 indicating the euclidean distance value for each dot
-        powerY -- a dictionary linking chromosome IDs (keys) to lists of floats
-                  indicating the euclidean distance value for each position after
-                  power transformation
+                 indicating the euclidean distance value for each dot; can have
+                 had power transformation applied in advance
         lengthsDict -- a dictionary with structure like:
                        {
                             'contig1': intLength1,
@@ -267,8 +229,11 @@ def plot_per_contig(dotsX, dotsY, powerY, lengthsDict, minimumContigSize, width,
                        }
         minimumContigSize -- an integer value indicating the minimum size a contig must be
                              to be considered for plotting
+        wmaSize -- an integer value indicating the number of previous values to consider
+                   during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
+        power -- an integer value indicating what power euclidean distances were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
@@ -296,16 +261,11 @@ def plot_per_contig(dotsX, dotsY, powerY, lengthsDict, minimumContigSize, width,
             # Get plotting values
             x = np.array(dotsX[contigID]) / 1000000 # convert to Mbp
             y = np.array(dotsY[contigID])
-            power = powerY[contigID]
-            #smoothedList = smoothedY[contigID]
-            smoothedList = smoothTriangle(power, 10)
-            #smoothedList = WMA(np.array(yList), 100)
-            #smoothedList = loess_smoothing(xList, np.array(yList), degree=1, frac=0.5)
-            #smoothedX, smoothedList = pygam_smoothing(xList, yList, npoints=100000)
+            smoothedY = WMA(y, wmaSize)
             
             # Skip plotting if smoothing fails
             "This probably means there are not enough data points to smooth"
-            if smoothedList == None:
+            if smoothedY is None:
                 print(f"WARNING: '{contigID}' has too few data points to smooth; skipping...")
                 continue
             
@@ -314,29 +274,30 @@ def plot_per_contig(dotsX, dotsY, powerY, lengthsDict, minimumContigSize, width,
             ax = plt.axes()
             
             ax.set_xlabel(f"Chromosomal position (Mbp)", fontweight="bold")
-            ax.set_ylabel("Euclidean distance", fontweight="bold")
-            ax.set_title(f"{contigID} euclidean distance plot", fontweight="bold")
+            ax.set_ylabel(f"Euclidean distance (to power {power})", fontweight="bold")
+            ax.set_title(f"{contigID} Euclidean distance plot", fontweight="bold")
             
             # Plot dots
             ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
             
             # Plot line
-            ax.plot(x, smoothedList, zorder=1, linewidth=linewidth)
-            #ax.plot(smoothedX, smoothedList, zorder=1, linewidth=linewidth)
+            ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
             
             # Save output file
             plt.savefig(fileOut)
             numContigsPlotted += 1
     return numContigsProcessed, numContigsPlotted
 
-def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, width, height, outputDirectory,
+def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
+              width, height, power, outputDirectory,
               plotPDF=False, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
                  indicating the position where a dot is located
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
-                 indicating the euclidean distance value for each dot
+                 indicating the euclidean distance value for each dot; can have
+                 had power transformation applied in advance
         lengthsDict -- a dictionary with structure like:
                        {
                             'contig1': intLength1,
@@ -345,8 +306,11 @@ def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, width, height, outpu
                        }
         minimumContigSize -- an integer value indicating the minimum size a contig must be
                              to be considered for plotting
+        wmaSize -- an integer value indicating the number of previous values to consider
+                   during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
+        power -- an integer value indicating what power euclidean distances were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
@@ -361,10 +325,6 @@ def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, width, height, outpu
     if os.path.isfile(fileOut):
         raise FileExistsError(f"'onePlot.{fileSuffix}' already found in output directory")
     
-    # Calculate kbp values for plot axis labels
-    kbpWindowSize = round(windowSize / 1000, 2)
-    kbpStepSize = round(stepSize / 1000, 2)
-    
     # Get the ordered contig IDs
     contigIDs = get_sorted_contig_ids(lengthsDict.keys())
     
@@ -376,43 +336,46 @@ def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, width, height, outpu
             numContigsProcessed += 1
             
             # Skip if we found no SNPs on this contig
-            if not contigID in densityDict:
-                print(f"WARNING: '{contigID}' is in the difference ratio file but has no SNPs associated " +
+            if not contigID in dotsY:
+                print(f"WARNING: '{contigID}' is in the Euclidean distance file but has no SNPs associated " +
                       "with it; skipping...")
                 continue
             
-            # Get the dots for this contig (if applicable)
-            if dotsX != None and contigID in dotsX:
-                dotsXList = dotsX[contigID]
-                dotsYList = dotsY[contigID]
-            else:
-                dotsXList, dotsYList = None, None
+            # Get plotting values
+            x = np.array(dotsX[contigID]) / 1000000 # convert to Mbp
+            y = np.array(dotsY[contigID])
+            smoothedY = WMA(y, wmaSize)
             
-            # Store density values
-            plotData.append([densityDict[contigID], contigID, dotsXList, dotsYList])
+            # Skip plotting if smoothing fails
+            "This probably means there are not enough data points to smooth"
+            if smoothedY is None:
+                print(f"WARNING: '{contigID}' has too few data points to smooth; skipping...")
+                continue
+            
+            # Store dot values
+            plotData.append([contigID, x, y, smoothedY])
             numContigsPlotted += 1
     
-    # Format a single joined plot
-    ## Produce the figure axes
+    # Produce the figure axes
     fig = plt.figure(figsize=(width, height), constrained_layout=True)
     gs = fig.add_gridspec(1, len(plotData), hspace=0)
     axes = gs.subplots(sharey='row')
     
     ## Set the figure title
-    fig.suptitle(f"Contigs difference ratio plot", fontweight="bold")
-    fig.supxlabel(f"Chromosomal position ({kbpWindowSize} kbp windows; {kbpStepSize} kbp step size)", fontweight="bold")
-    fig.supylabel("Mean difference ratio", fontweight="bold")
+    fig.suptitle(f"Euclidean distance plot", fontweight="bold")
+    fig.supxlabel(f"Chromosomal position (Mbp)", fontweight="bold")
+    fig.supylabel(f"Euclidean distance (to power {power})", fontweight="bold")
     
-    ## Plot the data into each axis
-    for ax, (densityList, contigID, dotsXList, dotsYList) in zip(axes, plotData):
+    # Plot the data into each axis
+    for ax, (contigID, x, y, smoothedY) in zip(axes, plotData):
+        # Set plot title
         ax.set_title(contigID)
         
-        ### Plot dots (if applicable)
-        if dotsXList != None and dotsYList != None:
-            ax.scatter(dotsXList, dotsYList, color="red", s=3, alpha=0.5, zorder=0)
+        # Plot dots
+        ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
         
-        ### Plot line
-        ax.plot(densityList, zorder=1, linewidth=linewidth)
+        # Plot line
+        ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
     
     for ax in fig.get_axes():
         ax.label_outer()
@@ -422,10 +385,16 @@ def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, width, height, outpu
     
     return numContigsProcessed, numContigsPlotted
 
-def plot_regions(dotsX, dotsY, regions, width, height, outputDirectory,
-                 plotPDF=False, linewidth=1):
+def plot_regions(dotsX, dotsY, regions, wmaSize,
+                 width, height, power,
+                 outputDirectory, plotPDF=False, linewidth=1):
     '''
     Parameters:
+        dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
+                 indicating the position where a dot is located
+        dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
+                 indicating the euclidean distance value for each dot; can have
+                 had power transformation applied in advance
         densityDict -- a dictionary with structure like:
                        {
                            'contig1': [ floatDensity1, floatDensity2, ... ],
@@ -434,88 +403,66 @@ def plot_regions(dotsX, dotsY, regions, width, height, outputDirectory,
                        the length of the contig divided by its step size
         regions -- a list of strings indicating regions to plot in greater detail with format
                    'contigID:startPos:endPos'
-        windowSize -- an integer value indicating what length of genome the difference ratio
-                      values were averaged over
-        stepSize -- an integer value indicating the step size used to move across the genome
+        wmaSize -- an integer value indicating the number of previous values to consider
+                   during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
+        power -- an integer value indicating what power euclidean distances were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
-        dotsX -- OPTIONAL; a dictionary linking chromosome IDs (keys) to lists of integers
-                 indicating the step position where a dot is located OR None for no dots
-        dotsY -- OPTIONAL; a dictionary linking chromosome IDs (keys) to lists of floats
-                 indicating the difference ratio value for each dot OR None for no dots
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
     '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
     
-    # Convert regions to step indices
-    regions = [
-        [ contig, math.floor(int(start) / stepSize), math.floor(int(end) / stepSize), start, end ]
-        for contig, start, end in regions
-    ]
+    # Convert start and end values to int
+    regions = [ (contigID, int(start), int(end)) for contigID, start, end in regions ]
     
     # Plot each region
     numContigsPlotted = 0
     numContigsProcessed = 0
-    for contigID, startStep, endStep, origStart, origEnd in regions:
+    for contigID, start, end in regions:
         numContigsProcessed += 1
         
         # Derive our output file name and skip if already existing
         fileSuffix = "pdf" if plotPDF else "png"
-        fileOut = os.path.join(outputDirectory, f"{contigID}.{origStart}_to_{origEnd}.{fileSuffix}")
+        fileOut = os.path.join(outputDirectory, f"{contigID}.{start}_to_{end}.{fileSuffix}")
         if os.path.isfile(fileOut):
-            print(f"WARNING: Plot for '{contigID, origStart, origEnd}' already found in output directory; skipping...")
+            print(f"WARNING: Plot for '{contigID, start, end}' already found in output directory; skipping...")
             continue
         
         # Skip if we found no SNPs on this contig
-        if not contigID in densityDict:
-            print(f"WARNING: '{contigID}' is in the difference ratio file but has no SNPs associated " +
+        if not contigID in dotsY:
+            print(f"WARNING: '{contigID}' is in the Euclidean distance file but has no SNPs associated " +
                     "with it; skipping...")
             continue
         
-        # Get density values for the region
-        xList = [ i for i in range(startStep, endStep+1) ]
-        yList = densityDict[contigID][startStep:endStep+1]
+        # Get values within this region
+        regionValues = [ [x, y] for x, y in zip(dotsX[contigID], dotsY[contigID]) if x >= start and x <= end ]
+        x = np.array([ x / 1000000 for x, y in regionValues ]) # convert to Mbp
+        y = np.array([ y for x, y in regionValues ])
+        smoothedY = WMA(y, wmaSize)
         
-        # Get the dots for this region (if applicable)
-        if dotsX != None and contigID in dotsX:
-            dotsXList = dotsX[contigID]
-            dotsYList = dotsY[contigID]
-            
-            # Subset to the region of interest
-            regionDots = [
-                (x, y)
-                for x, y in zip(dotsXList, dotsYList)
-                if x >= startStep and x <= endStep
-            ]
-            
-            # Unpack the region dots back into X and Y lists
-            dotsXList = [ x for x, y in regionDots ]
-            dotsYList = [ y for x, y in regionDots ]
-        
-        else:
-            dotsXList, dotsYList = None, None
+        # Skip plotting if smoothing fails
+        "This probably means there are not enough data points to smooth"
+        if smoothedY is None:
+            print(f"WARNING: '{contigID, start, end}'  has too few data points to smooth; skipping...")
+            continue
         
         # Configure plot
-        kbpWindowSize = round(windowSize / 1000, 2)
-        kbpStepSize = round(stepSize / 1000, 2)
-        
         fig = plt.figure(figsize=(width, height))
         ax = plt.axes()
         
-        ax.set_xlabel(f"Chromosomal position ({kbpWindowSize} kbp windows; {kbpStepSize} kbp step size)", fontweight="bold")
-        ax.set_ylabel("Mean difference ratio", fontweight="bold")
-        ax.set_title(f"{contigID} difference ratio plot", fontweight="bold")
+        ax.set_xlabel(f"Chromosomal position (Mbp)", fontweight="bold")
+        ax.set_ylabel(f"Euclidean distance (to power {power})", fontweight="bold")
+        ax.set_title(f"{contigID} Euclidean distance plot", fontweight="bold")
         
-        # Plot dots (if applicable)
-        if dotsXList != None and dotsYList != None:
-            ax.scatter(dotsXList, dotsYList, color="red", s=3, alpha=0.5, zorder=0)
+        # Plot dots
+        ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
         
         # Plot line
-        ax.plot(xList, yList, zorder=1, linewidth=linewidth)
+        ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
         
         # Save output file
         plt.savefig(fileOut)
@@ -603,6 +550,12 @@ def main():
                    help="""Optionally, specify the power to raise euclidean distances to
                    reduce noise (default=4)""",
                    default=4)
+    p.add_argument("--wmaSize", dest="wmaSize",
+                   type=int,
+                   required=False,
+                   help="""Optionally, specify the number of previous values to consider
+                   during weighted moving average calculation (default=5)""",
+                   default=5)
     # Opts (output)
     p.add_argument("--regions", dest="regions",
                    required=False,
@@ -626,8 +579,9 @@ def main():
     p.add_argument("--reportAboveCutoff", dest="reportAboveCutoff",
                    required=False,
                    type=float,
-                   help="""Optionally, indicate a cutoff value for which any window with a
-                   difference ratio above this value will be reported to the console""",
+                   help="""Optionally, indicate a cutoff value for which any variant with a
+                   power-transformed difference ratio above this value will
+                   be reported to the console""",
                    default=None)
     
     args = p.parse_args()
@@ -640,45 +594,53 @@ def main():
     # Figure out what our pickle file should be called
     pickleFile = os.path.join(
         args.outputDirectory,
-        f"{os.path.basename(args.edistFile)}.al{'_'.join(map(str, args.bulkAlleles))}.oc{args.bulkOccurrence}.po{args.power}.pkl"
+        f"{os.path.basename(args.edistFile)}.al{'_'.join(map(str, args.bulkAlleles))}.oc{args.bulkOccurrence}.pkl"
     )
     
     # Load pickle if it exists to skip computation
     if os.path.isfile(pickleFile):
         with open(pickleFile, "rb") as fileIn:
-            dotsX, dotsY, powerY = pickle.load(fileIn)
+            dotsX, dotsY = pickle.load(fileIn)
     
     # Otherwise ...
     else:
         # Parse euclidean distance data
         dotsX, dotsY = get_edist_for_dotting(args.edistFile, args.bulkAlleles, args.bulkOccurrence)
         
-        # Store power-transformed values
-        powerY = {}
-        for contigID in dotsX.keys():
-            y = np.array(dotsY[contigID])**args.power
-            powerY[contigID] = y
-            
-        # Save the smoothed data
+        # Save data
         with open(pickleFile, "wb") as fileOut:
-            pickle.dump([dotsX, dotsY, powerY], fileOut)
+            pickle.dump([dotsX, dotsY], fileOut)
+    
+    # Power-transform values
+    powerY = {}
+    for contigID in dotsX.keys():
+        y = np.array(dotsY[contigID])**args.power
+        powerY[contigID] = y
+    
+    # Report any variants above the cutoff
+    if args.reportAboveCutoff != None:
+        for contigID in dotsX.keys():
+            for x, y in zip(dotsX[contigID], powerY[contigID]):
+                if y >= args.reportAboveCutoff:
+                    print(f"{contigID}:{x} = {y}")
     
     # Create plots
     if args.onePlot:
-        numContigsProcessed, numContigsPlotted = plot_once(dotsX, powerY,
-                                                           lengthsDict, args.minimumContigSize,
-                                                           args.width, args.height,
+        numContigsProcessed, numContigsPlotted = plot_once(dotsX, powerY, lengthsDict,
+                                                           args.minimumContigSize, args.wmaSize,
+                                                           args.width, args.height, args.power,
                                                            args.outputDirectory, args.plotPDF,
                                                            args.linewidth)
     elif args.regions != []:
         numContigsProcessed, numContigsPlotted = plot_regions(dotsX, powerY, args.regions,
-                                                              args.width, args.height,
+                                                              args.wmaSize,
+                                                              args.width, args.height, args.power,
                                                               args.outputDirectory, args.plotPDF,
                                                               args.linewidth)
     else:
-        numContigsProcessed, numContigsPlotted = plot_per_contig(dotsX, dotsY, powerY,
-                                                                 lengthsDict, args.minimumContigSize,
-                                                                 args.width, args.height,
+        numContigsProcessed, numContigsPlotted = plot_per_contig(dotsX, powerY, lengthsDict,
+                                                                 args.minimumContigSize, args.wmaSize,
+                                                                 args.width, args.height, args.power,
                                                                  args.outputDirectory, args.plotPDF,
                                                                  args.linewidth)
     
