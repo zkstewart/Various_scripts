@@ -213,7 +213,7 @@ def WMA(s, period):
 
 def plot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
                     width, height, power, outputDirectory,
-                    plotPDF=False, linewidth=1):
+                    plotPDF=False, showDots=True, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -237,6 +237,8 @@ def plot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
+        showDots -- OPTIONAL; a boolean indicating whether to show dots for each data point
+                    in addition to the line plot (default=True)
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
     '''
     numContigsProcessed = 0
@@ -277,8 +279,9 @@ def plot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
             ax.set_ylabel(f"Euclidean distance (to power {power})", fontweight="bold")
             ax.set_title(f"{contigID} Euclidean distance plot", fontweight="bold")
             
-            # Plot dots
-            ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+            # Plot dots (if applicable)
+            if showDots:
+                ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
             
             # Plot line
             ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
@@ -290,7 +293,7 @@ def plot_per_contig(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
 
 def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
               width, height, power, outputDirectory,
-              plotPDF=False, linewidth=1):
+              plotPDF=False, showDots=True, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -314,6 +317,8 @@ def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
+        showDots -- OPTIONAL; a boolean indicating whether to show dots for each data point
+                    in addition to the line plot (default=True)
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
     '''
     numContigsProcessed = 0
@@ -371,8 +376,9 @@ def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
         # Set plot title
         ax.set_title(contigID)
         
-        # Plot dots
-        ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+        # Plot dots (if applicable)
+        if showDots:
+            ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
         
         # Plot line
         ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
@@ -386,8 +392,8 @@ def plot_once(dotsX, dotsY, lengthsDict, minimumContigSize, wmaSize,
     return numContigsProcessed, numContigsPlotted
 
 def plot_regions(dotsX, dotsY, regions, wmaSize,
-                 width, height, power,
-                 outputDirectory, plotPDF=False, linewidth=1):
+                 width, height, power, outputDirectory,
+                 showDots=True, plotPDF=False, linewidth=1):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -411,6 +417,8 @@ def plot_regions(dotsX, dotsY, regions, wmaSize,
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
+        showDots -- OPTIONAL; a boolean indicating whether to show dots for each data point
+                    in addition to the line plot (default=True)
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
     '''
     # Parse out regions for plotting
@@ -458,8 +466,9 @@ def plot_regions(dotsX, dotsY, regions, wmaSize,
         ax.set_ylabel(f"Euclidean distance (to power {power})", fontweight="bold")
         ax.set_title(f"{contigID} Euclidean distance plot", fontweight="bold")
         
-        # Plot dots
-        ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+        # Plot dots (if applicable)
+        if showDots:
+            ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
         
         # Plot line
         ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
@@ -619,10 +628,11 @@ def main():
     
     # Report any variants above the cutoff
     if args.reportAboveCutoff != None:
+        print(f"# Euclidean distance >= {args.reportAboveCutoff} report:")
         for contigID in dotsX.keys():
             for x, y in zip(dotsX[contigID], powerY[contigID]):
                 if y >= args.reportAboveCutoff:
-                    print(f"{contigID}:{x} = {y}")
+                    print(f"# {contigID}:{x} = {y}")
     
     # Create plots
     if args.onePlot:
@@ -630,19 +640,19 @@ def main():
                                                            args.minimumContigSize, args.wmaSize,
                                                            args.width, args.height, args.power,
                                                            args.outputDirectory, args.plotPDF,
-                                                           args.linewidth)
+                                                           args.showDots, args.linewidth)
     elif args.regions != []:
         numContigsProcessed, numContigsPlotted = plot_regions(dotsX, powerY, args.regions,
                                                               args.wmaSize,
                                                               args.width, args.height, args.power,
                                                               args.outputDirectory, args.plotPDF,
-                                                              args.linewidth)
+                                                              args.showDots, args.linewidth)
     else:
         numContigsProcessed, numContigsPlotted = plot_per_contig(dotsX, powerY, lengthsDict,
                                                                  args.minimumContigSize, args.wmaSize,
                                                                  args.width, args.height, args.power,
                                                                  args.outputDirectory, args.plotPDF,
-                                                                 args.linewidth)
+                                                                 args.showDots, args.linewidth)
     
     # Raise relevant warnings
     if numContigsProcessed == 0:
