@@ -745,8 +745,8 @@ def main():
                     required=False,
                     type=float,
                     help="""Optionally, indicate a cutoff value for which any power-transformed
-                    variant ('line' mode) or bin quantity ('histogram' mode) above this value will
-                    be reported to the console""",
+                    variant statistic ('line' mode) or bin quantity ('histogram' mode) above this
+                    value will be reported to the console""",
                     default=None)
     
     # Establish subparsers
@@ -902,10 +902,6 @@ def histomain(args, dotsX, powerY, lengthsDict):
             binIndex = x // args.binSize
             if y >= args.binThreshold:
                 histoDict[contigID][binIndex] += 1
-    
-    # Figure out what value to use for the quantiles
-    #binsWithValues = np.concatenate([ a[a > 0] for a in histoDict.values() ])
-    #np.quantile(binsWithValues, [0.25, 0.5, 0.75])
     
     # Report any bins above the cutoff
     if args.reportAboveCutoff != None:
