@@ -40,11 +40,11 @@ def validate_args(args):
             eprint("bulkAlleles values must be integers >= 2")
             quit()
     if args.bulkOccurrence != None:
-        if 0 < args.bulkOccurrence >= 1:
+        if args.bulkOccurrence < 0 or args.bulkOccurrence > 1:
             eprint("bulkOccurrence must be a float value >0 and <=1")
     if args.reportAboveCutoff != None:
-        if 0 < args.reportAboveCutoff >= 1:
-            eprint("reportAboveCutoff must be a float value >0 and <=1")
+        if 0 > args.reportAboveCutoff:
+            eprint("reportAboveCutoff must be a float or int value >0")
             quit()
     # Check for conflicting arguments
     if args.onePlot and args.regions != []:
@@ -249,9 +249,9 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height, power,
     for contigID in dotsX.keys():
         # Derive our output file name and skip if already existing
         fileSuffix = "pdf" if plotPDF else "png"
-        fileOut = os.path.join(outputDirectory, f"{contigID}.{fileSuffix}")
+        fileOut = os.path.join(outputDirectory, f"{contigID}.line.{fileSuffix}")
         if os.path.isfile(fileOut):
-            print(f"WARNING: Plot for '{contigID}' already found in output directory; skipping...")
+            print(f"WARNING: Line plot for '{contigID}' already found in output directory; skipping...")
             continue
         
         # Skip if we found no SNPs on this contig
@@ -316,9 +316,9 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height, power,
     
     # Derive our output file name and error if already existing
     fileSuffix = "pdf" if plotPDF else "png"
-    fileOut = os.path.join(outputDirectory, f"onePlot.{fileSuffix}")
+    fileOut = os.path.join(outputDirectory, f"onePlot.line.{fileSuffix}")
     if os.path.isfile(fileOut):
-        raise FileExistsError(f"'onePlot.{fileSuffix}' already found in output directory")
+        raise FileExistsError(f"'onePlot.line.{fileSuffix}' already found in output directory")
     
     # Get the ordered contig IDs
     contigIDs = get_sorted_contig_ids(dotsX.keys())
@@ -412,9 +412,9 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
     for contigID, start, end in regions:        
         # Derive our output file name and skip if already existing
         fileSuffix = "pdf" if plotPDF else "png"
-        fileOut = os.path.join(outputDirectory, f"{contigID}.{start}_to_{end}.{fileSuffix}")
+        fileOut = os.path.join(outputDirectory, f"{contigID}.{start}_to_{end}.line.{fileSuffix}")
         if os.path.isfile(fileOut):
-            print(f"WARNING: Plot for '{contigID, start, end}' already found in output directory; skipping...")
+            print(f"WARNING: Line plot for '{contigID, start, end}' already found in output directory; skipping...")
             continue
         
         # Skip if we found no SNPs on this contig
@@ -449,6 +449,181 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
         
         # Plot line
         ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
+        
+        # Save output file
+        plt.savefig(fileOut)
+        numContigsPlotted += 1
+    return numContigsPlotted
+
+def histo_per_contig(histoDict, width, height, power, outputDirectory,
+                     binSize, binThreshold, plotPDF=False):
+    '''
+    Parameters:
+        histoDict -- dictionary linking chromosome IDs (keys) to numpy arrays of integers
+                     containing the number of SNPs in each bin that exceeded the threshold
+        width -- an integer value indicating the width of the output plot
+        height -- an integer value indicating the height of the output plot
+        power -- an integer value indicating what power euclidean distances were raised to
+        outputDirectory -- a string indicating the directory where output files will be written
+        binSize -- an integer value indicating the size of the bins that were used for counting
+        binThreshold -- a float value indicating the Euclidean distance threshold that
+                        was set for counting a SNP
+        plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
+                   PDFs (True) or PNGs (False)
+    '''
+    numContigsPlotted = 0
+    for contigID in histoDict.keys():
+        # Derive our output file name and skip if already existing
+        fileSuffix = "pdf" if plotPDF else "png"
+        fileOut = os.path.join(outputDirectory, f"{contigID}.histo.{fileSuffix}")
+        if os.path.isfile(fileOut):
+            print(f"WARNING: Histogram plot for '{contigID}' already found in output directory; skipping...")
+            continue
+        
+        # Get plotting values
+        x = np.arange(0, len(histoDict[contigID]))
+        y = histoDict[contigID]
+        stepSize = binSize / 1000 # convert to Kbp
+        
+        # Configure plot
+        fig = plt.figure(figsize=(width, height))
+        ax = plt.axes()
+        
+        ax.set_xlabel(f"Bin number ({stepSize} Kbp step and width)", fontweight="bold")
+        ax.set_ylabel(f"Number of variants with Euclidean distance (to power {power}) >= {binThreshold}", fontweight="bold")
+        ax.set_title(f"{contigID} Euclidean distance histogram", fontweight="bold")
+        
+        # Plot bars
+        ax.bar(x, y, color="red", zorder=0)
+        
+        # Save output file
+        plt.savefig(fileOut)
+        numContigsPlotted += 1
+    return numContigsPlotted
+
+def histo_horizontal(histoDict, width, height, power, outputDirectory,
+                     binSize, binThreshold, plotPDF=False):
+    '''
+    Parameters:
+        histoDict -- dictionary linking chromosome IDs (keys) to numpy arrays of integers
+                     containing the number of SNPs in each bin that exceeded the threshold
+        width -- an integer value indicating the width of the output plot
+        height -- an integer value indicating the height of the output plot
+        power -- an integer value indicating what power euclidean distances were raised to
+        outputDirectory -- a string indicating the directory where output files will be written
+        binSize -- an integer value indicating the size of the bins that were used for counting
+        binThreshold -- a float value indicating the Euclidean distance threshold that
+                        was set for counting a SNP
+        plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
+                   PDFs (True) or PNGs (False)
+    '''
+    numContigsPlotted = 0
+    
+    # Derive our output file name and error if already existing
+    fileSuffix = "pdf" if plotPDF else "png"
+    fileOut = os.path.join(outputDirectory, f"onePlot.histo.{fileSuffix}")
+    if os.path.isfile(fileOut):
+        raise FileExistsError(f"'onePlot.histo.{fileSuffix}' already found in output directory")
+    
+    # Get the ordered contig IDs
+    contigIDs = get_sorted_contig_ids(histoDict.keys())
+    
+    # Get each contigs' plot data
+    plotData = []
+    for contigID in contigIDs:
+        x = np.arange(0, len(histoDict[contigID]))
+        y = histoDict[contigID]
+        
+        plotData.append([contigID, x, y])
+        numContigsPlotted += 1
+    
+    # Produce the figure axes
+    fig = plt.figure(figsize=(width, height), constrained_layout=True)
+    gs = fig.add_gridspec(1, len(plotData), hspace=0)
+    axes = gs.subplots(sharey='row')
+    
+    ## Set the figure title
+    stepSize = binSize / 1000 # convert to Kbp
+    fig.suptitle(f"Euclidean distance histogram", fontweight="bold")
+    fig.supxlabel(f"Bin number ({stepSize} Kbp step and width)", fontweight="bold")
+    fig.supylabel(f"Number of variants with Euclidean distance (to power {power}) >= {binThreshold}", fontweight="bold")
+    
+    # Plot the data into each axis
+    for ax, (contigID, x, y) in zip(axes, plotData):
+        # Set plot title
+        ax.set_title(contigID)
+        
+        # Plot bars
+        ax.bar(x, y, color="red", zorder=0)
+    
+    for ax in fig.get_axes():
+        ax.label_outer()
+    
+    # Save output file
+    plt.savefig(fileOut)
+    
+    return numContigsPlotted
+
+def histo_regions(histoDict, regions, width, height, power, outputDirectory,
+                  binSize, binThreshold, plotPDF=False):
+    '''
+    Parameters:
+        histoDict -- dictionary linking chromosome IDs (keys) to numpy arrays of integers
+                     containing the number of SNPs in each bin that exceeded the threshold
+        regions -- a list of strings indicating regions to plot in greater detail with format
+                   'contigID:startPos:endPos'
+        width -- an integer value indicating the width of the output plot
+        height -- an integer value indicating the height of the output plot
+        power -- an integer value indicating what power euclidean distances were raised to
+        outputDirectory -- a string indicating the directory where output files will be written
+        binSize -- an integer value indicating the size of the bins that were used for counting
+        binThreshold -- a float value indicating the Euclidean distance threshold that
+                        was set for counting a SNP
+        plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
+                   PDFs (True) or PNGs (False)
+    '''
+    # Parse out regions for plotting
+    regions = [ region.split(":") for region in regions ]
+    
+    # Convert start and end values to int
+    regions = [ (contigID, int(start), int(end)) for contigID, start, end in regions ]
+    
+    # Plot each region
+    numContigsPlotted = 0
+    for contigID, start, end in regions:        
+        # Derive our output file name and skip if already existing
+        fileSuffix = "pdf" if plotPDF else "png"
+        fileOut = os.path.join(outputDirectory, f"{contigID}.{start}_to_{end}.histo.{fileSuffix}")
+        if os.path.isfile(fileOut):
+            print(f"WARNING: Histogram plot for '{contigID, start, end}' already found in output directory; skipping...")
+            continue
+        
+        # Figure out which bins fall within this region
+        binStart = start // binSize
+        binEnd = end // binSize
+        regionBins = histoDict[contigID][binStart:binEnd+1]
+        
+        # Raise error if incorrect number of bins found
+        if len(regionBins) != binEnd - binStart + 1:
+            raise ValueError(f"Region '{contigID, start, end}' only has {len(regionBins)} bins " +
+                             f"but should have {binEnd - binStart + 1} bins. This probably means " +
+                             "that your region coordinates are incorrect.")
+        
+        # Format values within this region
+        x = np.arange(binStart, binEnd+1)
+        y = regionBins
+        
+        # Configure plot
+        fig = plt.figure(figsize=(width, height))
+        ax = plt.axes()
+        
+        stepSize = binSize / 1000 # convert to Kbp
+        ax.set_xlabel(f"Bin number ({stepSize} Kbp step and width)", fontweight="bold")
+        ax.set_ylabel(f"Number of variants with Euclidean distance (to power {power}) >= {binThreshold}", fontweight="bold")
+        ax.set_title(f"{contigID} Euclidean distance histogram", fontweight="bold")
+        
+        # Plot bars
+        ax.bar(x, y, color="red", zorder=0)
         
         # Save output file
         plt.savefig(fileOut)
@@ -660,9 +835,9 @@ def main():
     # Split into mode-specific functions
     if args.mode == "line":
         linemain(args, dotsX, powerY)
-    elif args.mode == "histogram":
+    elif args.mode in ["histogram", "histo"]:
         histomain(args, dotsX, powerY, lengthsDict)
-    
+
 def linemain(args, dotsX, powerY):
     # Report any variants above the cutoff
     if args.reportAboveCutoff != None:
@@ -709,6 +884,10 @@ def histomain(args, dotsX, powerY, lengthsDict):
             if y >= args.binThreshold:
                 histoDict[contigID][binIndex] += 1
     
+    # Figure out what value to use for the quantiles
+    #binsWithValues = np.concatenate([ a[a > 0] for a in histoDict.values() ])
+    #np.quantile(binsWithValues, [0.25, 0.5, 0.75])
+    
     # Report any bins above the cutoff
     if args.reportAboveCutoff != None:
         print(f"# Bin containing distance >= {args.binThreshold} report:")
@@ -718,8 +897,21 @@ def histomain(args, dotsX, powerY, lengthsDict):
                     print(f"# {contigID}:{i*args.binSize}-{(i+1)*args.binSize} = {count}")
     
     # Create plots
-    raise NotImplementedError("Histogram mode is not yet implemented!")
-    ## TBD ...
+    if args.onePlot:
+        numContigsPlotted = histo_horizontal(histoDict,
+                                             args.width, args.height, args.power,
+                                             args.outputDirectory, args.binSize,
+                                             args.binThreshold, args.plotPDF)
+    elif args.regions != []:
+        numContigsPlotted = histo_regions(histoDict, args.regions,
+                                          args.width, args.height, args.power,
+                                          args.outputDirectory, args.binSize,
+                                          args.binThreshold, args.plotPDF)
+    else:
+        numContigsPlotted = histo_per_contig(histoDict,
+                                             args.width, args.height, args.power,
+                                             args.outputDirectory, args.binSize,
+                                             args.binThreshold, args.plotPDF)
     
     # Raise errors if necessary
     if numContigsPlotted == 0:
