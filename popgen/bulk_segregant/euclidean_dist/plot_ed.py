@@ -70,7 +70,6 @@ def validate_args(args):
     if not os.path.isdir(args.outputDirectory):
         os.makedirs(args.outputDirectory)
         eprint(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
-    
     # Handle mode-specific arguments
     if args.mode == "line":
         if args.wmaSize < 1:
@@ -87,11 +86,11 @@ def validate_args(args):
             eprint("binThreshold must be a float value >0")
             quit()
 
-def get_edist_for_dotting(edistFile, bulkAlleles=[], bulkOccurrence=None):
+def get_statistics_for_dotting(tsvFile, bulkAlleles=[], bulkOccurrence=None,
+                               HEADER_VALUES = ["CHROM", "POSI", "euclideanDist", "bulk1_alleles", "bulk2_alleles"]):
     '''
     Parameters:
-        edistFile -- a string pointing to the Euclidean distance file
-                         containing relevant statistics
+        tsvFile -- a string pointing to the TSV file containing relevant statistics
         bulkAlleles -- OPTIONAL; a list of two integers indicating the maximum number of alleles
                        in each bulk OR an empty list OR None to indicate that bulk occurrence
                        should not be considered (default=[])
@@ -102,10 +101,8 @@ def get_edist_for_dotting(edistFile, bulkAlleles=[], bulkOccurrence=None):
         dotsX -- a dict pairing chromosome IDs (keys) to a list of integers indicating
                  the position for each SNP (values)
         dotsY -- a dict pairing chromosome IDs (keys) to a list of floats indicating the
-                 Euclidean distance for each SNP (values)
+                 statistic for each SNP (values)
     '''
-    HEADER_VALUES = ["CHROM", "POSI", "euclideanDist", "bulk1_alleles", "bulk2_alleles"]
-    
     # Check that bulk values make sense
     if bulkAlleles != [] and bulkOccurrence != None:
         assert all([ isinstance(val, int) for val in bulkAlleles ]), "Bulk alleles must be integers!"
@@ -117,9 +114,9 @@ def get_edist_for_dotting(edistFile, bulkAlleles=[], bulkOccurrence=None):
     else:
         shouldBulk = False
     
-    # Iterate through file and grab distance values
+    # Iterate through file and grab statistical values
     dotsX, dotsY = {}, {}
-    with open(edistFile, "r") as fileIn:
+    with open(tsvFile, "r") as fileIn:
         firstLine = True
         for line in fileIn:
             sl = line.rstrip("\r\n ").split("\t")
@@ -225,25 +222,28 @@ def WMA(s, period):
     return pd.Series(sw)
 
 def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height, power,
-                        outputDirectory, plotPDF=False, showDots=True, linewidth=1):
+                        outputDirectory, plotPDF=False, showDots=True,
+                        linewidth=1, statisticLabel="Euclidean distance"):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
                  indicating the position where a dot is located
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
-                 indicating the Euclidean distance value for each dot; can have
+                 indicating the statistical value for each dot; can have
                  had power transformation applied in advance
         wmaSize -- an integer value indicating the number of previous values to consider
                    during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power Euclidean distances were raised to
+        power -- an integer value indicating what power statistical values were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
         showDots -- OPTIONAL; a boolean indicating whether to show dots for each data point
                     in addition to the line plot (default=True)
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
+        statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
+                          (default="Euclidean distance")
     '''
     numContigsPlotted = 0
     for contigID in dotsX.keys():
@@ -256,7 +256,7 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height, power,
         
         # Skip if we found no SNPs on this contig
         if not contigID in dotsY:
-            print(f"WARNING: '{contigID}' is in the Euclidean distance file but has no SNPs associated " +
+            print(f"WARNING: '{contigID}' is in the statistics file but has no SNPs associated " +
                     "with it; skipping...")
             continue
         
@@ -276,8 +276,9 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height, power,
         ax = plt.axes()
         
         ax.set_xlabel(f"Chromosomal position (Mbp)", fontweight="bold")
-        ax.set_ylabel(f"Euclidean distance (to power {power})", fontweight="bold")
-        ax.set_title(f"{contigID} Euclidean distance plot", fontweight="bold")
+        ax.set_ylabel(f"{statisticLabel} (to power {power})"
+                      if power != 1 else f"{statisticLabel}", fontweight="bold")
+        ax.set_title(f"{contigID} {statisticLabel} plot", fontweight="bold")
         
         # Plot dots (if applicable)
         if showDots:
@@ -292,25 +293,28 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height, power,
     return numContigsPlotted
 
 def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height, power,
-                        outputDirectory, plotPDF=False, showDots=True, linewidth=1):
+                        outputDirectory, plotPDF=False, showDots=True,
+                        linewidth=1, statisticLabel="Euclidean distance"):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
                  indicating the position where a dot is located
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
-                 indicating the Euclidean distance value for each dot; can have
+                 indicating the statistical value for each dot; can have
                  had power transformation applied in advance
         wmaSize -- an integer value indicating the number of previous values to consider
                    during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power Euclidean distances were raised to
+        power -- an integer value indicating what power statistical values were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
         showDots -- OPTIONAL; a boolean indicating whether to show dots for each data point
                     in addition to the line plot (default=True)
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
+        statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
+                          (default="Euclidean distance")
     '''
     numContigsPlotted = 0
     
@@ -328,7 +332,7 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height, power,
     for contigID in contigIDs:
         # Skip if we found no SNPs on this contig
         if not contigID in dotsY:
-            print(f"WARNING: '{contigID}' is in the Euclidean distance file but has no SNPs associated " +
+            print(f"WARNING: '{contigID}' is in the statistics file but has no SNPs associated " +
                     "with it; skipping...")
             continue
         
@@ -353,9 +357,10 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height, power,
     axes = gs.subplots(sharey='row')
     
     ## Set the figure title
-    fig.suptitle(f"Euclidean distance plot", fontweight="bold")
+    fig.suptitle(f"{statisticLabel} plot", fontweight="bold")
     fig.supxlabel(f"Chromosomal position (Mbp)", fontweight="bold")
-    fig.supylabel(f"Euclidean distance (to power {power})", fontweight="bold")
+    fig.supylabel(f"{statisticLabel} (to power {power})"
+                      if power != 1 else f"{statisticLabel}", fontweight="bold")
     
     # Plot the data into each axis
     for ax, (contigID, x, y, smoothedY) in zip(axes, plotData):
@@ -379,13 +384,14 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height, power,
 
 def lineplot_regions(dotsX, dotsY, regions, wmaSize,
                      width, height, power, outputDirectory,
-                     showDots=True, plotPDF=False, linewidth=1):
+                     showDots=True, plotPDF=False,
+                     linewidth=1, statisticLabel="Euclidean distance"):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
                  indicating the position where a dot is located
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
-                 indicating the Euclidean distance value for each dot; can have
+                 indicating the statistical value for each dot; can have
                  had power transformation applied in advance
         regions -- a list of strings indicating regions to plot in greater detail with format
                    'contigID:startPos:endPos'
@@ -393,13 +399,15 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
                    during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power Euclidean distances were raised to
+        power -- an integer value indicating what power statistical values were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
         showDots -- OPTIONAL; a boolean indicating whether to show dots for each data point
                     in addition to the line plot (default=True)
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
+        statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
+                          (default="Euclidean distance")
     '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
@@ -419,7 +427,7 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
         
         # Skip if we found no SNPs on this contig
         if not contigID in dotsY:
-            print(f"WARNING: '{contigID}' is in the Euclidean distance file but has no SNPs associated " +
+            print(f"WARNING: '{contigID}' is in the statistics file but has no SNPs associated " +
                     "with it; skipping...")
             continue
         
@@ -440,8 +448,9 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
         ax = plt.axes()
         
         ax.set_xlabel(f"Chromosomal position (Mbp)", fontweight="bold")
-        ax.set_ylabel(f"Euclidean distance (to power {power})", fontweight="bold")
-        ax.set_title(f"{contigID} Euclidean distance plot", fontweight="bold")
+        ax.set_ylabel(f"{statisticLabel} (to power {power})"
+                      if power != 1 else f"{statisticLabel}", fontweight="bold")
+        ax.set_title(f"{contigID} {statisticLabel} plot", fontweight="bold")
         
         # Plot dots (if applicable)
         if showDots:
@@ -456,20 +465,23 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
     return numContigsPlotted
 
 def histo_per_contig(histoDict, width, height, power, outputDirectory,
-                     binSize, binThreshold, plotPDF=False):
+                     binSize, binThreshold, plotPDF=False,
+                     statisticLabel="Euclidean distance"):
     '''
     Parameters:
         histoDict -- dictionary linking chromosome IDs (keys) to numpy arrays of integers
                      containing the number of SNPs in each bin that exceeded the threshold
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power Euclidean distances were raised to
+        power -- an integer value indicating what power statistical values were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         binSize -- an integer value indicating the size of the bins that were used for counting
-        binThreshold -- a float value indicating the Euclidean distance threshold that
+        binThreshold -- a float value indicating the statistics value threshold that
                         was set for counting a SNP
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
+        statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
+                          (default="Euclidean distance")
     '''
     numContigsPlotted = 0
     for contigID in histoDict.keys():
@@ -490,8 +502,9 @@ def histo_per_contig(histoDict, width, height, power, outputDirectory,
         ax = plt.axes()
         
         ax.set_xlabel(f"Bin number ({stepSize} Kbp step and width)", fontweight="bold")
-        ax.set_ylabel(f"Number of variants with Euclidean distance (to power {power}) >= {binThreshold}", fontweight="bold")
-        ax.set_title(f"{contigID} Euclidean distance histogram", fontweight="bold")
+        ax.set_ylabel(f"Number of variants with {statisticLabel} (to power {power}) >= {binThreshold}"
+                      if power != 1 else f"Number of variants with {statisticLabel} >= {binThreshold}", fontweight="bold")
+        ax.set_title(f"{contigID} {statisticLabel} histogram", fontweight="bold")
         
         # Plot bars
         ax.bar(x, y, color="red", zorder=0)
@@ -502,20 +515,23 @@ def histo_per_contig(histoDict, width, height, power, outputDirectory,
     return numContigsPlotted
 
 def histo_horizontal(histoDict, width, height, power, outputDirectory,
-                     binSize, binThreshold, plotPDF=False):
+                     binSize, binThreshold, plotPDF=False,
+                     statisticLabel="Euclidean distance"):
     '''
     Parameters:
         histoDict -- dictionary linking chromosome IDs (keys) to numpy arrays of integers
                      containing the number of SNPs in each bin that exceeded the threshold
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power Euclidean distances were raised to
+        power -- an integer value indicating what power statistical values were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         binSize -- an integer value indicating the size of the bins that were used for counting
-        binThreshold -- a float value indicating the Euclidean distance threshold that
+        binThreshold -- a float value indicating the statistics value threshold that
                         was set for counting a SNP
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
+        statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
+                          (default="Euclidean distance")
     '''
     numContigsPlotted = 0
     
@@ -544,9 +560,10 @@ def histo_horizontal(histoDict, width, height, power, outputDirectory,
     
     ## Set the figure title
     stepSize = binSize / 1000 # convert to Kbp
-    fig.suptitle(f"Euclidean distance histogram", fontweight="bold")
+    fig.suptitle(f"{statisticLabel} histogram", fontweight="bold")
     fig.supxlabel(f"Bin number ({stepSize} Kbp step and width)", fontweight="bold")
-    fig.supylabel(f"Number of variants with Euclidean distance (to power {power}) >= {binThreshold}", fontweight="bold")
+    fig.supylabel(f"Number of variants with {statisticLabel} (to power {power}) >= {binThreshold}"
+                  if power != 1 else f"Number of variants with {statisticLabel} >= {binThreshold}", fontweight="bold")
     
     # Plot the data into each axis
     for ax, (contigID, x, y) in zip(axes, plotData):
@@ -565,7 +582,8 @@ def histo_horizontal(histoDict, width, height, power, outputDirectory,
     return numContigsPlotted
 
 def histo_regions(histoDict, regions, width, height, power, outputDirectory,
-                  binSize, binThreshold, plotPDF=False):
+                  binSize, binThreshold, plotPDF=False,
+                  statisticLabel="Euclidean distance"):
     '''
     Parameters:
         histoDict -- dictionary linking chromosome IDs (keys) to numpy arrays of integers
@@ -574,13 +592,15 @@ def histo_regions(histoDict, regions, width, height, power, outputDirectory,
                    'contigID:startPos:endPos'
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power Euclidean distances were raised to
+        power -- an integer value indicating what power statistical values were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         binSize -- an integer value indicating the size of the bins that were used for counting
-        binThreshold -- a float value indicating the Euclidean distance threshold that
+        binThreshold -- a float value indicating the statistics value threshold that
                         was set for counting a SNP
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
+        statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
+                          (default="Euclidean distance")
     '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
@@ -619,8 +639,9 @@ def histo_regions(histoDict, regions, width, height, power, outputDirectory,
         
         stepSize = binSize / 1000 # convert to Kbp
         ax.set_xlabel(f"Bin number ({stepSize} Kbp step and width)", fontweight="bold")
-        ax.set_ylabel(f"Number of variants with Euclidean distance (to power {power}) >= {binThreshold}", fontweight="bold")
-        ax.set_title(f"{contigID} Euclidean distance histogram", fontweight="bold")
+        ax.set_ylabel(f"Number of variants with {statisticLabel} (to power {power}) >= {binThreshold}"
+                      if power != 1 else f"Number of variants with {statisticLabel} >= {binThreshold}", fontweight="bold")
+        ax.set_title(f"{contigID} {statisticLabel} histogram", fontweight="bold")
         
         # Plot bars
         ax.bar(x, y, color="red", zorder=0)
@@ -796,7 +817,7 @@ def main():
     # Otherwise ...
     else:
         # Parse Euclidean distance data
-        dotsX, dotsY = get_edist_for_dotting(args.edistFile, args.bulkAlleles, args.bulkOccurrence)
+        dotsX, dotsY = get_statistics_for_dotting(args.edistFile, args.bulkAlleles, args.bulkOccurrence)
         
         # Save data
         with open(pickleFile, "wb") as fileOut:
