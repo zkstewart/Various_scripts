@@ -1,6 +1,6 @@
 #! python3
-# plot_diffratio.py
-# Script to create visualisations of the difference ratio statistics
+# plot_ed.py
+# Script to create visualisations of the Euclidean distance statistics
 # for assessing hypotheses of variant segregation along chromosomes.
 
 import os, argparse, sys, re, pickle, math
@@ -15,7 +15,7 @@ def eprint(*args, **kwargs):
 def validate_args(args):
     # Validate input data locations
     if not os.path.isfile(args.edistFile):
-        eprint(f'I am unable to locate the euclidean distance file ({args.edistFile})')
+        eprint(f'I am unable to locate the Euclidean distance file ({args.edistFile})')
         eprint('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
     if not os.path.isfile(args.genomeFasta):
@@ -90,7 +90,7 @@ def validate_args(args):
 def get_edist_for_dotting(edistFile, bulkAlleles=[], bulkOccurrence=None):
     '''
     Parameters:
-        edistFile -- a string pointing to the euclidean distance file
+        edistFile -- a string pointing to the Euclidean distance file
                          containing relevant statistics
         bulkAlleles -- OPTIONAL; a list of two integers indicating the maximum number of alleles
                        in each bulk OR an empty list OR None to indicate that bulk occurrence
@@ -102,7 +102,7 @@ def get_edist_for_dotting(edistFile, bulkAlleles=[], bulkOccurrence=None):
         dotsX -- a dict pairing chromosome IDs (keys) to a list of integers indicating
                  the position for each SNP (values)
         dotsY -- a dict pairing chromosome IDs (keys) to a list of floats indicating the
-                 euclidean distance for each SNP (values)
+                 Euclidean distance for each SNP (values)
     '''
     HEADER_VALUES = ["CHROM", "POSI", "euclideanDist", "bulk1_alleles", "bulk2_alleles"]
     
@@ -231,13 +231,13 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height, power,
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
                  indicating the position where a dot is located
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
-                 indicating the euclidean distance value for each dot; can have
+                 indicating the Euclidean distance value for each dot; can have
                  had power transformation applied in advance
         wmaSize -- an integer value indicating the number of previous values to consider
                    during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power euclidean distances were raised to
+        power -- an integer value indicating what power Euclidean distances were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
@@ -298,13 +298,13 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height, power,
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
                  indicating the position where a dot is located
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
-                 indicating the euclidean distance value for each dot; can have
+                 indicating the Euclidean distance value for each dot; can have
                  had power transformation applied in advance
         wmaSize -- an integer value indicating the number of previous values to consider
                    during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power euclidean distances were raised to
+        power -- an integer value indicating what power Euclidean distances were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
@@ -385,7 +385,7 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
                  indicating the position where a dot is located
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
-                 indicating the euclidean distance value for each dot; can have
+                 indicating the Euclidean distance value for each dot; can have
                  had power transformation applied in advance
         regions -- a list of strings indicating regions to plot in greater detail with format
                    'contigID:startPos:endPos'
@@ -393,7 +393,7 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
                    during weighted moving average calculation
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power euclidean distances were raised to
+        power -- an integer value indicating what power Euclidean distances were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
                    PDFs (True) or PNGs (False)
@@ -463,7 +463,7 @@ def histo_per_contig(histoDict, width, height, power, outputDirectory,
                      containing the number of SNPs in each bin that exceeded the threshold
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power euclidean distances were raised to
+        power -- an integer value indicating what power Euclidean distances were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         binSize -- an integer value indicating the size of the bins that were used for counting
         binThreshold -- a float value indicating the Euclidean distance threshold that
@@ -509,7 +509,7 @@ def histo_horizontal(histoDict, width, height, power, outputDirectory,
                      containing the number of SNPs in each bin that exceeded the threshold
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power euclidean distances were raised to
+        power -- an integer value indicating what power Euclidean distances were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         binSize -- an integer value indicating the size of the bins that were used for counting
         binThreshold -- a float value indicating the Euclidean distance threshold that
@@ -574,7 +574,7 @@ def histo_regions(histoDict, regions, width, height, power, outputDirectory,
                    'contigID:startPos:endPos'
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
-        power -- an integer value indicating what power euclidean distances were raised to
+        power -- an integer value indicating what power Euclidean distances were raised to
         outputDirectory -- a string indicating the directory where output files will be written
         binSize -- an integer value indicating the size of the bins that were used for counting
         binThreshold -- a float value indicating the Euclidean distance threshold that
@@ -640,14 +640,12 @@ def get_sorted_contig_ids(idsList):
         return sorted(idsList)
 
 def main():
-    usage = """%(prog)s receives a difference ratio TSV file and creates
-    difference ratio plots per chromosome. It specifically calculates the
-    average difference ratio value over each window and plots that value.
-    Hence, it may help to visualise where in the genome regions associated
-    with bulks exist.
-    
-    Note that step size dictates where the centre of each window will be,
-    with the window size dictating the size of the window.
+    usage = """%(prog)s receives a Euclidean distance TSV file and creates
+    Euclidean distance plots in various formats (line plots and histograms)
+    in different manners (per contig, horizontally, or for specific regions).
+    Through raising the Euclidean distances to a power, and calculating
+    a weighted moving average (for line plots), it can help to visualise where
+    in the genome regions that segregate between bulks occur.
     """
     # Establish main parser
     p = argparse.ArgumentParser(description=usage)
@@ -656,7 +654,7 @@ def main():
     ## Required arguments
     p.add_argument("-d", dest="edistFile",
                     required=True,
-                    help="Specify the location of the input euclidean distance file")
+                    help="Specify the location of the input Euclidean distance file")
     p.add_argument("-f", dest="genomeFasta",
                     required=True,
                     help="Specify the location of the genome FASTA file")
@@ -699,7 +697,7 @@ def main():
     p.add_argument("--power", dest="power",
                     type=int,
                     required=False,
-                    help="""Optionally, specify the power to raise euclidean distances to
+                    help="""Optionally, specify the power to raise Euclidean distances to
                     reduce noise (default=4)""",
                     default=4)
     ## Opts (output)
@@ -738,14 +736,14 @@ def main():
     lineparser = subparsers.add_parser("line",
                                        parents=[p],
                                        add_help=False,
-                                       help="Create line plots of euclidean distances")
+                                       help="Create line plots of Euclidean distances")
     lineparser.set_defaults(func=linemain)
     
     histoparser = subparsers.add_parser("histogram",
                                         aliases=["histo"],
                                         parents=[p],
                                         add_help=False,
-                                        help="Create histograms of euclidean distances")
+                                        help="Create histograms of Euclidean distances")
     histoparser.set_defaults(func=histomain)
     
     # Line-subparser arguments
@@ -797,7 +795,7 @@ def main():
     
     # Otherwise ...
     else:
-        # Parse euclidean distance data
+        # Parse Euclidean distance data
         dotsX, dotsY = get_edist_for_dotting(args.edistFile, args.bulkAlleles, args.bulkOccurrence)
         
         # Save data
