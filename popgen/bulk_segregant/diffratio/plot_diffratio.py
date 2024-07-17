@@ -329,7 +329,7 @@ def histomain(args, dotsX, dotsY, lengthsDict):
     
     # Report any bins above the cutoff
     if args.reportAboveCutoff != None:
-        print(f"# Bin containing distance >= {args.binThreshold} report:")
+        print(f"# Bin containing difference ratio >= {args.binThreshold} report:")
         for contigID, binCounts in histoDict.items():
             for i, count in enumerate(binCounts):
                 if count >= args.reportAboveCutoff:
