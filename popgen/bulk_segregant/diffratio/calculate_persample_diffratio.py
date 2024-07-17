@@ -166,6 +166,14 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Specify the output file name")
+    # Opts
+    p.add_argument("--ignoreIdentical", dest="ignoreIdentical",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, provide this flag if you'd like variants where
+                   both bulks are identical to be ignored; this can occur when both bulks
+                   have the same variant with respect to the reference genome""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -232,6 +240,14 @@ def main():
                 bulk1_alleles, bulk2_alleles, bulk1_refIndex, \
                     bulk2_refIndex, delta_refIndex, \
                     differenceRatio = calculate_snp_indices(bulk1, bulk2)
+                
+                # Skip if both bulks are identical
+                if args.ignoreIdentical and differenceRatio == 0:
+                    bulk1Dedup = set(( tuple(x) for x in bulk1 ))
+                    bulk2Dedup = set(( tuple(x) for x in bulk2 ))
+                    "if both have set len==1, are the same, and have 0 difference ratio, they are identical non-reference alleles"
+                    if len(bulk1Dedup) == 1 and bulk1Dedup == bulk2Dedup:
+                        continue
                 
                 # Format and write output line
                 outputLine = f"{contig}\t{pos}\t{variant}\t{bulk1_alleles}\t" + \
