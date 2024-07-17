@@ -507,7 +507,7 @@ def histo_per_contig(histoDict, width, height, power, outputDirectory,
         ax.set_title(f"{contigID} {statisticLabel} histogram", fontweight="bold")
         
         # Plot bars
-        ax.bar(x, y, color="red", zorder=0)
+        ax.bar(x, y, zorder=0)
         
         # Save output file
         plt.savefig(fileOut)
@@ -571,7 +571,7 @@ def histo_horizontal(histoDict, width, height, power, outputDirectory,
         ax.set_title(contigID)
         
         # Plot bars
-        ax.bar(x, y, color="red", zorder=0)
+        ax.bar(x, y, zorder=0)
     
     for ax in fig.get_axes():
         ax.label_outer()
@@ -644,7 +644,7 @@ def histo_regions(histoDict, regions, width, height, power, outputDirectory,
         ax.set_title(f"{contigID} {statisticLabel} histogram", fontweight="bold")
         
         # Plot bars
-        ax.bar(x, y, color="red", zorder=0)
+        ax.bar(x, y, zorder=0)
         
         # Save output file
         plt.savefig(fileOut)
