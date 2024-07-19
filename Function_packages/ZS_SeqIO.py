@@ -219,6 +219,33 @@ class Conversion:
             tmpHash = sha256(bytes(strForHash, 'utf-8')).hexdigest()
         
         return tmpHash[0:maxLength]
+    
+    @staticmethod
+    def format_str_as_fasta_id(inputString):
+        '''
+        This method will take a string and format it as a FASTA ID. That entails removing
+        any whitespace, and ensuring that the string does not contain any characters that
+        might break FASTA formatting with an underscore.
+        
+        Parameters:
+            inputString -- a string that will be formatted as a FASTA ID
+        Returns:
+            formattedString -- a string that is formatted as a FASTA ID
+        '''
+        assert isinstance(inputString, str), \
+            "inputString must be a string"
+        
+        # Replace multiple spaces with a single space
+        inputString = re.sub(r"\s+", " ", inputString)
+        
+        # Replace any whitespace with underscores
+        formattedString = inputString.replace(" ", "_")
+        
+        # Remove any characters that might break FASTA formatting
+        formattedString = formattedString.replace("|", "_").replace(",", "_").replace(">", "")\
+            .replace("\r", "").replace("\n", "").replace("\t", "")
+        
+        return formattedString
 
 class FastASeq:
     '''
