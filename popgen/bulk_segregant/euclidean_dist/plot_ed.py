@@ -384,7 +384,7 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height, power,
 
 def lineplot_regions(dotsX, dotsY, regions, wmaSize,
                      width, height, power, outputDirectory,
-                     showDots=True, plotPDF=False,
+                     plotPDF=False, showDots=True,
                      linewidth=1, statisticLabel="Euclidean distance"):
     '''
     Parameters:
