@@ -461,7 +461,7 @@ def main():
         # If tblout doesn't exist, run HMMER
         tbloutName = os.path.join(
             tbloutsDir,
-            "{0}.tblout".format(os.path.basename(hmm.hmmFile).rsplit(".", maxsplit=1)[0])
+            "{0}.tblout".format(os.path.basename(hmmFile).rsplit(".", maxsplit=1)[0])
         )
         if not os.path.isfile(tbloutName):
             hmmer = ZS_HmmIO.HMMER(args.hmmerDir, hmmFile,
