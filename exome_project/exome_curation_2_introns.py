@@ -528,24 +528,33 @@ def main():
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-a", dest="alignmentsDir", required=True,
-                help="Specify the directory where aligned FASTA files are located")
-    p.add_argument("-g", dest="gff3s", required=True, nargs="+",
-                help="Specify one or more GFF3s to provide CDS boundary information")
-    p.add_argument("-lo", dest="liftovers", required=True, nargs="+",
-                help="Specify one or more liftover exon FASTAs dirs paired to the gff3s")
-    p.add_argument("-t", dest="transcriptomeFile", required=True,
-                help="Specify the location of a single representative (protein) transcriptome file")
-    p.add_argument("-o", dest="outputDir", required=True,
-                help="Output directory location (default == \"2_prep\")",
-                default="2_polish")
+    p.add_argument("-a", dest="alignmentsDir",
+                   required=True,
+                   help="Specify the directory where aligned FASTA files are located")
+    p.add_argument("-g", dest="gff3s",
+                   required=True,
+                   nargs="+",
+                   help="Specify one or more GFF3s to provide CDS boundary information")
+    p.add_argument("-lo", dest="liftovers",
+                   required=True,
+                   nargs="+",
+                   help="Specify one or more liftover exon FASTAs dirs paired to the gff3s")
+    p.add_argument("-t", dest="transcriptomeFile",
+                   required=True,
+                   help="Specify the location of a single representative (protein) transcriptome file")
+    p.add_argument("-o", dest="outputDir",
+                   required=True,
+                   help="Output directory location (default == \"2_prep\")",
+                   default="2_polish")
     # Opts
-    p.add_argument("--INTRON_CHAR", dest="INTRON_CHAR", required=False,
-                help="Optionally, specify what character should be used to denote intron positions (default==\"4\")",
-                default="4")
-    p.add_argument("--PROBLEM_CHAR", dest="PROBLEM_CHAR", required=False,
-                help="Optionally, specify what character should be used to denote positions that are problematic to solve (default==\"5\")",
-                default="5")
+    p.add_argument("--INTRON_CHAR", dest="INTRON_CHAR",
+                   required=False,
+                   help="Optionally, specify what character should be used to denote intron positions (default==\"4\")",
+                   default="4")
+    p.add_argument("--PROBLEM_CHAR", dest="PROBLEM_CHAR",
+                   required=False,
+                   help="Optionally, specify what character should be used to denote positions that are problematic to solve (default==\"5\")",
+                   default="5")
     args = p.parse_args()
     validate_args(args)
     

@@ -64,7 +64,10 @@ def set_alts(FASTA_obj, metadataDict):
     '''
     for FastASeq_obj in FASTA_obj:
         description = FastASeq_obj.description
-        metadataID = description.split(" ")[1].rsplit("_", maxsplit=1)[0] # Get just the middle part sans _S### suffix
+        if " " in description:
+            metadataID = description.split(" ")[1].rsplit("_", maxsplit=1)[0] # Get just the middle part sans _S### suffix
+        else:
+            metadataID = description
         altID = metadataDict[metadataID]
         FastASeq_obj.alt = altID
 
@@ -95,23 +98,28 @@ def main():
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-a", dest="alignmentsDir", required=True,
-                help="Specify the directory where aligned FASTA files are located")
-    p.add_argument("-m", dest="metadataFile", required=True,
-                help="Specify the metadata file location")
+    p.add_argument("-a", dest="alignmentsDir",
+                   required=True,
+                   help="Specify the directory where aligned FASTA files are located")
+    p.add_argument("-m", dest="metadataFile",
+                   required=True,
+                   help="Specify the metadata file location")
     p.add_argument("--mafft", dest="mafft",
                    required=False,
                    help="""Optionally, specify the mafft executable file
                    if it is not discoverable in the path""",
                    default=None)
-    p.add_argument("-o", dest="outputDir", required=True,
-                help="Output directory location (default == \"1_prep\")",
-                default="prep")
+    p.add_argument("-o", dest="outputDir",
+                   required=False,
+                   help="Output directory location (default == \"1_prep\")",
+                   default="1_prep")
     # Opts
-    p.add_argument("-l", dest="liftoverDirs", required=False, nargs="+",
-                help="Optionally, specify one or more directories where exome liftover FASTAs can be found",
-                default=[])
-
+    p.add_argument("-l", dest="liftoverDirs",
+                   required=False,
+                   nargs="+",
+                   help="Optionally, specify one or more directories where exome liftover FASTAs can be found",
+                   default=[])
+    
     args = p.parse_args()
     validate_args(args)
     
@@ -120,7 +128,7 @@ def main():
     
     # Parse metadata file
     metadataDict = get_dasyurid_metadata_dict(args.metadataFile)
-
+    
     # Load FASTA files
     fastaObjs = []
     mergeStats = [0 for _ in range(len(args.liftoverDirs))]
@@ -180,7 +188,7 @@ def main():
     # Sort FASTA objects to have consistent internal ordering
     for FASTA_obj in fastaObjs:
         FASTA_obj.seqs.sort(key = lambda x: sequenceIDs.index(x.alt))
-
+    
     # Write output files
     for i in range(len(files)):
         file = os.path.basename(files[i])
