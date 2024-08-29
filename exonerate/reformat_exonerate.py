@@ -18,6 +18,26 @@ def validate_args(args):
                             "If you provide a full path, make sure its parent directories exist; " +
                             "otherwise, provide a file name only."))
 
+def exonerate_geneid_produce(contigID, sequenceID, idDict):
+        # Produce the basic ID prefix
+        sequenceBit = sequenceID.split('|')
+        sequenceBit.sort(key=len, reverse=True) # This should help to handle sequence IDs like eg|asdf|c1; we assume the longest part is the most informative which should be true with Trinity and GenBank/Swiss-Prot IDs
+        # Specifically handle older Trinity-style IDs
+        if len(sequenceBit) > 1:
+                if sequenceBit[1].startswith('TR') and sequenceBit[1][2:].isdigit():
+                        sequenceBit[0] = sequenceBit[1] + '_' + sequenceBit[0]
+        # Specifically handle ToxProt-style IDs [Note that, normally, the longest bit in a UniProt ID is what we want, but with toxprot the format differs e.g., with "toxprot_sp|P25660|VKT9_BUNFA" the longest section is ambiguous and might return the toxprot bit]
+        if len(sequenceBit) == 3 and sequenceID.split('|')[0] == 'toxprot_sp':
+                sequenceBit[0] = sequenceID.split('|')[2]
+        # Format gene ID
+        geneID = contigID + '.' + sequenceBit[0]
+        if geneID not in idDict:
+                idDict[geneID] = 1
+        # Produce the final geneID and iterate idDict's contents
+        outGeneID = geneID + '.' + str(idDict[geneID])
+        idDict[geneID] += 1
+        return outGeneID, idDict
+
 def convert_exonerate_gff(exonerateFile, outputFileName):
     '''
     This function will take an exonerate output file and reformat
