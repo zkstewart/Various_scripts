@@ -6,7 +6,7 @@
 
 import sys, argparse, os, math, statistics, platform, hashlib, time, random
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
-from Function_packages import ZS_SeqIO, ZS_HmmIO, ZS_AlignIO
+from Function_packages import ZS_SeqIO, ZS_HmmIO, ZS_Utility
 import parasail # need to import this always to handle modules importing our ssw_parasail function
 if platform.system() != 'Windows':
     from skbio.alignment import StripedSmithWaterman
@@ -198,7 +198,8 @@ def get_hmm_length(hmmFile):
                 currentCount += 1
     return currentCount - 1 # Since we add one every iteration, we'll end up adding 1 too many by the end
 
-def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_obj):
+def check_if_prediction_is_good(bestPrediction, hmmerObj, hmmFastaFile, 
+                                genomeFastaFile, genome_FASTA_obj):
     '''
     This function will apply some general heuristics to see if the exon we've
     predicted seems to match the HMM well. If there's something minor wrong 
@@ -206,9 +207,11 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
     
     Params:
         bestPrediction -- a list created by get_prediction_from_domdict()
-        hmmer -- a ZS_HmmIO.HMMER object.
-        fastaFile -- a string indicating the location of the FASTA file that
-                     the HMM is based on.
+        hmmerObj -- a ZS_HmmIO.HMMER object configured with the HMM
+        hmmFastaFile -- a string indicating the location of the FASTA file that
+                        the HMM is based on.
+        genomeFastaFile -- a string indicating the location of the FASTA file of
+                           the genome sequences.
         genome_FASTA_obj -- a ZS_SeqIO.FASTA object containing the genome sequences.
     Returns:
         isGood -- a boolean indicating whether the prediction is good or not.
@@ -229,22 +232,16 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
     
     # Heuristic 2: Check if the exon has a comparable E-value to sequences taken from the HMM itself
     ## Run HMMER again against the HMM's own sequences
-    tmpHash = hashlib.sha256(bytes(str(fastaFile) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+    tmpHash = hashlib.sha256(bytes(str(hmmFastaFile) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
+    tmpTbloutName = ZS_Utility.tmp_file_name_gen("goodPred" + tmpHash[0:20], "tblout")
     
-    FASTA_obj = ZS_SeqIO.FASTA(fastaFile, isAligned=True)
-    tmpFastaName = hmmer._tmp_file_name_gen("tmpFasta" + tmpHash[0:20], "fasta")
-    FASTA_obj.write(tmpFastaName)
-    
-    hmmer.load_FASTA_from_file(tmpFastaName)
-    tmpTbloutName = hmmer._tmp_file_name_gen("goodPred" + tmpHash[0:20], "tblout")
-    hmmer.set_output_name(tmpTbloutName)
-    hmmer.run_search()
+    hmmerObj.run(genomeFastaFile, tmpTbloutName, isNucleotide=True)
+    domDict = hmmerObj.domDict
     
     os.unlink(tmpTbloutName) # Clean up temporary files now since we've saved .domDict
-    os.unlink(tmpFastaName)
     
     ## Get the statistical distribution of E-values
-    evalues = [value[3] for chrom in hmmer.domDict.keys() for value in hmmer.domDict[chrom]]
+    evalues = [ value[3] for chrom in domDict.keys() for value in domDict[chrom] ]
     evalues.sort()
     assert evalues != [], "HMMER search against own HMM fails to find results, alignment file is out of sync probably"
     
@@ -265,7 +262,7 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
         # ... try to rescue it first to see if it's a gap sequence messing with things
         
         ## Rescue step 1: Find out how much sequence might be left out due to gap regions
-        hmmLength = get_hmm_length(hmmer.HMM.hmmFile)
+        hmmLength = get_hmm_length(hmmerObj.hmmFile)
         predictionHmmStart, predictionHmmEnd = bestPrediction[5:7]
         
         potentialNewStart = bestPrediction[2] - predictionHmmStart + 1
@@ -304,6 +301,7 @@ def check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_o
         
         ## Rescue step 4: If the new sequence DOES contain gaps, align it to the exon and check for good alignment
         ## 4.1: Create a consensus sequence for the exon
+        FASTA_obj = ZS_SeqIO.FASTA(hmmFastaFile, isAligned=True)
         consensus = FASTA_obj.generate_consensus().replace("-", "")
         ## 4.2: Get the additionalSequence bit we want to align (sans N's)
         querySequence = max(additionalSequence.lower().split("n" * LONG_GAP_LENGTH), key = lambda x: len(x)).lstrip("n").upper()
@@ -427,23 +425,22 @@ def main():
     
     # Locate all files
     files = [os.path.join(args.alignmentsDir, file) for file in os.listdir(args.alignmentsDir)]
-
+    
     # Create HMMs from aligned files
     hmmsDir = os.path.join(args.outputDir, "hmms")
     hmmsList = []
     os.makedirs(hmmsDir, exist_ok=True)
     for f in files:
-        hmmName = os.path.join(hmmsDir, os.path.basename(f).rsplit(".", maxsplit=1)[0] + ".hmm")
-        hmm = ZS_HmmIO.HMM(args.hmmerDir, isNucleotide=True)
+        hmmName = os.path.basename(f).rsplit(".", maxsplit=1)[0]
+        hmmFile = os.path.join(hmmsDir, hmmName + ".hmm")
         
-        # If HMM exists, load it in
-        if os.path.isfile(hmmName):
-            hmm.load_HMM_file(hmmName)
         # Create HMM if it doesn't exist
-        else:
-            hmm.load_FASTA_from_file(f)
-            hmm.create_HMM(hmmName, hmmBuildExtraArgs="--dna")
-        hmmsList.append(hmm)
+        if not os.path.isfile(hmmName):
+            hmm = ZS_HmmIO.HMM(args.hmmerDir, isNucleotide=True)
+            hmm.create(f, hmmFile, hmmName=hmmName, isNucleotide=True)
+        
+        # Store HMM file name for later use
+        hmmsList.append(hmmFile)
     
     # Load the genome FASTA for later use
     genome_FASTA_obj = ZS_SeqIO.FASTA(args.genomeFile)
@@ -454,10 +451,10 @@ def main():
     os.makedirs(tbloutsDir, exist_ok=True)
     os.makedirs(fastasDir, exist_ok=True)
     for i in range(len(hmmsList)):
-        hmm = hmmsList[i]
+        hmmFile = hmmsList[i]
         
         # Derive exon FASTA name and skip if it already exists
-        exonFastaFile = os.path.join(fastasDir, os.path.basename(hmm.hmmFile).rsplit(".", maxsplit=1)[0]) + ".fasta"
+        exonFastaFile = os.path.join(fastasDir, os.path.basename(hmmFile).rsplit(".", maxsplit=1)[0]) + ".fasta"
         if os.path.isfile(exonFastaFile):
             continue
         
@@ -467,35 +464,32 @@ def main():
             "{0}.tblout".format(os.path.basename(hmm.hmmFile).rsplit(".", maxsplit=1)[0])
         )
         if not os.path.isfile(tbloutName):
-            hmmer = ZS_HmmIO.HMMER(hmm)
-            hmmer.load_FASTA_from_file(args.genomeFile)
-            hmmer.set_output_name(tbloutName)
-            hmmer.set_Evalue(args.Evalue)
-            hmmer.set_threads(args.threads)
-            hmmer.run_search()
+            hmmer = ZS_HmmIO.HMMER(args.hmmerDir, hmmFile,
+                                   threads=args.threads, evalue=args.Evalue)
+            hmmer.run(args.genomeFile, tbloutName, isNucleotide=True)
             domDict = hmmer.domDict # This is what we want out of HMMER
         # If it does exist, simply load it in
         else:
-            hmmer = ZS_HmmIO.HMMER(hmm) # We're going to reuse this later
-            hmmer.set_Evalue(args.Evalue)
-            hmmer.set_threads(args.threads) 
+            hmmer = ZS_HmmIO.HMMER(args.hmmerDir, hmmFile, # we use this later
+                                   threads=args.threads, evalue=args.Evalue)
             domDict = ZS_HmmIO.nhmmer_parse(tbloutName, args.Evalue, extendedDetails=True)
-
+        
         # If domDict is empty, skip this exon since we've failed to find it
         if domDict == {}:
             continue
-                
+        
         # Parse domDict and find the best exon
         bestPrediction = get_prediction_from_domdict(domDict)
         if bestPrediction == None:
             continue
-    
+        
         # If we could find a single "best" exon, check if it's any good at all
         fastaFile = files[i]
-        isGood = check_if_prediction_is_good(bestPrediction, hmmer, fastaFile, genome_FASTA_obj)
+        isGood = check_if_prediction_is_good(bestPrediction, hmmer, fastaFile,
+                                             args.genomeFile, genome_FASTA_obj)
         if not isGood:
             continue
-
+        
         # If it's good, write it to file
         write_prediction_to_fasta(bestPrediction, genome_FASTA_obj, args.identifier, exonFastaFile)
 
