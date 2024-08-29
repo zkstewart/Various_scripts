@@ -6,7 +6,7 @@ import os, argparse
 
 def validate_args(args):
     # Validate input data location
-    if not os.path.isfile(inputFile):
+    if not os.path.isfile(args.inputFile):
         raise FileNotFoundError((f"I am unable to locate the file at '{args.inputFile}'. " + 
                                 "Make sure you've typed the name or location correctly and try again."))
     # Handle file output
