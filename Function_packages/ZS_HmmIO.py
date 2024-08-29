@@ -30,7 +30,7 @@ class HMM:
     @hmmerDir.setter
     def hmmerDir(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_isdir(convertedValue, isFolder=True), \
+        assert ZS_Utility.wsl_isdir(convertedValue), \
             f"hmmer folder not found at '{convertedValue}' after WSL compatibility conversion"
         self._hmmerDir = convertedValue
         self.hmmpress = value + "/hmmpress"
@@ -197,7 +197,7 @@ class HMMER:
     @hmmerDir.setter
     def hmmerDir(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_isdir(convertedValue, isFolder=True), \
+        assert ZS_Utility.wsl_isdir(convertedValue), \
             f"hmmer folder not found at '{convertedValue}' after WSL compatibility conversion"
         self._hmmerDir = convertedValue
         self.hmmsearch = value + "/hmmsearch"
