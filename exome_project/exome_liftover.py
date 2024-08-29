@@ -199,7 +199,7 @@ def get_hmm_length(hmmFile):
     return currentCount - 1 # Since we add one every iteration, we'll end up adding 1 too many by the end
 
 def check_if_prediction_is_good(bestPrediction, hmmerObj, hmmFastaFile, 
-                                genomeFastaFile, genome_FASTA_obj):
+                                genome_FASTA_obj):
     '''
     This function will apply some general heuristics to see if the exon we've
     predicted seems to match the HMM well. If there's something minor wrong 
@@ -207,11 +207,9 @@ def check_if_prediction_is_good(bestPrediction, hmmerObj, hmmFastaFile,
     
     Params:
         bestPrediction -- a list created by get_prediction_from_domdict()
-        hmmerObj -- a ZS_HmmIO.HMMER object configured with the HMM
+        hmmerObj -- a ZS_HmmIO.HMMER object configured with the HMM for querying.
         hmmFastaFile -- a string indicating the location of the FASTA file that
                         the HMM is based on.
-        genomeFastaFile -- a string indicating the location of the FASTA file of
-                           the genome sequences.
         genome_FASTA_obj -- a ZS_SeqIO.FASTA object containing the genome sequences.
     Returns:
         isGood -- a boolean indicating whether the prediction is good or not.
@@ -235,7 +233,7 @@ def check_if_prediction_is_good(bestPrediction, hmmerObj, hmmFastaFile,
     tmpHash = hashlib.sha256(bytes(str(hmmFastaFile) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
     tmpTbloutName = ZS_Utility.tmp_file_name_gen("goodPred" + tmpHash[0:20], "tblout")
     
-    hmmerObj.run(genomeFastaFile, tmpTbloutName, isNucleotide=True)
+    hmmerObj.run(hmmFastaFile, tmpTbloutName, isNucleotide=True)
     domDict = hmmerObj.domDict
     
     os.unlink(tmpTbloutName) # Clean up temporary files now since we've saved .domDict
@@ -486,7 +484,7 @@ def main():
         # If we could find a single "best" exon, check if it's any good at all
         fastaFile = files[i]
         isGood = check_if_prediction_is_good(bestPrediction, hmmer, fastaFile,
-                                             args.genomeFile, genome_FASTA_obj)
+                                             genome_FASTA_obj)
         if not isGood:
             continue
         
