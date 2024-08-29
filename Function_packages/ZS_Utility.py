@@ -74,7 +74,10 @@ def wsl_exists(program, isFolder=False):
                     or not. Default is False (i.e., a file or program).
     '''
     if platform.system() != 'Windows':
-        return os.path.isfile(program)
+        if isFolder:
+            return os.path.isdir(program)
+        else:
+            return os.path.isfile(program)
     else:
         cmd = ["wsl", "~", "-e", "ls", program]
         run_wsl_exists = subprocess.Popen(cmd, shell = True,
