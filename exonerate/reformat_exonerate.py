@@ -2,7 +2,7 @@
 # reformat_exonerate.py
 # Reformats exonerate's output into a standard GFF3 format.
 
-import os
+import os, argparse
 
 def validate_args(args):
     # Validate input data location
