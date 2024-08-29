@@ -30,7 +30,7 @@ class HMM:
     @hmmerDir.setter
     def hmmerDir(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_exists(convertedValue, isFolder=True), \
+        assert ZS_Utility.wsl_isdir(convertedValue, isFolder=True), \
             f"hmmer folder not found at '{convertedValue}' after WSL compatibility conversion"
         self._hmmerDir = convertedValue
         self.hmmpress = value + "/hmmpress"
@@ -43,7 +43,7 @@ class HMM:
     @hmmpress.setter
     def hmmpress(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_exists(convertedValue), \
+        assert ZS_Utility.wsl_isfile(convertedValue), \
             f"hmmpress executable not found at '{convertedValue}' after WSL compatibility conversion"
         self._hmmpress = convertedValue
     
@@ -54,7 +54,7 @@ class HMM:
     @hmmbuild.setter
     def hmmbuild(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_exists(convertedValue), \
+        assert ZS_Utility.wsl_isfile(convertedValue), \
             f"hmmbuild executable not found at '{convertedValue}' after WSL compatibility conversion"
         self._hmmbuild = convertedValue
     
@@ -197,7 +197,7 @@ class HMMER:
     @hmmerDir.setter
     def hmmerDir(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_exists(convertedValue, isFolder=True), \
+        assert ZS_Utility.wsl_isdir(convertedValue, isFolder=True), \
             f"hmmer folder not found at '{convertedValue}' after WSL compatibility conversion"
         self._hmmerDir = convertedValue
         self.hmmsearch = value + "/hmmsearch"
@@ -210,7 +210,7 @@ class HMMER:
     @hmmsearch.setter
     def hmmsearch(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_exists(convertedValue), \
+        assert ZS_Utility.wsl_isfile(convertedValue), \
             f"hmmsearch executable not found at '{convertedValue}' after WSL compatibility conversion"
         self._hmmsearch = convertedValue
     
@@ -221,7 +221,7 @@ class HMMER:
     @nhmmer.setter
     def nhmmer(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_exists(convertedValue), \
+        assert ZS_Utility.wsl_isfile(convertedValue), \
             f"nhmmer executable not found at '{convertedValue}' after WSL compatibility conversion"
         self._nhmmer = convertedValue
     
@@ -232,7 +232,7 @@ class HMMER:
     @hmmFile.setter
     def hmmFile(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_exists(convertedValue), \
+        assert ZS_Utility.wsl_isfile(convertedValue), \
             f"HMM file not found at '{convertedValue}' after WSL compatibility conversion"
         self._hmmFile = convertedValue
     
@@ -315,9 +315,9 @@ class HMMER:
         Returns:
             domDict -- a dictionary containing the parsed results of the search.
         '''
-        assert ZS_Utility.wsl_exists(hmmFileName), \
+        assert ZS_Utility.wsl_isfile(hmmFileName), \
             f"ERROR: HMMER.search() could not find HMM file '{hmmFileName}'"
-        assert not ZS_Utility.wsl_exists(outputFileName), \
+        assert not ZS_Utility.wsl_isfile(outputFileName), \
             f"ERROR: HMMER.search() will not allow overwriting '{outputFileName}'"
         assert isinstance(threads, int), "threads must be an integer"
         assert threads > 0, "threads must be greater than 0"

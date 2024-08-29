@@ -296,7 +296,7 @@ class MAFFT:
     @exe.setter
     def exe(self, value):
         convertedValue = ZS_Utility.convert_to_wsl_if_not_unix(value)
-        assert ZS_Utility.wsl_exists(convertedValue), \
+        assert ZS_Utility.wsl_isfile(convertedValue), \
             f"MAFFT executable not found at '{convertedValue}' after WSL compatibility conversion"
         self._exe = convertedValue
     
