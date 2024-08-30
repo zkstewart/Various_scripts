@@ -443,7 +443,7 @@ def main():
         hmmFile = os.path.join(hmmsDir, hmmName + ".hmm")
         
         # Create HMM if it doesn't exist
-        if not os.path.isfile(hmmName):
+        if not os.path.isfile(hmmFile):
             hmm = ZS_HmmIO.HMM(args.hmmerDir, isNucleotide=True)
             hmm.create(f, hmmFile, hmmName=hmmName, isNucleotide=True)
         
