@@ -6,7 +6,7 @@
 
 import sys, argparse, os, math, statistics, platform, hashlib, time, random
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
-from Function_packages import ZS_SeqIO, ZS_HmmIO, ZS_Utility
+from Function_packages import ZS_SeqIO, ZS_HmmIO, ZS_SeqIO
 import parasail # need to import this always to handle modules importing our ssw_parasail function
 if platform.system() != 'Windows':
     from skbio.alignment import StripedSmithWaterman
@@ -213,7 +213,10 @@ def check_if_prediction_is_good(bestPrediction, hmmerObj, hmmFastaFile,
         genome_FASTA_obj -- a ZS_SeqIO.FASTA object containing the genome sequences.
     Returns:
         isGood -- a boolean indicating whether the prediction is good or not.
-    '''    
+    '''
+    # Generate random hash for this run
+    tmpHash = ZS_SeqIO.Conversion.get_hash_for_input_sequences(hmmFastaFile)
+    
     # Heuristic 1: Check if the exon mostly aligns end-to-end with the HMM
     '''
     From testing, this heuristic can't be applied because some of the alignments
@@ -229,14 +232,19 @@ def check_if_prediction_is_good(bestPrediction, hmmerObj, hmmFastaFile,
     #     return False
     
     # Heuristic 2: Check if the exon has a comparable E-value to sequences taken from the HMM itself
-    ## Run HMMER again against the HMM's own sequences
-    tmpHash = hashlib.sha256(bytes(str(hmmFastaFile) + str(time.time()) + str(random.randint(0, 100000)), 'utf-8') ).hexdigest()
-    tmpTbloutName = ZS_Utility.tmp_file_name_gen("goodPred" + tmpHash[0:20], "tblout")
+    ## Generate a temporary FASTA file sans gap characters
+    tmpFastaName = f"tmpFasta{tmpHash}.fasta"
+    FASTA_obj = ZS_SeqIO.FASTA(hmmFastaFile, isAligned=True)
+    FASTA_obj.write(tmpFastaName)
     
-    hmmerObj.run(hmmFastaFile, tmpTbloutName, isNucleotide=True)
+    ## Run HMMER again against the HMM's own gapless sequences
+    tmpTbloutName = f"goodPred{tmpHash}.tblout"
+    hmmerObj.run(tmpFastaName, tmpTbloutName, isNucleotide=True)
     domDict = hmmerObj.domDict
     
-    os.unlink(tmpTbloutName) # Clean up temporary files now since we've saved .domDict
+    ## Clean up temporary files
+    os.unlink(tmpFastaName)
+    os.unlink(tmpTbloutName)
     
     ## Get the statistical distribution of E-values
     evalues = [ value[3] for chrom in domDict.keys() for value in domDict[chrom] ]
@@ -397,6 +405,8 @@ def main():
     Oz Mammals genome project. Its goal is to transform these alignments into HMMs that can
     then be queried against a genome of interest to locate the relevant exon sequence from
     said genome.
+    
+    Note: You should make sure you
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
