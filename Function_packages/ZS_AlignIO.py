@@ -540,7 +540,7 @@ class MAFFT:
                 f"ERROR: MAFFT.add() could not find the FASTA file '{originalFasta}'"
             originalFileName, originalIsTemporary = originalFasta, False
         elif hasattr(originalFasta, "isFASTA") and originalFasta.isFASTA is True:
-            originalFileName, originalIsTemporary = ZS_SeqIO.Conversion.get_filename_for_input_sequences(originalFasta)
+            originalFileName, originalIsTemporary = ZS_SeqIO.Conversion.get_filename_for_input_sequences(originalFasta, asAligned=True)
         else:
             raise Exception(f"ERROR: MAFFT.run() requires a FASTA file or FASTA object as input; did not understand '{originalFasta}'")
         

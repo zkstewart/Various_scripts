@@ -142,7 +142,7 @@ class Conversion:
         return inObject
     
     @staticmethod
-    def get_filename_for_input_sequences(inObject):
+    def get_filename_for_input_sequences(inObject, asAligned=False):
         '''
         Method for use when boiling down one of the three data types (FASTA, FastASeq, and string)
         into a string representing a FASTA file name.
@@ -155,6 +155,9 @@ class Conversion:
         
         Parameters:
             inObject -- a value that is expected to be a string, FastASeq, or FASTA object.
+            asAligned -- OPTIONAL; a Boolean indicating whether the FASTA file should be
+                         written with gaps included (True) or not (False). Default is False;
+                         only relevant if inObject isAligned.
         Returns:
             fileName -- a string indicating the file name representing the contents of the
                         inObject value. If it was already a string, this will be the same.
@@ -171,8 +174,14 @@ class Conversion:
         isTemporary = False
         if hasattr(inObject, "isFASTA") and inObject.isFASTA is True:
             tmpinObjectName = ZS_Utility.tmp_file_name_gen("SeqIO_Conversion_tmp" + tmpHash, "fasta")
-            inObject.write(tmpinObjectName)
             
+            # Write the FASTA object to a file
+            if asAligned:
+                inObject.write(tmpinObjectName, asAligned=True)
+            else:
+                inObject.write(tmpinObjectName)
+            
+            # Store the file name for return
             inObject = tmpinObjectName # after this point, inObject will be a string indicating a FASTA file name
             isTemporary = True # if we set this, inObject was not originally a string
         
