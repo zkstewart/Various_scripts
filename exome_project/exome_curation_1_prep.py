@@ -47,6 +47,7 @@ def validate_args(args):
             print("Created '{0}' directory as part of argument validation".format(args.outputDir))
         except:
             print("Wasn't able to create '{0}' directory; does '{1}' actually exist?".format(args.outputDir, os.path.dirname(args.outputDir)))
+            quit()
 
 def get_dasyurid_metadata_dict(metadataFile):
     metadataDict = {}
@@ -125,6 +126,8 @@ def main():
     
     # Locate all files
     files = [os.path.join(args.alignmentsDir, file) for file in os.listdir(args.alignmentsDir)]
+    if files == []:
+        raise ValueError("No files found in the specified -a input directory")
     
     # Parse metadata file
     metadataDict = get_dasyurid_metadata_dict(args.metadataFile)
@@ -163,7 +166,7 @@ def main():
                 
                 # Perform MAFFT --add alignment
                 m = ZS_AlignIO.MAFFT(args.mafft)
-                f = m.add(f, add_FASTA_obj)
+                f = m.add(f, add_FASTA_obj, "add")
         
         # Store in fasta objects list
         fastaObjs.append(f)
