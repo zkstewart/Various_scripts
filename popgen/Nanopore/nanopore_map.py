@@ -100,7 +100,7 @@ def process_fqfiles(speciesIds, fqDir, suffix=".fq.gz"):
             print("Either fix your metadata, or make sure the indicated file exists.")
             quit()
         
-        fqFiles.append(os.path.join(fqDir, fqFileName))
+        fqFiles.append(fqFileName)
     return fqFiles
 
 def create_cmd_file(speciesIds, fqDir, readgroups, genomeFile, minimap2Exe,
