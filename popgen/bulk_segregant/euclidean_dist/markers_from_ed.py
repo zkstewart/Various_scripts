@@ -70,66 +70,66 @@ def main():
     # Set arguments shared by subparsers
     ## Required arguments
     p.add_argument("-d", dest="edistFile",
-                    required=True,
-                    help="Specify the location of the input Euclidean distance file")
+                   required=True,
+                   help="Specify the location of the input Euclidean distance file")
     p.add_argument("-f", dest="genomeFasta",
-                    required=True,
-                    help="Specify the location of the genome FASTA file")
+                   required=True,
+                   help="Specify the location of the genome FASTA file")
     p.add_argument("-v", dest="vcfFile",
-                    required=True,
-                    help="Specify the location of the VCF file")
+                   required=True,
+                   help="Specify the location of the VCF file")
     p.add_argument("-o", dest="outputFileName",
-                    required=True,
-                    help="Output name for the marker selection file")
+                   required=True,
+                   help="Output name for the marker selection file")
     p.add_argument("--binThreshold", dest="binThreshold",
-                    type=True,
-                    required=False,
-                    help="""Specify the Euclidean distance threshold
-                    to set for binning a SNP (default=0.4)""",
-                    default=0.4)
+                   required=True,
+                   type=float,
+                   help="""Specify the Euclidean distance threshold
+                   to set for binning a SNP (default=0.4)""",
+                   default=0.4)
     p.add_argument("--reportThreshold", dest="reportThreshold",
-                    type=True,
-                    required=False,
-                    help="""Specify the Euclidean distance threshold
-                    to set for outputting a SNP (default=0.1)""",
-                    default=0.4)
+                   required=True,
+                   type=float, 
+                   help="""Specify the Euclidean distance threshold
+                   to set for outputting a SNP (default=0.1)""",
+                   default=0.4)
     ## Opts
     p.add_argument("--minimum_contig", dest="minimumContigSize",
-                    type=int,
-                    required=False,
-                    help="""Optionally, specify the minimum size of contig to
-                    create plots for (default=200000 i.e., 2Mb)""",
-                    default=200000)
+                   type=int,
+                   required=False,
+                   help="""Optionally, specify the minimum size of contig to
+                   create plots for (default=200000 i.e., 2Mb)""",
+                   default=200000)
     p.add_argument("--bulkAlleles", dest="bulkAlleles",
-                    required=False,
-                    nargs="+",
-                    type=int,
-                    help="""Optionally, indicate the number of maximum possible alleles
-                    in each bulk in order to calculate the occurrence fraction for
-                    filtering""",
-                    default=[])
+                   required=False,
+                   nargs="+",
+                   type=int,
+                   help="""Optionally, indicate the number of maximum possible alleles
+                   in each bulk in order to calculate the occurrence fraction for
+                   filtering""",
+                   default=[])
     p.add_argument("--bulkOccurrence", dest="bulkOccurrence",
-                    type=float,
-                    required=False,
-                    help="""Optionally, specify the minimum fraction of occurrence
-                    for one of the two bulks to be considered for plotting""",
-                    default=None)
+                   type=float,
+                   required=False,
+                   help="""Optionally, specify the minimum fraction of occurrence
+                   for one of the two bulks to be considered for plotting""",
+                   default=None)
     p.add_argument("--binSize", dest="binSize",
-                    type=int,
-                    required=False,
-                    help="""Optionally, specify the bin size to count variants
-                    within (default=10000)""",
-                    default=10000)
+                   type=int,
+                   required=False,
+                   help="""Optionally, specify the bin size to count variants
+                   within (default=10000)""",
+                   default=10000)
     p.add_argument("--power", dest="power",
-                    type=int,
-                    required=False,
-                    help="""Optionally, specify the power to raise Euclidean distances to
-                    reduce noise (default=4)""",
-                    default=4)
+                   type=int,
+                   required=False,
+                   help="""Optionally, specify the power to raise Euclidean distances to
+                   reduce noise (default=4)""",
+                   default=4)
     p.add_argument("--pickle", dest="pickleFile",
-                    required=False,
-                    help="""Optionally, specify the location of a pickle file""",
-                    default=None)
+                   required=False,
+                   help="""Optionally, specify the location of a pickle file""",
+                   default=None)
     
     args = p.parse_args()
     validate_args(args)
