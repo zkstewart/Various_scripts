@@ -24,7 +24,6 @@ def validate_args(args):
                 print('I am unable to locate the directory where the liftover files are (' + loDir + ')')
                 print('Make sure you\'ve typed the file name or location correctly and try again.')
                 quit()
-    
     # Validate MAFFT arguments
     if args.mafft is None:
         args.mafft = ZS_Utility.wsl_which("mafft")
@@ -35,7 +34,9 @@ def validate_args(args):
         if not os.path.isfile(args.mafft):
             print(f"ERROR: 'mafft' was not found at the location indicated ('{args.mafft}')")
             quit()
-    
+    if args.threads < 1:
+        print("ERROR: Number of threads must be at least 1")
+        quit()
     # Handle file output
     if os.path.isdir(args.outputDir):
         if os.listdir(args.outputDir) != []:
@@ -120,6 +121,11 @@ def main():
                    nargs="+",
                    help="Optionally, specify one or more directories where exome liftover FASTAs can be found",
                    default=[])
+    p.add_argument("--threads", dest="threads",
+                   required=False,
+                   type=int,
+                   help="Optionally, the number of threads to use for MAFFT (default == 1)",
+                   default=1)
     
     args = p.parse_args()
     validate_args(args)
@@ -133,6 +139,7 @@ def main():
     metadataDict = get_dasyurid_metadata_dict(args.metadataFile)
     
     # Load FASTA files
+    mafftRunner = ZS_AlignIO.MAFFT(args.mafft, thread=args.threads)
     fastaObjs = []
     mergeStats = [0 for _ in range(len(args.liftoverDirs))]
     for file in files:
@@ -162,11 +169,14 @@ def main():
             
             # Align and merge relevant file(s) into FASTA
             for _loFile in loFiles:
+                # Load in the liftover FASTA file with informative ID set
                 add_FASTA_obj = ZS_SeqIO.FASTA(_loFile)
+                assert len(add_FASTA_obj) == 1, \
+                    "Liftover FASTA file should only contain one sequence"
+                add_FASTA_obj.seqs[0].id = add_FASTA_obj.seqs[0].description.split(" ")[1] # Set the ID to the informative part
                 
                 # Perform MAFFT --add alignment
-                m = ZS_AlignIO.MAFFT(args.mafft)
-                f = m.add(f, add_FASTA_obj, "add")
+                f = mafftRunner.add(f, add_FASTA_obj, "add")
         
         # Store in fasta objects list
         fastaObjs.append(f)
