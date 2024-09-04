@@ -31,3 +31,5 @@ cp orthofinder/Results_*/Species_Tree/SpeciesTree_rooted.txt results
 
 # STEP 3: Hope that GENESPACE resumes correctly
 Rscript run_genespace.R --no-save
+
+## Download the 'results' and 'syntenicHits' folders to local PC
