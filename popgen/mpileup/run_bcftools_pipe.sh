@@ -40,8 +40,7 @@ BAMFILE_ARG="$( printf "${SEPARATOR}%s" "${BAMFILES[@]}" )"
 if [[ ! -f ${PREFIX}.mpileup  ]]; then
     bcftools mpileup \
         -f ${GENOMEDIR}/${GENOME} \
-        -q 10 -Q 20 \
-	-a AD \
+        -q 10 -Q 20 -a AD \
         --threads ${CPUS} \
         -o ${PREFIX}.mpileup \
         ${BAMFILE_ARG}
@@ -52,8 +51,8 @@ if [[ ! -f ${PREFIX}.vcf.gz  ]]; then
     bcftools call -m -v -Oz \
         -o ${PREFIX}.vcf.gz \
         ${PREFIX}.mpileup;
-	tabix ${PREFIX}.vcf.gz;
-	tabix -C ${PREFIX}.vcf.gz;
+    tabix ${PREFIX}.vcf.gz;
+    tabix -C ${PREFIX}.vcf.gz;
 fi
 
 # > STEP 5: Filter vcf
