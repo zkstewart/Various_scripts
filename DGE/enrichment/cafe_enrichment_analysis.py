@@ -398,16 +398,22 @@ def main():
     within a species will be compared to the families that expanded in OTHER species.
     """
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-i1", dest="tabFileName", required=True,
-        help="Input Base_count.tab file name")
-    p.add_argument("-i2", dest="famResultsFileName", required=True,
-        help="Input Base_family_results.txt file name")
-    p.add_argument("-i3", dest="orthofinderFileName", required=True,
-        help="Input OrthoFinder.tsv file name")
-    p.add_argument("-i4", dest="annotationFileName", required=True,
-        help="Input annotation file name")
-    p.add_argument("-o", dest="outputFilePrefix", required=True,
-        help="Output file prefix for the chi-square results")
+    p.add_argument("-i1", dest="tabFileName",
+                   required=True,
+                   help="Input Base_count.tab file name")
+    p.add_argument("-i2", dest="famResultsFileName",
+                   required=True,
+                   help="Input Base_family_results.txt file name")
+    p.add_argument("-i3", dest="orthofinderFileName",
+                   required=True,
+                   help="Input OrthoFinder.tsv file name")
+    p.add_argument("-i4", dest="annotationFileName",
+                   required=True,
+                   nargs="+",
+                   help="Input annotation file name")
+    p.add_argument("-o", dest="outputFilePrefix",
+                   required=True,
+                   help="Output file prefix for the chi-square results")
     args = p.parse_args()
     validate_args(args)
     
