@@ -173,6 +173,12 @@ class FastASeqFrames:
                 # Iterate through letters in the ORF
                 "Without counting anything earlier than the first position in the ORF"
                 while orfRemaining > 0:
+                    # Handle translation's behaviour of inferring a final truncated codon
+                    "ongoingCount can exceed the length of the sequence, so we need to break if that happens"
+                    if ongoingCount == len(numbers):
+                        break
+                    
+                    # Original implementation
                     if self.FastASeq.gap_seq[ongoingCount] != "-":
                         cdsHasStarted = True
                         orfRemaining -= 1
@@ -361,6 +367,12 @@ class MSA_ORF:
         for position in range(msaLength):
             self.lineChart[position] = sum([frame.max(position) for frame in frames])
         
+        # End detection if no peaks are possible
+        "i.e., if the line chart is just a flat line"
+        if np.min(self.lineChart) == np.max(self.lineChart):
+            self.peaksCoordinates = [[0, msaLength]]
+            return self.peaksCoordinates
+        
         # Min-max normalise line chart values
         self.lineChart = [(value - np.min(self.lineChart)) / (np.max(self.lineChart) - np.min(self.lineChart)) for value in self.lineChart]
         
@@ -390,7 +402,7 @@ class MSA_ORF:
                     plat = [index,i-1] # This is 0-indexed, and we -1 since we want the previous i value
                     break
             if plat == None: # This acts as a check for plateaus that run to the end of the sequence
-                plat = plat = [index,i] # We don't -1 here since i will be equal to the last position of the sequence (in 0-based notation)
+                plat = [index,i] # We don't -1 here since i will be equal to the last position of the sequence (in 0-based notation)
             plateaus.append(plat)
             coverages.append(coverage)
         
