@@ -542,11 +542,11 @@ def main():
     p.add_argument("-t", dest="transcriptomeFile",
                    required=True,
                    help="Specify the location of a single representative (protein) transcriptome file")
-    p.add_argument("-o", dest="outputDir",
-                   required=True,
-                   help="Output directory location (default == \"2_prep\")",
-                   default="2_polish")
     # Opts
+    p.add_argument("-o", dest="outputDir",
+                   required=False,
+                   help="Output directory location (default == \"2_polish\")",
+                   default="2_polish")
     p.add_argument("--INTRON_CHAR", dest="INTRON_CHAR",
                    required=False,
                    help="Optionally, specify what character should be used to denote intron positions (default==\"4\")",
