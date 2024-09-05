@@ -196,7 +196,7 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height,
             continue
         
         # Configure plot
-        fig = plt.figure(figsize=(50, height))
+        fig = plt.figure(figsize=(width, height))
         ax = plt.axes()
         
         ax.set_xlabel(f"Chromosomal position (Mbp)", fontweight="bold")
@@ -209,7 +209,7 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height,
             ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
         
         # Plot line
-        ax.plot(x, smoothedY, zorder=1, linewidth=0.1)
+        ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
         
         # Save output file
         plt.savefig(fileOut)
