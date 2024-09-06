@@ -25,6 +25,9 @@ def validate_args(args):
     if args.height < 0:
         eprint("height must be a positive integer")
         quit()
+    if args.ylim == 0 or args.ylim < -1:
+        eprint("ylim must be a positive integer (to set a limit) or -1 (to set no limit)")
+        quit()
     # Check for conflicting arguments
     if args.onePlot and args.regions != []:
         eprint("You can't provide both --onePlot and --regions; please choose one and try again.")
@@ -48,8 +51,8 @@ def validate_args(args):
         if args.wmaSize < 1:
             eprint("wmaSize must be an integer >= 1")
             quit()
-        if args.linewidth < 1:
-            eprint("linewidth must be an integer >= 1")
+        if args.linewidth < 0:
+            eprint("linewidth must be a float > 0")
             quit()
     elif args.mode == "histogram":
         if args.binSize < 1:
@@ -147,7 +150,7 @@ def WMA(s, period):
         return None
     return pd.Series(sw)
 
-def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height,
+def lineplot_per_contig(dotsX, dotsY, wmaSize, ylim, width, height,
                         outputDirectory, plotPDF=False, showDots=True,
                         linewidth=1, statisticLabel="Q13 depth"):
     '''
@@ -158,6 +161,8 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height,
                  indicating the depth value for each dot
         wmaSize -- an integer value indicating the number of previous values to consider
                    during weighted moving average calculation
+        ylim -- an integer value indicating the maximum value that will be presented
+                OR -1 to set no limit
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory where output files will be written
@@ -195,6 +200,10 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height,
             print(f"WARNING: '{contigID}' has too few data points to smooth; skipping...")
             continue
         
+        # Enforce ylim if set
+        if ylim != -1:
+            smoothedY[smoothedY > ylim] = ylim
+        
         # Configure plot
         fig = plt.figure(figsize=(width, height))
         ax = plt.axes()
@@ -216,7 +225,7 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, width, height,
         numContigsPlotted += 1
     return numContigsPlotted
 
-def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height,
+def lineplot_horizontal(dotsX, dotsY, wmaSize, ylim, width, height,
                         outputDirectory, plotPDF=False, showDots=True,
                         linewidth=1, statisticLabel="Q13 depth"):
     '''
@@ -227,6 +236,8 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height,
                  indicating the depth value for each dot
         wmaSize -- an integer value indicating the number of previous values to consider
                    during weighted moving average calculation
+        ylim -- an integer value indicating the maximum value that will be presented
+                OR -1 to set no limit
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory where output files will be written
@@ -263,6 +274,10 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height,
             print(f"WARNING: '{contigID}' has too few data points to smooth; skipping...")
             continue
         
+        # Enforce ylim if set
+        if ylim != -1:
+            smoothedY[smoothedY > ylim] = ylim
+        
         # Store dot values
         plotData.append([contigID, x, y, smoothedY])
         numContigsPlotted += 1
@@ -297,7 +312,7 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, width, height,
     
     return numContigsPlotted
 
-def lineplot_regions(dotsX, dotsY, regions, wmaSize,
+def lineplot_regions(dotsX, dotsY, regions, wmaSize, ylim,
                      width, height, outputDirectory,
                      plotPDF=False, showDots=True,
                      linewidth=1, statisticLabel="Q13 depth"):
@@ -311,6 +326,8 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
                    'contigID:startPos:endPos'
         wmaSize -- an integer value indicating the number of previous values to consider
                    during weighted moving average calculation
+        ylim -- an integer value indicating the maximum value that will be presented
+                OR -1 to set no limit
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory where output files will be written
@@ -356,6 +373,10 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
             print(f"WARNING: '{contigID, start, end}'  has too few data points to smooth; skipping...")
             continue
         
+        # Enforce ylim if set
+        if ylim != -1:
+            smoothedY[smoothedY > ylim] = ylim
+        
         # Configure plot
         fig = plt.figure(figsize=(width, height))
         ax = plt.axes()
@@ -376,8 +397,8 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize,
         numContigsPlotted += 1
     return numContigsPlotted
 
-def histo_per_contig(histoDict, width, height, outputDirectory,
-                     binSize, plotPDF=False,
+def histo_per_contig(histoDict, width, height, ylim,
+                     outputDirectory, binSize, plotPDF=False,
                      statisticLabel="Q13 depth"):
     '''
     Parameters:
@@ -385,6 +406,8 @@ def histo_per_contig(histoDict, width, height, outputDirectory,
                      containing the number of SNPs in each bin that exceeded the threshold
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
+        ylim -- an integer value indicating the maximum value that will be presented
+                OR -1 to set no limit
         outputDirectory -- a string indicating the directory where output files will be written
         binSize -- an integer value indicating the size of the bins that were used for counting
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
@@ -406,6 +429,10 @@ def histo_per_contig(histoDict, width, height, outputDirectory,
         y = histoDict[contigID]
         stepSize = binSize / 1000 # convert to Kbp
         
+        # Enforce ylim if set
+        if ylim != -1:
+            y[y > ylim] = ylim
+        
         # Configure plot
         fig = plt.figure(figsize=(width, height))
         ax = plt.axes()
@@ -422,7 +449,7 @@ def histo_per_contig(histoDict, width, height, outputDirectory,
         numContigsPlotted += 1
     return numContigsPlotted
 
-def histo_horizontal(histoDict, width, height, outputDirectory,
+def histo_horizontal(histoDict, width, height, ylim, outputDirectory,
                      binSize, plotPDF=False,
                      statisticLabel="Q13 depth"):
     '''
@@ -431,6 +458,8 @@ def histo_horizontal(histoDict, width, height, outputDirectory,
                      containing the number of SNPs in each bin that exceeded the threshold
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
+        ylim -- an integer value indicating the maximum value that will be presented
+                OR -1 to set no limit
         outputDirectory -- a string indicating the directory where output files will be written
         binSize -- an integer value indicating the size of the bins that were used for counting
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
@@ -454,6 +483,10 @@ def histo_horizontal(histoDict, width, height, outputDirectory,
     for contigID in contigIDs:
         x = np.arange(0, len(histoDict[contigID]))
         y = histoDict[contigID]
+        
+        # Enforce ylim if set
+        if ylim != -1:
+            y[y > ylim] = ylim
         
         plotData.append([contigID, x, y])
         numContigsPlotted += 1
@@ -485,7 +518,7 @@ def histo_horizontal(histoDict, width, height, outputDirectory,
     
     return numContigsPlotted
 
-def histo_regions(histoDict, regions, width, height, outputDirectory,
+def histo_regions(histoDict, regions, width, height, ylim, outputDirectory,
                   binSize, plotPDF=False,
                   statisticLabel="Q13 depth"):
     '''
@@ -496,6 +529,8 @@ def histo_regions(histoDict, regions, width, height, outputDirectory,
                    'contigID:startPos:endPos'
         width -- an integer value indicating the width of the output plot
         height -- an integer value indicating the height of the output plot
+        ylim -- an integer value indicating the maximum value that will be presented
+                OR -1 to set no limit
         outputDirectory -- a string indicating the directory where output files will be written
         binSize -- an integer value indicating the size of the bins that were used for counting
         plotPDF -- OPTIONAL; a boolean indicating whether to save output files as
@@ -533,6 +568,10 @@ def histo_regions(histoDict, regions, width, height, outputDirectory,
         # Format values within this region
         x = np.arange(binStart, binEnd+1)
         y = regionBins
+        
+        # Enforce ylim if set
+        if ylim != -1:
+            y[y > ylim] = ylim
         
         # Configure plot
         fig = plt.figure(figsize=(width, height))
@@ -596,6 +635,13 @@ def main():
                     help="""Optionally, specify the minimum size of contig to
                     create plots for (default=200000 i.e., 2Mb)""",
                     default=200000)
+    p.add_argument("--ylim", dest="ylim",
+                    type=int,
+                    required=False,
+                    help="""Optionally, specify the ylim value to set the maximum
+                    value that will be presented; default is -1, which means that
+                    NO limit will be set""",
+                    default=-1)
     ## Opts (output)
     p.add_argument("--regions", dest="regions",
                     required=False,
@@ -643,7 +689,7 @@ def main():
                             during weighted moving average calculation (default=5)""",
                             default=5)
     lineparser.add_argument("--linewidth", dest="linewidth",
-                            type=int,
+                            type=float,
                             required=False,
                             help="""Optionally, specify the line width (default=1)""",
                             default=1)
@@ -712,17 +758,18 @@ def main():
 def linemain(args, dotsX, dotsY):
     # Create plots
     if args.onePlot:
-        numContigsPlotted = lineplot_horizontal(dotsX, dotsY, args.wmaSize,
+        numContigsPlotted = lineplot_horizontal(dotsX, dotsY, args.wmaSize, args.ylim,
                                                 args.width, args.height,
                                                 args.outputDirectory, args.plotPDF,
                                                 args.showDots, args.linewidth)
     elif args.regions != []:
-        numContigsPlotted = lineplot_regions(dotsX, dotsY, args.regions, args.wmaSize,
+        numContigsPlotted = lineplot_regions(dotsX, dotsY, args.regions,
+                                             args.wmaSize, args.ylim,
                                              args.width, args.height,
                                              args.outputDirectory, args.plotPDF,
                                              args.showDots, args.linewidth)
     else:
-        numContigsPlotted = lineplot_per_contig(dotsX, dotsY, args.wmaSize,
+        numContigsPlotted = lineplot_per_contig(dotsX, dotsY, args.wmaSize, args.ylim,
                                                 args.width, args.height,
                                                 args.outputDirectory, args.plotPDF,
                                                 args.showDots, args.linewidth)
@@ -749,17 +796,17 @@ def histomain(args, dotsX, dotsY, lengthsDict):
     # Create plots
     if args.onePlot:
         numContigsPlotted = histo_horizontal(histoDict,
-                                             args.width, args.height,
+                                             args.width, args.height, args.ylim,
                                              args.outputDirectory, args.binSize,
                                              args.plotPDF)
     elif args.regions != []:
         numContigsPlotted = histo_regions(histoDict, args.regions,
-                                          args.width, args.height,
+                                          args.width, args.height, args.ylim,
                                           args.outputDirectory, args.binSize,
                                           args.plotPDF)
     else:
         numContigsPlotted = histo_per_contig(histoDict,
-                                             args.width, args.height,
+                                             args.width, args.height, args.ylim,
                                              args.outputDirectory, args.binSize,
                                              args.plotPDF)
     
