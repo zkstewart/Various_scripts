@@ -5,17 +5,14 @@
 # using the plotly library for scrollable inspection of relative depth
 # across each chromosome.
 
-import os, argparse, sys, pickle, math
+import os, argparse, sys, pickle
 import plotly.graph_objects as go
 import numpy as np
 
 from rdp import rdp
-
-from plot_samtools_depth import get_depth_for_dotting, WMA
-
-##
 from typing import Union
-##
+
+from plot_samtools_depth import get_depth_for_dotting
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -34,13 +31,6 @@ def validate_args(args):
     if not os.path.isdir(args.outputDirectory):
         os.makedirs(args.outputDirectory)
         eprint(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
-    # Handle numeric arguments
-    if args.wmaSize < 1:
-        eprint("wmaSize must be an integer >= 1")
-        quit()
-    if args.decimateTo < 1:
-        eprint("decimateTo must be an integer >= 1")
-        quit()
 
 def lang_simplification(input_points: np.ndarray, tolerance: Union[int, float], look_ahead: int) -> np.ndarray:
     """
@@ -114,10 +104,73 @@ def calculate_perpendicular_distance(
         np.cross(end_point - start_point, start_point - intermediate_points) / np.linalg.norm(end_point - start_point)
     )
 
-def plotly_per_contig(dotsX, dotsY,
-                      simplificationAlg, wmaSize, 
-                      outputDirectory,
-                      statisticLabel="Smoothed Q13 depth"):
+def simplify_depth(xy: np.ndarray, tolerance: Union[int, float]) -> np.ndarray:
+    '''
+    Simplify depth data for plotting by removing data points
+    that are redundant or minimally informative.
+    
+    Algorithm works by obtaining the first and last points, in addition to
+    any points that mark a departure from the previously stored point by more
+    than the specified tolerance.
+    
+    Parameters:
+        xy -- a 2D numpy array where the first column is the x-axis position
+              and the second column is the y-axis value
+        tolerance -- an integer or float value indicating the maximum increase
+                     or decrease in y-axis value before a change is detected
+                     and the point is retained
+    Returns:
+        simplifiedXY -- a 2D numpy array of the input data with some points removed
+                        where deemed to be redundant or minimally informative
+    '''
+    def process_plateau(simplifiedXY, xPlateau, yPlateau):
+        # Process plateaus with only one point
+        if len(xPlateau) == 1:
+            simplifiedXY.append([xPlateau[0], yPlateau[0]])
+        
+        # Process plateaus with multiple points
+        else:
+            # Obtain and store the median value of the plateau
+            medianY = np.median(yPlateau)
+            
+            # Store the plateau's median value
+            simplifiedXY.append([xPlateau[0], medianY])
+            simplifiedXY.append([x-1, medianY])
+    
+    # Skip simplification if there are too few points
+    if len(xy) < 3:
+        return xy
+    
+    # Note first data points
+    simplifiedXY = []
+    xPlateau = [xy[0][0]]
+    yPlateau = [xy[0][1]]
+    
+    # Begin iteration through remaining data points
+    for i in range(1, len(xy)):
+        x, y = xy[i]
+        
+        # Check for departure from this plateau's tolerance threshold
+        if y > yPlateau[0] + tolerance or y < yPlateau[0] - tolerance:
+            process_plateau(simplifiedXY, xPlateau, yPlateau)
+            
+            # Begin a new plateau at the point of departure
+            xPlateau = [x]
+            yPlateau = [y]
+        
+        # Otherwise, continue to build the plateau
+        else:
+            xPlateau.append(x)
+            yPlateau.append(y)
+    
+    # Process the last plateau
+    process_plateau(simplifiedXY, xPlateau, yPlateau)
+    
+    # Return the simplified data as a numpy array
+    return np.array(simplifiedXY, dtype=float)
+
+def plotly_per_contig(dotsX, dotsY, simplificationAlg, tolerance,
+                      outputDirectory, statisticLabel="Smoothed Q13 depth"):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -125,10 +178,11 @@ def plotly_per_contig(dotsX, dotsY,
         dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
                  indicating the depth value for each dot
         simplificationAlg -- a string indicating the simplification algorithm to use;
-                             currently recognises "rdp" for Ramer-Douglas-Peucker and
-                             "lang" for Lang simplification
-        wmaSize -- an integer value indicating the number of previous values to consider
-                   during weighted moving average calculation
+                             currently recognises "rdp" for Ramer-Douglas-Peucker, 
+                             "lang" for Lang simplification, and "zks" for my simplification
+        tolerance -- an integer or float value used by th simplification algorithms to indicate
+                     the maximum increase or decrease in y-axis value before a change is detected
+                     and the point is retained
         outputDirectory -- a string indicating the directory where output files will be written
         statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
                           (default="Q13 depth")
@@ -144,21 +198,15 @@ def plotly_per_contig(dotsX, dotsY,
         # Get plotting values
         x = np.array(dotsX[contigID])
         y = np.array(dotsY[contigID])
-        smoothedY = y
-        #smoothedY = WMA(y, wmaSize)
-        
-        # Skip plotting if smoothing fails
-        "This probably means there are not enough data points to smooth"
-        if smoothedY is None:
-            print(f"WARNING: '{contigID}' has too few data points to smooth; skipping...")
-            continue
+        xy = np.column_stack((x, y))
         
         # Simplify data for lighter weight plotting
-        xy = np.column_stack((x, smoothedY))
         if simplificationAlg == "rdp":
             xy = rdp(xy)
         elif simplificationAlg == "lang":
-            xy = lang_simplification(xy, 5, 20) # tolerance=5, look_ahead=20
+            xy = lang_simplification(xy, tolerance, 20) # tolerance=5, look_ahead=20
+        elif simplificationAlg == "zks":
+            xy = simplify_depth(xy, tolerance)
         else:
             raise NotImplementedError(f"Unrecognised simplification algorithm '{simplificationAlg}'")
         x, smoothedY = xy[:, 0], xy[:, 1]
@@ -191,12 +239,18 @@ def plotly_per_contig(dotsX, dotsY,
 def main():
     usage = """%(prog)s receives a samtools depth output file and creates
     an interative plotly line plot of the depth of coverage across each
-    chromosome. This can be useful for identifying regions of low coverage
+    chromosome. This can be useful for identifying regions of low
     or high coverage in a genome assembly.
     
-    Coverage should be smoothed with --wmaSize to reduce noise, after
-    which values will be min-max normalised to enable comparison of
-    relative coverage across chromosomes.
+    Coverage data is decimated/simplified for plotting to ensure that the
+    output files are not too large. The user can specify the algorithm used
+    for simplification, but note that for large genomes, the 'zks' algorithm
+    is recommended for speed and efficiency.
+    
+    This 'zks' algorithm essentially looks for plateaus in the data where values
+    do not change by more than a specified tolerance value. The median value of
+    the plateau is then used as the starting and ending point for the plateau,
+    hence simplifying all data in between.
     """
     # Establish main parser
     p = argparse.ArgumentParser(description=usage)
@@ -210,25 +264,22 @@ def main():
                     required=True,
                     help="Output directory where plot files will be written")
     ## Opts (behavioural)
-    p.add_argument("--wmaSize", dest="wmaSize",
-                   type=int,
-                   required=False,
-                   help="""Optionally, specify the number of previous values to consider
-                   during weighted moving average calculation (default=20)""",
-                   default=20)
-    p.add_argument("--decimateTo", dest="decimateTo",
-                   type=int,
-                   required=False,
-                   help="""Optionally, specify the maximum number of data points to allow
-                   in an output plot (default=100000)""",
-                   default=100000)
     p.add_argument("--alg", dest="simplificationAlg",
                    required=False,
-                   choices=["rdp", "lang"],
+                   choices=["rdp", "lang", "zks"],
                    help="""Optionally, specify the simplification algorithm to use;
-                   currently recognises 'rdp' for Ramer-Douglas-Peucker and
-                   'lang' for Lang simplification; default is 'lang'""",
-                   default="lang")
+                   currently recognises 'rdp' for Ramer-Douglas-Peucker,
+                   'lang' for Lang simplification, and "zks" for Zachary Kenneth
+                   Stewart simplification; default is 'zks'""",
+                   default="zks")
+    p.add_argument("--tolerance", dest="tolerance",
+                   required=False,
+                   type=float,
+                   help="""Optionally, specify the tolerance value for simplification;
+                   generally speaking, this is the maximum increase or decrease in
+                   depth value before a change is detected and the point is retained;
+                   default is 10""",
+                   default=10)
     
     args = p.parse_args()
     validate_args(args)
@@ -255,7 +306,7 @@ def main():
     
     # Create plots
     plotly_per_contig(dotsX, dotsY, args.simplificationAlg,
-                      args.wmaSize, args.outputDirectory)
+                      args.tolerance, args.outputDirectory)
     
     print("Program completed successfully!")
 
