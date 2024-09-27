@@ -417,6 +417,26 @@ def get_edist_distribution(edistList):
     _mean = sum(edistList) / len(edistList) if edistList != [] else "."
     return _min, _max, _mean
 
+def get_annot(annotDict, geneID, allowAbsence=False):
+    '''
+    Helper function to get annotation details for a gene ID with tolerance for absence.
+    
+    Parameters:
+        annotDict -- a dictionary resulting from parse_annot_file()
+        geneID -- a string indicating the gene ID for which we want annotation details
+        allowAbsence -- [OPTIONAL] a boolean indicating whether we should allow the
+                        absence of a gene in the annotation file; default == False
+    Returns:
+        annot -- the value of annotDict[geneID] if it exists, or None if it does not
+    '''
+    try:
+        return annotDict[geneID]
+    except Exception as e:
+        if allowAbsence:
+            return None
+        else:
+            raise e
+
 def main():
     # User input
     usage = """%(prog)s receives several files associated with a per-sample SNP
@@ -519,13 +539,9 @@ def main():
         for contigID, geneData in geneDict.items():
             for geneID, snpData in geneData.items():
                 # Get annotation details with tolerance for absence (if applicable)
-                try:
-                    annot = annotDict[geneID]
-                except Exception as e:
-                    if args.allowAbsence:
-                        continue
-                    else:
-                        raise e
+                annot = get_annot(annotDict, geneID, args.allowAbsence)
+                if annot == None:
+                    continue
                 
                 # Skip if this gene does not meet our --euclideanDistance threshold
                 meetsThreshold = any([
@@ -620,15 +636,21 @@ def main():
                 # Format gene names
                 withinName = "." # set default condition
                 for geneID in snpDetails["within"]: # there's only ever 1 value in this list
-                    annot = annotDict[geneID]
+                    annot = get_annot(annotDict, geneID, args.allowAbsence)
+                    if annot == None:
+                        continue
                     withinName = f'{geneID} ({annot["name"]})'
                 leftName = "."
                 for geneID in snpDetails["left_of"]: # iterating thru is just a convenience
-                    annot = annotDict[geneID]
+                    annot = get_annot(annotDict, geneID, args.allowAbsence)
+                    if annot == None:
+                        continue
                     leftName = f'{geneID} ({annot["name"]})'
                 rightName = "."
                 for geneID in snpDetails["right_of"]:
-                    annot = annotDict[geneID]
+                    annot = get_annot(annotDict, geneID, args.allowAbsence)
+                    if annot == None:
+                        continue
                     rightName = f'{geneID} ({annot["name"]})'
                 
                 # Format output line
