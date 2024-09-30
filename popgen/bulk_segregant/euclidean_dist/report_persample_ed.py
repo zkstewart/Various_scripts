@@ -37,9 +37,8 @@ def validate_args(args):
         print(f'I am unable to locate the GO .obo file ({args.goOboFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
     # Validate numeric arguments
-    if 0 > args.euclideanDistance or 1 < args.euclideanDistance:
-        print("--ed must be in the range 0 (no filtering) to 1 " + 
-                "(retain only variants that completely segregate between the two populations)")
+    if 0 > args.euclideanDistance:
+        print("--ed must be 0 (no filtering) or higher")
         quit()
     if args.radiusSize < 1:
         print("--radiusSize must be a positive integer")
