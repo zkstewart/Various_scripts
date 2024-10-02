@@ -76,7 +76,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftExe):
                       correspond to exon regions ordered as per _get_exon_coords().
     '''
     assert FASTA_obj[0].id == "Codons", "FASTA lacks a Codons line at its start!"
-    mafftAligner = ZS_AlignIO.MAFFT(mafftExe) # set up here for use later
+    mafftAligner = ZS_AlignIO.MAFFT(mafftExe, "einsi", 1, 2) # exe, alg, threads, maxiterate
     
     # Get the coordinate spans of exons
     exonCoords = _get_exon_coords(FASTA_obj)
@@ -547,21 +547,27 @@ def main():
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-a", dest="alignmentsDir", required=True,
-                help="Specify the directory where aligned FASTA files are located")
-    p.add_argument("-t", dest="transcriptomeFile", required=True,
-                help="Specify the location of a single representative (protein) transcriptome file")
+    p.add_argument("-a", dest="alignmentsDir",
+                   required=True,
+                   help="Specify the directory where aligned FASTA files are located")
+    p.add_argument("-t", dest="transcriptomeFile",
+                   required=True,
+                   help="Specify the location of a single representative (protein) transcriptome file")
+    # Opts
+    p.add_argument("-o", dest="outputDir",
+                   required=False,
+                   help="Output directory location (default == \"3_polish\")",
+                   default="3_polish")
     p.add_argument("--mafft", dest="mafft",
                    required=False,
                    help="""Optionally, specify the mafft executable file
                    if it is not discoverable in the path""",
                    default=None)
-    p.add_argument("-o", dest="outputDir", required=True,
-                help="Output directory location (default == \"3_polish\")",
-                default="3_polish")
-    # Opts
-    p.add_argument("--threads", dest="threads", required=False, type=int, default=1,
-                help="Optionally specify how many threads to run with")
+    p.add_argument("--threads", dest="threads",
+                   required=False,
+                   type=int,
+                   help="Optionally specify how many threads to run with",
+                   default=1)
     args = p.parse_args()
     validate_args(args)
     
