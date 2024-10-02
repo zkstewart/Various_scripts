@@ -111,11 +111,11 @@ def main():
     p.add_argument("-m", dest="metadataFile",
                    required=True,
                    help="Specify the metadata file location")
+    # Opts
     p.add_argument("-o", dest="outputDir",
                    required=False,
                    help="Output directory location (default == \"1_prep\")",
                    default="1_prep")
-    # Opts
     p.add_argument("-l", dest="liftoverDirs",
                    required=False,
                    nargs="+",

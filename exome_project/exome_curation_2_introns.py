@@ -545,8 +545,8 @@ def main():
     # Opts
     p.add_argument("-o", dest="outputDir",
                    required=False,
-                   help="Output directory location (default == \"2_polish\")",
-                   default="2_polish")
+                   help="Output directory location (default == \"2_introns\")",
+                   default="2_introns")
     p.add_argument("--INTRON_CHAR", dest="INTRON_CHAR",
                    required=False,
                    help="Optionally, specify what character should be used to denote intron positions (default==\"4\")",
