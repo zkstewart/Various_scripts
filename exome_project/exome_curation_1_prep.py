@@ -4,7 +4,7 @@
 # to occur for the Oz Mammals Genomics initiative as part
 # of Matthew Phillips and Andrew Baker (et. al.'s) group.
 
-import sys, argparse, os, platform
+import sys, argparse, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 2 dirs up is where we find dependencies
 from Function_packages import ZS_SeqIO, ZS_AlignIO, ZS_Utility
 
@@ -73,7 +73,7 @@ def set_alts(FASTA_obj, metadataDict):
         altID = metadataDict[metadataID]
         FastASeq_obj.alt = altID
 
-def add_missing_seqs(FASTA_obj, sequenceIDs):
+def add_missing_seqs(FASTA_obj, sequenceIDs, toOmit=[]):
     '''
     This function will receive a single FASTA object and perform
     Oz Mammals-specific processing to add missing sequences into
@@ -82,7 +82,12 @@ def add_missing_seqs(FASTA_obj, sequenceIDs):
     '''
     # Figure out which IDs are missing
     altIDs = [FastASeq_obj.alt for FastASeq_obj in FASTA_obj]
-    missingIDs = [id for id in sequenceIDs if id not in altIDs]
+    missingIDs = [
+        id
+        for id in sequenceIDs
+        if id not in altIDs
+          and not any([omit in id for omit in toOmit])
+    ]
     
     # Add dummy sequences to FASTA object
     mockSequence = "-" * len(FASTA_obj[0].gap_seq) # Mock up a fully-gapped sequence
@@ -106,11 +111,6 @@ def main():
     p.add_argument("-m", dest="metadataFile",
                    required=True,
                    help="Specify the metadata file location")
-    p.add_argument("--mafft", dest="mafft",
-                   required=False,
-                   help="""Optionally, specify the mafft executable file
-                   if it is not discoverable in the path""",
-                   default=None)
     p.add_argument("-o", dest="outputDir",
                    required=False,
                    help="Output directory location (default == \"1_prep\")",
@@ -121,11 +121,22 @@ def main():
                    nargs="+",
                    help="Optionally, specify one or more directories where exome liftover FASTAs can be found",
                    default=[])
+    p.add_argument("--mafft", dest="mafft",
+                   required=False,
+                   help="""Optionally, specify the mafft executable file
+                   if it is not discoverable in the path""",
+                   default=None)
     p.add_argument("--threads", dest="threads",
                    required=False,
                    type=int,
                    help="Optionally, the number of threads to use for MAFFT (default == 1)",
                    default=1)
+    p.add_argument("--omit", dest="omit",
+                   required=False,
+                   nargs="+",
+                   help="""Optionally, specify one or more strings that specifically identify
+                   sequences that should NOT have dummy sequenced added into each alignment""",
+                   default=[])
     
     args = p.parse_args()
     validate_args(args)
@@ -194,13 +205,19 @@ def main():
         set_alts(FASTA_obj, metadataDict)
     
     # Add dummy missing sequences
-    sequenceIDs = list(metadataDict.values())
+    sequenceIDs = set(metadataDict.values())
     for FASTA_obj in fastaObjs:
-        add_missing_seqs(FASTA_obj, sequenceIDs)
+        add_missing_seqs(FASTA_obj, sequenceIDs, args.omit)
     
     # Sort FASTA objects to have consistent internal ordering
     for FASTA_obj in fastaObjs:
-        FASTA_obj.seqs.sort(key = lambda x: sequenceIDs.index(x.alt))
+        #FASTA_obj.seqs.sort(key = lambda x: sequenceIDs.index(x.alt))
+        FASTA_obj.seqs.sort(key = lambda x: x.alt)
+    
+    # Make sure all FASTA objects have the same number of sequences
+    for i in range(1, len(fastaObjs)):
+        assert len(fastaObjs[i]) == len(fastaObjs[i-1]), \
+            "FASTA objects have differing numbers of sequences!"
     
     # Write output files
     for i in range(len(files)):
