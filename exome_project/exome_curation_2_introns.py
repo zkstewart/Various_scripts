@@ -411,11 +411,11 @@ def trim_intron_locations_denovo(FASTA_obj, transcriptomeFile, EXCLUSION_PCT=0.9
     
     # Create a dummy string with only gaps to mimic genomic intron location prediction
     dummyString = "-"*len(FASTA_obj[0].gap_seq)
-        
+    
     # Return result string pct for logging purposes, as well as method of operation
     return dummyString, pctIntron, "denovo-minimalStops"
 
-def get_orf_locations_denovo(FASTA_obj, PROBLEM_CHAR="5"):
+def get_orf_locations_denovo(FASTA_obj, PROBLEM_CHAR="5", IS_BAD_QUAL=False):
     '''
     Locates one or more ORFs within a ZS_SeqIO.FASTA object to the best guess boundaries
     of any CDS region(s). It does this without genomic evidence (hence "de novo") by
@@ -427,6 +427,10 @@ def get_orf_locations_denovo(FASTA_obj, PROBLEM_CHAR="5"):
     
     Params:
         FASTA_obj -- a ZS_SeqIO.FASTA instance
+        PROBLEM_CHAR -- a string containing a single character for how the problematic
+                        region will be represented within the dummy sequence output.
+        IS_BAD_QUAL -- a boolean indicating whether the input data is of poor quality with
+                       many indel errors
     Returns:
         dummyString -- a string value with "-" for every character position; intended to
                        mimic get_intron_locations_genomic()'s return.
@@ -436,7 +440,10 @@ def get_orf_locations_denovo(FASTA_obj, PROBLEM_CHAR="5"):
     '''
     # Predict the best ORF regions within this MSA
     orfPredictor = ZS_ORF.MSA_ORF(FASTA_obj)
-    orfPredictor.denovo_prediction_peaks()
+    if IS_BAD_QUAL:
+        orfPredictor.denovo_prediction_peaks(delta=0.005, allowedDecrease=0.2, PEAK_MINIMUM=0.90)
+    else:
+        orfPredictor.denovo_prediction_peaks(delta=0.005, allowedDecrease=0.1, PEAK_MINIMUM=0.90)
     msaCoords = orfPredictor.peaksCoordinates
     
     # Create a string with ${PROBLEM_CHAR}'s for problem regions, and gaps for CDS positions
@@ -555,6 +562,13 @@ def main():
                    required=False,
                    help="Optionally, specify what character should be used to denote positions that are problematic to solve (default==\"5\")",
                    default="5")
+    p.add_argument("--badQuality", dest="badQuality",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, specify this flag if the input data is of poor quality with many indel errors; doing so
+                   will parameterise the script to be more lenient when predicting problem regions so as to leave
+                   these regions for polishing in the subsequent step.""",
+                   default=False)
     args = p.parse_args()
     validate_args(args)
     
@@ -602,7 +616,7 @@ def main():
                 isGood = check_if_genome_annotation_is_good(result[0], FASTA_obj, INTRON_CHAR=args.INTRON_CHAR)
             
             # Perform CDS prediction with de novo evidence
-            cdsDummyString = get_orf_locations_denovo(FASTA_obj, PROBLEM_CHAR=args.PROBLEM_CHAR)
+            cdsDummyString = get_orf_locations_denovo(FASTA_obj, PROBLEM_CHAR=args.PROBLEM_CHAR, IS_BAD_QUAL=args.badQuality)
             
             # Merge genomic and de novo predictions if appropriate
             if isGood:
