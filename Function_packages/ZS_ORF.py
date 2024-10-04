@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ZS_BlastIO import BLAST
-from ZS_SeqIO import FastASeq
+from ZS_SeqIO import FASTA, FastASeq
 from ZS_AlignIO import SSW
 
 def peakdet(v, delta, x = None):
@@ -97,6 +97,42 @@ def maxdet(v):
         outindices + [(maxindices[i], 1.0) for i in range(1, len(maxindices)) if (maxindices[i] > maxindices[i-1]+1)]
     )
 
+def plateau_start_det(v, minimum=0.9):
+    """
+    Alternative to peakdet which will address problems where peaks are not found for reasons
+    that have not been fully understood. This function will return the start of regions that should
+    later become plateaus.
+    
+    Parameters:
+        v -- a list or np.array() containing float values in the range of 0.0->1.0
+        minimum -- a float value indicating the minimum value that a plateau should have
+    """
+    # Find where the values are greater than the minimum
+    startindices = np.where(v >= np.float64(minimum))[0]
+    startindices = [
+        [si, v[si]]
+        for si in startindices
+        if si == 0 or v[si-1] < minimum
+    ]
+    
+    # Push values back to where they first become 1 if possible
+    outindices = []
+    for si, sv in startindices:
+        if sv == 1.0:
+            outindices.append([si, sv])
+        else:
+            _si, _sv = si, sv
+            for i in range(si, len(v)):
+                if v[i] < minimum:
+                    break
+                if v[i] > _sv:
+                    _si, _sv = i, v[i]
+                    if v[i] == 1.0:
+                        break
+            outindices.append([_si, _sv])
+    
+    return np.array(outindices)
+
 def outliers_z_score(ys, threshold=3):
     """
     Credit to http://colingorrie.github.io/outlier-detection.html
@@ -167,6 +203,7 @@ class FastASeqFrames:
         
         # Generate a new sequence with the concealed regions replaced by Ns
         self.seq = "N"*startConcealed + thisSeq[0+startConcealed:len(thisSeq)-endConcealed] + "N"*endConcealed
+        thisSeq = thisSeq.replace("-", "") # get rid of gaps so we can use it for translation next
         
         # Translate the sequence
         self.frame_1 = FastASeq.dna_to_protein(thisSeq)
@@ -192,6 +229,11 @@ class FastASeqFrames:
             cdsHasStarted = False
             splitFrame = frame.split("*")
             for y in range(len(splitFrame)):
+                ##
+                # TBD:
+                # - For each ORF, we need to find the start and end positions in the original sequence
+                # And then we can set the numbers_# values for those positions to the length of the ORF
+                ##
                 frameSeq = splitFrame[y]
                 orfLength = len(frameSeq)*3 # *3 for nucleotide length
                 orfRemaining = orfLength
@@ -434,12 +476,13 @@ class MSA_ORF:
         self.lineChart = [(value - np.min(self.lineChart)) / (np.max(self.lineChart) - np.min(self.lineChart)) for value in self.lineChart]
         
         # Perform peak detection & plummet detection
-        plummets = plummetdet(self.lineChart)
-        maxindices, minindices = peakdet(self.lineChart, delta)
-        if len(maxindices) == 0:
-            maxindices = maxdet(self.lineChart)
-        else:
-            maxindices = maxindices[np.where(np.abs(maxindices[:,1]) > PEAK_MINIMUM)] # remove crappy peaks
+        plummets = plummetdet(self.lineChart) # plummets are actually any outlier sudden increase or decrease
+        maxindices = plateau_start_det(self.lineChart, PEAK_MINIMUM)
+        # maxindices, minindices = peakdet(self.lineChart, delta)
+        # if len(maxindices) == 0:
+        #     maxindices = maxdet(self.lineChart)
+        # else:
+        #     maxindices = maxindices[np.where(np.abs(maxindices[:,1]) > PEAK_MINIMUM)] # remove crappy peaks
         
         # Get plateau regions
         plateaus = []

@@ -493,6 +493,39 @@ class FastASeq:
             return protein, strand, frame
     
     @staticmethod
+    def gapped_translation(gap_seq, strict=False):
+        '''
+        Static method to receive a gapped nucleotide sequence and translate it into
+        a protein sequence, handling gaps in the sequence, and will return a protein
+        sequence with gaps in the same positions as the input sequence.
+        
+        Parameters:
+            gap_seq -- a string of nucleotides with gaps, as might be found in a FastASeq.gap_seq
+                       attribute.
+            strict -- a Boolean indicating whether the method should raise an error if it
+                      encounters a codon with gaps in it. If False, it will replace the codon
+                      with an 'X' in the protein sequence.
+        Returns:
+            gapProtein -- a string of amino acid residues translated from gap_seq.
+        '''
+        gapProtein = ""
+        for i in range(0, len(gap_seq), 3):
+            codon = gap_seq[i:i+3]
+            
+            if "-" in codon:
+                "Use len(set()) as it 1) identifies mixes of gaps and nucleotides and 2) handles truncated codons"
+                if len(set(codon)) != 1:
+                    if strict:
+                        raise ValueError(f"Codon '{codon}' cannot translate as it contains gaps")
+                    else:
+                        gapProtein += "X"
+                else:
+                    gapProtein += "-"
+            else:
+                gapProtein += FastASeq.TRANSLATION_TABLE[codon.upper()] if codon.upper() in FastASeq.TRANSLATION_TABLE else "X"
+        return gapProtein
+    
+    @staticmethod
     def dna_to_protein(dnaString):
         '''
         Hidden method for FastASeq to convert a string DNA sequence into
@@ -1509,22 +1542,7 @@ class FASTA:
             # Translate the gap sequence if it exists
             if FastASeq_obj.gap_seq != None:
                 translatedFASTA.isAligned = True # make sure the output FASTA is marked as aligned
-                
-                gapProtein = ""
-                for i in range(0, len(FastASeq_obj.gap_seq), 3):
-                    codon = FastASeq_obj.gap_seq[i:i+3]
-                    
-                    if "-" in codon:
-                        "Use len(set()) as it 1) identifies mixes of gaps and nucleotides and 2) handles truncated codons"
-                        if len(set(codon)) != 1:
-                            if strict:
-                                raise ValueError(f"Codon '{codon}' cannot translate as it contains gaps")
-                            else:
-                                gapProtein += "X"
-                        else:
-                            gapProtein += "-"
-                    else:
-                        gapProtein += FastASeq.TRANSLATION_TABLE[codon.upper()] if codon.upper() in FastASeq.TRANSLATION_TABLE else "X"
+                gapProtein = FastASeq.gapped_translation(FastASeq_obj.gap_seq)
             else:
                 gapProtein = None
             
