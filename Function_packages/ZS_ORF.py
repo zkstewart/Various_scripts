@@ -4,7 +4,7 @@
 # the prediction of ORFs for each sequence or from a
 # MSA.
 
-import os, sys, inspect, random, math
+import os, sys, inspect, random, math, re
 from copy import deepcopy
 import numpy as np
 
@@ -137,26 +137,52 @@ class FastASeqFrames:
     '''
     def __init__(self, FastASeq_obj):
         assert type(FastASeq_obj).__name__ == "FastASeq" or type(FastASeq_obj).__name__ == "ZS_SeqIO.FastASeq"
-        self.FastASeq = FastASeq_obj
         
-        self.framing()
+        self.framing(FastASeq_obj) # sets self.seq, self.frame_1, self.frame_2, self.frame_3
         self.frame_position_numbering()
     
-    def framing(self):
+    def framing(self, FastASeq_obj):
         '''
-        Performs the three frame translation.
+        Performs the three frame translation;
+        drops the strand and frame returns as '_' internally.
         '''
-        self.frame_1, _, _ = self.FastASeq.get_translation(strand=1, frame=0) # drop the strand and frame returns as '_'
-        self.frame_2, _, _ = self.FastASeq.get_translation(strand=1, frame=1)
-        self.frame_3, _, _ = self.FastASeq.get_translation(strand=1, frame=2)
+        startRegex = re.compile(r"^[nN-]+")
+        endRegex = re.compile(r"[nN-]+$")
+        #self.frame_1 = FastASeq.dna_to_protein(FastASeq_obj.seq.rstrip("nN")) # remove any trailing Ns
+        #self.frame_2 = FastASeq.dna_to_protein(FastASeq_obj.seq[1:].rstrip("nN"))
+        #self.frame_3 = FastASeq.dna_to_protein(FastASeq_obj.seq[2:].rstrip("nN"))
+        
+        #self.frame_1, _, _ = FastASeq_obj.get_translation(strand=1, frame=0)
+        #self.frame_2, _, _ = FastASeq_obj.get_translation(strand=1, frame=1)
+        #self.frame_3, _, _ = FastASeq_obj.get_translation(strand=1, frame=2)
+        
+        # Identify where the sequence is concealed by Ns or gaps
+        thisSeq = FastASeq_obj.gap_seq
+        
+        startConcealed = startRegex.search(thisSeq)
+        endConcealed = endRegex.search(thisSeq)
+        
+        startConcealed = len(startConcealed.group()) if startConcealed != None else 0
+        endConcealed = len(endConcealed.group()) if endConcealed != None else 0
+        
+        # Generate a new sequence with the concealed regions replaced by Ns
+        self.seq = "N"*startConcealed + thisSeq[0+startConcealed:len(thisSeq)-endConcealed] + "N"*endConcealed
+        
+        # Translate the sequence
+        self.frame_1 = FastASeq.dna_to_protein(thisSeq)
+        self.frame_2 = FastASeq.dna_to_protein(thisSeq[1:])
+        self.frame_3 = FastASeq.dna_to_protein(thisSeq[2:])
+        
+        # Note where the sequence is concealed
+        self.concealed = np.array( [1]*startConcealed + [0]*(len(self.seq) - startConcealed - endConcealed) + [1]*endConcealed )
     
     def frame_position_numbering(self):
         '''
         Numbers each position in each frame according to the length of ORF it is participating in.
         '''
-        self.numbers_1 = np.zeros(len(self.FastASeq.gap_seq))
-        self.numbers_2 = np.zeros(len(self.FastASeq.gap_seq))
-        self.numbers_3 = np.zeros(len(self.FastASeq.gap_seq))
+        self.numbers_1 = np.zeros(len(self.seq))
+        self.numbers_2 = np.zeros(len(self.seq))
+        self.numbers_3 = np.zeros(len(self.seq))
         
         for x in range(0, 3):
             numbers = [self.numbers_1, self.numbers_2, self.numbers_3][x] # reuse code by selecting our numbers_# values here
@@ -179,7 +205,7 @@ class FastASeqFrames:
                         break
                     
                     # Original implementation
-                    if self.FastASeq.gap_seq[ongoingCount] != "-":
+                    if self.seq[ongoingCount] != "-":
                         cdsHasStarted = True
                         orfRemaining -= 1
                     
@@ -194,10 +220,11 @@ class FastASeqFrames:
                 while codonRemaining > 0 and ongoingCount < len(numbers) and y+1 < len(splitFrame):
                     numbers[ongoingCount] = orfLength
                     
-                    if self.FastASeq.gap_seq[ongoingCount] != "-": 
+                    if self.seq[ongoingCount] != "-": 
                         codonRemaining -= 1
                     
-                    ongoingCount += 1 
+                    ongoingCount += 1
+        self.numbers_max = np.max((self.numbers_1, self.numbers_2, self.numbers_3))
     
     def max(self, position):
         '''
@@ -334,7 +361,7 @@ class MSA_ORF:
             plateaus[i][1] = newEnd
         return plateaus
     
-    def denovo_prediction_peaks(self, delta=0.005, allowedDecrease=0.2, PEAK_MINIMUM=0.90):
+    def denovo_prediction_peaks(self, delta=0.005, allowedDecrease=0.2, PEAK_MINIMUM=0.90, CONCEALED_COUNT_RATIO=0.5):
         '''
         This method attempts to predict multiple ORFs from within the MSA using a peak 
         detection algorithm.
@@ -352,6 +379,13 @@ class MSA_ORF:
             PEAK_MINIMUM -- a float value in the range of 0->1 which will limit what regions
                             of the min-max array can be detected as a peak. This will prevent
                             low-quality peaks from being found.
+            CONCEALED_COUNT_RATIO -- a float value in the range of 0->1 which will determine whether
+                                     a sequence that is concealed at its start or end (i.e., has gaps or
+                                     N's exclusively) will have the benefit of the doubt applied when it
+                                     comes to contributing to the line chart. Specifically, if the ratio
+                                     of non-concealed sequences has a full length ORF at a position, then
+                                     the concealed sequence will be treated as if it has a full length ORF
+                                     at that position.
         Returns:
             orfCoordinates -- a list containing lists with structure like:
                               [
@@ -360,16 +394,39 @@ class MSA_ORF:
                                   ...
                               ]
         '''
+        # Init values
         msaLength = len(self.FASTA[0].gap_seq) # all seqs should be same length due to __init__ validations
         frames = [FastASeqFrames(FastASeq_obj) for FastASeq_obj in self.FASTA]
         
+        # Generate data structure for peak detection
         self.lineChart = np.zeros(msaLength)
         for position in range(msaLength):
-            self.lineChart[position] = sum([frame.max(position) for frame in frames])
+            # Determine whether we should treat concealed sequences as full length
+            isFullLength = [
+                1 if 
+                  frame.concealed[position] == 0 # concealed sequences are ambiguous if they're full length
+                  and frame.max(position) == frame.numbers_max
+                else 0
+                for frame in frames
+                if 0 in frame.concealed # skip sequences that are all concealed
+            ]
+            isFullLengthRatio = sum(isFullLength) / len(isFullLength)
+            
+            # Generate line chart values based on whether we should treat concealed sequences as full length
+            if isFullLengthRatio >= CONCEALED_COUNT_RATIO:
+                self.lineChart[position] = sum([frame.max(position) for frame in frames])
+            else:
+                self.lineChart[position] = sum([frame.max(position) for frame in frames if frame.concealed[position] == 0])
         
         # End detection if no peaks are possible
         "i.e., if the line chart is just a flat line"
         if np.min(self.lineChart) == np.max(self.lineChart):
+            self.peaksCoordinates = [[0, msaLength]]
+            return self.peaksCoordinates
+        
+        # End detection if trough is really minor
+        "i.e., if the difference between the min and max value is small and being contributed by a minority of sequences"
+        if (np.min(self.lineChart) + np.max(self.lineChart)*0.01) >= np.max(self.lineChart):
             self.peaksCoordinates = [[0, msaLength]]
             return self.peaksCoordinates
         
