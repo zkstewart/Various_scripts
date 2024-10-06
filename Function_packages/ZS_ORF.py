@@ -196,7 +196,7 @@ class FastASeqFrames:
         
         # Generate a new sequence with the concealed regions replaced by Ns
         self.seq = "N"*startConcealed + thisSeq[0+startConcealed:len(thisSeq)-endConcealed] + "N"*endConcealed
-        thisSeq = thisSeq.replace("-", "") # get rid of gaps so we can use it for translation next
+        thisSeq = self.seq.replace("-", "") # get rid of gaps so we can use it for translation next
         
         # Translate the sequence
         self.frame_1 = FastASeq.dna_to_protein(thisSeq)
@@ -234,7 +234,7 @@ class FastASeqFrames:
                     for nucleotide in self.seq[ongoingCount:]:
                         if aminoCount == 3 or ongoingCount == len(numbers):
                             break
-                        
+                         
                         numbers[ongoingCount] = orfLength
                         if nucleotide != "-":
                             aminoCount += 1
