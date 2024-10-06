@@ -184,13 +184,6 @@ class FastASeqFrames:
         '''
         startRegex = re.compile(r"^[nN-]+")
         endRegex = re.compile(r"[nN-]+$")
-        #self.frame_1 = FastASeq.dna_to_protein(FastASeq_obj.seq.rstrip("nN")) # remove any trailing Ns
-        #self.frame_2 = FastASeq.dna_to_protein(FastASeq_obj.seq[1:].rstrip("nN"))
-        #self.frame_3 = FastASeq.dna_to_protein(FastASeq_obj.seq[2:].rstrip("nN"))
-        
-        #self.frame_1, _, _ = FastASeq_obj.get_translation(strand=1, frame=0)
-        #self.frame_2, _, _ = FastASeq_obj.get_translation(strand=1, frame=1)
-        #self.frame_3, _, _ = FastASeq_obj.get_translation(strand=1, frame=2)
         
         # Identify where the sequence is concealed by Ns or gaps
         thisSeq = FastASeq_obj.gap_seq
@@ -225,47 +218,40 @@ class FastASeqFrames:
             numbers = [self.numbers_1, self.numbers_2, self.numbers_3][x] # reuse code by selecting our numbers_# values here
             frame = [self.frame_1, self.frame_2, self.frame_3][x] # as above for frame_# values
             
-            ongoingCount = 0
-            cdsHasStarted = False
+            # Fill in first numbers values cut off by this frame
             splitFrame = frame.split("*")
+            numbers[0:x] = len(splitFrame[0])*3 # *3 for nucleotide length
+            
+            # Fill in the rest of the numbers values based on the ORF lengths
+            ongoingCount = x
             for y in range(len(splitFrame)):
-                ##
-                # TBD:
-                # - For each ORF, we need to find the start and end positions in the original sequence
-                # And then we can set the numbers_# values for those positions to the length of the ORF
-                ##
                 frameSeq = splitFrame[y]
                 orfLength = len(frameSeq)*3 # *3 for nucleotide length
-                orfRemaining = orfLength
                 
-                # Iterate through letters in the ORF
-                "Without counting anything earlier than the first position in the ORF"
-                while orfRemaining > 0:
-                    # Handle translation's behaviour of inferring a final truncated codon
-                    "ongoingCount can exceed the length of the sequence, so we need to break if that happens"
-                    if ongoingCount == len(numbers):
-                        break
-                    
-                    # Original implementation
-                    if self.seq[ongoingCount] != "-":
-                        cdsHasStarted = True
-                        orfRemaining -= 1
-                    
-                    if cdsHasStarted:
+                # Iterate through the ORF sequence
+                for amino in frameSeq:
+                    aminoCount = 0
+                    for nucleotide in self.seq[ongoingCount:]:
+                        if aminoCount == 3 or ongoingCount == len(numbers):
+                            break
+                        
                         numbers[ongoingCount] = orfLength
-                    
-                    ongoingCount += 1 
+                        if nucleotide != "-":
+                            aminoCount += 1
+                        ongoingCount += 1
                 
-                # Iterate over any stop codons
-                "Without going past the final position in the ORF"
-                codonRemaining = 3
-                while codonRemaining > 0 and ongoingCount < len(numbers) and y+1 < len(splitFrame):
-                    numbers[ongoingCount] = orfLength
-                    
-                    if self.seq[ongoingCount] != "-": 
-                        codonRemaining -= 1
-                    
-                    ongoingCount += 1
+                # Handle a stop codon at the end if we didn't reach len(numbers)
+                if ongoingCount != len(numbers):
+                    stopCodonCount = 0
+                    for nucleotide in self.seq[ongoingCount:]:
+                        if stopCodonCount == 3 or ongoingCount == len(numbers):
+                            break
+                        
+                        numbers[ongoingCount] = orfLength
+                        if nucleotide != "-":
+                            stopCodonCount += 1
+                        ongoingCount += 1
+        
         self.numbers_max = np.max((self.numbers_1, self.numbers_2, self.numbers_3))
     
     def max(self, position):
@@ -491,7 +477,7 @@ class MSA_ORF:
             index = int(maximum[0])
             coverage = maximum[1]
             # Look forward
-            '''The peakdet values are always at the start of the plateau,
+            '''The peakdet/plateau_start_det values are always at the start of the plateau,
             so we don't need to look back, we just need to look forward to find
             where the plateau ends'''
             plat = None
