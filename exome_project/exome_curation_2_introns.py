@@ -49,6 +49,7 @@ def validate_args(args):
             print("Created '{0}' directory as part of argument validation".format(args.outputDir))
         except:
             print("Wasn't able to create '{0}' directory; does '{1}' actually exist?".format(args.outputDir, os.path.dirname(args.outputDir)))
+            quit()
 
 def get_cds_coords(gff3File):
     '''
