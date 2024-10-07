@@ -195,7 +195,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftExe):
             # Then, update the sequence in our exon_FASTA_obj
             exon_FASTA_obj[problemSeqID].seq = editedSeq
             exon_FASTA_obj[problemSeqID].gap_seq = None # make sure we know that our gap_seq is no longer valid
-
+        
         # Recompute solutionDict if necessary
         if polishedSequences == True:
             solutionDict = ZS_ORF.ORF.solve_translation_frames(exon_FASTA_obj, transcriptomeFile)
@@ -206,8 +206,8 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftExe):
         
         # Align edited exon region
         mafftAligner.align_as_protein(exon_FASTA_obj,
-                                      strand=[1 for _ in range(len(frames))], # always search on strand=1 for an ORF
-                                      frame=frames) 
+                                      strands=[1 for _ in range(len(frames))], # always search on strand=1 for an ORF
+                                      frames=frames) 
         
         # Perform extra polishing after alignment
         """
@@ -222,8 +222,8 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftExe):
             frames, thisExonFrames = _get_frames_from_solutionDict(exon_FASTA_obj, solutionDict)
             mafftAligner.align_as_protein(
                 exon_FASTA_obj,
-                strand=[1 for _ in range(len(frames))],
-                frame=frames) # re-align again
+                strands=[1 for _ in range(len(frames))],
+                frames=frames) # re-align again
     
     # Merge the edited exon regions back into the overall sequence
     for x in range(len(exonCoords)-1, -1, -1): # iterate backwards through coords since we know they're ordered ascendingly
