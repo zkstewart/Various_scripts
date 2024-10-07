@@ -639,10 +639,14 @@ class MAFFT:
             FastASeq_obj = FASTA_obj.seqs[i]
             
             # Run the translation
+            strand=None if strands == None else strands[i] if strands[i] != None else None
+            frame=None if strand == None else None if frames == None else frames[i] if frames[i] != None else None
+            findBestFrame=True if (strand == None or frame == None) else False
+            
             protein, _strand, _frame = FastASeq_obj.get_translation(
-                findBestFrame=False if frames != None else True,
-                strand=None if strands == None else strands[i],
-                frame=None if frames == None else frames[i])
+                findBestFrame=findBestFrame,
+                strand=strand,
+                frame=frame)
             
             # Modify stop codons to be "X"s
             '''
