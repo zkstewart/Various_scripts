@@ -159,8 +159,13 @@ def plummetdet(v):
         declines.append(prev - this)
     
     declines = np.array(declines)
-    plummets = outliers_z_score(declines)
-    return list(plummets[0])
+    
+    # Calculate plummets using z-score
+    if np.all(declines == 0): # avoid a runtime warning
+        return []
+    else:
+        plummets = outliers_z_score(declines)
+        return list(plummets[0])
 
 class FastASeqFrames:
     '''
@@ -814,7 +819,7 @@ class ORF:
                 # Otherwise, do it anew
                 except:
                     solutionSeq, solutionFrame, _ = solution
-                    sswResult = SSW.ssw_parasail(solutionSeq, targetSeq)
+                    sswResult = SSW.ssw_parasail(solutionSeq, targetSeq, "protein")
                     score = sswResult.score
                     # Store it into memoryDict
                     memoryDict.setdefault(thisSeqID, {})
