@@ -120,7 +120,7 @@ class FastASeqAlignmentFrames:
                 if solutionSeq.upper().replace("X", "") == "":
                     continue
                 
-                sswResult = SSW.ssw_parasail(frame, solutionSeq) # query, target
+                sswResult = SSW.ssw_parasail(frame, solutionSeq, "protein") # query, target
                 
                 # Find our nucleotide positions for the alignment
                 queryStartIndex = sswResult.queryStartIndex * 3
@@ -288,6 +288,10 @@ class IndelPredictor:
         if np.sum(lineChart) == 0.0:
             return []
         
+        # Early exit for flat line charts
+        if len(set(lineChart)) == 1:
+            return []
+        
         # Min-max normalise line chart values
         lineChart = [(value - np.min(lineChart)) / (np.max(lineChart) - np.min(lineChart)) for value in lineChart]
         
@@ -416,7 +420,7 @@ class IndelPredictor:
                 continue
             else:
                 targetNuclSeq = FASTA_obj[targetSeqID].seq
-                sswResult = SSW.ssw_parasail(queryNuclSeq, targetNuclSeq)
+                sswResult = SSW.ssw_parasail(queryNuclSeq, targetNuclSeq, "nucleotide")
                 matches.append(
                     Match(
                         sswResult.queryAlign, sswResult.targetAlign,
