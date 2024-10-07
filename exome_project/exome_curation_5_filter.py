@@ -33,17 +33,30 @@ def main():
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-a", dest="alignmentsDir", required=True,
-                help="Specify the directory where aligned FASTA files are located")
-    p.add_argument("-o", dest="outputFileName", required=True,
-                help="Specify the file name for the output MSA FASTA")
+    p.add_argument("-a", dest="alignmentsDir",
+                   required=True,
+                   help="Specify the directory where aligned FASTA files are located")
+    p.add_argument("-o", dest="outputFileName",
+                   required=True,
+                   help="Specify the file name for the output MSA FASTA")
     # Opts
-    p.add_argument("--rows_to_drop", dest="rowsToDrop", nargs="+", default=["Codons", "GeneName"],
-                help="Optionally, specify one or more space-separated IDs to drop these sequences from the MSA")
-    p.add_argument("--filter_id", dest="filterID", default="Codons",
-                help="""Optionally specify a single row ID which contains values that will mark columns to be dropped""")
-    p.add_argument("--filter_values", dest="filterValues", nargs="+", default=["4", "5"],
-                help="Optionally, specify one or more space-separated values that mark columns to be dropped")
+    p.add_argument("--rows_to_drop", dest="rowsToDrop",
+                   required=False,
+                   nargs="+",
+                   default=["Codons", "GeneName"],
+                   help="""Optionally, specify one or more space-separated IDs to drop these
+                   sequences from the MSA (default == 'Codons GeneName')""")
+    p.add_argument("--filter_id", dest="filterID",
+                   required=False,
+                   help="""Optionally specify a single row ID which contains values that will
+                   mark columns to be dropped (default == 'Codons')""",
+                   default="Codons")
+    p.add_argument("--filter_values", dest="filterValues",
+                   required=False,
+                   nargs="+",
+                   help="""Optionally, specify one or more space-separated values that mark
+                   columns to be dropped (default == '4 5')""",
+                   default=["4", "5"])
     
     args = p.parse_args()
     validate_args(args)

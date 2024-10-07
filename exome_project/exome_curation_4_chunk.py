@@ -79,16 +79,21 @@ def main():
     """
     # Reqs
     p = argparse.ArgumentParser(description=usage)
-    p.add_argument("-a", dest="alignmentsDir", required=True,
-                help="Specify the directory where aligned FASTA files are located")
-    p.add_argument("-o", dest="outputDir", required=True,
-                help="Output directory location (default == \"3_chunk\")",
-                default="3_chunk")
+    p.add_argument("-a", dest="alignmentsDir",
+                   required=True,
+                   help="Specify the directory where aligned FASTA files are located")
     # Opts
-    p.add_argument("-c", dest="chunkSize", type=int, required=False,
-                help="Optionally, specify how many exons should be concatenated in a file",
-                default=50)
-
+    p.add_argument("-o", dest="outputDir",
+                   required=False,
+                   help="Output directory location (default == \"4_chunk\")",
+                   default="4_chunk")
+    p.add_argument("-c", dest="chunkSize",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify how many exons should be concatenated
+                   in a file (default == 50)""",
+                   default=50)
+    
     args = p.parse_args()
     validate_args(args)
     
@@ -137,12 +142,14 @@ def main():
         
         concatFastaObjs.append(baseFASTA) # Store our modified FASTA with all the concatenation performed
         prevChunkStart = chunkPoints[i]
-
+    
     # Write output files
     for i in range(0, len(chunkPoints)):
         outputFileName = os.path.join(args.outputDir, "exons_chunk_{0}.fa".format(i+1))
         FASTA_obj = concatFastaObjs[i]
         FASTA_obj.write(outputFileName, withDescription=True, asAligned=True, withConsensus=False)
+    
+    print("Program completed successfully!")
 
 if __name__ == "__main__":
     main()
