@@ -634,16 +634,27 @@ class MSA_ORF:
             startIndex, endIndex = None, None
             for x in range(len(FastASeq_obj.gap_seq)):
                 letter = FastASeq_obj.gap_seq[x]
-                if letter == "-":
-                    continue
                 
-                if ongoingPositionCount == proteinStart*3:
-                    startIndex = x
                 if ongoingPositionCount+1 >= proteinEnd*3: # +1 to handle sequences that end early and have all gap at end
                     "The >= is important above for various reasons I've come to semi-understand"
                     endIndex = x+1 # proteinEnd marks the first position of the stop codon, setting this to endIndex will exclude it
                 
+                if letter == "-":
+                    "Must skip gaps AFTER checking for the end of the sequence in case"
+                    "the sequence ends in a gap"
+                    continue
+                
+                if ongoingPositionCount == proteinStart*3:
+                    "OK to check start position after skipping gaps since the start"
+                    "position will never be a gap"
+                    startIndex = x
+                
                 ongoingPositionCount += 1
+            
+            if endIndex == None:
+                assert letter != "-" # check that the last letter isn't a gap
+                endIndex = x+1 # +1 to include the last position when using range() type logic
+            
             assert startIndex != None and endIndex != None
             
             # Store the unextended boundary details now
@@ -684,7 +695,7 @@ class MSA_ORF:
             if (sum(truncated_end) / len(truncated_end)) > NATURAL_PCT:
                 for j in range(len(boundaries)):
                     boundaries[j][1] = boundaries_with_extension[j][1]
-
+        
         return boundaries
 
 class ORF:
@@ -759,7 +770,7 @@ class ORF:
                 blastResults = [] # holds the best E-value, or +inf if no result found
                 for seq, _, _ in results:
                     # Skip blank sequences and _almost blank_ sequences
-                    if len(seq) < SHORT_SEQ_LEN:
+                    if len(seq.upper().replace("X","")) < SHORT_SEQ_LEN:
                         blastResults.append(math.inf)
                         continue
                     # Set up our BLAST handler
@@ -772,12 +783,12 @@ class ORF:
                     bestFrame = blastResults.index(min(blastResults))
                     solutionDict[FastASeq_obj.id] = results[bestFrame]
                     continue
-
+            
             # Note unsolveable (/not solved if DESIRABLE_NUMBER is met) scenarios
             problemDict[FastASeq_obj.id] = resultsDict[FastASeq_obj.id]
         
         return solutionDict, problemDict
-
+    
     @staticmethod
     def _reset_memory_dict_index(memoryDict, thisSeqID):
         '''
