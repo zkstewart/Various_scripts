@@ -43,6 +43,9 @@ def validate_args(args):
     if args.radiusSize < 1:
         print("--radiusSize must be a positive integer")
         quit()
+    if args.power < 1:
+        print("--power must be an integer >= 1")
+        quit()
     # Validate output file location
     for outputSuffix in [".gene_report.tsv", ".variant_report.tsv"]:
         if os.path.isfile(args.outputPrefix + outputSuffix):
@@ -50,11 +53,13 @@ def validate_args(args):
             print('Make sure you specify a unique file name and try again.')
             quit()
 
-def parse_ed_file(tsvFile, bulkAlleles=[], bulkOccurrence=None,
+def parse_ed_file(tsvFile, power=1, bulkAlleles=[], bulkOccurrence=None,
                   HEADER_VALUES = ["CHROM", "POSI", "euclideanDist", "bulk1_alleles", "bulk2_alleles"]):
     '''
     Parameters:
         tsvFile -- a string pointing to the TSV file containing relevant statistics
+        power -- OPTIONAL; an integer indicating the power to raise Euclidean distances to
+                 reduce noise (default=1)
         bulkAlleles -- OPTIONAL; a list of two integers indicating the maximum number of alleles
                        in each bulk OR an empty list OR None to indicate that bulk occurrence
                        should not be considered (default=[])
@@ -117,7 +122,7 @@ def parse_ed_file(tsvFile, bulkAlleles=[], bulkOccurrence=None,
                 edDict[chrom][int(pos)] = {
                     "bulk1_alleles": int(bulk1),
                     "bulk2_alleles": int(bulk2),
-                    "euclidean_distance": float(edist) if edist != "." else "."
+                    "euclidean_distance": float(edist)**power if edist != "." else "."
                 }
                 
     return edDict
@@ -479,6 +484,12 @@ def main():
                    a SNP if it has >= the Euclidean distance; default
                    == 0 (i.e., no filtering occurs, all results are reported)""",
                    default=0)
+    p.add_argument("--power", dest="power",
+                    type=int,
+                    required=False,
+                    help="""Optionally, specify the power to raise Euclidean distances to
+                    reduce noise (default=4)""",
+                    default=4)
     p.add_argument("--radius", dest="radiusSize",
                    type=int,
                    required=False,
@@ -500,7 +511,7 @@ def main():
     go = obo_parser.GODag(args.goOboFile)
     
     # Parse Euclidean distance file
-    edDict = parse_ed_file(args.edistFile)
+    edDict = parse_ed_file(args.edistFile, power=args.power)
     
     # Parse GFF3 with NCLS indexing
     gff3Obj = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False)
