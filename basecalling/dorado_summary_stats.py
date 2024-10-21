@@ -64,6 +64,7 @@ def main():
     
     # Parse the summary TSV file and obtain the read lengths
     statsList = []
+    qList = []
     numSeqs = 0
     totalSize = 0
     firstLine = True
@@ -75,13 +76,20 @@ def main():
                 assert sl[0] == "filename" and "sequence_length_template" in sl, \
                     "Invalid header line in summary TSV file"
                 lengthIndex = sl.index("sequence_length_template")
+                qIndex = sl.index("mean_qscore_template")
                 firstLine = False
             else:
+                # Store length values
                 length = int(sl[lengthIndex])
                 statsList.append(length)
                 numSeqs += 1
                 totalSize += length
-    # Calculate additional statistics
+                
+                # Store Q-score values
+                q = float(sl[qIndex])
+                qList.append(q)
+                
+    # Calculate length statistics
     totalSize = locale.format_string("%d", totalSize, grouping=True)
     numSeqs = locale.format_string("%d", numSeqs, grouping=True)
     shortest = locale.format_string("%d", min(statsList), grouping=True)
@@ -89,26 +97,46 @@ def main():
     n50 = locale.format_string("%d", N50(statsList), grouping=True)
     medianStat = locale.format_string("%d", median(statsList), grouping=True)
     meanStat = locale.format_string("%d", mean(statsList), grouping=True)
-    # Print statistics
+    
+    # Calculate Q-score statistics
+    minimumQ = locale.format_string("%d", min(qList), grouping=True)
+    maximumQ = locale.format_string("%d", max(qList), grouping=True)
+    medianQ = locale.format_string("%d", median(qList), grouping=True)
+    meanQ = locale.format_string("%d", mean(qList), grouping=True)
+    
+    # Print length statistics
+    print('# Length statistics')
     print('Total amount of sequence (bp): ' + totalSize)
     print('Number of reads: ' + numSeqs)
     print('Shortest read: ' + shortest)
     print('Longest read: ' + longest)
-    print('')
     print('N50: ' + n50)
     print('Median: ' + medianStat)
     print('Mean: ' + meanStat)
+    
+    # Print Q-score statistics
+    print('\n# Q-score statistics')
+    print('Minimum Q-score: ' + minimumQ)
+    print('Maximum Q-score: ' + maximumQ)
+    print('Median Q-score: ' + medianQ)
+    print('Mean Q-score: ' + meanQ)
+    
     # File output
     if args.outputFileName != False:
         with open(args.outputFileName, 'w') as output:
+            output.write('# Length statistics\n')
             output.write('Total amount of sequence (bp): ' + totalSize + '\n')
             output.write('Number of reads: ' + numSeqs + '\n')
             output.write('Shortest read: ' + shortest + '\n')
             output.write('Longest read: ' + longest + '\n')
-            output.write('\n')
             output.write('N50: ' + n50 + '\n')
             output.write('Median: ' + medianStat + '\n')
             output.write('Mean: ' + meanStat + '\n')
+            output.write('\n# Q-score statistics\n')
+            output.write('Minimum Q-score: ' + minimumQ + '\n')
+            output.write('Maximum Q-score: ' + maximumQ + '\n')
+            output.write('Median Q-score: ' + medianQ + '\n')
+            output.write('Mean Q-score: ' + meanQ + '\n')
 
 if __name__ == '__main__':
     main()
