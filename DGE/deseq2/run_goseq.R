@@ -111,7 +111,7 @@ geneList = ids.table$ALL_IDS
 
 
 # Extract IDs for each individual test
-tests.list = as.list(ids.table[, 2:ncol(ids.table)])
+tests.list = as.list(ids.table[, 2:ncol(ids.table),drop=FALSE])
 tests.list = lapply(tests.list, function(x) x[x!=""])
 
 
@@ -149,7 +149,7 @@ stopifnot(names(length.vector) == names(splitgoannot), names(length.vector) == g
 
 for (testName in names(tests.list))
 {
-  goseq.result = run_goseq(tests.list[testName], geneList,
+  goseq.result = run_goseq(tests.list[[testName]], geneList,
                            length.vector, splitgoannot,
                            GOSEQ_SIGNIFICANCE_THRESHOLD)
   write.table(goseq.result,
