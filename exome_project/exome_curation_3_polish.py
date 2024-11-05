@@ -259,7 +259,7 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftExe):
         FASTA_obj = left_FASTA_obj
         os.unlink(exonTmpFileName)
         os.unlink(rightTmpFileName)
-        
+    
     return FASTA_obj, exonFrames # this has the same variable name, but its value is DIFFERENT than the input
 
 def _get_exon_coords(FASTA_obj):
