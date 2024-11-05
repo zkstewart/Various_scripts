@@ -149,7 +149,7 @@ GENOME={genome}
 
 # Specify the name of the contiglist and bamlist file
 CONTIG_LIST={CONTIG_LIST}
-BAMLIST={BAM_LIST}
+BAM_LIST={BAM_LIST}
 
 ####
 
