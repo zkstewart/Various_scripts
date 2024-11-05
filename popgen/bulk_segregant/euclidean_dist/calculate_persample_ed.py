@@ -72,7 +72,7 @@ def calculate_snp_ed(b1Gt, b2Gt):
     if b1Sum == 0 and b2Sum == 0:
         return b1Sum, b2Sum, "." # euclidean distance is null
     elif b1Sum == 0 or b2Sum == 0:
-        return b1Sum, b2Sum, 1 # euclidean distance is 1 [##TEST!]
+        return b1Sum, b2Sum, 1 # euclidean distance is 1
     else:
         # Derive our euclidean distance value
         """Refer to "Euclidean distance calculation" in Hill et al. 2013"""
