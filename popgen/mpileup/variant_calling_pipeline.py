@@ -108,13 +108,13 @@ def qsub(scriptFileName):
     else:
         raise Exception(f"qsub died with stderr == {stderr}")
 
-def make_calling_script(argsDict, PREFIX="", WALLTIME="72:00:00", MEM="40G"):
+def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"):
     '''
     Function to format a script for qsub submission to the HPC cluster to perform
     variant calling using the bcftools mpileup->call pipeline in parallel.
     
     Parameters:
-        argsDict -- a dictionary containing the following keys:
+        argsContainer -- an object containing the following keys:
             numJobs -- the number of jobs to submit to the HPC cluster;
                        should be equal to the number of contigs in the genome
             workingDir -- the directory to run the script in; should be the CWD
@@ -168,25 +168,25 @@ tabix -C ${{CONTIG}}.vcf.gz
     PREFIX=PREFIX,
     WALLTIME=WALLTIME,
     MEM=MEM,
-    numJobs=argsDict.numJobs,
-    workingDir=argsDict.workingDir,
-    genomeDir=argsDict.genomeDir,
-    genome=argsDict.genome,
+    numJobs=argsContainer.numJobs,
+    workingDir=argsContainer.workingDir,
+    genomeDir=argsContainer.genomeDir,
+    genome=argsContainer.genome,
     CONTIG_LIST=CONTIG_LIST, # global variable
     BAM_LIST=BAM_LIST # global variable
 )
 
     # Write script to file
-    with open(argsDict.outputFileName, "w") as fileOut:
+    with open(argsContainer.outputFileName, "w") as fileOut:
         fileOut.write(scriptText)
 
-def make_normalise_script(argsDict, PREFIX="", WALLTIME="08:00:00", MEM="15G"):
+def make_normalise_script(argsContainer, PREFIX="", WALLTIME="08:00:00", MEM="15G"):
     '''
     Function to format a script for qsub submission to the HPC cluster to perform
     variant normalisation.
     
     Parameters:
-        argsDict -- a dictionary containing the following keys:
+        argsContainer -- an object containing the following keys:
             numJobs -- the number of jobs to submit to the HPC cluster;
                        should be equal to the number of contigs in the genome
             workingDir -- the directory to run the script in; should be the CWD
@@ -247,25 +247,25 @@ bcftools index ${{CONTIG}}.decomposed.vcf.gz
     PREFIX=PREFIX,
     WALLTIME=WALLTIME,
     MEM=MEM,
-    numJobs=argsDict.numJobs,
-    workingDir=argsDict.workingDir,
-    genomeDir=argsDict.genomeDir,
-    genome=argsDict.genome,
+    numJobs=argsContainer.numJobs,
+    workingDir=argsContainer.workingDir,
+    genomeDir=argsContainer.genomeDir,
+    genome=argsContainer.genome,
     CONTIG_LIST=CONTIG_LIST, # global variable
-    afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsDict.runningJobIDs)) if argsDict.runningJobIDs != [] else ""
+    afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
 
     # Write script to file
-    with open(argsDict.outputFileName, "w") as fileOut:
+    with open(argsContainer.outputFileName, "w") as fileOut:
         fileOut.write(scriptText)
 
-def make_concatenation_script(argsDict, PREFIX="", WALLTIME="08:00:00", MEM="15G"):
+def make_concatenation_script(argsContainer, PREFIX="", WALLTIME="08:00:00", MEM="15G"):
     '''
     Function to format a script for qsub submission to the HPC cluster to perform
     concatenation of multiple VCF files produced in parallel for the same genome.
     
     Parameters:
-        argsDict -- a dictionary containing the following keys:
+        argsContainer -- an object containing the following keys:
             numJobs -- the number of jobs to submit to the HPC cluster;
                        should be equal to the number of contigs in the genome
             workingDir -- the directory to run the script in; should be the CWD
@@ -319,16 +319,21 @@ tabix -C ${{OUTPUT_PREFIX}}.vcf.gz;
     PREFIX=PREFIX,
     WALLTIME=WALLTIME,
     MEM=MEM,
-    numJobs=argsDict.numJobs,
-    workingDir=argsDict.workingDir,
+    numJobs=argsContainer.numJobs,
+    workingDir=argsContainer.workingDir,
     CONTIG_LIST=CONTIG_LIST, # global variable
     OUTPUT_PREFIX=OUTPUT_PREFIX, # global variable
-    afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsDict.runningJobIDs)) if argsDict.runningJobIDs != [] else ""
+    afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
 
     # Write script to file
-    with open(argsDict.outputFileName, "w") as fileOut:
+    with open(argsContainer.outputFileName, "w") as fileOut:
         fileOut.write(scriptText)
+
+class Container:
+    def __init__(self, paramsDict):
+        for key, value in paramsDict.items():
+            self.__dict__[key] = value
 
 ## Main
 def main():
@@ -410,14 +415,13 @@ def main():
                 fileOut.write(f"{bamFile}\n")
     
     # Write and qsub mpileup->call pipeline script
-    make_calling_script(
-        {
+    make_calling_script(Container({
             "numJobs": len(contigIDs),
             "workingDir": os.getcwd(),
             "genomeDir": os.path.dirname(args.fastaFile),
             "genome": os.path.basename(args.fastaFile),
             "outputFileName": CALLING_SCRIPT
-        },
+        }),
         PREFIX=args.jobPrefix,
         WALLTIME=args.walltime,
         MEM=args.mem
@@ -425,27 +429,25 @@ def main():
     callingJobID = qsub(CALLING_SCRIPT)
     
     # Write and qsub normalisation pipeline script
-    make_normalise_script(
-        {
+    make_normalise_script(Container({
             "numJobs": len(contigIDs),
             "workingDir": os.getcwd(),
             "genomeDir": os.path.dirname(args.fastaFile),
             "genome": os.path.basename(args.fastaFile),
             "outputFileName": NORMALISE_SCRIPT,
             "runningJobIDs": [callingJobID]
-        },
+        }),
         PREFIX=args.jobPrefix
     )
     normaliseJobID = qsub(NORMALISE_SCRIPT)
     
     # Write and qsub concatenation script
-    make_concatenation_script(
-        {
+    make_concatenation_script(Container({
             "numJobs": len(contigIDs),
             "workingDir": os.getcwd(),
             "outputFileName": CONCAT_SCRIPT,
             "runningJobIDs": [callingJobID, normaliseJobID]
-        },
+        }),
         PREFIX=args.jobPrefix
     )
     concatenationJobID = qsub(CONCAT_SCRIPT)
