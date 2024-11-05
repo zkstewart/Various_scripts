@@ -58,6 +58,9 @@ def validate_args(args):
     if ZS_Utility.wsl_which("tabix") is None:
         _not_discoverable_error("tabix")
     
+    if ZS_Utility.wsl_which("vt") is None:
+        _not_discoverable_error("vt")
+    
     # Validate behavioural inputs
     if not re.match(r"^\d+:\d{2}:\d{2}$", args.walltime):
         print("--walltime should be in the format of 'HH:MM:SS'")
