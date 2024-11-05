@@ -228,7 +228,7 @@ CONTIG_LIST={CONTIG_LIST}
 ####
 
 # STEP 1: Get the contig to work on
-CONTIG=$(eval $(cat ${{CONTIG_LIST}} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1))
+CONTIG=$(cat ${{CONTIG_LIST}} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
 
 # STEP 2: Split multiallelic records to biallelic
 bcftools norm -m- -Oz -o ${{CONTIG}}.split.vcf.gz -N ${{CONTIG}}.vcf.gz
