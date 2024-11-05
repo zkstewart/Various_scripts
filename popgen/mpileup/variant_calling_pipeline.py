@@ -80,13 +80,16 @@ def get_fasta_ids(fastaFile):
     Parameters:
         fastaFile -- a string indicating the location of a FASTA file
     Returns:
-        contigIDs -- a list of strings representing the sequence IDs in the FASTA file
+        contigIDs -- a set of strings representing the sequence IDs in the FASTA file
     '''
-    contigIDs = []
+    contigIDs = set()
     with open(fastaFile, "r") as fastaIn:
         for line in fastaIn:
             if line.startswith(">"):
-                contigIDs.append(line[1:].rstrip("\r\n "))
+                thisID = line[1:].rstrip("\r\n ").split(" ")[0]
+                if thisID in contigIDs:
+                    raise ValueError(f"ERROR: Contig ID '{thisID}' found more than once in FASTA file.")
+                contigIDs.add(thisID)
     return contigIDs
 
 def qsub(scriptFileName):
@@ -151,7 +154,7 @@ BAMLIST={BAM_LIST}
 ####
 
 # STEP 1: Get the contig to work on
-CONTIG=$(eval $(cat ${{CONTIG_LIST}} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1))
+CONTIG=$(cat ${{CONTIG_LIST}} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
 
 # STEP 2: Run bcftools mpileup->call pipeline
 bcftools mpileup -Ou \\
