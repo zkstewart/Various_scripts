@@ -315,7 +315,7 @@ SEPARATOR=" "
 VCFTOOLS_ARG="$( printf "${{SEPARATOR}}%s" "${{VCFFILES[@]}}" )"
 
 # STEP 3: Merge individual VCFs
-bcftools merge -Oz -o ${{OUTPUT_PREFIX}}.vcf.gz ${{VCFTOOLS_ARG}}
+bcftools concat -Oz -o ${{OUTPUT_PREFIX}}.vcf.gz ${{VCFTOOLS_ARG}}
 
 # STEP 4: Index VCF
 tabix ${{OUTPUT_PREFIX}}.vcf.gz;
