@@ -12,6 +12,7 @@ import pandas as pd
 
 from Bio import SeqIO
 from hashlib import md5
+from contextlib import nullcontext
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))) # 3 dirs up is where we find GFF3IO
 from Function_packages import ZS_GFF3IO, ZS_VCFIO
@@ -149,6 +150,9 @@ def tally_variants_within_features(vcfFile, gff3, onlyCDS=False, weightByOccurre
     for geneFeature in gff3.types["gene"]:
         geneID = geneFeature.ID
         if onlyCDS:
+            # Skip non-mRNA genes
+            if not hasattr(geneFeature, "mRNA"):
+                continue
             longestMrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(geneFeature)
             geneLength = sum([ cdsFeature.end - cdsFeature.start + 1 for cdsFeature in longestMrnaFeature.CDS ])
         else:
@@ -186,6 +190,11 @@ def tally_variants_within_features(vcfFile, gff3, onlyCDS=False, weightByOccurre
             geneFeatures = gff3.ncls_finder(pos, pos, "contig", chrom)
             for geneFeature in geneFeatures:
                 geneID = geneFeature.ID
+                
+                # Skip genes that were skipped in the initial tally
+                "Can occur if onlyCDS is enabled and the gene has no mRNA children"
+                if not geneID in tallyDict:
+                    continue
                 
                 # Narrow down to variants within the CDS region if onlyCDS
                 if onlyCDS:
@@ -407,7 +416,8 @@ def normalise_density(densityList):
     normalisedDensityList = [ (x - minValue) / (maxValue - minValue) for x in densityList ]
     return normalisedDensityList
 
-def line_horizontal(dotsX, dotsY, lengthsDict, wmaSize, width, height, outputDirectory, plotPDF, showDots, lineWidth):
+def line_horizontal(dotsX, dotsY, lengthsDict, wmaSize, width, height,
+                    outputDirectory, plotPDF, showDots, lineWidth, createTSV):
     '''
     Parameters:
         dotsX -- a dict pairing chromosome IDs (keys) to a list of integers indicating
@@ -427,6 +437,7 @@ def line_horizontal(dotsX, dotsY, lengthsDict, wmaSize, width, height, outputDir
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         showDots -- a boolean flag indicating whether to show the dots on the plot
         lineWidth -- an integer value indicating the width of the line to plot
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     # Get contig ordering by length
     contigOrder = sorted(lengthsDict.keys(), key=lambda x: lengthsDict[x], reverse=True) # longest to shortest
@@ -471,25 +482,37 @@ def line_horizontal(dotsX, dotsY, lengthsDict, wmaSize, width, height, outputDir
     fig.supylabel(f"Weighted moving average of variant occurrence (WMA size = {wmaSize})", fontweight="bold")
     
     # Plot the data into each axis
-    for ax, (contigID, x, y, smoothedY) in zip(axes, plotData):
-        # Set plot title
-        ax.set_title(contigID)
+    with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+        # Write TSV header if applicable
+        if createTSV:
+            fileOutTSV.write("contigID\tposition\tvariant_occurrence\tsmoothed_variant_occurrence\n")
         
-        # Plot dots (if applicable)
-        if showDots:
-            ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+        # Plot each contig
+        for ax, (contigID, x, y, smoothedY) in zip(axes, plotData):
+            # Set plot title
+            ax.set_title(contigID)
+            
+            # Plot dots (if applicable)
+            if showDots:
+                ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+            
+            # Plot line
+            ax.plot(x, smoothedY, zorder=1, linewidth=lineWidth)
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
+                    fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
         
-        # Plot line
-        ax.plot(x, smoothedY, zorder=1, linewidth=lineWidth)
-    
-    for ax in fig.get_axes():
-        ax.label_outer()
+        for ax in fig.get_axes():
+            ax.label_outer()
     
     # Save output file
     plt.savefig(fileOut)
     plt.close()
 
-def line_regions(dotsX, dotsY, regions, wmaSize, width, height, outputDirectory, plotPDF, showDots, lineWidth):
+def line_regions(dotsX, dotsY, regions, wmaSize, width, height, outputDirectory,
+                 plotPDF, showDots, lineWidth, createTSV):
     '''
     Parameters:
         dotsX -- a dict pairing chromosome IDs (keys) to a list of integers indicating
@@ -505,7 +528,8 @@ def line_regions(dotsX, dotsY, regions, wmaSize, width, height, outputDirectory,
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         showDots -- a boolean flag indicating whether to show the dots on the plot
         lineWidth -- an integer value indicating the width of the line to plot
-    '''    
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
+    '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
     
@@ -549,13 +573,25 @@ def line_regions(dotsX, dotsY, regions, wmaSize, width, height, outputDirectory,
             ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
         
         # Plot line
-        ax.plot(x, smoothedY, zorder=1, linewidth=lineWidth)
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            # Write TSV header if applicable
+            if createTSV:
+                fileOutTSV.write("contigID\tposition\tvariant_occurrence\tsmoothed_variant_occurrence\n")
+                
+            # Plot the contig
+            ax.plot(x, smoothedY, zorder=1, linewidth=lineWidth)
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY):
+                    fileOutTSV.write(f"{contig}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
         
         # Save output file
         plt.savefig(fileOut)
         plt.close()
 
-def line_per_contig(dotsX, dotsY, wmaSize, width, height, outputDirectory, plotPDF, showDots, lineWidth):
+def line_per_contig(dotsX, dotsY, wmaSize, width, height, outputDirectory,
+                    plotPDF, showDots, lineWidth, createTSV):
     '''
     Parameters:
         dotsX -- a dict pairing chromosome IDs (keys) to a list of integers indicating
@@ -569,6 +605,7 @@ def line_per_contig(dotsX, dotsY, wmaSize, width, height, outputDirectory, plotP
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         showDots -- a boolean flag indicating whether to show the dots on the plot
         lineWidth -- an integer value indicating the width of the line to plot
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     for contig, x in dotsX.items():
         
@@ -603,13 +640,24 @@ def line_per_contig(dotsX, dotsY, wmaSize, width, height, outputDirectory, plotP
             ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
         
         # Plot line
-        ax.plot(x, smoothedY, zorder=1, linewidth=lineWidth)
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            # Write TSV header if applicable
+            if createTSV:
+                fileOutTSV.write("contigID\tposition\tvariant_occurrence\tsmoothed_variant_occurrence\n")
+            
+            # Plot the contig
+            ax.plot(x, smoothedY, zorder=1, linewidth=lineWidth)
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY):
+                    fileOutTSV.write(f"{contig}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
         
         # Save output file
         plt.savefig(fileOut)
         plt.close()
 
-def histo_horizontal(binDict, binSize, width, height, outputDirectory, plotPDF):
+def histo_horizontal(binDict, binSize, width, height, outputDirectory, plotPDF, createTSV):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -624,6 +672,7 @@ def histo_horizontal(binDict, binSize, width, height, outputDirectory, plotPDF):
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     # Derive our output file name and skip if already existing
     fileSuffix = "pdf" if plotPDF else "png"
@@ -651,17 +700,28 @@ def histo_horizontal(binDict, binSize, width, height, outputDirectory, plotPDF):
     fig.supylabel(f"Number of variants", fontweight="bold")
     
     # Plot the data into each axis
-    for ax, (contigID, x, y) in zip(axes, plotData):
-        ax.set_title(contigID)
-        ax.bar(x, y, zorder=0)
-    for ax in fig.get_axes():
-        ax.label_outer()
+    with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+        # Write TSV header if applicable
+        if createTSV:
+            fileOutTSV.write("contigID\tbin_number\tvariant_occurrence\n")
+        
+        # Plot each contig
+        for ax, (contigID, x, y) in zip(axes, plotData):
+            ax.set_title(contigID)
+            ax.bar(x, y, zorder=0)
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for xVal, yVal in zip(x, y):
+                    fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
+        for ax in fig.get_axes():
+            ax.label_outer()
     
     # Save output file
     plt.savefig(fileOut)
     plt.close()
 
-def histo_regions(binDict, regions, binSize, width, height, outputDirectory, plotPDF):
+def histo_regions(binDict, regions, binSize, width, height, outputDirectory, plotPDF, createTSV):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -678,7 +738,8 @@ def histo_regions(binDict, regions, binSize, width, height, outputDirectory, plo
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
-    '''    
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
+    '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
     
@@ -722,13 +783,24 @@ def histo_regions(binDict, regions, binSize, width, height, outputDirectory, plo
         ax.set_title(f"{contig} variant occurrence histogram", fontweight="bold")
         
         # Plot histogram
-        ax.bar(x, y, zorder=0)
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            # Write TSV header if applicable
+            if createTSV:
+                fileOutTSV.write("contigID\tbin_number\tvariant_occurrence\n")
+            
+            # Plot the region
+            ax.bar(x, y, zorder=0)
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for xVal, yVal in zip(x, y):
+                    fileOutTSV.write(f"{contig}\t{xVal}\t{yVal}\n")
         
         # Save output file
         plt.savefig(fileOut)
         plt.close()
 
-def histo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF):
+def histo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF, createTSV):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -743,6 +815,7 @@ def histo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF):
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     for contig in binDict.keys():
         
@@ -766,14 +839,25 @@ def histo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF):
         ax.set_ylabel(f"Number of variants", fontweight="bold")
         ax.set_title(f"{contig} variant occurrence histogram", fontweight="bold")
         
-        # Plot ideogram
-        ax.bar(x, y, zorder=0)
+        # Plot histogram
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            # Write TSV header if applicable
+            if createTSV:
+                fileOutTSV.write("contigID\tbin_number\tvariant_occurrence\n")
+            
+            # Plot the contig
+            ax.bar(x, y, zorder=0)
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for xVal, yVal in zip(x, y):
+                    fileOutTSV.write(f"{contig}\t{xVal}\t{yVal}\n")
         
         # Save output file
         plt.savefig(fileOut)
         plt.close()
 
-def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirectory, plotPDF):
+def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirectory, plotPDF, createTSV):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -794,6 +878,7 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     SPACING = 0.1
     
@@ -827,20 +912,32 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
     # Plot ideograms per contig
     contigLabels = []
     ongoingCount = 0.5 # this centers the contig label
-    for contig in contigOrder:
-        if not contig in binDict:
-            continue
+    
+    with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+        # Write TSV header if applicable
+        if createTSV:
+            fileOutTSV.write("contigID\twindow_number\tvariant_occurrence\n")
         
-        # Get plotting values
-        y = binDict[contig]
-        xranges = [ (x, 1) for x in np.arange(0, len(y)) ]
-        
-        # Plot contig ideogram
-        ax.broken_barh(xranges, (ongoingCount+SPACING, 1-(SPACING*2)), facecolors=cmap(norm(y)))
-        
-        # Iterate values
-        contigLabels.append(contig)
-        ongoingCount += 1
+        # Plot each contig
+        for contig in contigOrder:
+            if not contig in binDict:
+                continue
+            
+            # Get plotting values
+            y = binDict[contig]
+            xranges = [ (x, 1) for x in np.arange(0, len(y)) ]
+            
+            # Plot contig ideogram
+            ax.broken_barh(xranges, (ongoingCount+SPACING, 1-(SPACING*2)), facecolors=cmap(norm(y)))
+            
+            # Iterate values
+            contigLabels.append(contig)
+            ongoingCount += 1
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for xVal, yVal in enumerate(y):
+                    fileOutTSV.write(f"{contig}\t{xVal}\t{yVal}\n")
     ax.set_ylim(0.5+SPACING, ongoingCount-SPACING)
     
     # Indicate contig labels
@@ -856,7 +953,7 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
     plt.savefig(fileOut)
     plt.close()
 
-def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plotPDF):
+def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plotPDF, createTSV):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -873,7 +970,8 @@ def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plot
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
-    '''    
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
+    '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
     
@@ -922,7 +1020,18 @@ def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plot
         ax.set_ylim(1, 2)
         
         # Plot ideogram
-        ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            # Write TSV header if applicable
+            if createTSV:
+                fileOutTSV.write("contigID\twindow_number\tvariant_occurrence\n")
+            
+            # Plot the region
+            ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for xRange, yVal in zip(xranges, y):
+                    fileOutTSV.write(f"{contig}\t{xRange[0]}\t{yVal}\n")
         
         # Show the colour scale legend
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
@@ -933,7 +1042,7 @@ def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plot
         plt.savefig(fileOut)
         plt.close()
 
-def ideo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF):
+def ideo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF, createTSV):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -948,7 +1057,8 @@ def ideo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF):
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
-    '''    
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
+    '''
     for contig in binDict.keys():
         # Derive our output file name and skip if already existing
         fileSuffix = "pdf" if plotPDF else "png"
@@ -977,7 +1087,18 @@ def ideo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF):
         ax.set_ylim(1, 2)
         
         # Plot ideogram
-        ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            # Write TSV header if applicable
+            if createTSV:
+                fileOutTSV.write("contigID\twindow_number\tvariant_occurrence\n")
+            
+            # Plot the contig
+            ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for xVal, yVal in enumerate(y):
+                    fileOutTSV.write(f"{contig}\t{xVal}\t{yVal}\n")
         
         # Show the colour scale legend
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
@@ -988,7 +1109,7 @@ def ideo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF):
         plt.savefig(fileOut)
         plt.close()
 
-def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotPDF):
+def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotPDF, createTSV):
     '''
     Parameters:
         tallyDict -- a dictionary with structure like:
@@ -1004,6 +1125,7 @@ def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotP
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     SPACING = 0.5
     
@@ -1015,9 +1137,6 @@ def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotP
     
     # Plot each region
     for contig, start, end in regions:
-        if not contig in tallyDict:
-            continue
-        
         # Get gene IDs within this region
         geneFeatures = gff3.ncls_finder(start, end, "contig", contig)
         
@@ -1038,6 +1157,11 @@ def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotP
         xranges, y = [] , []
         ongoingCount = 1
         for geneID, geneStart, geneEnd in geneIDs:
+            # Skip genes that were skipped in the initial tally
+            "Can occur if onlyCDS is enabled and the gene has no mRNA children"
+            if not geneID in tallyDict:
+                continue
+            
             snpCount, geneLength = tallyDict[geneID]
             density = snpCount / geneLength
             y.append(density)
@@ -1061,7 +1185,20 @@ def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotP
         #ax.set_yticks(range(0, len(xranges)+1))
         
         # Plot genegram
-        ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            # Write TSV header if applicable
+            if createTSV:
+                fileOutTSV.write("contigID\tgene_number\tgene_id\tvariant_density\n")
+            
+            # Plot the region
+            ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for geneValue, xRange, yVal in zip(geneIDs, xranges, y):
+                    geneID = geneValue[0]
+                    xVal = int(xRange[0]) # implicitly subtracts SPACING
+                    fileOutTSV.write(f"{contig}\t{xVal}\t{geneID}\t{yVal}\n")
         
         # Show the colour scale legend
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
@@ -1072,7 +1209,7 @@ def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotP
         plt.savefig(fileOut)
         plt.close()
 
-def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF):
+def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF, createTSV):
     '''
     Parameters:
         tallyDict -- a dictionary with structure like:
@@ -1086,6 +1223,7 @@ def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF):
         height -- an integer value indicating the height of the output plot
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     SPACING = 0.5
     
@@ -1114,6 +1252,11 @@ def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF):
         xranges, y = [] , []
         ongoingCount = 1
         for geneID, geneStart, geneEnd in geneIDs:
+            # Skip genes that were skipped in the initial tally
+            "Can occur if onlyCDS is enabled and the gene has no mRNA children"
+            if not geneID in tallyDict:
+                continue
+            
             snpCount, geneLength = tallyDict[geneID]
             density = snpCount / geneLength
             y.append(density)
@@ -1136,7 +1279,20 @@ def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF):
         ax.set_xlim(1-SPACING, ongoingCount+SPACING)
         
         # Plot genegram
-        ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            # Write TSV header if applicable
+            if createTSV:
+                fileOutTSV.write("contigID\tgene_number\tgene_id\tvariant_density\n")
+            
+            # Plot the contig
+            ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for geneValue, xyVal in zip(geneIDs, enumerate(y)):
+                    geneID = geneValue[0]
+                    xVal, yVal = xyVal
+                    fileOutTSV.write(f"{contig}\t{xVal}\t{geneID}\t{yVal}\n")
         
         # Show the colour scale legend
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
@@ -1187,6 +1343,12 @@ def main():
                     in PDF format instead of PNG format""",
                     default=False)
     ## Optional (behaviour)
+    p.add_argument("--tsv", dest="createTSV",
+                    required=False,
+                    action="store_true",
+                    help="""Optionally, provide this flag if you want to have the plotted
+                    data output as a TSV file""",
+                    default=False)
     p.add_argument("--weightByOccurrence", dest="weightByOccurrence",
                     required=False,
                     action="store_true",
@@ -1334,7 +1496,7 @@ def linemain(args, lengthsDict):
     hashString = f"{args.vcfFile}" + \
                  f"{'.wbo' if args.weightByOccurrence else ''}" + \
                  f"{'.sma' if args.skipMonoallelic else ''}.pkl" + \
-                 f"{args.regions}{args.filter}_lineplot"
+                 f"{args.filter}_lineplot"
     
     hash = int(md5(hashString.encode("utf-8")).hexdigest(), 16)
     pickleFile = os.path.join(args.outputDirectory, f"snpDensityPlot_{hash}.pkl")
@@ -1355,24 +1517,27 @@ def linemain(args, lengthsDict):
         line_horizontal(dotsX, dotsY, lengthsDict, args.wmaSize,
                         args.width, args.height,
                         args.outputDirectory, args.plotPDF,
-                        args.showDots, args.linewidth)
+                        args.showDots, args.lineWidth,
+                        args.createTSV)
     elif args.regions != []:
         line_regions(dotsX, dotsY, args.regions, args.wmaSize,
                      args.width, args.height,
                      args.outputDirectory, args.plotPDF,
-                     args.showDots, args.linewidth)
+                     args.showDots, args.lineWidth,
+                     args.createTSV)
     else:
         line_per_contig(dotsX, dotsY, args.wmaSize,
                         args.width, args.height,
                         args.outputDirectory, args.plotPDF,
-                        args.showDots, args.linewidth)
+                        args.showDots, args.lineWidth,
+                        args.createTSV)
 
 def histomain(args, lengthsDict):
     # Figure out what our pickle file should be called
     hashString = f"{args.vcfFile}" + \
                  f"{'.wbo' if args.weightByOccurrence else ''}" + \
                  f"{'.sma' if args.skipMonoallelic else ''}.pkl" + \
-                 f"{args.regions}{args.filter}"
+                 f"{args.filter}"
     
     hash = int(md5(hashString.encode("utf-8")).hexdigest(), 16)
     pickleFile = os.path.join(args.outputDirectory, f"snpDensityPlot_{hash}.pkl")
@@ -1392,22 +1557,25 @@ def histomain(args, lengthsDict):
     if args.onePlot:
         histo_horizontal(binDict, args.binSize,
                          args.width, args.height,
-                         args.outputDirectory, args.plotPDF)
+                         args.outputDirectory, args.plotPDF,
+                         args.createTSV)
     elif args.regions != []:
         histo_regions(binDict, args.regions, args.binSize,
                       args.width, args.height,
-                      args.outputDirectory, args.plotPDF)
+                      args.outputDirectory, args.plotPDF,
+                      args.createTSV)
     else:
         histo_per_contig(binDict, args.binSize,
                          args.width, args.height,
-                         args.outputDirectory, args.plotPDF)
+                         args.outputDirectory, args.plotPDF,
+                         args.createTSV)
 
 def ideomain(args, lengthsDict):
     # Figure out what our pickle file should be called
     hashString = f"{args.vcfFile}" + \
                  f"{'.wbo' if args.weightByOccurrence else ''}" + \
                  f"{'.sma' if args.skipMonoallelic else ''}.pkl" + \
-                 f"{args.regions}{args.filter}"
+                 f"{args.filter}"
     
     hash = int(md5(hashString.encode("utf-8")).hexdigest(), 16)
     pickleFile = os.path.join(args.outputDirectory, f"snpDensityPlot_{hash}.pkl")
@@ -1427,22 +1595,25 @@ def ideomain(args, lengthsDict):
     if args.onePlot:
         ideo_horizontal(binDict, lengthsDict, args.binSize,
                         args.width, args.height,
-                        args.outputDirectory, args.plotPDF)
+                        args.outputDirectory, args.plotPDF,
+                        args.createTSV)
     elif args.regions != []:
         ideo_regions(binDict, args.regions, args.binSize,
                      args.width, args.height,
-                     args.outputDirectory, args.plotPDF)
+                     args.outputDirectory, args.plotPDF,
+                     args.createTSV)
     else:
         ideo_per_contig(binDict, args.binSize,
                         args.width, args.height,
-                        args.outputDirectory, args.plotPDF)
+                        args.outputDirectory, args.plotPDF,
+                        args.createTSV)
 
 def genemain(args):
     # Figure out what our pickle file should be called
     hashString = f"{args.vcfFile}" + \
                  f"{'.wbo' if args.weightByOccurrence else ''}" + \
                  f"{'.sma' if args.skipMonoallelic else ''}.pkl" + \
-                 f"{args.regions}{args.filter}" + \
+                 f"{args.filter}" + \
                  f"{args.gff3File}" + \
                  f"{'.cds' if args.onlyCDS else ''}"
     
@@ -1468,11 +1639,13 @@ def genemain(args):
     if args.regions != []:
         gene_regions(tallyDict, gff3, args.regions,
                      args.width, args.height,
-                     args.outputDirectory, args.plotPDF)
+                     args.outputDirectory, args.plotPDF,
+                     args.createTSV)
     else:
         gene_per_contig(tallyDict, gff3,
                         args.width, args.height,
-                        args.outputDirectory, args.plotPDF)
+                        args.outputDirectory, args.plotPDF,
+                        args.createTSV)
 
 if __name__ == "__main__":
     main()
