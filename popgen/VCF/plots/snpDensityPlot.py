@@ -8,6 +8,7 @@ import os, argparse, math, sys, re, pickle
 import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from Bio import SeqIO
 from hashlib import md5
@@ -50,6 +51,11 @@ def validate_args(args):
                              "or --skipMonoallelic flags. Please enable at least one of these " + 
                              "flags to proceed, or omit --filter values.")
     
+    if args.mode == "line":
+        if not args.weightByOccurrence:
+            raise ValueError("You must enable the --weightByOccurrence flag for line mode since " +
+                             "a line plot would otherwise have no meaning.")
+    
     # Handle file output
     if os.path.isdir(args.outputDirectory):
         print('The specified output directory already exists. This program will attempt to resume an existing run where possible.')
@@ -65,10 +71,6 @@ def validate_args(args):
             raise ValueError("wmaSize must be a positive integer")
         if args.lineWidth < 1:
             raise ValueError("lineWidth must be a positive integer")
-        if args.windowSize < 1:
-            raise ValueError("windowSize must be a positive integer")
-        if args.minimumContigSize < (args.windowSize * 2):
-            raise ValueError(f"minimumContig must be an integer >= 2* the window size ({(args.windowSize * 2)})")
     elif args.mode in ["histogram", "histo"]:
         if args.binSize < 1:
             raise ValueError("binSize must be an integer >= 1")
@@ -80,6 +82,36 @@ def validate_args(args):
             raise ValueError(f"I am unable to locate the input GFF3 file ({args.gff3File})")
     else:
         raise ValueError("Invalid mode specified")
+
+def WMA(s, period):
+    """
+    See https://stackoverflow.com/questions/74518386/improving-weighted-moving-average-performance
+    
+    Parameters:
+        s -- a numpy array of values to smooth
+        period -- an integer value indicating the number of previous values to consider
+                  during weighted moving average calculation
+    Returns:
+        sw -- a pandas Series of the smoothed values
+    """
+    w = np.arange(period)+1
+    w_s = w.sum()
+    
+    try:
+        swv = np.lib.stride_tricks.sliding_window_view(s.flatten(), window_shape=period)
+    except ValueError:
+        "Less data points than period size causes this error"
+        return None
+    sw = (swv * w).sum(axis=1) / w_s
+    
+    # Need to now return it as a normal series
+    sw = np.concatenate((np.full(period - 1, np.nan), sw))
+    try:
+        sw[0:period] = sw[period] # set first n=period values to be same as first smoothed value
+    except:
+        "len(sw)==1 causes this error"
+        return None
+    return pd.Series(sw)
 
 def tally_variants_within_features(vcfFile, gff3, onlyCDS=False, weightByOccurrence=False,
                                    skipMonoallelic=False, filterSamples=[]):
@@ -309,7 +341,7 @@ def get_vcf_variants(vcfFile, weightByOccurrence=False,
         dotsY -- a dict pairing chromosome IDs (keys) to a list of floats indicating the
                  count for each SNP (values)
     '''
-    dotsX, dotsY = [], []
+    dotsX, dotsY = {}, {}
     with ZS_VCFIO.open_vcf_file(vcfFile) as fileIn:
         for line in fileIn:
             sl = line.rstrip("\r\n").replace('"', '').split("\t") # replace quotations may help with Excel files
@@ -374,6 +406,208 @@ def normalise_density(densityList):
     minValue, maxValue = min(densityList), max(densityList)
     normalisedDensityList = [ (x - minValue) / (maxValue - minValue) for x in densityList ]
     return normalisedDensityList
+
+def line_horizontal(dotsX, dotsY, lengthsDict, wmaSize, width, height, outputDirectory, plotPDF, showDots, lineWidth):
+    '''
+    Parameters:
+        dotsX -- a dict pairing chromosome IDs (keys) to a list of integers indicating
+                 the position for each SNP (values)
+        dotsY -- a dict pairing chromosome IDs (keys) to a list of integers indicating the
+                 count for each SNP (values)
+        lengthsDict -- a dictionary with structure like:
+                       {
+                           'contig1': intLength1,
+                           'contig2': intLength2,
+                           ...
+                       }
+        wmaSize -- an integer value indicating the window size for the weighted moving average
+        width -- an integer value indicating the width of the output plot
+        height -- an integer value indicating the height of the output plot
+        outputDirectory -- a string indicating the directory to write output plots to
+        plotPDF -- a boolean flag indicating whether to output plots in PDF format
+        showDots -- a boolean flag indicating whether to show the dots on the plot
+        lineWidth -- an integer value indicating the width of the line to plot
+    '''
+    # Get contig ordering by length
+    contigOrder = sorted(lengthsDict.keys(), key=lambda x: lengthsDict[x], reverse=True) # longest to shortest
+    
+    # Derive our output file name and skip if already existing
+    fileSuffix = "pdf" if plotPDF else "png"
+    fileOut = os.path.join(outputDirectory, f"onePlot.line.{fileSuffix}")
+    if os.path.isfile(fileOut):
+        raise FileExistsError(f"'onePlot.line.{fileSuffix}' already found in output directory")
+    
+    # Get each contigs' plot data
+    plotData = []
+    for contig in contigOrder:
+        # Skip if we found no SNPs on this contig
+        if not contig in dotsY:
+            print(f"WARNING: '{contig}' is in the genome FASTA but has no SNPs associated " +
+                    "with it; skipping...")
+            continue
+        
+        # Get plotting values
+        x = np.array(dotsX[contig]) / 1000000 # convert to Mbp
+        y = np.array(dotsY[contig])
+        smoothedY = WMA(y, wmaSize)
+        
+        # Skip plotting if smoothing fails
+        "This probably means there are not enough data points to smooth"
+        if smoothedY is None:
+            print(f"WARNING: '{contig}' has too few data points to smooth; skipping...")
+            continue
+        
+        # Store dot values
+        plotData.append([contig, x, y, smoothedY])
+    
+    # Produce the figure axes
+    fig = plt.figure(figsize=(width, height), constrained_layout=True)
+    gs = fig.add_gridspec(1, len(plotData), hspace=0)
+    axes = gs.subplots(sharey='row')
+    
+    ## Set the figure title
+    fig.suptitle(f"Variant occurrence plot", fontweight="bold")
+    fig.supxlabel(f"Chromosomal position (Mbp)", fontweight="bold")
+    fig.supylabel(f"Weighted moving average of variant occurrence (WMA size = {wmaSize})", fontweight="bold")
+    
+    # Plot the data into each axis
+    for ax, (contigID, x, y, smoothedY) in zip(axes, plotData):
+        # Set plot title
+        ax.set_title(contigID)
+        
+        # Plot dots (if applicable)
+        if showDots:
+            ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+        
+        # Plot line
+        ax.plot(x, smoothedY, zorder=1, linewidth=lineWidth)
+    
+    for ax in fig.get_axes():
+        ax.label_outer()
+    
+    # Save output file
+    plt.savefig(fileOut)
+    plt.close()
+
+def line_regions(dotsX, dotsY, regions, wmaSize, width, height, outputDirectory, plotPDF, showDots, lineWidth):
+    '''
+    Parameters:
+        dotsX -- a dict pairing chromosome IDs (keys) to a list of integers indicating
+                 the position for each SNP (values)
+        dotsY -- a dict pairing chromosome IDs (keys) to a list of integers indicating the
+                 count for each SNP (values)
+        regions -- a list of strings indicating regions to plot in greater detail with format
+                   'contigID:startPos:endPos'
+        wmaSize -- an integer value indicating the window size for the weighted moving average
+        width -- an integer value indicating the width of the output plot
+        height -- an integer value indicating the height of the output plot
+        outputDirectory -- a string indicating the directory to write output plots to
+        plotPDF -- a boolean flag indicating whether to output plots in PDF format
+        showDots -- a boolean flag indicating whether to show the dots on the plot
+        lineWidth -- an integer value indicating the width of the line to plot
+    '''    
+    # Parse out regions for plotting
+    regions = [ region.split(":") for region in regions ]
+    
+    # Convert start and end values to int
+    regions = [ (contigID, int(start), int(end)) for contigID, start, end in regions ]
+    
+    # Plot each region
+    for contig, start, end in regions:
+        if not contig in dotsX:
+            continue
+        
+        # Derive our output file name and skip if already existing
+        fileSuffix = "pdf" if plotPDF else "png"
+        fileOut = os.path.join(outputDirectory, f"{contig}.{start}_to_{end}.line.{fileSuffix}")
+        if os.path.isfile(fileOut):
+            print(f"WARNING: Line plot for '{contig}' already found in output directory; skipping...")
+            continue
+        
+        # Get values within this region
+        regionValues = [ [x, y] for x, y in zip(dotsX[contig], dotsY[contig]) if x >= start and x <= end ]
+        x = np.array([ x / 1000000 for x, y in regionValues ]) # convert to Mbp
+        y = np.array([ y for x, y in regionValues ])
+        smoothedY = WMA(y, wmaSize)
+        
+        # Skip plotting if smoothing fails
+        "This probably means there are not enough data points to smooth"
+        if smoothedY is None:
+            print(f"WARNING: '{contig}' has too few data points to smooth with WMA size of {wmaSize}; skipping...")
+            continue
+        
+        # Configure plot
+        fig = plt.figure(figsize=(width, height), tight_layout=True)
+        ax = plt.axes()
+        
+        ax.set_xlabel(f"Chromosomal position (Mbp)", fontweight="bold")
+        ax.set_ylabel(f"Weighted moving average of variant occurrence (WMA size = {wmaSize})", fontweight="bold")
+        ax.set_title(contig, fontweight="bold")
+        
+        # Plot dots (if applicable)
+        if showDots:
+            ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+        
+        # Plot line
+        ax.plot(x, smoothedY, zorder=1, linewidth=lineWidth)
+        
+        # Save output file
+        plt.savefig(fileOut)
+        plt.close()
+
+def line_per_contig(dotsX, dotsY, wmaSize, width, height, outputDirectory, plotPDF, showDots, lineWidth):
+    '''
+    Parameters:
+        dotsX -- a dict pairing chromosome IDs (keys) to a list of integers indicating
+                 the position for each SNP (values)
+        dotsY -- a dict pairing chromosome IDs (keys) to a list of integers indicating the
+                 count for each SNP (values)
+        wmaSize -- an integer value indicating the window size for the weighted moving average
+        width -- an integer value indicating the width of the output plot
+        height -- an integer value indicating the height of the output plot
+        outputDirectory -- a string indicating the directory to write output plots to
+        plotPDF -- a boolean flag indicating whether to output plots in PDF format
+        showDots -- a boolean flag indicating whether to show the dots on the plot
+        lineWidth -- an integer value indicating the width of the line to plot
+    '''
+    for contig, x in dotsX.items():
+        
+        # Derive our output file name and skip if already existing
+        fileSuffix = "pdf" if plotPDF else "png"
+        fileOut = os.path.join(outputDirectory, f"{contig}.line.{fileSuffix}")
+        if os.path.isfile(fileOut):
+            print(f"WARNING: Line plot for '{contig}' already found in output directory; skipping...")
+            continue
+        
+        # Get plotting values
+        x = np.array(x) / 1000000 # convert to Mbp
+        y = np.array(dotsY[contig])
+        smoothedY = WMA(y, wmaSize)
+        
+        # Skip plotting if smoothing fails
+        "This probably means there are not enough data points to smooth"
+        if smoothedY is None:
+            print(f"WARNING: '{contig}' has too few data points to smooth with WMA size of {wmaSize}; skipping...")
+            continue
+        
+        # Configure plot
+        fig = plt.figure(figsize=(width, height), tight_layout=True)
+        ax = plt.axes()
+        
+        ax.set_xlabel(f"Chromosomal position (Mbp)", fontweight="bold")
+        ax.set_ylabel(f"Weighted moving average of variant occurrence (WMA size = {wmaSize})", fontweight="bold")
+        ax.set_title(contig, fontweight="bold")
+        
+        # Plot dots (if applicable)
+        if showDots:
+            ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+        
+        # Plot line
+        ax.plot(x, smoothedY, zorder=1, linewidth=lineWidth)
+        
+        # Save output file
+        plt.savefig(fileOut)
+        plt.close()
 
 def histo_horizontal(binDict, binSize, width, height, outputDirectory, plotPDF):
     '''
@@ -1025,12 +1259,6 @@ def main():
                             help="""Optionally, specify the number of previous values to consider
                             during weighted moving average calculation (default=5)""",
                             default=5)
-    lineparser.add_argument("--windowSize", dest="windowSize",
-                            type=int,
-                            required=False,
-                            help="""Optionally, specify the size of the window to sum
-                            SNPs within (default=100000)""",
-                            default=100000)
     lineparser.add_argument("--lineWidth", dest="lineWidth",
                             type=int,
                             required=False,
@@ -1106,7 +1334,7 @@ def linemain(args, lengthsDict):
     hashString = f"{args.vcfFile}" + \
                  f"{'.wbo' if args.weightByOccurrence else ''}" + \
                  f"{'.sma' if args.skipMonoallelic else ''}.pkl" + \
-                 f"{args.regions}{args.filter}"
+                 f"{args.regions}{args.filter}_lineplot"
     
     hash = int(md5(hashString.encode("utf-8")).hexdigest(), 16)
     pickleFile = os.path.join(args.outputDirectory, f"snpDensityPlot_{hash}.pkl")
@@ -1116,7 +1344,7 @@ def linemain(args, lengthsDict):
         with open(pickleFile, "rb") as fileIn:
             dotsX, dotsY = pickle.load(fileIn)
     else:
-        dotsX, dotsY = get_vcf_variants(args.vcfFile, lengthsDict, args.windowSize,
+        dotsX, dotsY = get_vcf_variants(args.vcfFile,
                                         args.weightByOccurrence, args.skipMonoallelic,
                                         args.filter)
         with open(pickleFile, "wb") as fileOut:
@@ -1124,15 +1352,15 @@ def linemain(args, lengthsDict):
     
     # Create plots
     if args.onePlot:
-        line_horizontal(dotsX, dotsY, args.wmaSize,
-                            args.width, args.height,
-                            args.outputDirectory, args.plotPDF,
-                            args.showDots, args.linewidth)
+        line_horizontal(dotsX, dotsY, lengthsDict, args.wmaSize,
+                        args.width, args.height,
+                        args.outputDirectory, args.plotPDF,
+                        args.showDots, args.linewidth)
     elif args.regions != []:
         line_regions(dotsX, dotsY, args.regions, args.wmaSize,
-                         args.width, args.height,
-                         args.outputDirectory, args.plotPDF,
-                         args.showDots, args.linewidth)
+                     args.width, args.height,
+                     args.outputDirectory, args.plotPDF,
+                     args.showDots, args.linewidth)
     else:
         line_per_contig(dotsX, dotsY, args.wmaSize,
                         args.width, args.height,
@@ -1245,62 +1473,6 @@ def genemain(args):
         gene_per_contig(tallyDict, gff3,
                         args.width, args.height,
                         args.outputDirectory, args.plotPDF)
-
-def junkyard():
-    # Tally SNPs over windows per contig
-    densityDict = get_vcf_density(args.vcfFile, lengthsDict, args.windowSize)
-    
-    # Create plot per contig
-    numContigsProcessed = 0
-    numContigsPlotted = 0
-    for contigID, length in lengthsDict.items():
-        if length >= args.minimumContigSize:
-            numContigsProcessed += 1
-            
-            # Derive our output file name and skip if already existing
-            fileOut = os.path.join(args.outputDirectory, f"{contigID}.png")
-            if os.path.isfile(fileOut):
-                print(f"WARNING: Plot for '{contigID}' already found in output directory; skipping...")
-                continue
-            
-            # Skip if we found no SNPs on this contig
-            if not contigID in densityDict:
-                print(f"WARNING: '{contigID}' is in the VCF header but has no SNPs associated " +
-                      "with it; skipping...")
-                continue
-            
-            # Get density values
-            densityList = densityDict[contigID]
-            normalisedDensityList = normalise_density(densityList)
-            
-            # Smooth the curve for better visualisation
-            smoothedDensityList = gaussian_filter1d(normalisedDensityList, sigma=args.smoothingSigma)
-            
-            # Configure plot
-            kbpWindowSize = round(args.windowSize / 1000, 2)
-            fig = plt.figure(figsize=(10,6))
-            ax = plt.axes()
-            
-            ax.set_xlabel(f"Chromosomal position ({kbpWindowSize} kbp windows)", fontweight="bold")
-            ax.set_ylabel("Min-max normalised SNP number per window", fontweight="bold")
-            ax.set_title(f"{contigID} SNP density plot", fontweight="bold")
-            
-            ax.plot(smoothedDensityList)
-            
-            # Save output file
-            plt.savefig(fileOut)
-            plt.close()
-            numContigsPlotted += 1
-    
-    # Raise relevant warnings
-    if numContigsProcessed == 0:
-        print(f"WARNING: We didn't find any contigs which exceeded {args.minimumContigSize}bp in size")
-        print("Hence, no output files have been generated! Maybe you should fix your --minimum_contig value?")
-    elif numContigsPlotted == 0:
-        print("WARNING: We ended up skipping every contig! This means the program has already run to completion previously.")
-        print("Hence, no new output files have been generated! Maybe you should delete the existing folder to restart?")
-    
-    print("Program completed successfully!")
 
 if __name__ == "__main__":
     main()
