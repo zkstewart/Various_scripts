@@ -239,17 +239,11 @@ def tally_variants_within_features(vcfFile, gff3, onlyCDS=False, weightByOccurre
                 tallyDict[geneID][0] += snpCount
     return tallyDict
 
-def bin_vcf_variants(vcfFile, lengthsDict, windowSize=100000, weightByOccurrence=False,
+def bin_vcf_variants(vcfFile, windowSize=100000, weightByOccurrence=False,
                     skipMonoallelic=False, filterSamples=[]):
     '''
     Parameters:
         vcfFile -- a string pointing to the VCF file containing SNP annotation
-        lengthsDict -- a dictionary with structure like:
-                       {
-                           'contig1': intLength1,
-                           'contig2': intLength2,
-                           ...
-                       }
         windowSize -- OPTIONAL; an integer value indicating what size to bin variants
                       within (default == 100000)
         weightByOccurrence -- OPTIONAL; a boolean flag to indicate whether to
@@ -271,12 +265,16 @@ def bin_vcf_variants(vcfFile, lengthsDict, windowSize=100000, weightByOccurrence
                    }
     '''
     binDict = {}
+    lengthsDict = {}
     with ZS_VCFIO.open_vcf_file(vcfFile) as fileIn:
         for line in fileIn:
             sl = line.rstrip("\r\n").replace('"', '').split("\t") # replace quotations may help with Excel files
             
             # Handle header lines
-            if line.startswith("#CHROM"):
+            if line.startswith("##contig"):
+                contigID, contigLength = sl[0].split("ID=")[1].split(",length=")
+                lengthsDict[contigID] = int(contigLength.rstrip(">"))
+            elif line.startswith("#CHROM"):
                 samples = sl[9:] # This gives us the ordered sample IDs
                 for sample in filterSamples:
                     if not sample in samples:
@@ -1483,7 +1481,7 @@ def main():
     if args.mode == "line":
         linemain(args, lengthsDict)
     elif args.mode in ["histogram", "histo"]:
-        histomain(args, lengthsDict)
+        histomain(args)
     elif args.mode in ["ideogram", "ideo"]:
         ideomain(args, lengthsDict)
     elif args.mode in ["genegram", "gene"]:
@@ -1532,7 +1530,7 @@ def linemain(args, lengthsDict):
                         args.showDots, args.lineWidth,
                         args.createTSV)
 
-def histomain(args, lengthsDict):
+def histomain(args):
     # Figure out what our pickle file should be called
     hashString = f"{args.vcfFile}" + \
                  f"{'.wbo' if args.weightByOccurrence else ''}" + \
@@ -1547,7 +1545,7 @@ def histomain(args, lengthsDict):
         with open(pickleFile, "rb") as fileIn:
             binDict = pickle.load(fileIn)
     else:
-        binDict = bin_vcf_variants(args.vcfFile, lengthsDict, args.binSize,
+        binDict = bin_vcf_variants(args.vcfFile, args.binSize,
                                    args.weightByOccurrence, args.skipMonoallelic,
                                    args.filter)
         with open(pickleFile, "wb") as fileOut:
@@ -1585,7 +1583,7 @@ def ideomain(args, lengthsDict):
         with open(pickleFile, "rb") as fileIn:
             binDict = pickle.load(fileIn)
     else:
-        binDict = bin_vcf_variants(args.vcfFile, lengthsDict, args.binSize,
+        binDict = bin_vcf_variants(args.vcfFile, args.binSize,
                                    args.weightByOccurrence, args.skipMonoallelic,
                                    args.filter)
         with open(pickleFile, "wb") as fileOut:
