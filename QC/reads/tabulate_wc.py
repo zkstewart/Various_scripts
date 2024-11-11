@@ -67,7 +67,7 @@ def get_wc_from_files(wcFiles, suffix, divideBy=1):
                 
                 if divideBy != 1:
                     dividedReadCount = int(readcount) / divideBy
-                    statsTable.append(f"{sampleName}\t{readcount}{dividedReadCount}")
+                    statsTable.append(f"{sampleName}\t{readcount}\t{dividedReadCount}")
                 else:
                     statsTable.append(f"{sampleName}\t{readcount}")
                 
