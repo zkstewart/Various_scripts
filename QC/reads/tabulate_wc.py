@@ -56,9 +56,7 @@ def get_wc_from_files(wcFiles, suffix, divideBy=1):
         uniqueNames.add(sampleName)
         
         # Parse the file
-        with open(file, "r") as fileIn:
-            statsTable.append([sampleName])
-            
+        with open(file, "r") as fileIn:            
             firstLine = True
             for line in fileIn:
                 if not firstLine:
