@@ -34,16 +34,16 @@ def get_wc_from_files(wcFiles, suffix, divideBy=1):
     Returns:
         statsTable -- a list of strings with the following format:
                       [
-                          ["sample\tread_count"],
-                          [f"{sample1}\t{read_count1}"],
+                          ["sample\twc"], # with another header if divideBy != 1
+                          [f"{sample1}\t{wc1}"], # with another column if divideBy != 1
                           ...
                       ]
     '''
     # Setup the output table format
     if divideBy != 1:
-        statsTable=["sample\tread_count\tdivided_by_"+str(divideBy)]
+        statsTable=["sample\twc\tdivided_by_"+str(divideBy)]
     else:
-        statsTable=["sample\tread_count"]
+        statsTable=["sample\twc"]
     
     # Parse all logs files
     uniqueNames = set()
