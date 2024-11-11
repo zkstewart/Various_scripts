@@ -108,7 +108,7 @@ def main():
                    required=False,
                    help="""Optionally, indicate the file suffix that identifies files containing
                    wc results (default=='.wc')""",
-                   default=1)
+                   default=".wc")
     
     args = p.parse_args()
     validate_args(args)
