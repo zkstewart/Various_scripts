@@ -9,14 +9,14 @@ import os, argparse
 def validate_args(args):
     # Validate input file locations
     if not os.path.isdir(args.wcDir):
-        raise FileNotFoundError('I am unable to locate the parent directory where .wc files are (' + args.wcDir + ')' + 
+        raise FileNotFoundError('I am unable to locate the parent directory where .wc files are (' + args.wcDir + '). ' + 
                                 'Make sure you\'ve typed the file name or location correctly and try again.')
     # Validate numeric arguments
     if args.divideBy <= 0:
         raise ValueError('The divideBy argument must be a positive integer. Please provide a valid number and try again.')
     # Validate output file location
     if os.path.isfile(args.outputFileName):
-        raise FileExistsError('File already exists at output location (' + args.outputFileName + ')' +
+        raise FileExistsError('File already exists at output location (' + args.outputFileName + '). ' +
                               'Make sure you specify a unique file name and try again.')
 
 def get_wc_from_files(wcFiles, suffix, divideBy=1):
@@ -117,7 +117,7 @@ def main():
         if file.endswith(args.suffix):
             flagFiles.append(os.path.join(args.wcDir, file))
     if len(flagFiles) == 0:
-        raise FileNotFoundError(f"No '{args.suffix}' files found in the -i directory ({args.wcDir})" + 
+        raise FileNotFoundError(f"No '{args.suffix}' files found in the -i directory ({args.wcDir}). " + 
                                 "Make sure you\'ve typed the file name or location correctly and try again")
     
     # Combine .wc files
