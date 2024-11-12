@@ -226,10 +226,11 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, ylim, width, height,
         numContigsPlotted += 1
         
         # Write TSV file if requested
-        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
-            fileOutTSV.write("contigID\tposition\tdepth\tsmoothed_depth\n")
-            for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
-                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
+        if createTSV:
+            with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") as fileOutTSV:
+                fileOutTSV.write("contigID\tposition\tdepth\tsmoothed_depth\n")
+                for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
+                    fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
     
     return numContigsPlotted
 
@@ -319,8 +320,9 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, ylim, width, height,
             ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
             
             # Write TSV file if requested
-            for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
-                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
+            if createTSV:
+                for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
+                    fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
         
         for ax in fig.get_axes():
             ax.label_outer()
@@ -416,11 +418,12 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize, ylim,
         numContigsPlotted += 1
         
         # Write TSV file if requested
-        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
-            fileOutTSV.write("contigID\tposition\tdepth\tsmoothed_depth\n")
-            for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
-                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
-        
+        if createTSV:
+            with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") as fileOutTSV:
+                fileOutTSV.write("contigID\tposition\tdepth\tsmoothed_depth\n")
+                for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
+                    fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
+    
     return numContigsPlotted
 
 def histo_per_contig(histoDict, width, height, ylim,
@@ -476,10 +479,11 @@ def histo_per_contig(histoDict, width, height, ylim,
         numContigsPlotted += 1
         
         # Write TSV file if requested
-        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
-            fileOutTSV.write("contigID\tposition\tdepth\n")
-            for xVal, yVal in zip(x*1000000, y): # convert back to bp
-                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
+        if createTSV:
+            with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") as fileOutTSV:
+                fileOutTSV.write("contigID\tposition\tdepth\n")
+                for xVal, yVal in zip(x*1000000, y): # convert back to bp
+                    fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
         
     return numContigsPlotted
 
@@ -551,8 +555,9 @@ def histo_horizontal(histoDict, width, height, ylim, outputDirectory,
             ax.bar(x, y, zorder=0)
             
             # Write TSV file if requested
-            for xVal, yVal in zip(x*1000000, y): # convert back to bp
-                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
+            if createTSV:
+                for xVal, yVal in zip(x*1000000, y): # convert back to bp
+                    fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
         
         for ax in fig.get_axes():
             ax.label_outer()
@@ -635,11 +640,12 @@ def histo_regions(histoDict, regions, width, height, ylim, outputDirectory,
         numContigsPlotted += 1
         
         # Write TSV file if requested
-        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
-            fileOutTSV.write("contigID\tposition\tdepth\n")
-            for xVal, yVal in zip(x*1000000, y): # convert back to bp
-                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
-        
+        if createTSV:
+            with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") as fileOutTSV:
+                fileOutTSV.write("contigID\tposition\tdepth\n")
+                for xVal, yVal in zip(x*1000000, y): # convert back to bp
+                    fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
+    
     return numContigsPlotted
 
 def get_sorted_contig_ids(idsList):
