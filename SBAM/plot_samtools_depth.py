@@ -826,20 +826,20 @@ def linemain(args, dotsX, dotsY):
                                                 args.width, args.height,
                                                 args.outputDirectory, args.plotPDF,
                                                 args.showDots, args.linewidth,
-                                                args.createTSV)
+                                                createTSV=args.createTSV)
     elif args.regions != []:
         numContigsPlotted = lineplot_regions(dotsX, dotsY, args.regions,
                                              args.wmaSize, args.ylim,
                                              args.width, args.height,
                                              args.outputDirectory, args.plotPDF,
                                              args.showDots, args.linewidth,
-                                             args.createTSV)
+                                             createTSV=args.createTSV)
     else:
         numContigsPlotted = lineplot_per_contig(dotsX, dotsY, args.wmaSize, args.ylim,
                                                 args.width, args.height,
                                                 args.outputDirectory, args.plotPDF,
                                                 args.showDots, args.linewidth,
-                                                args.createTSV)
+                                                createTSV=args.createTSV)
     
     # Raise errors if necessary
     if numContigsPlotted == 0:
@@ -865,17 +865,17 @@ def histomain(args, dotsX, dotsY, lengthsDict):
         numContigsPlotted = histo_horizontal(histoDict,
                                              args.width, args.height, args.ylim,
                                              args.outputDirectory, args.binSize,
-                                             args.plotPDF, args.createTSV)
+                                             args.plotPDF, createTSV=args.createTSV)
     elif args.regions != []:
         numContigsPlotted = histo_regions(histoDict, args.regions,
                                           args.width, args.height, args.ylim,
                                           args.outputDirectory, args.binSize,
-                                          args.plotPDF, args.createTSV)
+                                          args.plotPDF, createTSV=args.createTSV)
     else:
         numContigsPlotted = histo_per_contig(histoDict,
                                              args.width, args.height, args.ylim,
                                              args.outputDirectory, args.binSize,
-                                             args.plotPDF, args.createTSV)
+                                             args.plotPDF, createTSV=args.createTSV)
     
     # Raise errors if necessary
     if numContigsPlotted == 0:
