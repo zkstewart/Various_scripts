@@ -7,7 +7,7 @@ import os, argparse, sys, re, pickle, math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from Bio import SeqIO
+from contextlib import nullcontext
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -152,7 +152,7 @@ def WMA(s, period):
 
 def lineplot_per_contig(dotsX, dotsY, wmaSize, ylim, width, height,
                         outputDirectory, plotPDF=False, showDots=True,
-                        linewidth=1, statisticLabel="Q13 depth"):
+                        linewidth=1, statisticLabel="Q13 depth", createTSV=False):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -173,6 +173,7 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, ylim, width, height,
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
         statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
                           (default="Q13 depth")
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     numContigsPlotted = 0
     for contigID in dotsX.keys():
@@ -223,11 +224,18 @@ def lineplot_per_contig(dotsX, dotsY, wmaSize, ylim, width, height,
         # Save output file
         plt.savefig(fileOut)
         numContigsPlotted += 1
+        
+        # Write TSV file if requested
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            fileOutTSV.write("contigID\tposition\tdepth\tsmoothed_depth\n")
+            for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
+                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
+    
     return numContigsPlotted
 
 def lineplot_horizontal(dotsX, dotsY, wmaSize, ylim, width, height,
                         outputDirectory, plotPDF=False, showDots=True,
-                        linewidth=1, statisticLabel="Q13 depth"):
+                        linewidth=1, statisticLabel="Q13 depth", createTSV=False):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -248,6 +256,7 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, ylim, width, height,
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
         statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
                           (default="Q13 depth")
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     numContigsPlotted = 0
     
@@ -281,7 +290,7 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, ylim, width, height,
         # Store dot values
         plotData.append([contigID, x, y, smoothedY])
         numContigsPlotted += 1
-
+    
     # Produce the figure axes
     fig = plt.figure(figsize=(width, height), constrained_layout=True)
     gs = fig.add_gridspec(1, len(plotData), hspace=0)
@@ -293,19 +302,28 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, ylim, width, height,
     fig.supylabel(f"{statisticLabel}", fontweight="bold")
     
     # Plot the data into each axis
-    for ax, (contigID, x, y, smoothedY) in zip(axes, plotData):
-        # Set plot title
-        ax.set_title(contigID)
+    with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+        # Write TSV header if applicable
+        if createTSV:
+            fileOutTSV.write("contigID\tposition\tdepth\tsmoothed_depth\n")
         
-        # Plot dots (if applicable)
-        if showDots:
-            ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+        for ax, (contigID, x, y, smoothedY) in zip(axes, plotData):
+            # Set plot title
+            ax.set_title(contigID)
+            
+            # Plot dots (if applicable)
+            if showDots:
+                ax.scatter(x, y, color="red", s=3, alpha=0.5, zorder=0)
+            
+            # Plot line
+            ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
+            
+            # Write TSV file if requested
+            for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
+                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
         
-        # Plot line
-        ax.plot(x, smoothedY, zorder=1, linewidth=linewidth)
-    
-    for ax in fig.get_axes():
-        ax.label_outer()
+        for ax in fig.get_axes():
+            ax.label_outer()
     
     # Save output file
     plt.savefig(fileOut)
@@ -315,7 +333,7 @@ def lineplot_horizontal(dotsX, dotsY, wmaSize, ylim, width, height,
 def lineplot_regions(dotsX, dotsY, regions, wmaSize, ylim,
                      width, height, outputDirectory,
                      plotPDF=False, showDots=True,
-                     linewidth=1, statisticLabel="Q13 depth"):
+                     linewidth=1, statisticLabel="Q13 depth", createTSV=False):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -338,6 +356,7 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize, ylim,
         linewidth -- OPTIONAL; an integer value indicating the width of the line plot (default=1)
         statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
                           (default="Q13 depth")
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
@@ -395,11 +414,18 @@ def lineplot_regions(dotsX, dotsY, regions, wmaSize, ylim,
         # Save output file
         plt.savefig(fileOut)
         numContigsPlotted += 1
+        
+        # Write TSV file if requested
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            fileOutTSV.write("contigID\tposition\tdepth\tsmoothed_depth\n")
+            for xVal, yVal, smoothedYVal in zip(x*1000000, y, smoothedY): # convert back to bp
+                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\t{smoothedYVal}\n")
+        
     return numContigsPlotted
 
 def histo_per_contig(histoDict, width, height, ylim,
                      outputDirectory, binSize, plotPDF=False,
-                     statisticLabel="Q13 depth"):
+                     statisticLabel="Q13 depth", createTSV=False):
     '''
     Parameters:
         histoDict -- dictionary linking chromosome IDs (keys) to numpy arrays of integers
@@ -414,6 +440,7 @@ def histo_per_contig(histoDict, width, height, ylim,
                    PDFs (True) or PNGs (False)
         statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
                           (default="Q13 depth")
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     numContigsPlotted = 0
     for contigID in histoDict.keys():
@@ -438,7 +465,7 @@ def histo_per_contig(histoDict, width, height, ylim,
         ax = plt.axes()
         
         ax.set_xlabel(f"Bin number ({stepSize} Kbp step and width)", fontweight="bold")
-        ax.set_ylabel(f"Number of variants with {statisticLabel}", fontweight="bold")
+        ax.set_ylabel(f"Number of read alignments with {statisticLabel}", fontweight="bold")
         ax.set_title(f"{contigID} {statisticLabel} histogram", fontweight="bold")
         
         # Plot bars
@@ -447,11 +474,18 @@ def histo_per_contig(histoDict, width, height, ylim,
         # Save output file
         plt.savefig(fileOut)
         numContigsPlotted += 1
+        
+        # Write TSV file if requested
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            fileOutTSV.write("contigID\tposition\tdepth\n")
+            for xVal, yVal in zip(x*1000000, y): # convert back to bp
+                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
+        
     return numContigsPlotted
 
 def histo_horizontal(histoDict, width, height, ylim, outputDirectory,
                      binSize, plotPDF=False,
-                     statisticLabel="Q13 depth"):
+                     statisticLabel="Q13 depth", createTSV=False):
     '''
     Parameters:
         histoDict -- dictionary linking chromosome IDs (keys) to numpy arrays of integers
@@ -466,6 +500,7 @@ def histo_horizontal(histoDict, width, height, ylim, outputDirectory,
                    PDFs (True) or PNGs (False)
         statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
                           (default="Q13 depth")
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     numContigsPlotted = 0
     
@@ -500,18 +535,27 @@ def histo_horizontal(histoDict, width, height, ylim, outputDirectory,
     stepSize = binSize / 1000 # convert to Kbp
     fig.suptitle(f"{statisticLabel} histogram", fontweight="bold")
     fig.supxlabel(f"Bin number ({stepSize} Kbp step and width)", fontweight="bold")
-    fig.supylabel(f"Number of variants with {statisticLabel}", fontweight="bold")
+    fig.supylabel(f"Number of read alignments with {statisticLabel}", fontweight="bold")
     
     # Plot the data into each axis
-    for ax, (contigID, x, y) in zip(axes, plotData):
-        # Set plot title
-        ax.set_title(contigID)
+    with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+        # Write TSV header if applicable
+        if createTSV:
+            fileOutTSV.write("contigID\tposition\tdepth\n")
         
-        # Plot bars
-        ax.bar(x, y, zorder=0)
-    
-    for ax in fig.get_axes():
-        ax.label_outer()
+        for ax, (contigID, x, y) in zip(axes, plotData):
+            # Set plot title
+            ax.set_title(contigID)
+            
+            # Plot bars
+            ax.bar(x, y, zorder=0)
+            
+            # Write TSV file if requested
+            for xVal, yVal in zip(x*1000000, y): # convert back to bp
+                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
+        
+        for ax in fig.get_axes():
+            ax.label_outer()
     
     # Save output file
     plt.savefig(fileOut)
@@ -520,7 +564,7 @@ def histo_horizontal(histoDict, width, height, ylim, outputDirectory,
 
 def histo_regions(histoDict, regions, width, height, ylim, outputDirectory,
                   binSize, plotPDF=False,
-                  statisticLabel="Q13 depth"):
+                  statisticLabel="Q13 depth", createTSV=False):
     '''
     Parameters:
         histoDict -- dictionary linking chromosome IDs (keys) to numpy arrays of integers
@@ -537,6 +581,7 @@ def histo_regions(histoDict, regions, width, height, ylim, outputDirectory,
                    PDFs (True) or PNGs (False)
         statisticLabel -- OPTIONAL; a string indicating what the statistical value represents
                           (default="Q13 depth")
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
@@ -579,7 +624,7 @@ def histo_regions(histoDict, regions, width, height, ylim, outputDirectory,
         
         stepSize = binSize / 1000 # convert to Kbp
         ax.set_xlabel(f"Bin number ({stepSize} Kbp step and width)", fontweight="bold")
-        ax.set_ylabel(f"Number of variants with {statisticLabel}", fontweight="bold")
+        ax.set_ylabel(f"Number of read alignments with {statisticLabel}", fontweight="bold")
         ax.set_title(f"{contigID} {statisticLabel} histogram", fontweight="bold")
         
         # Plot bars
@@ -588,6 +633,13 @@ def histo_regions(histoDict, regions, width, height, ylim, outputDirectory,
         # Save output file
         plt.savefig(fileOut)
         numContigsPlotted += 1
+        
+        # Write TSV file if requested
+        with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+            fileOutTSV.write("contigID\tposition\tdepth\n")
+            for xVal, yVal in zip(x*1000000, y): # convert back to bp
+                fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
+        
     return numContigsPlotted
 
 def get_sorted_contig_ids(idsList):
@@ -662,6 +714,12 @@ def main():
                     help="""Optionally, provide this flag if you want outputs to be
                     in PDF format instead of PNG format""",
                     default=False)
+    p.add_argument("--tsv", dest="createTSV",
+                    required=False,
+                    action="store_true",
+                    help="""Optionally, provide this flag if you want to have the plotted
+                    data output as a TSV file""",
+                    default=False)
     
     # Establish subparsers
     subParentParser = argparse.ArgumentParser()
@@ -704,7 +762,7 @@ def main():
     histoparser.add_argument("--binSize", dest="binSize",
                             type=int,
                             required=False,
-                            help="""Optionally, specify the bin size to count variants
+                            help="""Optionally, specify the bin size to count reads
                             within (default=10000)""",
                             default=10000)
     
@@ -761,18 +819,21 @@ def linemain(args, dotsX, dotsY):
         numContigsPlotted = lineplot_horizontal(dotsX, dotsY, args.wmaSize, args.ylim,
                                                 args.width, args.height,
                                                 args.outputDirectory, args.plotPDF,
-                                                args.showDots, args.linewidth)
+                                                args.showDots, args.linewidth,
+                                                args.createTSV)
     elif args.regions != []:
         numContigsPlotted = lineplot_regions(dotsX, dotsY, args.regions,
                                              args.wmaSize, args.ylim,
                                              args.width, args.height,
                                              args.outputDirectory, args.plotPDF,
-                                             args.showDots, args.linewidth)
+                                             args.showDots, args.linewidth,
+                                             args.createTSV)
     else:
         numContigsPlotted = lineplot_per_contig(dotsX, dotsY, args.wmaSize, args.ylim,
                                                 args.width, args.height,
                                                 args.outputDirectory, args.plotPDF,
-                                                args.showDots, args.linewidth)
+                                                args.showDots, args.linewidth,
+                                                args.createTSV)
     
     # Raise errors if necessary
     if numContigsPlotted == 0:
@@ -798,17 +859,17 @@ def histomain(args, dotsX, dotsY, lengthsDict):
         numContigsPlotted = histo_horizontal(histoDict,
                                              args.width, args.height, args.ylim,
                                              args.outputDirectory, args.binSize,
-                                             args.plotPDF)
+                                             args.plotPDF, args.createTSV)
     elif args.regions != []:
         numContigsPlotted = histo_regions(histoDict, args.regions,
                                           args.width, args.height, args.ylim,
                                           args.outputDirectory, args.binSize,
-                                          args.plotPDF)
+                                          args.plotPDF, args.createTSV)
     else:
         numContigsPlotted = histo_per_contig(histoDict,
                                              args.width, args.height, args.ylim,
                                              args.outputDirectory, args.binSize,
-                                             args.plotPDF)
+                                             args.plotPDF, args.createTSV)
     
     # Raise errors if necessary
     if numContigsPlotted == 0:
