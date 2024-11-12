@@ -482,7 +482,7 @@ def histo_per_contig(histoDict, width, height, ylim,
         if createTSV:
             with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") as fileOutTSV:
                 fileOutTSV.write("contigID\tposition\tdepth\n")
-                for xVal, yVal in zip(x*1000000, y): # convert back to bp
+                for xVal, yVal in zip(xs, y): # convert back to bp
                     fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
         
     return numContigsPlotted
@@ -556,7 +556,7 @@ def histo_horizontal(histoDict, width, height, ylim, outputDirectory,
             
             # Write TSV file if requested
             if createTSV:
-                for xVal, yVal in zip(x*1000000, y): # convert back to bp
+                for xVal, yVal in zip(x, y): # convert back to bp
                     fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
         
         for ax in fig.get_axes():
@@ -643,7 +643,7 @@ def histo_regions(histoDict, regions, width, height, ylim, outputDirectory,
         if createTSV:
             with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") as fileOutTSV:
                 fileOutTSV.write("contigID\tposition\tdepth\n")
-                for xVal, yVal in zip(x*1000000, y): # convert back to bp
+                for xVal, yVal in zip(x, y): # convert back to bp
                     fileOutTSV.write(f"{contigID}\t{xVal}\t{yVal}\n")
     
     return numContigsPlotted
