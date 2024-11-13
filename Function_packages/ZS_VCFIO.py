@@ -650,9 +650,10 @@ class SimpleGenotypeIterator:
                     ongoingCount += 1
                 
                 # Check to see if this genotype, after imputation, still has a variant allele
-                alleles = set([allele for key, allelePair in posGenotypeDict.items() if key != "ref_alt" for allele in allelePair])
-                if alleles == {0}: # skip if it doesn't
-                    continue
+                "Deactivated since our VCF may want to represent invariant sites; up to the user to decide"
+                # alleles = set([allele for key, allelePair in posGenotypeDict.items() if key != "ref_alt" for allele in allelePair])
+                # if alleles == {0}: # skip if it doesn't
+                #     continue
                 
                 # Yield result
                 yield chrom, pos, ref, alt, posGenotypeDict
