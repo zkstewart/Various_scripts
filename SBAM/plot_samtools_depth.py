@@ -7,7 +7,9 @@ import os, argparse, sys, re, pickle, math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
 from contextlib import nullcontext
+from Bio import SeqIO
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -18,6 +20,11 @@ def validate_args(args):
         eprint(f'I am unable to locate the samtools depth TSV file ({args.depthFile})')
         eprint('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if not args.genomeFasta == None:
+        if not os.path.isfile(args.genomeFasta):
+            eprint(f'I am unable to locate the genome FASTA file ({args.genomeFasta})')
+            eprint('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     # Handle numeric parameters
     if args.width < 0:
         eprint("width must be a positive integer")
@@ -657,6 +664,36 @@ def get_sorted_contig_ids(idsList):
     else:
         return sorted(idsList)
 
+def fill_missing_depths(dotsX, dotsY, lengthsDict):
+    '''
+    Receives the dotsX and dotsY dictionaries and fills in missing values in instances
+    where 'samtools depth' was run without the -a flag to output zero depth positions.
+    
+    Parameters:
+        dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
+                 indicating the position where a dot is located
+        dotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
+                 indicating the depth value for each dot
+        lengthsDict -- a dictionary linking chromosome IDs (keys) to integers
+                       indicating the length of the contig
+    Returns:
+        newDotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
+                    indicating the position where a dot is located, including missing values
+        newDotsY -- a dictionary linking chromosome IDs (keys) to lists of floats
+                    indicating the depth value for each dot, including missing values
+    '''
+    newDotsX, newDotsY = {}, {}
+    for contigID in dotsX.keys():
+        assert contigID in lengthsDict, \
+            f"Contig '{contigID}' not found in genome FASTA file"
+        
+        contigLength = lengthsDict[contigID]
+        xyDict = { x: [x, y] for x, y in zip(dotsX[contigID], dotsY[contigID]) }
+        xy = np.array([[x, 0] if not x in xyDict else xyDict[x] for x in range(1, contigLength+1)])
+        newDotsX[contigID] = xy[:, 0]
+        newDotsY[contigID] = xy[:, 1]
+    return newDotsX, newDotsY
+
 def main():
     usage = """%(prog)s receives a samtools depth output file and creates
     line plots and histograms of the alignment depth in various manners
@@ -687,6 +724,12 @@ def main():
                     help="""Optionally, specify the output plot height (default=6)""",
                     default=6)
     ## Opts (statistical behaviour)
+    p.add_argument("--genome", dest="genomeFasta",
+                   required=True,
+                   help="""Optionally, specify the location of the genome FASTA file
+                   if you didn't run samtools depth with -a to output zero depth
+                   positions""",
+                   default=None)
     p.add_argument("--minimum_contig", dest="minimumContigSize",
                     type=int,
                     required=False,
@@ -796,9 +839,16 @@ def main():
             pickle.dump([dotsX, dotsY], fileOut)
     
     # Figure out the lengths of each contig
-    lengthsDict = {}
-    for contigID in dotsX.keys():
-        lengthsDict[contigID] = dotsX[contigID][-1]
+    if args.genomeFasta != None:
+        genomeRecords = SeqIO.parse(open(args.genomeFasta, 'r'), "fasta")
+        lengthsDict = { record.id:len(record) for record in genomeRecords }
+        
+        # Fill in missing data points
+        dotsX, dotsY = fill_missing_depths(dotsX, dotsY, lengthsDict)
+    else:
+        lengthsDict = {}
+        for contigID in dotsX.keys():
+            lengthsDict[contigID] = dotsX[contigID][-1]
     
     # Drop any contigs which don't meet our length cutoff
     for contigID, length in lengthsDict.items():

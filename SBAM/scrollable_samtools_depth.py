@@ -11,6 +11,7 @@ import numpy as np
 
 from rdp import rdp
 from typing import Union
+from Bio import SeqIO
 
 from plot_samtools_depth import get_depth_for_dotting
 
@@ -23,6 +24,11 @@ def validate_args(args):
         eprint(f'I am unable to locate the samtools depth TSV file ({args.depthFile})')
         eprint('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
+    if not args.genomeFasta == None:
+        if not os.path.isfile(args.genomeFasta):
+            eprint(f'I am unable to locate the genome FASTA file ({args.genomeFasta})')
+            eprint('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     # Handle file output
     if os.path.isdir(args.outputDirectory) and os.listdir(args.outputDirectory) != []:
         eprint(f"Output directory '{args.outputDirectory}' already exists; I'll write output files here.")
@@ -169,8 +175,18 @@ def simplify_depth(xy: np.ndarray, tolerance: Union[int, float]) -> np.ndarray:
     # Return the simplified data as a numpy array
     return np.array(simplifiedXY, dtype=float)
 
+def fill_missing_xy(xy, lengthsDict, contigID):
+    if contigID in lengthsDict:
+        contigLength = lengthsDict[contigID]
+        xyDict = { i: [i, j] for i, j in xy }
+        xy = np.array([[x, 0] if not x in xyDict else xyDict[x] for x in range(1, contigLength+1)])
+    else:
+        raise ValueError(f"Contig ID '{contigID}' not found in genome FASTA file!")
+    return xy
+
 def plotly_per_contig(dotsX, dotsY, simplificationAlg, tolerance,
-                      outputDirectory, statisticLabel="Smoothed Q13 depth"):
+                      outputDirectory, statisticLabel="Smoothed Q13 depth",
+                      lengthsDict=None):
     '''
     Parameters:
         dotsX -- a dictionary linking chromosome IDs (keys) to lists of integers
@@ -199,6 +215,10 @@ def plotly_per_contig(dotsX, dotsY, simplificationAlg, tolerance,
         x = np.array(dotsX[contigID])
         y = np.array(dotsY[contigID])
         xy = np.column_stack((x, y))
+        
+        # Fill in missing data points (if applicable)
+        if lengthsDict != None:
+            xy = fill_missing_xy(xy, lengthsDict, contigID)
         
         # Simplify data for lighter weight plotting
         if simplificationAlg == "rdp":
@@ -280,9 +300,20 @@ def main():
                    depth value before a change is detected and the point is retained;
                    default is 10""",
                    default=10)
+    p.add_argument("--genome", dest="genomeFasta",
+                   required=True,
+                   help="""Optionally, specify the location of the genome FASTA file
+                   if you didn't run samtools depth with -a to output zero depth
+                   positions""",
+                   default=None)
     
     args = p.parse_args()
     validate_args(args)
+    
+    # Figure out the lengths of each contig (if applicable)
+    if args.genomeFasta != None:
+        genomeRecords = SeqIO.parse(open(args.genomeFasta, 'r'), "fasta")
+        lengthsDict = { record.id:len(record) for record in genomeRecords }
     
     # Figure out what our pickle file should be called
     pickleFile = os.path.join(
@@ -306,7 +337,8 @@ def main():
     
     # Create plots
     plotly_per_contig(dotsX, dotsY, args.simplificationAlg,
-                      args.tolerance, args.outputDirectory)
+                      args.tolerance, args.outputDirectory,
+                      lengthsDict=lengthsDict)
     
     print("Program completed successfully!")
 
