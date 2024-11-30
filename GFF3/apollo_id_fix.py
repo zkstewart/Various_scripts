@@ -141,7 +141,7 @@ def main():
         
         contigCount = {}
         for artifactFeature in artifactFeatures:
-            contigCount.setdefault(geneFeature.contig, 1)
+            contigCount.setdefault(artifactFeature.contig, 1)
             artifactID = f"{artifactFeature.contig}_artifact_{contigCount[artifactFeature.contig]}"
             
             attributes = f"ID={artifactID};Name=apollo_{artifactID};" + \
@@ -156,7 +156,7 @@ def main():
                 attributes
             ]))
             outputLines.append(artifactLine)
-            contigCount[geneFeature.contig] += 1
+            contigCount[artifactFeature.contig] += 1
     
     # Write file
     with open(args.outputGff3, "w") as fileOut:
