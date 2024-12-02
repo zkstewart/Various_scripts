@@ -323,11 +323,16 @@ def listrename(fastaFile, listFileName, outputFileName):
                         else:
                                 seq, qual = fastq_format_extract(record)
                         # Main function action
-                        oldseqid = record.description
+                        oldseqdesc = record.description
+                        oldseqid = record.id
                         if oldseqid in listDictL:
                                 newseqid = listDictL[oldseqid]
                         elif oldseqid in listDictR:
                                 newseqid = listDictR[oldseqid]
+                        elif oldseqdesc in listDictL:
+                                newseqid = listDictL[oldseqdesc]
+                        elif oldseqdesc in listDictR:
+                                newseqid = listDictR[oldseqdesc]
                         else:
                                 print('"' + oldseqid + '" not found in .list file. These files should match up.')
                                 quit()
