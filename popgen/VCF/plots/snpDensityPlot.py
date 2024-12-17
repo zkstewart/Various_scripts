@@ -1741,7 +1741,7 @@ def main():
                              default=10000)
     
     # Ideogram-subparser arguments
-    ideoparser.add_argument("--gff3", dest="gff3File",
+    ideoparser.add_argument("-g", "--gff3", dest="gff3File",
                             required=False,
                             help="""Optionally, specify the location of an input GFF3 file
                             if you want to annotate gene locations""")
