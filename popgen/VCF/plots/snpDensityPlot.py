@@ -20,13 +20,17 @@ from Function_packages import ZS_GFF3IO, ZS_VCFIO
 def validate_args(args):
     # Validate input data locations
     if not os.path.isfile(args.vcfFile):
-        print(f'I am unable to locate the input VCF file ({args.vcfFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+        raise FileNotFoundError(f'Unable to locate the input VCF file ({args.vcfFile})')
     if not os.path.isfile(args.genomeFasta):
-        print(f'I am unable to locate the input genome FASTA file ({args.genomeFasta})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+        raise FileNotFoundError(f'Unable to locate the input genome FASTA file ({args.genomeFasta})')
+    if hasattr(args, "gff3File") and args.gff3File != None:
+        if not os.path.isfile(args.gff3File):
+            raise FileNotFoundError(f"Unable to locate the input GFF3 file '{args.gff3File}'")
+        else:
+            args.gff3Obj = ZS_GFF3IO.GFF3(args.gff3File) # parsing now to raise errors early
+            args.gff3Obj.create_ncls_index("gene")
+    else:
+        args.gff3Obj = None
     
     # Handle numeric parameters
     if args.width < 0:
@@ -237,6 +241,122 @@ def tally_variants_within_features(vcfFile, gff3, onlyCDS=False, weightByOccurre
                 
                 # Add to the tally
                 tallyDict[geneID][0] += snpCount
+    return tallyDict
+
+def count_variants_along_features(vcfFile, gff3, weightByOccurrence=False,
+                                   skipMonoallelic=False, filterSamples=[]):
+    '''
+    Counts variants by position along a feature, rather than simply tallying the number
+    of variants per feature.
+    
+    Parameters:
+        vcfFile -- a string pointing to the VCF file containing SNP annotation
+        gff3 -- a ZS_GFF3IO.GFF3 object
+        weightByOccurrence -- OPTIONAL; a boolean flag to indicate whether to
+                              count a variant each time it occurs in a sample
+                              (default == False)
+        skipMonoallelic -- OPTIONAL; a boolean flag to indicate whether to skip
+                           counting a variant when ALL samples have a non-variant
+                           allele (default == False)
+        filterSamples -- OPTIONAL; a list of strings indicating the sample IDs
+                         to filter on. Only relevant if you are using the
+                         --weightByOccurrence flag or the --skipMonoallelic flag
+                         (default == [])
+    Returns:
+        tallyDict -- a dictionary with structure like:
+                     {
+                         "geneID1": [snpCount, geneLength],
+                         "geneID2": [snpCount, geneLength],
+                         ...
+                     }
+    '''
+    # Establish tally dictionary
+    tallyDict = {}
+    for geneFeature in gff3.types["gene"]:
+        geneID = geneFeature.ID
+        
+        # Skip non-mRNA genes
+        if not hasattr(geneFeature, "mRNA"):
+            continue
+        
+        longestMrnaFeature = ZS_GFF3IO.GFF3.longest_isoform(geneFeature)
+        coords, zeros = [], []
+        for cdsFeature in longestMrnaFeature.CDS:
+            coords.append((cdsFeature.start, cdsFeature.end))
+            zeros.append(np.zeros(cdsFeature.end - cdsFeature.start + 1, np.uint)) # value will only be a positive integer
+        zeros = np.concatenate(zeros)
+        
+        tallyDict[geneID] = [coords, zeros]
+    
+    # Populate tally dictionary
+    with ZS_VCFIO.open_vcf_file(vcfFile) as fileIn:
+        for line in fileIn:
+            sl = line.rstrip("\r\n").replace('"', '').split("\t") # replace quotations may help with Excel files
+            
+            # Handle header lines
+            if line.startswith("#CHROM"):
+                samples = sl[9:] # This gives us the ordered sample IDs
+                for sample in filterSamples:
+                    if not sample in samples:
+                        raise ValueError(f"Sample indicated for filtration ({sample}) not found in VCF header!")
+                filterIndices = set([ samples.index(sample) for sample in filterSamples ])
+                continue
+            if line.startswith("#"):
+                continue
+            
+            # Extract relevant details
+            chrom = sl[0]
+            pos = int(sl[1])
+            sampleDetails = sl[9:]
+            
+            fieldsDescription = sl[8]
+            if ":" not in fieldsDescription:
+                gtIndex = 0
+            else:
+                gtIndex = fieldsDescription.split(":").index("GT")
+            
+            # Iterate through any gene features this variant overlaps
+            geneFeatures = gff3.ncls_finder(pos, pos, "contig", chrom)
+            for geneFeature in geneFeatures:
+                geneID = geneFeature.ID
+                coords, zeros = tallyDict[geneID]
+                
+                # Narrow down to variants within the CDS region
+                isWithinCDS = any([ start <= pos <= end for start, end in coords ])
+                if not isWithinCDS:
+                    continue
+                
+                # Get sample genotypes if relevant
+                if skipMonoallelic or weightByOccurrence:
+                    genotypes = [
+                        sampleDetails[i].split(":")[gtIndex].replace("|", "/").split("/")
+                        for i in range(len(sampleDetails))
+                        if i not in filterIndices
+                    ]
+                
+                # Skip if we're skipping monoallelic and all samples are the same
+                if skipMonoallelic:
+                    genotypeSet = set([ g for genotype in genotypes for g in genotype ]).difference(".") # remove missing data
+                    if len(genotypeSet) == 1:
+                        continue
+                
+                # See how many times we should count this variant if relevant
+                if weightByOccurrence:
+                    snpCount = sum([ 1 for genotype in genotypes if set(genotype).difference(".") != {"0"} ])
+                else:
+                    snpCount = 1
+                
+                # Locate the variant position in the zeros array
+                ongoingCount = 0
+                for start, end in coords:
+                    if start <= pos <= end:
+                        ongoingCount += pos - start
+                        zeros[ongoingCount] += snpCount
+                        break
+                    ongoingCount += end - start + 1
+                
+                # Add to the tally
+                zeros[ongoingCount] += snpCount
     return tallyDict
 
 def bin_vcf_variants(vcfFile, windowSize=100000, weightByOccurrence=False,
@@ -855,7 +975,7 @@ def histo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF, 
         plt.savefig(fileOut)
         plt.close()
 
-def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirectory, plotPDF, createTSV):
+def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirectory, plotPDF, createTSV, gff3Obj):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -877,6 +997,8 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         createTSV -- a boolean flag indicating whether to output a TSV file of the data
+        gff3Obj -- an instance of the GFF3 class from ZS_GFF3IO.py to annotate gene
+                   locations on the plot OR None
     '''
     SPACING = 0.1
     
@@ -932,6 +1054,22 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
             contigLabels.append(contig)
             ongoingCount += 1
             
+            # Plot gene locations if applicable
+            if gff3Obj is not None:
+                geneFeatures = gff3Obj.ncls_finder(0, lengthsDict[contig], "contig", contig)
+                mrnaFeatures = [
+                    ZS_GFF3IO.GFF3.longest_isoform(geneFeature)
+                    for geneFeature in geneFeatures
+                    if hasattr(geneFeature, "mRNA")
+                ]
+                mrnaCentres = [
+                    int((mrnaFeature.start + mrnaFeature.end) / 2) / binSize # convert to fractional bin position
+                    for mrnaFeature in mrnaFeatures
+                ]
+                ax.scatter(mrnaCentres, [ongoingCount+SPACING]*len(mrnaCentres), marker="v", color="#EA8527")
+                
+                ongoingCount += 1
+            
             # Write TSV data if applicable
             if createTSV:
                 for xVal, yVal in enumerate(y):
@@ -939,7 +1077,10 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
     ax.set_ylim(0.5+SPACING, ongoingCount-SPACING)
     
     # Indicate contig labels
-    ax.set_yticks(range(1, len(contigLabels)+1))
+    if gff3Obj is not None:
+        ax.set_yticks(np.arange(1, ongoingCount + 0.5, 2))
+    else:
+        ax.set_yticks(range(1, len(contigLabels)+1))
     ax.set_yticklabels(contigLabels)
     
     # Show the colour scale legend
@@ -951,7 +1092,7 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
     plt.savefig(fileOut)
     plt.close()
 
-def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plotPDF, createTSV):
+def ideo_regions(binDict, lengthsDict, regions, binSize, width, height, outputDirectory, plotPDF, createTSV, gff3Obj):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -960,6 +1101,12 @@ def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plot
                        'contig1': [...],
                        ...
                    }
+        lengthsDict -- a dictionary with structure like:
+                       {
+                           'contig1': intLength1,
+                           'contig2': intLength2,
+                           ...
+                       }
         regions -- a list of strings indicating regions to plot in greater detail with format
                    'contigID:startPos:endPos'
         binSize -- an integer value indicating the bin size to count variants
@@ -1015,7 +1162,11 @@ def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plot
         ax.set_xlabel(f"Window number ({stepSize} Kbp step and width)", fontweight="bold")
         ax.get_yaxis().set_visible(False)
         ax.set_xlim(binStart, binEnd+1) # +1 to include the last bin
-        ax.set_ylim(1, 2)
+        
+        if gff3Obj is not None:
+            ax.set_ylim(1, 3)
+        else:
+            ax.set_ylim(1, 2)
         
         # Plot ideogram
         with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
@@ -1025,6 +1176,20 @@ def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plot
             
             # Plot the region
             ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+            
+            # Plot gene locations if applicable
+            if gff3Obj is not None:
+                geneFeatures = gff3Obj.ncls_finder(0, lengthsDict[contig], "contig", contig)
+                mrnaFeatures = [
+                    ZS_GFF3IO.GFF3.longest_isoform(geneFeature)
+                    for geneFeature in geneFeatures
+                    if hasattr(geneFeature, "mRNA")
+                ]
+                mrnaCentres = [
+                    int((mrnaFeature.start + mrnaFeature.end) / 2) / binSize # convert to fractional bin position
+                    for mrnaFeature in mrnaFeatures
+                ]
+                ax.scatter(mrnaCentres, [2]*len(mrnaCentres), marker="v", color="#EA8527")
             
             # Write TSV data if applicable
             if createTSV:
@@ -1040,7 +1205,7 @@ def ideo_regions(binDict, regions, binSize, width, height, outputDirectory, plot
         plt.savefig(fileOut)
         plt.close()
 
-def ideo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF, createTSV):
+def ideo_per_contig(binDict, lengthsDict, binSize, width, height, outputDirectory, plotPDF, createTSV, gff3Obj):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -1049,6 +1214,12 @@ def ideo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF, c
                        'contig1': [...],
                        ...
                    }
+        lengthsDict -- a dictionary with structure like:
+                       {
+                           'contig1': intLength1,
+                           'contig2': intLength2,
+                           ...
+                       }
         binSize -- an integer value indicating the bin size to count variants
                    within
         width -- an integer value indicating the width of the output plot
@@ -1057,7 +1228,7 @@ def ideo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF, c
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         createTSV -- a boolean flag indicating whether to output a TSV file of the data
     '''
-    for contig in binDict.keys():
+    for contig in lengthsDict.keys():
         # Derive our output file name and skip if already existing
         fileSuffix = "pdf" if plotPDF else "png"
         fileOut = os.path.join(outputDirectory, f"{contig}.ideogram.{fileSuffix}")
@@ -1091,7 +1262,21 @@ def ideo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF, c
                 fileOutTSV.write("contigID\twindow_number\tvariant_occurrence\n")
             
             # Plot the contig
-            ax.broken_barh(xranges, (1, 2), facecolors=cmap(norm(y)))
+            ax.broken_barh(xranges, (1, 1), facecolors=cmap(norm(y)))
+            
+            # Plot gene locations if applicable
+            if gff3Obj is not None:
+                geneFeatures = gff3Obj.ncls_finder(0, lengthsDict[contig], "contig", contig)
+                mrnaFeatures = [
+                    ZS_GFF3IO.GFF3.longest_isoform(geneFeature)
+                    for geneFeature in geneFeatures
+                    if hasattr(geneFeature, "mRNA")
+                ]
+                mrnaCentres = [
+                    int((mrnaFeature.start + mrnaFeature.end) / 2) / binSize # convert to fractional bin position
+                    for mrnaFeature in mrnaFeatures
+                ]
+                ax.scatter(mrnaCentres, [1.99]*len(mrnaCentres), marker="v", color="#EA8527", s=10**2)
             
             # Write TSV data if applicable
             if createTSV:
@@ -1301,6 +1486,116 @@ def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF, cr
         plt.savefig(fileOut)
         plt.close()
 
+def gene_models(tallyDict, gff3, width, height, outputDirectory, plotPDF, createTSV):
+    '''
+    Parameters:
+        tallyDict -- a dictionary with structure like:
+                     {
+                         "geneID1": [(coord1, coord2, ...), np.array([pos1Count, pos2Count, ...])],
+                         "geneID2": [ ... ],
+                         ...
+                     }
+        gff3 -- a ZS_GFF3IO.GFF3 object
+        width -- an integer value indicating the width of the output plot
+        height -- an integer value indicating the height of the output plot
+        outputDirectory -- a string indicating the directory to write output plots to
+        plotPDF -- a boolean flag indicating whether to output plots in PDF format
+        createTSV -- a boolean flag indicating whether to output a TSV file of the data
+    '''
+    SPACING = 0.1
+    
+    # Derive our output file name and skip if already existing
+    fileSuffix = "pdf" if plotPDF else "png"
+    filePrefix = os.path.basename(gff3.fileLocation).rsplit('.gff3', maxsplit=1)[0]
+    fileOut = os.path.join(outputDirectory, f"{filePrefix}.genemodels.{fileSuffix}")
+    if os.path.isfile(fileOut):
+        print(f"WARNING: Gene model plot for '{gff3.fileLocation}' already found in output directory; skipping...")
+        return
+    
+    # Get representative gene models in this GFF3 object
+    mrnaFeatures = [
+        ZS_GFF3IO.GFF3.longest_isoform(geneFeature)
+        for geneFeature in gff3.types["gene"]
+        if hasattr(geneFeature, "mRNA")
+    ]
+    
+    # Raise error if no genes found
+    if len(mrnaFeatures) == 0:
+        raise ValueError(f"No genes with mRNA subfeatures found in provided GFF3 file!")
+    
+    # Sort gene models by length
+    mrnaFeatures.sort(key=lambda x: len(tallyDict[x.Parent][1]))
+    
+    # Get the xlim and colour map values for the plot
+    xlimMax = 0
+    cmapMin = np.inf
+    cmapMax = 0
+    for mrnaFeature in mrnaFeatures:
+        coords, zeros = tallyDict[mrnaFeature.Parent]
+        xlimMax = max(xlimMax, len(zeros))
+        cmapMin = min(cmapMin, min(zeros))
+        cmapMax = max(cmapMax, max(zeros))
+    
+    # Colour map density values
+    cmap = plt.cm.viridis
+    norm = matplotlib.colors.Normalize(vmin=cmapMin, vmax=cmapMax)
+    
+    # Configure plot
+    fig = plt.figure(figsize=(width, height), tight_layout=True)
+    ax = plt.axes()
+    
+    # Set xlim and xlabel
+    ax.set_xlim(0.5, xlimMax+0.5) # 1-based indexing; position centres on integers, stretch 0.5 either side
+    ax.set_xlabel(f"Nucleotide position (bp)", fontweight="bold")
+    
+    # Plot gene models
+    geneLabels = []
+    with open(fileOut.replace(f".{fileSuffix}", ".tsv"), "w") if createTSV else nullcontext() as fileOutTSV:
+        # Write TSV header if applicable
+        if createTSV:
+            fileOutTSV.write("gene_id\tposition\tvariant_density\n")
+        
+        # Iterate over each gene model
+        for colNum, mrnaFeature in enumerate(mrnaFeatures):
+            # Get plotting values
+            coords, zeros = tallyDict[mrnaFeature.Parent]
+            xranges = [ (x+0.5, 1) for x in np.arange(0, len(zeros)) ]
+            
+            # Plot gene gram
+            ax.broken_barh(xranges, (colNum+SPACING, 1-(SPACING*2)), facecolors=cmap(norm(zeros)))
+            
+            # Plot intron splice sites
+            # spliceSites = []
+            # ongoingCount = 0
+            # for coordIndex, (start, end) in enumerate(coords):
+            #     if coordIndex != len(coords) - 1:
+            #         exonLength = end - start + 1
+            #         spliceSites.append(ongoingCount + exonLength)
+            #         ongoingCount += exonLength
+            # ax.scatter(spliceSites, [colNum+1]*len(spliceSites), marker="v", color="#EA8527", s=5**2)
+            
+            # Store gene name
+            geneLabels.append(mrnaFeature.Parent)
+            
+            # Write TSV data if applicable
+            if createTSV:
+                for position, variant_density in enumerate(zeros):
+                    fileOutTSV.write(f"{mrnaFeature.Parent}\t{position}\t{variant_density}\n")
+    ax.set_ylim(0+SPACING, colNum+1-SPACING)
+    
+    # Indicate contig labels
+    ax.set_yticks(np.arange(0.5, colNum + 0.5 + 1))
+    ax.set_yticklabels(geneLabels)
+    
+    # Show the colour scale legend
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    fig.colorbar(sm, ax=ax, orientation="vertical", label="Variant density")
+    
+    # Save output file
+    plt.savefig(fileOut)
+    plt.close()
+
 def main():
     usage = """%(prog)s receives a VCF and genome FASTA to creates SNP density plots per
     chromosome. It can produce line plots, histograms, and ideograms of SNP density.
@@ -1446,6 +1741,10 @@ def main():
                              default=10000)
     
     # Ideogram-subparser arguments
+    ideoparser.add_argument("--gff3", dest="gff3File",
+                            required=False,
+                            help="""Optionally, specify the location of an input GFF3 file
+                            if you want to annotate gene locations""")
     ideoparser.add_argument("--onePlot", dest="onePlot",
                             required=False,
                             action="store_true",
@@ -1468,6 +1767,13 @@ def main():
                             action="store_true",
                             help="""Optionally, provide this flag if you want to only count
                             variants within CDS regions""",
+                            default=False)
+    geneparser.add_argument("--models", dest="geneModels",
+                            required=False,
+                            action="store_true",
+                            help="""Optionally, provide this flag if you want to show gene model
+                            diagrams indicating the position of variants; note that you should
+                            use a GFF3 subset to only include models you want to plot!""",
                             default=False)
     
     args = subParentParser.parse_args()
@@ -1594,17 +1900,17 @@ def ideomain(args, lengthsDict):
         ideo_horizontal(binDict, lengthsDict, args.binSize,
                         args.width, args.height,
                         args.outputDirectory, args.plotPDF,
-                        args.createTSV)
+                        args.createTSV, args.gff3Obj)
     elif args.regions != []:
-        ideo_regions(binDict, args.regions, args.binSize,
+        ideo_regions(binDict, lengthsDict, args.regions, args.binSize,
                      args.width, args.height,
                      args.outputDirectory, args.plotPDF,
-                     args.createTSV)
+                     args.createTSV, args.gff3Obj)
     else:
-        ideo_per_contig(binDict, args.binSize,
+        ideo_per_contig(binDict, lengthsDict, args.binSize,
                         args.width, args.height,
                         args.outputDirectory, args.plotPDF,
-                        args.createTSV)
+                        args.createTSV, args.gff3Obj)
 
 def genemain(args):
     # Figure out what our pickle file should be called
@@ -1613,34 +1919,41 @@ def genemain(args):
                  f"{'.sma' if args.skipMonoallelic else ''}.pkl" + \
                  f"{args.filter}" + \
                  f"{args.gff3File}" + \
-                 f"{'.cds' if args.onlyCDS else ''}"
+                 f"{'.cds' if args.onlyCDS else ''}" + \
+                 f"{'.models' if args.geneModels else ''}"
     
     hash = int(md5(hashString.encode("utf-8")).hexdigest(), 16)
     pickleFile = os.path.join(args.outputDirectory, f"snpDensityPlot_{hash}.pkl")
-    
-    # Parse GFF3 with NCLS indexing
-    gff3 = ZS_GFF3IO.GFF3(args.gff3File, strict_parse=False)
-    gff3.create_ncls_index(typeToIndex="gene")
     
     # Get SNP tally from pickle or via calculation
     if os.path.isfile(pickleFile):
         with open(pickleFile, "rb") as fileIn:
             tallyDict = pickle.load(fileIn)
     else:
-        tallyDict = tally_variants_within_features(args.vcfFile, gff3,
-                                                   args.onlyCDS, args.weightByOccurrence,
-                                                   args.skipMonoallelic, args.filter)
+        if args.geneModels:
+            tallyDict = count_variants_along_features(args.vcfFile, args.gff3Obj,
+                                                      args.weightByOccurrence,
+                                                      args.skipMonoallelic, args.filter)
+        else:
+            tallyDict = tally_variants_within_features(args.vcfFile, args.gff3Obj,
+                                                       args.onlyCDS, args.weightByOccurrence,
+                                                       args.skipMonoallelic, args.filter)
         with open(pickleFile, "wb") as fileOut:
             pickle.dump(tallyDict, fileOut)
     
     # Create plots
-    if args.regions != []:
-        gene_regions(tallyDict, gff3, args.regions,
+    if args.geneModels:
+        gene_models(tallyDict, args.gff3Obj,
+                    args.width, args.height,
+                    args.outputDirectory, args.plotPDF,
+                    args.createTSV)
+    elif args.regions != []:
+        gene_regions(tallyDict, args.gff3Obj, args.regions,
                      args.width, args.height,
                      args.outputDirectory, args.plotPDF,
                      args.createTSV)
     else:
-        gene_per_contig(tallyDict, gff3,
+        gene_per_contig(tallyDict, args.gff3Obj,
                         args.width, args.height,
                         args.outputDirectory, args.plotPDF,
                         args.createTSV)
