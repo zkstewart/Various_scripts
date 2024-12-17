@@ -1580,7 +1580,7 @@ def gene_models(tallyDict, gff3, width, height, outputDirectory, plotPDF, create
             # Write TSV data if applicable
             if createTSV:
                 for position, variant_density in enumerate(zeros):
-                    fileOutTSV.write(f"{mrnaFeature.Parent}\t{position}\t{variant_density}\n")
+                    fileOutTSV.write(f"{mrnaFeature.Parent}\t{position+1}\t{variant_density}\n")
     ax.set_ylim(0+SPACING, colNum+1-SPACING)
     
     # Indicate contig labels
