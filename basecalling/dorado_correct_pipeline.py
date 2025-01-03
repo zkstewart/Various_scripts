@@ -72,7 +72,7 @@ def validate_args(args):
         os.makedirs(args.outputDirectory, exist_ok=True)
         print(f"Created output directory '{args.outputDirectory}' as part of argument validation")
     else:
-        print(f"Output directory '{args.outputDirectory}' already exists; resuming...")
+        print(f"Output directory '{args.outputDirectory}' already exists; will overwrite scripts...")
     args.outputDirectory = os.path.abspath(args.outputDirectory)
 
 def qsub(scriptFileName):
@@ -215,7 +215,7 @@ cd {workingDir}
 
 ####
 
-## Set CUDA_VISIBLE_DEVICES appropriately
+# Set CUDA_VISIBLE_DEVICES appropriately
 ## See https://github.com/microsoft/DeepSpeed/issues/5278#issuecomment-2232782045
 
 UUID=$(echo $CUDA_VISIBLE_DEVICES | cut -d',' -f1)
