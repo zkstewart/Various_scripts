@@ -215,6 +215,15 @@ cd {workingDir}
 
 ####
 
+## Set CUDA_VISIBLE_DEVICES appropriately
+## See https://github.com/microsoft/DeepSpeed/issues/5278#issuecomment-2232782045
+
+UUID=$(echo $CUDA_VISIBLE_DEVICES | cut -d',' -f1)
+ID=$(nvidia-smi --id=$UUID --query-gpu=index --format=csv,noheader)
+export CUDA_VISIBLE_DEVICES=$ID
+
+####
+
 # Specify the location of the dorado bin and lib folders
 DORADOEXE={DORADOEXE}
 DORADOLIB={DORADOLIB}
@@ -326,8 +335,8 @@ def main():
     p.add_argument("--memCPU", dest="memCPU",
                    required=False,
                    help="""Optionally, specify how much memory you want the CPU-bound
-                   job to have on the HPC cluster; default == '40G'""",
-                   default="40G")
+                   job to have on the HPC cluster; default == '250G'""",
+                   default="250G")
     p.add_argument("--memGPU", dest="memGPU",
                    required=False,
                    help="""Optionally, specify how much memory you want the GPU-bound
