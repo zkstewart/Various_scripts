@@ -9,6 +9,133 @@
 import os, argparse, re, math, textwrap
 from Bio import SeqIO
 
+from Bio.SeqIO.FastaIO import SimpleFastaParser
+from Bio.SeqIO.QualityIO import FastqGeneralIterator
+
+# Define general purpose functions
+def fasta_or_fastq(fastaFile):
+        # Get the first letter
+        with open(fastaFile, 'r') as seqFile:
+                for line in seqFile:
+                        firstChar1 = line[0]
+                        break
+        # Check first letter to see if it conforms to fastq or fasta expected format
+        if firstChar1 == '@':
+                seqType = 'fastq'
+        elif firstChar1 == '>':
+                seqType = 'fasta'
+        else:
+                print('I don\'t recognise the input file! It should start with "@" (fastq) or ">" (fasta). Fix your inputs to continue.')
+                quit()
+        # Return value
+        return seqType
+
+def AltFastqGeneralIterator(handle):
+        '''
+        Note: I have taken this code from Biopython's functions
+        (https://github.com/biopython/biopython/blob/master/Bio/SeqIO/QualityIO.py)
+        and turned off the requirement for second_title to be just '+' or to be
+        identical to the title_line value. This can be "monkey patched" into
+        SeqIO by this call "SeqIO.QualityIO.FastqGeneralIterator = AltFastqGeneralIterator"
+        if SeqIO was originally imported by "from Bio import SeqIO"
+        '''
+        # We need to call handle.readline() at least four times per record,
+        # so we'll save a property look up each time:
+        handle_readline = handle.readline
+
+        line = handle_readline()
+        if not line:
+                return  # Premature end of file, or just empty?
+        if isinstance(line[0], int):
+                raise ValueError("Is this handle in binary mode not text mode?")
+
+        while line:
+                if line[0] != "@":
+                        raise ValueError(
+                                "Records in Fastq files should start with '@' character")
+                title_line = line[1:].rstrip()
+                # Will now be at least one line of quality data - in most FASTQ files
+                # just one line! We therefore use string concatenation (if needed)
+                # rather using than the "".join(...) trick just in case it is multiline:
+                seq_string = handle_readline().rstrip()
+                # There may now be more sequence lines, or the "+" quality marker line:
+                while True:
+                        line = handle_readline()
+                        if not line:
+                                raise ValueError("End of file without quality information.")
+                        if line[0] == "+":
+                                # The title here is optional, but if present must match!
+                                ## My change is below
+                                #second_title = line[1:].rstrip()
+                                #if second_title and second_title != title_line: 
+                                        #raise ValueError("Sequence and quality captions differ.")
+                                break
+                        seq_string += line.rstrip()  # removes trailing newlines
+                # This is going to slow things down a little, but assuming
+                # this isn't allowed we should try and catch it here:
+                if " " in seq_string or "\t" in seq_string:
+                        raise ValueError("Whitespace is not allowed in the sequence.")
+                seq_len = len(seq_string)
+
+                # Will now be at least one line of quality data...
+                quality_string = handle_readline().rstrip()
+                # There may now be more quality data, or another sequence, or EOF
+                while True:
+                        line = handle_readline()
+                        if not line:
+                                break  # end of file
+                        if line[0] == "@":
+                                # This COULD be the start of a new sequence. However, it MAY just
+                                # be a line of quality data which starts with a "@" character.  We
+                                # should be able to check this by looking at the sequence length
+                                # and the amount of quality data found so far.
+                                if len(quality_string) >= seq_len:
+                                        # We expect it to be equal if this is the start of a new record.
+                                        # If the quality data is longer, we'll raise an error below.
+                                        break
+                                # Continue - its just some (more) quality data.
+                        quality_string += line.rstrip()
+
+                if seq_len != len(quality_string):
+                        raise ValueError("Lengths of sequence and quality values differs "
+                                         " for %s (%i and %i)."
+                                         % (title_line, seq_len, len(quality_string)))
+
+                # Return the record and then continue...
+                yield (title_line, seq_string, quality_string)
+
+def fastq_format_extract(fastqRecord):
+        fqLines = fastqRecord.format('fastq').split('\n')
+        fqSeq = fqLines[1]
+        fqQual = fqLines[3]
+        return fqSeq, fqQual
+
+def file_name_gen(prefix, suffix):
+        ongoingCount = 2
+        while True:
+                if not os.path.isfile(prefix + '1' + suffix):
+                        return prefix + '1' + suffix
+                elif os.path.isfile(prefix + str(ongoingCount) + suffix):
+                        ongoingCount += 1
+                else:
+                        return prefix + str(ongoingCount) + suffix
+
+# Define quick FASTA/Q parser
+class FastxParser:
+    def __init__(self, file):
+        self.file = file
+        self.seqType = fasta_or_fastq(file)
+    
+    def __iter__(self):
+        if self.seqType == 'fasta':
+            with open(self.file, 'r') as fastaFile:
+                for title, seq in SimpleFastaParser(fastaFile):
+                    yield title, seq
+        elif self.seqType == 'fastq':
+            with open(self.file, 'r') as fastqFile:
+                for title, seq, qual in FastqGeneralIterator(fastqFile):
+                    yield title, seq, qual
+
 # Define functions
 ## Fasta ONLY functions
 def multi2single(fastaFile, outputFileName):
@@ -195,46 +322,36 @@ def count(fastaFile, outputFileName):
 def cullbelow(fastaFile, length, outputFileName):
         # Check for file type
         seqType = fasta_or_fastq(fastaFile)
-        # Load fast(a/q) file
-        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
         with open(outputFileName, 'w') as fastaOut:
-                for record in records:
-                        # Extract relevant details regardless of fasta or fastq
-                        if seqType == 'fasta':
-                                seq = str(record.seq)
-                                qual = ''
-                        else:
-                                seq, qual = fastq_format_extract(record)
-                        if len(seq) < int(length):
+                # Use performant parser
+                parser = FastxParser(fastaFile)
+                for seqTuple in parser:
+                        # Check length
+                        if len(seqTuple[1]) < int(length):
                                 continue
-                        # Output
-                        if seqType == 'fasta':
-                                fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
+                        # Output if length is met
+                        if parser.seqType == 'fasta':
+                                fastaOut.write('>' + seqTuple[0] + '\n' + seqTuple[1] + '\n')
                         else:
-                                fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
+                                fastaOut.write('@' + seqTuple[0] + '\n' + seqTuple[1] + '\n+\n' + seqTuple[2] + '\n')
 
 def cullabove(fastaFile, length, outputFileName):
         # Check for file type
         seqType = fasta_or_fastq(fastaFile)
-        # Load fast(a/q) file
-        records = SeqIO.parse(open(fastaFile, 'r'), seqType)
         # Perform function
         with open(outputFileName, 'w') as fastaOut:
-                for record in records:
-                        # Extract relevant details regardless of fasta or fastq
-                        if seqType == 'fasta':
-                                seq = str(record.seq)
-                                qual = ''
-                        else:
-                                seq, qual = fastq_format_extract(record)
-                        if len(seq) > int(length):
+                # Use performant parser
+                parser = FastxParser(fastaFile)
+                for seqTuple in parser:
+                        # Check length
+                        if len(seqTuple[1]) > int(length):
                                 continue
-                        # Output
-                        if seqType == 'fasta':
-                                fastaOut.write('>' + record.description + '\n' + seq + '\n')                  #fa
+                        # Output if length is met
+                        if parser.seqType == 'fasta':
+                                fastaOut.write('>' + seqTuple[0] + '\n' + seqTuple[1] + '\n')
                         else:
-                                fastaOut.write('@' + record.description + '\n' + seq + '\n+\n' + qual + '\n') #fq
+                                fastaOut.write('@' + seqTuple[0] + '\n' + seqTuple[1] + '\n+\n' + seqTuple[2] + '\n')
 
 def rename(fastaFile, stringInput, outputFileName, listFileName):
         # Check for file type
@@ -729,114 +846,6 @@ def echoindex(fastaFile, index):
         
         # If we didn't find the index, print an error message
         raise ValueError(f"Input file '{fastaFile}' does not contain {index} sequences.")
-
-# Define general purpose functions
-def fasta_or_fastq(fastaFile):
-        # Get the first letter
-        with open(fastaFile, 'r') as seqFile:
-                for line in seqFile:
-                        firstChar1 = line[0]
-                        break
-        # Check first letter to see if it conforms to fastq or fasta expected format
-        if firstChar1 == '@':
-                seqType = 'fastq'
-        elif firstChar1 == '>':
-                seqType = 'fasta'
-        else:
-                print('I don\'t recognise the input file! It should start with "@" (fastq) or ">" (fasta). Fix your inputs to continue.')
-                quit()
-        # Return value
-        return seqType
-
-def AltFastqGeneralIterator(handle):
-        '''
-        Note: I have taken this code from Biopython's functions
-        (https://github.com/biopython/biopython/blob/master/Bio/SeqIO/QualityIO.py)
-        and turned off the requirement for second_title to be just '+' or to be
-        identical to the title_line value. This can be "monkey patched" into
-        SeqIO by this call "SeqIO.QualityIO.FastqGeneralIterator = AltFastqGeneralIterator"
-        if SeqIO was originally imported by "from Bio import SeqIO"
-        '''
-        # We need to call handle.readline() at least four times per record,
-        # so we'll save a property look up each time:
-        handle_readline = handle.readline
-
-        line = handle_readline()
-        if not line:
-                return  # Premature end of file, or just empty?
-        if isinstance(line[0], int):
-                raise ValueError("Is this handle in binary mode not text mode?")
-
-        while line:
-                if line[0] != "@":
-                        raise ValueError(
-                                "Records in Fastq files should start with '@' character")
-                title_line = line[1:].rstrip()
-                # Will now be at least one line of quality data - in most FASTQ files
-                # just one line! We therefore use string concatenation (if needed)
-                # rather using than the "".join(...) trick just in case it is multiline:
-                seq_string = handle_readline().rstrip()
-                # There may now be more sequence lines, or the "+" quality marker line:
-                while True:
-                        line = handle_readline()
-                        if not line:
-                                raise ValueError("End of file without quality information.")
-                        if line[0] == "+":
-                                # The title here is optional, but if present must match!
-                                ## My change is below
-                                #second_title = line[1:].rstrip()
-                                #if second_title and second_title != title_line: 
-                                        #raise ValueError("Sequence and quality captions differ.")
-                                break
-                        seq_string += line.rstrip()  # removes trailing newlines
-                # This is going to slow things down a little, but assuming
-                # this isn't allowed we should try and catch it here:
-                if " " in seq_string or "\t" in seq_string:
-                        raise ValueError("Whitespace is not allowed in the sequence.")
-                seq_len = len(seq_string)
-
-                # Will now be at least one line of quality data...
-                quality_string = handle_readline().rstrip()
-                # There may now be more quality data, or another sequence, or EOF
-                while True:
-                        line = handle_readline()
-                        if not line:
-                                break  # end of file
-                        if line[0] == "@":
-                                # This COULD be the start of a new sequence. However, it MAY just
-                                # be a line of quality data which starts with a "@" character.  We
-                                # should be able to check this by looking at the sequence length
-                                # and the amount of quality data found so far.
-                                if len(quality_string) >= seq_len:
-                                        # We expect it to be equal if this is the start of a new record.
-                                        # If the quality data is longer, we'll raise an error below.
-                                        break
-                                # Continue - its just some (more) quality data.
-                        quality_string += line.rstrip()
-
-                if seq_len != len(quality_string):
-                        raise ValueError("Lengths of sequence and quality values differs "
-                                         " for %s (%i and %i)."
-                                         % (title_line, seq_len, len(quality_string)))
-
-                # Return the record and then continue...
-                yield (title_line, seq_string, quality_string)
-
-def fastq_format_extract(fastqRecord):
-        fqLines = fastqRecord.format('fastq').split('\n')
-        fqSeq = fqLines[1]
-        fqQual = fqLines[3]
-        return fqSeq, fqQual
-
-def file_name_gen(prefix, suffix):
-        ongoingCount = 2
-        while True:
-                if not os.path.isfile(prefix + '1' + suffix):
-                        return prefix + '1' + suffix
-                elif os.path.isfile(prefix + str(ongoingCount) + suffix):
-                        ongoingCount += 1
-                else:
-                        return prefix + str(ongoingCount) + suffix
 
 # Define functions for output
 def output_list(outList, outputFileName):
