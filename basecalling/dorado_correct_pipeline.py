@@ -378,8 +378,8 @@ def main():
     gpuScriptName = os.path.join(args.outputDirectory, "run_dorado_correct_step2.sh")
     make_gpu_script(Container({
             "workingDir": args.outputDirectory,
-            "outputDir": step1Dir,
-            "pafDir": os.path.dirname(args.step1Dir),
+            "outputDir": step2Dir,
+            "pafDir": step1Dir,
             "fastqFile": os.path.basename(args.fastqFile),
             "numBlocks": args.numBlocks,
             "dorado": args.dorado,
