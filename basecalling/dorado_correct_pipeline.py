@@ -122,7 +122,7 @@ def make_cpu_script(argsContainer, PREFIX="", WALLTIME="72:00:00", CPU=10, MEM="
 #PBS -l walltime={WALLTIME}
 #PBS -l mem={MEM}
 #PBS -l ncpus={CPU}
-#PBS -J 1-{numBlocks}
+{PBSJ}
 
 cd {workingDir}
 
@@ -164,7 +164,7 @@ ${{DORADOEXE}} correct --device cpu \\
     WALLTIME=WALLTIME,
     CPU=CPU,
     MEM=MEM,
-    numBlocks=argsContainer.numBlocks,
+    PBSJ=f"#PBS -J 1-{argsContainer.numBlocks}" if argsContainer.numBlocks > 1 else "PBS_ARRAY_INDEX=1",
     workingDir=argsContainer.workingDir,
     FQDIR=argsContainer.fastqDir,
     FQFILE=argsContainer.fastqFile,
@@ -206,10 +206,10 @@ def make_gpu_script(argsContainer, PREFIX="", WALLTIME="72:00:00", CPU=10, MEM="
 #PBS -l walltime={WALLTIME}
 #PBS -l mem={MEM}
 #PBS -l ncpus={CPU}
-#PBS -J 1-{numBlocks}
 #PBS -l ngpus=1
 #PBS -l gputype=A100
 #PBS -W depend=afterok:{PREVJOB}
+{PBSJ}
 
 cd {workingDir}
 
@@ -262,7 +262,7 @@ ${{DORADOEXE}} correct --device cuda:all \\
     CPU=CPU,
     MEM=MEM,
     PREVJOB=argsContainer.step1JobID,
-    numBlocks=argsContainer.numBlocks,
+    PBSJ=f"#PBS -J 1-{argsContainer.numBlocks}" if argsContainer.numBlocks > 1 else "PBS_ARRAY_INDEX=1",
     workingDir=argsContainer.workingDir,
     PAFDIR=argsContainer.pafDir,
     FQFILE=argsContainer.fastqFile,
