@@ -335,8 +335,8 @@ def main():
     p.add_argument("--memCPU", dest="memCPU",
                    required=False,
                    help="""Optionally, specify how much memory you want the CPU-bound
-                   job to have on the HPC cluster; default == '250G'""",
-                   default="250G")
+                   job to have on the HPC cluster; default == '150G'""",
+                   default="150G")
     p.add_argument("--memGPU", dest="memGPU",
                    required=False,
                    help="""Optionally, specify how much memory you want the GPU-bound
@@ -388,9 +388,9 @@ def main():
             "step1JobID": cpuJobID
         }),
         PREFIX=args.jobPrefix,
-        WALLTIME=args.walltimeCPU,
-        CPU=args.cpuCPU,
-        MEM=args.memCPU
+        WALLTIME=args.walltimeGPU,
+        CPU=args.cpuGPU,
+        MEM=args.memGPU
     )
     gpuJobID = qsub(gpuScriptName)
     
