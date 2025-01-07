@@ -290,7 +290,7 @@ class GMAP:
         # Create index otherwise
         self.db.index()
     
-    def gmap(self, outFile):
+    def gmap(self, outFile, force=False):
         '''
         Performs the GMAP search operation.
         
@@ -298,16 +298,15 @@ class GMAP:
         FastASeq object types, rather than a string which we require here.
         
         Parameters:
-            queryFasta -- a string indicating the location of a FASTA file to use as query.
-            dbFastaFile -- a string indicating the location of a FASTA file to use as the database.
             outFile -- a string indicating the location to write the output file to. File must not already exist!
+            force -- a boolean indicating whether to overwrite the output file if it already exists.
         '''
         # Skip if index does not exist
         if not self.db.index_exists():
             raise FileNotFoundError("GMAP index does not exist! Cannot perform search.")
         
         # Error if output file already exists
-        if os.path.isfile(outFile):
+        if os.path.isfile(outFile) and force == False:
             raise FileExistsError(f"GMAP output file '{outFile}' already exists! Will not overwrite.")
         
         # Convert to WSL paths where needed
