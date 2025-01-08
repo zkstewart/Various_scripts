@@ -395,10 +395,12 @@ class MM_DB:
         mmseqsDir (REQUIRED) -- a string pointing to the location where the mmseqs executable
                                 is found.
         tmpDir (REQUIRED) -- a string location for where MMSeqs2 should keep temp files.
+        molecule (REQUIRED) -- a string indicating the type of molecule the database is for;
+                               acceptable values are 'protein' or 'nucleotide'.
         threads (OPTIONAL) -- a positive integer for how many threads to use when indexing
                               a database file.
     '''
-    def __init__(self, fasta, mmseqsDir, tmpDir, threads=1):
+    def __init__(self, fasta, mmseqsDir, tmpDir, molecule, threads=1):
         self.fasta = fasta
         self.mmseqsDir = mmseqsDir
         self.tmpDir = tmpDir
@@ -480,6 +482,18 @@ class MM_DB:
         
         self._threads = value
     
+    @property
+    def molecule(self):
+        return self._molecule
+    
+    @molecule.setter
+    def molecule(self, value):
+        assert isinstance(value, str)
+        assert value in ["protein", "nucleotide"], \
+            "molecule must be either 'protein' or 'nucleotide'"
+        
+        self._molecule = value
+    
     def clean_all(self):
         '''
         Function to invoke after using a MMSeqs2 database which is no longer
@@ -551,6 +565,10 @@ class MM_DB:
         # Format command
         cmd = base_subprocess_cmd(self.mmseqsExe)
         cmd += ["createindex", dbname, tmpDir, "--threads", str(self.threads)]
+        if self.molecule == "protein":
+            cmd += ["--search-type", "1"]
+        else:
+            cmd += ["--search-type", "3"]
         
         # Run query index
         logString = "# DB indexing with: " + " ".join(cmd)
@@ -754,6 +772,12 @@ class MMseqs:
         target = os.path.abspath(f"{self.target.fasta}_seqDB")
         tmpDir = self.tmpDir
         
+        # Derive our search type
+        if self.query.molecule == "nucleotide" and self.target.molecule == "nucleotide":
+            searchType = 3 # mmseqs needs explicit search type for nucleotide>nucleotide searches
+        else:
+            searchType = 0
+        
         # Convert to WSL paths where needed
         origOutFile = outFile
         if platform.system() == "Windows":
@@ -777,7 +801,7 @@ class MMseqs:
         cmd += [
             "search", queryDB, targetDB, searchOutFile, tmpDir, "--threads", str(self.threads),
             "-e", str(self.evalue), "--num-iterations", str(self.iterations), 
-            "-s", str(self.sensitivity), "--alt-ali", str(self.alt_ali)
+            "-s", str(self.sensitivity), "--alt-ali", str(self.alt_ali), "--search-type", str(searchType)
         ]
         
         # Run MMseqs search
