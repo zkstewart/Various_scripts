@@ -762,6 +762,11 @@ class MMseqs:
             searchOutFile = convert_windows_to_wsl_path(outFile + "_tmp")
             tableOutFile = convert_windows_to_wsl_path(outFile)
             tmpDir = convert_windows_to_wsl_path(tmpDir)
+        else:
+            queryDB = query
+            targetDB = target
+            searchOutFile = outFile + "_tmp"
+            tableOutFile = outFile
         
         # Raise exception if output file already exists
         if os.path.exists(outFile) and force == False:
