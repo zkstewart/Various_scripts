@@ -404,6 +404,7 @@ class MM_DB:
         self.fasta = fasta
         self.mmseqsDir = mmseqsDir
         self.tmpDir = tmpDir
+        self.molecule = molecule
         self.threads = threads
         
         self.isMM_DB = True # flag to check object type
