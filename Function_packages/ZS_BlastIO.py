@@ -736,9 +736,14 @@ class MMseqs:
         
         self.isSetup = True
     
-    def mmseqs(self, outFile):
+    def mmseqs(self, outFile, force=False):
         '''
         Performs the MMseqs2 search operation.
+        
+        Parameters:
+            outFile -- a string indicating the location to write the output file to.
+            force -- a Boolean indicating whether to force the search to run even if the output file
+                     already exists. Defaults to False.
         '''
         
         if not self.isSetup:
@@ -759,7 +764,7 @@ class MMseqs:
             tmpDir = convert_windows_to_wsl_path(tmpDir)
         
         # Raise exception if output file already exists
-        if os.path.exists(outFile):
+        if os.path.exists(outFile) and force == False:
             raise FileExistsError(f"Output file '{outFile}' already exists!")
         
         # Format search command
