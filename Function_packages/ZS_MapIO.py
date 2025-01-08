@@ -434,7 +434,7 @@ class Salmon_DB:
         
         # Format command
         cmd = base_subprocess_cmd(self.salmonExe)
-        cmd += ["--threads", str(self.threads), "--transcripts", fasta,
+        cmd += ["index", "--threads", str(self.threads), "--transcripts", fasta,
                 "--index", f"{fasta}.salmonDB"]
         
         # Run indexing
