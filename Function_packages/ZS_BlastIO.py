@@ -353,8 +353,6 @@ class BLAST_Results:
         # Sort individual entries in blastDict
         for value in blastDict.values():
             value.sort(key = lambda x: (x[6], -x[7])) # sort by evalue (lower) and bitscore (higher)
-            for v in value:
-                del v[7] # drop the bitscore since we don't need it after sorting
         
         # Enforce num_hits threshold
         if self.num_hits != -1:
