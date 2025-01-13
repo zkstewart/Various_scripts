@@ -1144,17 +1144,14 @@ class ORF_Find:
                     # Enter the main processing loop with our resolved regions
                     for i in range(len(splitProtein)):                              # Note that I have done a 'for i in range...' loop rather than a 'for value in splitProtein' loop which would have been simpler for a reason explained below on the 'elif i + 1 ==' line
                         # Declare blank values needed for each potential ORF region so we can tell which things were 'found'
-                        mPro = ''
-                        altPro = ''
-                        nonePro = ''
-                        topHit = ''
+                        mPro = None
+                        altPro = None
+                        nonePro = None
                         codonIndex = None
                         noneCodonContingency = None
                         
                         # Process sequences to determine whether we're ignoring this, or adding an asterisk for length counts
-                        if len(splitProtein[i]) < self.minProLen:            # Disregard sequences that won't meet the size requirement without further processing
-                            continue
-                        elif self.maxProLen != 0 and len(splitProtein[i]) > self.maxProLen:
+                        if len(splitProtein[i]) < self.minProLen:            # Disregard sequences that won't meet the size requirement
                             continue
                         acceptedPro = str(splitProtein[i])
                         
@@ -1181,17 +1178,20 @@ class ORF_Find:
                         nonePro = acceptedPro
                         
                         # Store if sequence lengths are within the desired range
-                        if (len(mPro) >= self.minProLen) and (self.maxProLen == 0 or len(mPro) <= self.maxProLen):
-                            tempMProt.append(topHit)
-                            newStartPosition = acceptedPro.find(mPro)
-                            tempMNucl.append(str(nucSeqOfProt[newStartPosition*3:]))
-                        if (len(altPro) >= self.minProLen) and (self.maxProLen == 0 or len(altPro) <= self.maxProLen):
-                            tempAltProt.append(altPro)
-                            newStartPosition = acceptedPro.find(altPro[1:]) - 1
-                            tempAltNucl.append(str(nucSeqOfProt[newStartPosition*3:]))
-                        if (len(nonePro) >= self.minProLen) and (self.maxProLen == 0 or len(nonePro) <= self.maxProLen):
-                            tempNoneProt.append(nonePro)
-                            tempNoneNucl.append(str(nucSeqOfProt))
+                        if mPro != None:
+                            if (len(mPro) >= self.minProLen) and (self.maxProLen == 0 or len(mPro) <= self.maxProLen):
+                                tempMProt.append(mPro)
+                                newStartPosition = acceptedPro.find(mPro)
+                                tempMNucl.append(str(nucSeqOfProt[newStartPosition*3:]))
+                        if altPro != None:
+                            if (len(altPro) >= self.minProLen) and (self.maxProLen == 0 or len(altPro) <= self.maxProLen):
+                                tempAltProt.append(altPro)
+                                newStartPosition = acceptedPro.find(altPro[1:]) - 1
+                                tempAltNucl.append(str(nucSeqOfProt[newStartPosition*3:]))
+                        if nonePro != None:
+                            if (len(nonePro) >= self.minProLen) and (self.maxProLen == 0 or len(nonePro) <= self.maxProLen):
+                                tempNoneProt.append(nonePro)
+                                tempNoneNucl.append(str(nucSeqOfProt))
             
             # Sort our top hits from each inter-stop codon fragment by size and category (i.e. mPro or altPro?) and select the top X hits
             if len(tempMProt + tempAltProt + tempNoneProt) >= 1:
@@ -1256,6 +1256,8 @@ class ORF_Find:
                 
                 # Yield results
                 for i in range(0, self.hitsToPull):
+                    if len(tempOverallProt) <= i:
+                        break
                     if tempOverallProt[i] != "-":
                         yield record.id, tempOverallProt[i], tempOverallNucl[i]
 
