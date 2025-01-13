@@ -1079,8 +1079,6 @@ class ORF_Find:
         # Iterate over transcript records
         for record in records:
             # Declare output holding values that should reset for each transcript/record
-            tempOverallProt = []
-            tempOverallNucl = []
             tempMProt = []
             tempMNucl = []
             tempAltProt = []
@@ -1170,7 +1168,7 @@ class ORF_Find:
                             elif codon == 'CTG':
                                 if noneCodonContingency == None:    # noneCodonContingency is set to None at the end of each loop. Thus, this line of code will 'capture' the position of the first CTG in a sequence if a GTG or TTG was not encountered first
                                     noneCodonContingency = codons.index(codon)
-
+                        
                         # Get the three ORF versions from each region inbetween stop codons
                         if 'M' in str(acceptedPro):                 # Obtains a traditional methionine initiated ORF starting from the first methionine if there is one in the sequence
                             mPro = self.startCodon.search(str(acceptedPro)).groups()[0]  # Note that startCodon was declared at the start of this file     
@@ -1180,38 +1178,25 @@ class ORF_Find:
                         elif noneCodonContingency != None:              # This will match an alternative start to 'CTG' only if 'TTG' or 'GTG' are not present
                             altPro = acceptedPro[codonIndex:]
                         
-                        if i == 0:                          # nonePro makes an assumption that the start of the ORF was not assembled properly resulting in the real start codon being cut off. Our stringency values will assess the likelihood of this hypothesis.
-                            nonePro = acceptedPro               # Additionally, by only obtaining a 'nonePro' when it is in a protein fragment at the start of a frame (i.e., splitProtein[0]), we also make the (reasonable) assumption that any ORF inbetween two stop codons should itself have a start codon. This doesn't always hold true due to transcript assembly errors, but it must be assumed for the purpose of this script.              
-
-                        # Pull out the top hit from this protein fragment based upon how strict we want to be with accepting a traditional, alternative, or no codon start                
-                        if len(nonePro) > len(altPro) + self.noCodonStringency and len(nonePro) > len(mPro) + self.noCodonStringency:         # By adding on the stringency values declared earlier to the length of the protein, we can determine whether we want to consider an ORF without a start codon as legitimate
-                            topHit = nonePro
-                        elif len(altPro) > len(mPro) + self.altCodonStringency:                                  # Adding the stringency values here allows us to determine whether we can increase ORF length significantly by assuming an alternative start rather than a methionine start
-                            topHit = altPro
-                        else:
-                            topHit = mPro                                               # This is the default position unless either an alternative start or a no codon start outweighs the stringency values
-
-                        # Cull the top hit if it doesn't meet our minimum length requirement anymore, or add it to the temporary list of ORF hits from this nucleotide sequence
-                        if len(topHit) < self.minProLen:                         # Culling is necessary since we will have shortened the sequence somewhat unless we accepted the topHit as being a no codon start ORF. Note that we will here consider a stop codon in the length of the protein, such that a protein with 99AAs and a stop will pass a minimum 100AA length test. I think this is fair since not all regions here have a stop codon which allows weight to be added to these cases, especially since a stop codon is still conserved as part of an ORF.
-                            doNothing = ''
-                        elif self.maxProLen!= 0 and len(topHit) > self.maxProLen:             # Culling should not be necessary here in almost all scenarios, but who knows?
-                            doNothing = ''
-                        elif topHit == mPro:                            # These temp lists will be populated with potential ORFs from a single nucleotide sequence before being processed in the next major chunk of code starting with 'if len(tempMList + tempAltList + tempNoneList) >= 1:'
+                        nonePro = acceptedPro
+                        
+                        # Store if sequence lengths are within the desired range
+                        if (len(mPro) >= self.minProLen) and (self.maxProLen == 0 or len(mPro) <= self.maxProLen):
                             tempMProt.append(topHit)
                             newStartPosition = acceptedPro.find(mPro)
                             tempMNucl.append(str(nucSeqOfProt[newStartPosition*3:]))
-                        elif topHit == altPro:
-                            tempAltProt.append(topHit)
+                        if (len(altPro) >= self.minProLen) and (self.maxProLen == 0 or len(altPro) <= self.maxProLen):
+                            tempAltProt.append(altPro)
                             newStartPosition = acceptedPro.find(altPro[1:]) - 1
                             tempAltNucl.append(str(nucSeqOfProt[newStartPosition*3:]))
-                        elif topHit == nonePro:
-                            tempNoneProt.append(topHit)
+                        if (len(nonePro) >= self.minProLen) and (self.maxProLen == 0 or len(nonePro) <= self.maxProLen):
+                            tempNoneProt.append(nonePro)
                             tempNoneNucl.append(str(nucSeqOfProt))
             
             # Sort our top hits from each inter-stop codon fragment by size and category (i.e. mPro or altPro?) and select the top X hits
-            if len(tempMProt + tempAltProt + tempNoneProt) >= 1 or len(tempMNucl + tempAltNucl + tempNoneNucl) >= 1:
+            if len(tempMProt + tempAltProt + tempNoneProt) >= 1:
                 # Append '-' entries to lists which have less entries than we want to pull to allow the below 'for' loops to run without exceptions
-                ## Prot list     [If we are only looking at nucleotides, then prot lists will be populated with hyphens which, realistically, won't impact memory consumption
+                ## Prot list
                 for i in range(0, self.hitsToPull-len(tempMProt)):
                     tempMProt.append('-')
                 for i in range(0, self.hitsToPull-len(tempAltProt)):
@@ -1226,7 +1211,7 @@ class ORF_Find:
                 for i in range(0, self.hitsToPull-len(tempNoneNucl)):
                     tempNoneNucl.append('-')
                 
-                # Sort the lists by size (largest on the bottom to allow the .pop() method to remove a hit when accepted) [as above, the prot or nucl variants might just be lists of hyphens. Running the sort twice shouldn't realistically impact time in that case.
+                # Sort the lists by size (largest on the bottom to allow the .pop() method to remove a hit when accepted)
                 ## Prot
                 tempSortedMProt = sorted(tempMProt, key=len)
                 tempSortedAltProt = sorted(tempAltProt, key=len)
@@ -1236,32 +1221,43 @@ class ORF_Find:
                 tempSortedAltNucl = sorted(tempAltNucl, key=len)
                 tempSortedNoneNucl = sorted(tempNoneNucl, key=len)
                 
-                # Run a final size comparison to choose the best ORF(s). We need to split this into two separate statements since the stringency values need to be *3 for nucls
+                # Run a final size comparison to choose the best ORF(s).
+                tempOverallProt = []
+                tempOverallNucl = []
                 for i in range(0, self.hitsToPull):
-                    ## Prot
+                    # Accept a none protein if it's longer+cutoff than the alternatives
                     if len(tempSortedNoneProt[-1]) > len(tempSortedAltProt[-1]) + self.noCodonStringency and len(tempSortedNoneProt[-1]) > len(tempSortedMProt[-1]) + self.noCodonStringency:     # Again, we add the stringency values to help with determining priority of ORF ordering. Since this script will often be returning either 1, 3, or 5 potential ORFs, it is important that we order these in the most logical way
                         tempOverallProt.append(tempSortedNoneProt[-1])
                         tempSortedNoneProt.pop()
+                        
+                        tempOverallNucl.append(tempSortedNoneNucl[-1])
+                        tempSortedNoneNucl.pop()
+                    # Accept an alt protein if it's longer+cutoff than the methionine protein
                     elif len(tempSortedAltProt[-1]) > len(tempSortedMProt[-1]) + self.altCodonStringency:
                         tempOverallProt.append(tempSortedAltProt[-1])
                         tempSortedAltProt.pop()
-                    else:
-                        tempOverallProt.append(tempSortedMProt[-1])                                                             # By using this as the 'else' position, sequences with methionine starts will be selected in the majority of situations as the default stringency settings ensure that it is rare an alternative start is used instead of a methionine start
-                        tempSortedMProt.pop()
-                    ## Nucl
-                    if len(tempSortedNoneNucl[-1]) > len(tempSortedAltNucl[-1]) + self.noCodonStringency*3 and len(tempSortedNoneNucl[-1]) > len(tempSortedMNucl[-1]) + self.noCodonStringency*3:     # Again, we add the stringency values to help with determining priority of ORF ordering. Since this script will often be returning either 1, 3, or 5 potential ORFs, it is important that we order these in the most logical way
-                        tempOverallNucl.append(tempSortedNoneNucl[-1])
-                        tempSortedNoneNucl.pop()
-                    elif len(tempSortedAltNucl[-1]) > len(tempSortedMNucl[-1]) + self.altCodonStringency*3:
+                        
                         tempOverallNucl.append(tempSortedAltNucl[-1])
                         tempSortedAltNucl.pop()
-                    else:
+                    # Accept an M protein if it isn't a blank
+                    elif tempSortedMProt[-1] != "-":
+                        tempOverallProt.append(tempSortedMProt[-1])                                                             # By using this as the 'else' position, sequences with methionine starts will be selected in the majority of situations as the default stringency settings ensure that it is rare an alternative start is used instead of a methionine start
+                        tempSortedMProt.pop()
+                        
                         tempOverallNucl.append(tempSortedMNucl[-1])                                                             # By using this as the 'else' position, sequences with methionine starts will be selected in the majority of situations as the default stringency settings ensure that it is rare an alternative start is used instead of a methionine start
                         tempSortedMNucl.pop()
+                    # Default to a none protein if nothing else is available and it isn't blank
+                    elif tempSortedNoneProt[-1] != "-":
+                        tempOverallProt.append(tempSortedNoneProt[-1])
+                        tempSortedNoneProt.pop()
+                        
+                        tempOverallNucl.append(tempSortedNoneNucl[-1])
+                        tempSortedNoneNucl.pop()
                 
                 # Yield results
                 for i in range(0, self.hitsToPull):
-                    yield record.id, tempOverallProt[i], tempOverallNucl[i]
+                    if tempOverallProt[i] != "-":
+                        yield record.id, tempOverallProt[i], tempOverallNucl[i]
 
 if __name__ == "__main__":
     pass
