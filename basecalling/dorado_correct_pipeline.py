@@ -228,7 +228,8 @@ export CUDA_VISIBLE_DEVICES=$ID
 DORADOEXE={DORADOEXE}
 DORADOLIB={DORADOLIB}
 
-# Specify the FASTQ file for correction (basename only)
+# Specify FASTQ file for correction
+FQDIR={FQDIR}
 FQFILE={FQFILE}
 
 # Specify the location of step 1 PAF files
@@ -251,10 +252,9 @@ export LD_LIBRARY_PATH=${{DORADOLIB}}:$LD_LIBRARY_PATH
 
 # STEP 1: Run dorado's GPU-bound step for this block
 mkdir -p ${{OUTDIR}}
-${{DORADOEXE}} correct --device cuda:all \\
-    --threads ${{CPUS}} \\
-    --from-paf \\
-    ${{PAFDIR}}/${{FQFILE}}.block_${{INDEX}}.paf > ${{FQFILE}}.block_${{INDEX}}.fasta
+${{DORADOEXE}} correct ${{PAFDIR}}/${{FQFILE}}
+    --device cuda:all --threads ${{CPUS}} \\
+    --from-paf ${{PAFDIR}}/${{FQFILE}}.block_${{INDEX}}.paf > ${{OUTDIR}}/${{FQFILE}}.block_${{INDEX}}.fasta
 
 """.format(
     PREFIX=PREFIX,
@@ -265,6 +265,7 @@ ${{DORADOEXE}} correct --device cuda:all \\
     PBSJ=f"#PBS -J 1-{argsContainer.numBlocks}" if argsContainer.numBlocks > 1 else "PBS_ARRAY_INDEX=1",
     workingDir=argsContainer.workingDir,
     PAFDIR=argsContainer.pafDir,
+    FQDIR=argsContainer.fastqDir,
     FQFILE=argsContainer.fastqFile,
     OUTDIR=argsContainer.outputDir,
     DORADOEXE=argsContainer.dorado,
@@ -380,6 +381,7 @@ def main():
             "workingDir": args.outputDirectory,
             "outputDir": step2Dir,
             "pafDir": step1Dir,
+            "fastqDir": os.path.dirname(args.fastqFile),
             "fastqFile": os.path.basename(args.fastqFile),
             "numBlocks": args.numBlocks,
             "dorado": args.dorado,
