@@ -116,6 +116,10 @@ def main():
     p.add_argument("-i", dest="fastaFile",
                    required=True,
                    help="Input FASTA file for clustering")
+    p.add_argument("-m", dest="molecule",
+                   required=True,
+                   choices=["protein", "nucleotide"],
+                   help="Specify which molecule type is contained in your FASTA file")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name for clustering results")
@@ -173,10 +177,6 @@ def main():
     p.add_argument("--cdhit", dest="cdhitDir",
                    required=False,
                    help="CD: Specify the directory containing the CD-HIT executables")
-    p.add_argument("--molecule", dest="molecule",
-                   required=False,
-                   choices=["protein", "nucleotide"],
-                   help="CD: Specify the molecule type contained in your FASTA file")
     p.add_argument("--mem", dest="mem",
                    required=False,
                    type=int,
@@ -222,7 +222,8 @@ def main_mmseqs(args, logName):
     Functionally part of the main namespace. Handles the running of MMseqs2 clustering
     with linclust or cascaded clustering.
     '''
-    mmDB = ZS_BlastIO.MM_DB(args.fastaFile, args.mmseqsDir, args.tmpDir, args.threads)
+    mmDB = ZS_BlastIO.MM_DB(args.fastaFile, args.mmseqsDir, args.tmpDir,
+                            args.molecule, args.threads)
     
     # Generate the sequence database
     logText = mmDB.generate()
