@@ -314,35 +314,35 @@ def main():
     p.add_argument("--walltimeCPU", dest="walltimeCPU",
                    required=False,
                    help="""Optionally, specify how much walltime you want the CPU-bound
-                   job to have on the HPC cluster; default == '72:00:00'""",
-                   default="72:00:00")
+                   job to have on the HPC cluster; default == '48:00:00'""",
+                   default="48:00:00")
     p.add_argument("--walltimeGPU", dest="walltimeGPU",
                    required=False,
                    help="""Optionally, specify how much walltime you want the GPU-bound
-                   job to have on the HPC cluster; default == '72:00:00'""",
-                   default="72:00:00")
+                   job to have on the HPC cluster; default == '16:00:00'""",
+                   default="16:00:00")
     p.add_argument("--cpuCPU", dest="cpuCPU",
                    required=False,
                    type=int,
                    help="""Optionally, specify how many cores you want each CPU-bound
-                   subjob to have on the HPC cluster; default == '10'""",
+                   subjob to have on the HPC cluster; default == 10""",
                    default=10)
     p.add_argument("--cpuGPU", dest="cpuGPU",
                    required=False,
                    type=int,
                    help="""Optionally, specify how many cores you want the GPU-bound
-                   job to have on the HPC cluster; default == '10'""",
-                   default=10)
+                   job to have on the HPC cluster; default == 4""",
+                   default=4)
     p.add_argument("--memCPU", dest="memCPU",
                    required=False,
                    help="""Optionally, specify how much memory you want the CPU-bound
-                   job to have on the HPC cluster; default == '150G'""",
-                   default="150G")
+                   job to have on the HPC cluster; default == '450G'""",
+                   default="450G")
     p.add_argument("--memGPU", dest="memGPU",
                    required=False,
                    help="""Optionally, specify how much memory you want the GPU-bound
-                   job to have on the HPC cluster; default == '40G'""",
-                   default="40G")
+                   job to have on the HPC cluster; default == '60G'""",
+                   default="60G")
     p.add_argument("--jobPrefix", dest="jobPrefix",
                    required=False,
                    help="""Optionally, specify a prefix to append to each job;
