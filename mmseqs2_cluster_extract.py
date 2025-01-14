@@ -49,6 +49,13 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output FASTA file name for representative sequences")
+    # Optional
+    p.add_argument("--prefix", dest="seqPrefix",
+                   required=False,
+                   help="""Optionally, if your sequence IDs have a prefix that involves a pipe (|)
+                   which MMseqs2 has removed, you can specify it here to allow for ID indexing
+                   to work correctly.""",
+                   default="")
     args = p.parse_args()
     validate_args(args)
     
@@ -61,7 +68,10 @@ def main():
     # Produce output
     with open(args.outputFileName, "w") as fileOut:
         for repID in repIDs:
-            fileOut.write(records[repID].format("fasta"))
+            try:
+                fileOut.write(records[repID].format("fasta"))
+            except KeyError:
+                fileOut.write(records[args.seqPrefix + repID].format("fasta"))
     
     # Done!
     print('Program completed successfully!')
