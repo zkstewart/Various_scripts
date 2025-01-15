@@ -205,7 +205,7 @@ class Feature:
         
         # Let GFF3 object handle the change
         if GFF3_obj != None:
-            if self.ID in GFF3_obj:
+            if self in GFF3_obj:
                 GFF3_obj.update_id(self, newID)
             else:
                 raise ValueError(f"Feature '{self.ID}' not found in GFF3 object")
