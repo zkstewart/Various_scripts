@@ -41,9 +41,9 @@ def write_orthofinder_representatives(tsvFile, recordsList, outputFileName, seqP
                 if column != "":
                     for seqID in column.split(", "):
                         try:
-                            seq = records[i][seqID]
+                            seq = recordsList[i][seqID]
                         except KeyError:
-                            seq = records[i][seqPrefix + seqID]
+                            seq = recordsList[i][seqPrefix + seqID]
                         if len(seq) > len(longestSeq):
                             longestSeq = seq
             
@@ -68,9 +68,9 @@ def write_sonicparanoid_representatives(tsvFile, recordsList, outputFileName, se
                 if column != "":
                     for seqID in column.split(","):
                         try:
-                            seq = records[i][seqID]
+                            seq = recordsList[i][seqID]
                         except KeyError:
-                            seq = records[i][seqPrefix + seqID]
+                            seq = recordsList[i][seqPrefix + seqID]
                         if len(seq) > len(longestSeq):
                             longestSeq = seq
             
