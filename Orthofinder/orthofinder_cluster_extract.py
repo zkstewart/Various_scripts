@@ -80,11 +80,11 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
-    # Parse cluster file
-    repIDs = parse_orthofinder_representatives(args.tsvFile)
-    
     # Load in FASTA file
     records = SeqIO.to_dict(SeqIO.parse(args.fastaFile, "fasta"))
+    
+    # Parse cluster file
+    repIDs = parse_orthofinder_representatives(args.tsvFile, records)
     
     # Produce output
     with open(args.outputFileName, "w") as fileOut:
