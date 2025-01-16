@@ -23,7 +23,34 @@ def validate_args(args):
         print('Specify a different name or move/delete/rename the existing file and try again.')
         quit()
 
-def parse_orthofinder_representatives(tsvFile, recordsList, outputFileName, seqPrefix=""):
+def write_orthofinder_representatives(tsvFile, recordsList, outputFileName, seqPrefix=""):
+    repIDs = []
+    with open(tsvFile, "r") as fileIn, open(outputFileName, "w") as fileOut:
+        firstLine = True
+        for line in fileIn:
+            if firstLine:
+                firstLine = False
+                continue
+            
+            sl = line.rstrip("\r\n ").split("\t")
+                        
+            # Get longest sequence
+            longestSeq = ""
+            for i, column in enumerate(sl[1:]):
+                if column != "":
+                    for seqID in column.split(", "):
+                        try:
+                            seq = records[i][seqID]
+                        except KeyError:
+                            seq = records[i][seqPrefix + seqID]
+                        if len(seq) > len(longestSeq):
+                            longestSeq = seq
+            
+            # Write to file
+            fileOut.write(longestSeq.format("fasta"))
+    return set(repIDs)
+
+def write_sonicparanoid_representatives(tsvFile, recordsList, outputFileName, seqPrefix=""):
     repIDs = []
     with open(tsvFile, "r") as fileIn, open(outputFileName, "w") as fileOut:
         firstLine = True
@@ -34,17 +61,15 @@ def parse_orthofinder_representatives(tsvFile, recordsList, outputFileName, seqP
             
             sl = line.rstrip("\r\n ").split("\t")
             
-            seqIDs = [ x for column in sl[1:] for x in column.split(", ") if x != "" ]
-            
             # Get longest sequence
             longestSeq = ""
-            for i, column in enumerate(sl[1:]):
+            for i, column in enumerate(sl[4:]):
                 if column != "":
-                    for seqID in column.split(", "):
+                    for seqID in column.split(","):
                         try:
-                            seq = records[seqID]
+                            seq = records[i][seqID]
                         except KeyError:
-                            seq = records[seqPrefix + seqID]
+                            seq = records[i][seqPrefix + seqID]
                         if len(seq) > len(longestSeq):
                             longestSeq = seq
             
@@ -78,6 +103,13 @@ def main():
                    which OrthoFinder has removed, you can specify it here to allow for ID indexing
                    to work correctly.""",
                    default="")
+    p.add_argument("--sonic", dest="isSonicParanoid",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, specify this flag if you are using this script to parse a
+                   SonicParanoid2 output file.""",
+                   default=False)
+    
     args = p.parse_args()
     validate_args(args)
     
@@ -85,7 +117,10 @@ def main():
     recordsList = [ SeqIO.to_dict(SeqIO.parse(f, "fasta") for f in args.fastaFiles) ]
     
     # Parse cluster file and produce output
-    write_orthofinder_representatives(args.tsvFile, recordsList, args.outputFileName, args.seqPrefix)
+    if args.isSonicParanoid:
+        write_sonicparanoid_representatives(args.tsvFile, recordsList, args.outputFileName, args.seqPrefix)
+    else:
+        write_orthofinder_representatives(args.tsvFile, recordsList, args.outputFileName, args.seqPrefix)
     
     # Done!
     print('Program completed successfully!')
