@@ -115,7 +115,7 @@ def main():
     validate_args(args)
     
     # Load in FASTA file
-    recordsList = [ SeqIO.to_dict(SeqIO.parse(f, "fasta") for f in args.fastaFiles) ]
+    recordsList = [ SeqIO.to_dict(SeqIO.parse(f, "fasta")) for f in args.fastaFiles ]
     
     # Parse cluster file and produce output
     if args.isSonicParanoid:
