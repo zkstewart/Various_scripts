@@ -34,13 +34,13 @@ def parse_orthofinder_representatives(tsvFile, recordsList, outputFileName, seqP
             
             sl = line.rstrip("\r\n ").split("\t")
             
-            seqIDs = [ x for column in sl[1:] for x in column.split(",") if x != "" ]
+            seqIDs = [ x for column in sl[1:] for x in column.split(", ") if x != "" ]
             
             # Get longest sequence
             longestSeq = ""
             for i, column in enumerate(sl[1:]):
                 if column != "":
-                    for seqID in column.split(","):
+                    for seqID in column.split(", "):
                         try:
                             seq = records[seqID]
                         except KeyError:
