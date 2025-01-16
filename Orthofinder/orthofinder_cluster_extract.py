@@ -65,7 +65,7 @@ def write_sonicparanoid_representatives(tsvFile, recordsList, outputFileName, se
             # Get longest sequence
             longestSeq = ""
             for i, column in enumerate(sl[4:]):
-                if column != "":
+                if column != "*":
                     for seqID in column.split(","):
                         try:
                             seq = recordsList[i][seqID]
