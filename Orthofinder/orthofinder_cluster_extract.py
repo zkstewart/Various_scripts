@@ -13,10 +13,11 @@ def validate_args(args):
         print(f'I am unable to locate the OrthoFinder .tsv file ({args.tsvFile})')
         print('Make sure you\'ve typed the file name or location correctly and try again.')
         quit()
-    if not os.path.isfile(args.fastaFile) and not os.path.islink(args.fastaFile):
-        print(f'I am unable to locate the FASTA file ({args.fastaFile})')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    for fastaFile in args.fastaFiles:
+        if not os.path.isfile(fastaFile) and not os.path.islink(fastaFile):
+            print(f'I am unable to locate the FASTA file ({fastaFile})')
+            print('Make sure you\'ve typed the file name or location correctly and try again.')
+            quit()
     # Validate output file location
     if os.path.exists(args.outputFileName):
         print('The specified output file name already exists (' + args.outputFileName + ')')
