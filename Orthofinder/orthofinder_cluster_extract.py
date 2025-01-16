@@ -23,9 +23,9 @@ def validate_args(args):
         print('Specify a different name or move/delete/rename the existing file and try again.')
         quit()
 
-def parse_orthofinder_representatives(tsvFile, records, seqPrefix=""):
+def parse_orthofinder_representatives(tsvFile, recordsList, outputFileName, seqPrefix=""):
     repIDs = []
-    with open(tsvFile, "r") as fileIn:
+    with open(tsvFile, "r") as fileIn, open(outputFileName, "w") as fileOut:
         firstLine = True
         for line in fileIn:
             if firstLine:
@@ -37,20 +37,19 @@ def parse_orthofinder_representatives(tsvFile, records, seqPrefix=""):
             seqIDs = [ x for column in sl[1:] for x in column.split(",") if x != "" ]
             
             # Get longest sequence
-            seqLens = []
-            for seqID in seqIDs:
-                try:
-                    seqLen = len(records[seqID])
-                except KeyError:
-                    seqLen = len(records[seqPrefix + seqID])
-                seqLens.append((seqID, seqLen))
+            longestSeq = ""
+            for i, column in enumerate(sl[1:]):
+                if column != "":
+                    for seqID in column.split(","):
+                        try:
+                            seq = records[seqID]
+                        except KeyError:
+                            seq = records[seqPrefix + seqID]
+                        if len(seq) > len(longestSeq):
+                            longestSeq = seq
             
-            # Sort by length
-            seqLens.sort(key=lambda x: x[1], reverse=True)
-            
-            # Add longest sequence to repIDs
-            rep = seqLens[0][0]
-            repIDs.append(rep)
+            # Write to file
+            fileOut.write(longestSeq.format("fasta"))
     return set(repIDs)
 
 # Main call
@@ -64,9 +63,11 @@ def main():
     p.add_argument("-i", dest="tsvFile",
                    required=True,
                    help="Input cluster file")
-    p.add_argument("-f", dest="fastaFile",
+    p.add_argument("-f", dest="fastaFiles",
                    required=True,
-                   help="Input FASTA file")
+                   nargs="+",
+                   help="""Input FASTA files for sequences; must provide in same
+                   order as in the OrthoFinder .tsv file header""")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output FASTA file name for representative sequences")
@@ -81,18 +82,10 @@ def main():
     validate_args(args)
     
     # Load in FASTA file
-    records = SeqIO.to_dict(SeqIO.parse(args.fastaFile, "fasta"))
+    recordsList = [ SeqIO.to_dict(SeqIO.parse(f, "fasta") for f in args.fastaFiles) ]
     
-    # Parse cluster file
-    repIDs = parse_orthofinder_representatives(args.tsvFile, records)
-    
-    # Produce output
-    with open(args.outputFileName, "w") as fileOut:
-        for repID in repIDs:
-            try:
-                fileOut.write(records[repID].format("fasta"))
-            except KeyError:
-                fileOut.write(records[args.seqPrefix + repID].format("fasta"))
+    # Parse cluster file and produce output
+    write_orthofinder_representatives(args.tsvFile, recordsList, args.outputFileName, args.seqPrefix)
     
     # Done!
     print('Program completed successfully!')
