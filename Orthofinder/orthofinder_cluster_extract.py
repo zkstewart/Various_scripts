@@ -34,7 +34,7 @@ def parse_orthofinder_representatives(tsvFile, records, seqPrefix=""):
             
             sl = line.rstrip("\r\n ").split("\t")
             
-            seqIDs = [ x for column in sl[1:] for x in column.split(",") ]
+            seqIDs = [ x for column in sl[1:] for x in column.split(",") if x != "" ]
             
             # Get longest sequence
             seqLens = []
