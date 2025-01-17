@@ -117,7 +117,7 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
     filePrefixes = list(numGenesDict.keys())
     
     # Order annotIDs according to category
-    annotIDs.sort(key = lambda x: categoryOrder.index(goDetails[x][1]))
+    annotIDs.sort(key = lambda x: (categoryOrder.index(goDetails[x][1]), goDetails[x][0]) )
     categories = []
     for goID in annotIDs:
         category = goDetails[goID][1]
@@ -327,7 +327,7 @@ def main():
         apiQueryDict = {}
     
     # Resolve GO names and categories
-    finalAnnotDict = {}
+    resolvedAnnotDict = {}
     goDetails = {}
     for goID, annotValue in filteredAnnotDict.items():
         # If we can find this GO ID already, use it
@@ -362,11 +362,37 @@ def main():
         goName = goObo[newGOID].name
         goCategory = goObo[newGOID].namespace
         goDetails[newGOID] = [goName, goCategory]
-        finalAnnotDict[newGOID] = annotValue
+        resolvedAnnotDict[newGOID] = annotValue
     
     # Store the API query results
     with open(pickleFileName, "wb") as fileOut:
         pickle.dump(apiQueryDict, fileOut)
+    
+    # Combine any GO terms that, through replacement, end up being the same
+    toCombine = []
+    for goID, (goName, goCategory) in goDetails.items():
+        occurrences = [
+            otherGoID
+            for otherGoID, (otherGoName, otherGoCategory) in goDetails.items()
+            if goName == otherGoName and goCategory == otherGoCategory
+        ]
+        if len(occurrences) > 1:
+            toCombine.append(occurrences)
+    dontInclude = set([y for x in toCombine for y in x])
+    
+    finalAnnotDict = {
+        goID: annotValue
+        for goID, annotValue in resolvedAnnotDict.items()
+        if goID not in dontInclude
+    }
+    for idsToCombine in toCombine:
+        newGOID = idsToCombine[0]
+        newDictValue = { filePrefix: 0 for filePrefix in numGenesDict.keys() }
+        for goID in idsToCombine:
+            for filePrefix, numAnnotated in resolvedAnnotDict[goID].items():
+                newDictValue[filePrefix] += numAnnotated
+        
+        finalAnnotDict[newGOID] = newDictValue
     
     # Plot the data
     plot_annotation_proportions(finalAnnotDict, numGenesDict, args.outputFileName,
