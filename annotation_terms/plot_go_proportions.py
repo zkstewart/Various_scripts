@@ -1,9 +1,7 @@
 #! python3
 # plot_go_proportions.py
-# Represents step 3 of the psQTL pipeline, which is to 'post'-process the data
-# generated from psQTL_proc.py. It can plot segregation statistics with a plug-and-play
-# approach of several different plot types (line, scatter, histogram, genes) or it
-# can report on genes that are proximal to or contained within potential QTLs.
+# Allows for the plotting of the proportion of genes associated with each
+# GO term in a given annotation file
 
 import os, argparse, sys, pickle, re
 import numpy as np
