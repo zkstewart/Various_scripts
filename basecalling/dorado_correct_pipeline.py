@@ -252,7 +252,7 @@ export LD_LIBRARY_PATH=${{DORADOLIB}}:$LD_LIBRARY_PATH
 
 # STEP 1: Run dorado's GPU-bound step for this block
 mkdir -p ${{OUTDIR}}
-${{DORADOEXE}} correct ${{PAFDIR}}/${{FQFILE}}
+${{DORADOEXE}} correct ${{PAFDIR}}/${{FQFILE}} \\
     --device cuda:all --threads ${{CPUS}} \\
     --from-paf ${{PAFDIR}}/${{FQFILE}}.block_${{INDEX}}.paf > ${{OUTDIR}}/${{FQFILE}}.block_${{INDEX}}.fasta
 
