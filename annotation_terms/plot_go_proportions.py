@@ -52,8 +52,8 @@ def validate_args(args):
     # Validate output file location
     if os.path.isfile(args.outputFileName):
         raise FileExistsError(f"File already exists at -o location '{args.outputFileName}'")
-    if not args.outputFileName.endswith(".png") and not args.outputFileName.endswith(".pdf"):
-        raise ValueError("-o file file must end with '.png' or '.pdf'")
+    if not args.outputFileName.rsplit(".")[-1] in ["png", "pdf", "svg"]:
+        raise ValueError("-o file file must end with '.png' or '.pdf' or '.svg'")
 
 def parse_annotation_file(inputFile, columnDelimiter, annotationDelimiter, hasHeader):
     '''
@@ -143,26 +143,26 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
         thisIndex = [ z for z, boundary in enumerate(categoryBoundaries) if boundary[0] == thisCategory ][0]
         if i < categoryBoundaries[thisIndex][1]:
             categoryBoundaries[thisIndex][1] = i
+        categoryBoundaries[thisIndex][2] = i
         
         # Plot bar for each filePrefix
         for j, filePrefix in enumerate(filePrefixes):
             numAnnotated = numAnnotatedDict[filePrefix]
             
             # Get our x and y values
-            x = i + (barWidth*j)
+            x = (i-0.45) + (barWidth*j)
             y1 = (numAnnotated / numGenesDict[filePrefix]) * 100 # percentage
             y2 = numAnnotated
-                        
+            
             # Plot bar
             ax.bar(x, y1, color = colourPalette[j], width = barWidth,
-                   label = filePrefix if i == 0 else None)
-            ax2.bar(x, y2, color = colourPalette[j], width = barWidth)
-            
-            # Store the maximum value for the secondary X-axis
-            categoryBoundaries[thisIndex][2] = x
+                   label = filePrefix if i == 0 else None,
+                   align = "edge")
+            ax2.bar(x, y2, color = colourPalette[j], width = barWidth,
+                    align = "edge")
     
     # Add labels
-    textBoxes = ax.set_xticks(np.arange(len(annotDict)) + (barWidth / len(numGenesDict)),
+    textBoxes = ax.set_xticks(np.arange(len(annotDict)),
                   labels=[ goDetails[x][0] for x in annotIDs ], rotation = 65, ha = 'right')
     ax.set_ylabel("Percentage of genes", fontweight = 'bold', fontsize = 12)
     ax2.set_ylabel("Number of genes", fontweight = 'bold', fontsize = 12)
@@ -185,7 +185,7 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
     axCategories.axis('off')
     
     # Write plot to file
-    fig.savefig(outputFile)#, bbox_inches="tight")
+    fig.savefig(outputFile)
 
 def main():
     usage = """%(prog)s receives a table pairing gene identifiers (left column)
@@ -205,7 +205,7 @@ def main():
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="""Specify the name for the output file; make sure to use
-                   a suffix of .png or .pdf to determine the output format""")
+                   a suffix of .png/.pdf/.svg to determine the output format""")
     # Optional (input)
     p.add_argument("--goIDsFile", dest="goIDsFile",
                    required=False,
