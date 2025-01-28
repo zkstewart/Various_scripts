@@ -174,7 +174,7 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
                     align = "edge")
             
             if barTypes == "both":
-                dummyBars.append(
+                dummyBars.extend(
                     twins[j].bar(x, y2, color = colourPalette[j], width = barWidth,
                             align = "edge")
                 )
@@ -194,11 +194,13 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
             twins[j].set_ylabel("Number of genes", fontweight = "bold", fontsize = 12,
                                 color = colourPalette[j])
     
-    # Remove dummy bar patches and frame
+    # Remove dummy bar patches
+    for i in range(len(dummyBars)):
+        dummyBars[i].remove()
+    
+    # Adjust twin axes display
     if barTypes == "both":
-        for j in range(len(filePrefixes)):
-            dummyBars[j].remove()
-            
+        for j in range(len(filePrefixes)):            
             twins[j].spines.right.set_position(("axes", 1 + (j * 0.1)))
             
             twins[j].spines["top"].set_visible(False)
