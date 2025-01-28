@@ -89,7 +89,7 @@ def parse_annotation_file(inputFile, columnDelimiter, annotationDelimiter, hasHe
                 annotDict[annot].add(geneID)
     return annotDict
 
-def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, width=12, height=8):
+def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, width=12, height=8, barTypes="both"):
     '''
     Parameters:
         annotDict -- a dictionary with structure like:
@@ -111,6 +111,10 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
                           "GO:0000002": ["Name of GO 2", "Category of GO 2"],
                           ...
                       }
+        width -- a float specifying the width of the plot in inches (default: 12)
+        height -- a float specifying the height of the plot in inches (default: 8)
+        barTypes -- a string specifying the type of bars to plot; options are
+                    'percentage', 'number', or 'both' (default: both)
     '''
     # Get consistently ordered annot IDs and sample names
     annotIDs = list(annotDict.keys())
@@ -132,9 +136,11 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
                                            tight_layout=True,
                                            figsize=(width, height),
                                            height_ratios=[50, 1])
-    ax2 = ax.twinx()
+    if barTypes == "both":
+        ax2 = ax.twinx()
     
     categoryBoundaries = [ [ c, np.inf, 0] for c in categories ]
+    dummyBars = []
     for i, annot in enumerate(annotIDs):
         numAnnotatedDict = annotDict[annot]
         
@@ -155,18 +161,45 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
             y2 = numAnnotated
             
             # Plot bar
-            ax.bar(x, y1, color = colourPalette[j], width = barWidth,
-                   label = filePrefix if i == 0 else None,
-                   align = "edge")
-            ax2.bar(x, y2, color = colourPalette[j], width = barWidth,
+            if barTypes in ["percentage", "both"]:
+                ax.bar(x, y1, color = colourPalette[j], width = barWidth,
+                    label = filePrefix if i == 0 else None,
                     align = "edge")
+            
+            if barTypes == "number":
+                ax.bar(x, y2, color = colourPalette[j], width = barWidth,
+                    label = filePrefix if i == 0 else None,
+                    align = "edge")
+            elif barTypes == "both":
+                ax.bar(x, y2, color = colourPalette[j], width = barWidth,
+                    align = "edge")
+            
+            if barTypes == "both":
+                dummyBars.append(ax2.bar(x, y2, color = colourPalette[j], width = barWidth,
+                        align = "edge"))
     
-    # Add labels
+    # Add labels (regardless of bar type)
     textBoxes = ax.set_xticks(np.arange(len(annotDict)),
-                  labels=[ goDetails[x][0] for x in annotIDs ], rotation = 65, ha = 'right')
-    ax.set_ylabel("Percentage of genes", fontweight = 'bold', fontsize = 12)
-    ax2.set_ylabel("Number of genes", fontweight = 'bold', fontsize = 12)
+                  labels=[ goDetails[x][0] for x in annotIDs ], rotation = 65, ha = "right")
     ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=len(numGenesDict))
+    
+    # Add labels (dependent on bar type)
+    if barTypes in ["percentage", "both"]:
+        ax.set_ylabel("Percentage of genes", fontweight = "bold", fontsize = 12)
+    if barTypes == "number":
+        ax.set_ylabel("Number of genes", fontweight = "bold", fontsize = 12)
+    if barTypes == "both":
+        ax2.set_ylabel("Number of genes", fontweight = "bold", fontsize = 12)
+    
+    # Remove dummy bar patches and frame
+    if barTypes == "both":
+        for dummyBar in dummyBars:
+            dummyBar.remove()
+        
+        ax2.spines["top"].set_visible(False)
+        ax2.spines["right"].set_visible(False)
+        ax2.spines["left"].set_visible(False)
+        ax2.spines["bottom"].set_visible(False)
     
     # Add category boundary lines to bottom subplot
     categoryCentres = []
@@ -213,6 +246,12 @@ def main():
                    per line) to include in the output plot; this will override
                    any other filtering options""")
     # Optional (plotting)
+    p.add_argument("--barTypes", dest="barTypes",
+                   required=False,
+                   choices=["percentage", "number", "both"],
+                   help="""Specify the type of bars to plot; options are 'percentage',
+                   'number', or 'both' (default: both)""",
+                   default="both")
     p.add_argument("--height", dest="height",
                    type=float,
                    required=False,
@@ -277,7 +316,7 @@ def main():
     # Parse annotation files
     annotDicts = [
         [
-            inputFile.rsplit(".", maxsplit=1)[0],
+            os.path.basename(inputFile).rsplit(".", maxsplit=1)[0],
             parse_annotation_file(inputFile, args.columnDelimiter, args.annotationDelimiter, args.hasHeader)
         ]
         for inputFile in args.inputFiles
@@ -396,7 +435,7 @@ def main():
     
     # Plot the data
     plot_annotation_proportions(finalAnnotDict, numGenesDict, args.outputFileName,
-                                goDetails, args.width, args.height)
+                                goDetails, args.width, args.height, args.barTypes)
     
     # Done!
     print('Program completed successfully!')
