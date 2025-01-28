@@ -19,10 +19,6 @@ goRegex = re.compile(r"^GO:\d{7}$")
 
 # Define functions
 def validate_args(args):
-    # Validate that bar type is supported
-    if args.barTypes == "both":
-        raise NotImplementedError("Bar type 'both' is not yet supported because I'm not sure how to make it work properly!")
-    
     # Validate input file locations
     for inputFile in args.inputFiles:
         if not os.path.isfile(inputFile):
@@ -141,7 +137,9 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
                                            figsize=(width, height),
                                            height_ratios=[50, 1])
     if barTypes == "both":
-        ax2 = ax.twinx()
+        twins = []
+        for i in range(len(filePrefixes)):
+            twins.append(ax.twinx())
     
     categoryBoundaries = [ [ c, np.inf, 0] for c in categories ]
     dummyBars = []
@@ -177,7 +175,7 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
             
             if barTypes == "both":
                 dummyBars.append(
-                    ax2.bar(x, y2, color = colourPalette[j], width = barWidth,
+                    twins[j].bar(x, y2, color = colourPalette[j], width = barWidth,
                             align = "edge")
                 )
     
@@ -192,17 +190,20 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
     if barTypes == "number":
         ax.set_ylabel("Number of genes", fontweight = "bold", fontsize = 12)
     if barTypes == "both":
-        ax2.set_ylabel("Number of genes", fontweight = "bold", fontsize = 12)
+        for j in range(len(filePrefixes)):
+            twins[j].set_ylabel("Number of genes", fontweight = "bold", fontsize = 12,
+                                color = colourPalette[j])
     
     # Remove dummy bar patches and frame
     if barTypes == "both":
-        for dummyBar in dummyBars:
-            dummyBar.remove()
-        
-        ax2.spines["top"].set_visible(False)
-        ax2.spines["right"].set_visible(False)
-        ax2.spines["left"].set_visible(False)
-        ax2.spines["bottom"].set_visible(False)
+        for j in range(len(filePrefixes)):
+            dummyBars[j].remove()
+            
+            twins[j].spines.right.set_position(("axes", 1 + (j * 0.1)))
+            
+            twins[j].spines["top"].set_visible(False)
+            twins[j].spines["left"].set_visible(False)
+            twins[j].spines["bottom"].set_visible(False)
     
     # Add category boundary lines to bottom subplot
     categoryCentres = []
