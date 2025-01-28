@@ -19,6 +19,10 @@ goRegex = re.compile(r"^GO:\d{7}$")
 
 # Define functions
 def validate_args(args):
+    # Validate that bar type is supported
+    if args.barTypes == "both":
+        raise NotImplementedError("Bar type 'both' is not yet supported because I'm not sure how to make it work properly!")
+    
     # Validate input file locations
     for inputFile in args.inputFiles:
         if not os.path.isfile(inputFile):
@@ -170,13 +174,12 @@ def plot_annotation_proportions(annotDict, numGenesDict, outputFile, goDetails, 
                 ax.bar(x, y2, color = colourPalette[j], width = barWidth,
                     label = filePrefix if i == 0 else None,
                     align = "edge")
-            elif barTypes == "both":
-                ax.bar(x, y2, color = colourPalette[j], width = barWidth,
-                    align = "edge")
             
             if barTypes == "both":
-                dummyBars.append(ax2.bar(x, y2, color = colourPalette[j], width = barWidth,
-                        align = "edge"))
+                dummyBars.append(
+                    ax2.bar(x, y2, color = colourPalette[j], width = barWidth,
+                            align = "edge")
+                )
     
     # Add labels (regardless of bar type)
     textBoxes = ax.set_xticks(np.arange(len(annotDict)),
