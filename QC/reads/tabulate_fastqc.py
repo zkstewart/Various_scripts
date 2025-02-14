@@ -177,6 +177,7 @@ def main():
         write_tables_to_excel(forwardTable, reverseTable, args.outputFileName)
     except Exception as e:
         os.unlink(args.outputFileName)
+        raise e
     
     # Alert user to program success
     print("Program completed successfully!")
