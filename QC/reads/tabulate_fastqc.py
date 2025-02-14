@@ -50,8 +50,8 @@ def parse_fcq_file(fqcFile):
         
         # Add in basic stats
         statsDict = {}
-        statsDict["total_reads"] = numReads
-        statsDict["low_quality_reads"] = poorQuality
+        statsDict["total_reads"] = int(numReads)
+        statsDict["low_quality_reads"] = int(poorQuality)
         
         # Convert pass/fail results to dictionary
         statsDict.update({
