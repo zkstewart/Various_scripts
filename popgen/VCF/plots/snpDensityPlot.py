@@ -70,6 +70,18 @@ def validate_args(args):
         os.makedirs(args.outputDirectory, exist_ok=True)
         print(f"Output directory created at '{args.outputDirectory}' as part of argument validation.")
     
+    # Handle colour palette
+    if args.colourMap == "viridis":
+        args.cm = plt.cm.viridis
+    elif args.colourMap == "Greys":
+        args.cm = plt.cm.Greys
+    elif args.colourMap == "GnBu":
+        args.cm = plt.cm.GnBu
+    elif args.colourMap == "RdBu":
+        args.cm = plt.cm.RdBu
+    else:
+        raise ValueError("Invalid colour map specified")
+    
     # Handle mode-specific arguments
     if args.mode == "line":
         if args.wmaSize < 1:
@@ -775,7 +787,8 @@ def line_per_contig(dotsX, dotsY, wmaSize, width, height, outputDirectory,
         plt.savefig(fileOut)
         plt.close()
 
-def histo_horizontal(binDict, binSize, width, height, outputDirectory, plotPDF, createTSV):
+def histo_horizontal(binDict, binSize, width, height, outputDirectory,
+                     plotPDF, createTSV):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -839,7 +852,8 @@ def histo_horizontal(binDict, binSize, width, height, outputDirectory, plotPDF, 
     plt.savefig(fileOut)
     plt.close()
 
-def histo_regions(binDict, regions, binSize, width, height, outputDirectory, plotPDF, createTSV):
+def histo_regions(binDict, regions, binSize, width, height, outputDirectory,
+                  plotPDF, createTSV):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -918,7 +932,8 @@ def histo_regions(binDict, regions, binSize, width, height, outputDirectory, plo
         plt.savefig(fileOut)
         plt.close()
 
-def histo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF, createTSV):
+def histo_per_contig(binDict, binSize, width, height, outputDirectory,
+                     plotPDF, createTSV):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -975,7 +990,8 @@ def histo_per_contig(binDict, binSize, width, height, outputDirectory, plotPDF, 
         plt.savefig(fileOut)
         plt.close()
 
-def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirectory, plotPDF, createTSV, gff3Obj):
+def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirectory,
+                    plotPDF, createTSV, gff3Obj, cmap):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -999,6 +1015,7 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
         createTSV -- a boolean flag indicating whether to output a TSV file of the data
         gff3Obj -- an instance of the GFF3 class from ZS_GFF3IO.py to annotate gene
                    locations on the plot OR None
+        cmap -- a matplotlib colour map to use for the plot
     '''
     SPACING = 0.1
     
@@ -1017,7 +1034,6 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
     longestDensity = max([ len(values) for values in binDict.values() ])
     
     # Colour map density values
-    cmap = plt.cm.viridis
     norm = matplotlib.colors.Normalize(vmin=minDensity, vmax=maxDensity)
     
     # Configure plot
@@ -1092,7 +1108,8 @@ def ideo_horizontal(binDict, lengthsDict, binSize, width, height, outputDirector
     plt.savefig(fileOut)
     plt.close()
 
-def ideo_regions(binDict, lengthsDict, regions, binSize, width, height, outputDirectory, plotPDF, createTSV, gff3Obj):
+def ideo_regions(binDict, lengthsDict, regions, binSize, width, height, outputDirectory,
+                 plotPDF, createTSV, gff3Obj, cmap):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -1116,6 +1133,7 @@ def ideo_regions(binDict, lengthsDict, regions, binSize, width, height, outputDi
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         createTSV -- a boolean flag indicating whether to output a TSV file of the data
+        cmap -- a matplotlib colour map to use for the plot
     '''
     # Parse out regions for plotting
     regions = [ region.split(":") for region in regions ]
@@ -1152,7 +1170,6 @@ def ideo_regions(binDict, lengthsDict, regions, binSize, width, height, outputDi
         y = regionBins
         
         # Colour map density values
-        cmap = plt.cm.viridis
         norm = matplotlib.colors.Normalize(vmin=min(y), vmax=max(y))
         
         # Configure plot
@@ -1205,7 +1222,8 @@ def ideo_regions(binDict, lengthsDict, regions, binSize, width, height, outputDi
         plt.savefig(fileOut)
         plt.close()
 
-def ideo_per_contig(binDict, lengthsDict, binSize, width, height, outputDirectory, plotPDF, createTSV, gff3Obj):
+def ideo_per_contig(binDict, lengthsDict, binSize, width, height, outputDirectory,
+                    plotPDF, createTSV, gff3Obj, cmap):
     '''
     Parameters:
         binDict -- a dictionary with structure like:
@@ -1227,6 +1245,7 @@ def ideo_per_contig(binDict, lengthsDict, binSize, width, height, outputDirector
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         createTSV -- a boolean flag indicating whether to output a TSV file of the data
+        cmap -- a matplotlib colour map to use for the plot
     '''
     for contig in lengthsDict.keys():
         # Derive our output file name and skip if already existing
@@ -1242,7 +1261,6 @@ def ideo_per_contig(binDict, lengthsDict, binSize, width, height, outputDirector
         stepSize = binSize / 1000 # convert to Kbp
         
         # Colour map density values
-        cmap = plt.cm.viridis
         norm = matplotlib.colors.Normalize(vmin=min(y), vmax=max(y))
         
         # Configure plot
@@ -1292,7 +1310,8 @@ def ideo_per_contig(binDict, lengthsDict, binSize, width, height, outputDirector
         plt.savefig(fileOut)
         plt.close()
 
-def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotPDF, createTSV):
+def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory,
+                 plotPDF, createTSV, cmap):
     '''
     Parameters:
         tallyDict -- a dictionary with structure like:
@@ -1309,6 +1328,7 @@ def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotP
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         createTSV -- a boolean flag indicating whether to output a TSV file of the data
+        cmap -- a matplotlib colour map to use for the plot
     '''
     SPACING = 0.5
     
@@ -1354,7 +1374,6 @@ def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotP
             ongoingCount += 1
         
         # Colour map density values
-        cmap = plt.cm.viridis
         norm = matplotlib.colors.Normalize(vmin=min(y), vmax=max(y))
         
         # Configure plot
@@ -1392,7 +1411,8 @@ def gene_regions(tallyDict, gff3, regions, width, height, outputDirectory, plotP
         plt.savefig(fileOut)
         plt.close()
 
-def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF, createTSV):
+def gene_per_contig(tallyDict, gff3, width, height, outputDirectory,
+                    plotPDF, createTSV, cmap):
     '''
     Parameters:
         tallyDict -- a dictionary with structure like:
@@ -1407,6 +1427,7 @@ def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF, cr
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         createTSV -- a boolean flag indicating whether to output a TSV file of the data
+        cmap -- a matplotlib colour map to use for the plot
     '''
     SPACING = 0.5
     
@@ -1449,7 +1470,6 @@ def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF, cr
             ongoingCount += 1
         
         # Colour map density values
-        cmap = plt.cm.viridis
         norm = matplotlib.colors.Normalize(vmin=min(y), vmax=max(y))
         
         # Configure plot
@@ -1486,7 +1506,8 @@ def gene_per_contig(tallyDict, gff3, width, height, outputDirectory, plotPDF, cr
         plt.savefig(fileOut)
         plt.close()
 
-def gene_models(tallyDict, gff3, width, height, outputDirectory, plotPDF, createTSV):
+def gene_models(tallyDict, gff3, width, height, outputDirectory,
+                plotPDF, createTSV, cmap):
     '''
     Parameters:
         tallyDict -- a dictionary with structure like:
@@ -1501,6 +1522,7 @@ def gene_models(tallyDict, gff3, width, height, outputDirectory, plotPDF, create
         outputDirectory -- a string indicating the directory to write output plots to
         plotPDF -- a boolean flag indicating whether to output plots in PDF format
         createTSV -- a boolean flag indicating whether to output a TSV file of the data
+        cmap -- a matplotlib colour map to use for the plot
     '''
     SPACING = 0.1
     
@@ -1537,7 +1559,6 @@ def gene_models(tallyDict, gff3, width, height, outputDirectory, plotPDF, create
         cmapMax = max(cmapMax, max(zeros))
     
     # Colour map density values
-    cmap = plt.cm.viridis
     norm = matplotlib.colors.Normalize(vmin=cmapMin, vmax=cmapMax)
     
     # Configure plot
@@ -1619,6 +1640,14 @@ def main():
                    required=True,
                    help="Output directory where plot files will be written")
     ## Optional (styling)
+    p.add_argument("--colour", dest="colourMap",
+                    required=False,
+                    choices=["viridis", "Greys", "GnBu", "RdBu"],
+                    help="""Optionally, specify the colour scheme to use for the plot;
+                    default is 'viridis'; refer to
+                    https://matplotlib.org/stable/users/explain/colors/colormaps.html
+                    for examples""",
+                    default="viridis")
     p.add_argument("--width", dest="width",
                     type=int,
                     required=False,
@@ -1741,7 +1770,7 @@ def main():
                              default=10000)
     
     # Ideogram-subparser arguments
-    ideoparser.add_argument("-g", "--gff3", dest="gff3File",
+    ideoparser.add_argument("--gff3", "-g", dest="gff3File",
                             required=False,
                             help="""Optionally, specify the location of an input GFF3 file
                             if you want to annotate gene locations""")
@@ -1900,17 +1929,17 @@ def ideomain(args, lengthsDict):
         ideo_horizontal(binDict, lengthsDict, args.binSize,
                         args.width, args.height,
                         args.outputDirectory, args.plotPDF,
-                        args.createTSV, args.gff3Obj)
+                        args.createTSV, args.gff3Obj, args.cm)
     elif args.regions != []:
         ideo_regions(binDict, lengthsDict, args.regions, args.binSize,
                      args.width, args.height,
                      args.outputDirectory, args.plotPDF,
-                     args.createTSV, args.gff3Obj)
+                     args.createTSV, args.gff3Obj, args.cm)
     else:
         ideo_per_contig(binDict, lengthsDict, args.binSize,
                         args.width, args.height,
                         args.outputDirectory, args.plotPDF,
-                        args.createTSV, args.gff3Obj)
+                        args.createTSV, args.gff3Obj, args.cm)
 
 def genemain(args):
     # Figure out what our pickle file should be called
@@ -1946,17 +1975,17 @@ def genemain(args):
         gene_models(tallyDict, args.gff3Obj,
                     args.width, args.height,
                     args.outputDirectory, args.plotPDF,
-                    args.createTSV)
+                    args.createTSV, args.cm)
     elif args.regions != []:
         gene_regions(tallyDict, args.gff3Obj, args.regions,
                      args.width, args.height,
                      args.outputDirectory, args.plotPDF,
-                     args.createTSV)
+                     args.createTSV, args.cm)
     else:
         gene_per_contig(tallyDict, args.gff3Obj,
                         args.width, args.height,
                         args.outputDirectory, args.plotPDF,
-                        args.createTSV)
+                        args.createTSV, args.cm)
 
 if __name__ == "__main__":
     main()
