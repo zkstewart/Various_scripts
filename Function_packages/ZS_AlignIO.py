@@ -289,6 +289,7 @@ class MAFFT:
         self.algorithm = algorithm
         self.thread = thread
         self.maxiterate = maxiterate
+        self.molecule = molecule
     
     @property
     def exe(self):
