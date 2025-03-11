@@ -1068,8 +1068,9 @@ def main():
     # Align the phased FASTA files
     if not os.path.exists(os.path.join(args.outputDirectory, "alignment_was_successful.flag")):
         # Set up MAFFT aligner
-        aligner = ZS_AlignIO.MAFFT(args.mafft, "einsi", # E-insi algorithm
-                                   args.threads, 5) # 5 maxiterate
+        aligner = ZS_AlignIO.MAFFT(args.mafft, algorithm="einsi",
+                                   thread=args.threads, maxiterate=5,
+                                   molecule="nucleotide")
         
         # Iterate through phased FASTA files
         for phasedFile in os.listdir(phasingOutputDir):
@@ -1085,7 +1086,7 @@ def main():
                 
                 # Perform MAFFT codon alignment
                 numSeqs = sum([1 for _ in SeqIO.parse(phasedFileName, "fasta")])
-
+                
                 resultFASTA_obj = aligner.align_as_protein(
                     phasedFileName,
                     strands=[1 for _ in range(numSeqs)], # do this to prevent best ORF

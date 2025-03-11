@@ -282,8 +282,9 @@ class MAFFT:
             "fftnsi": None
         }
     ACCEPTED_ALGS = ["auto", "einsi", "linsi", "ginsi", "fftns1", "fftns2", "fftnsi"]
+    ACCEPTED_MOLECULES = ["auto", "nucleotide", "protein"]
     
-    def __init__(self, mafftPath, algorithm="auto", thread=1, maxiterate=0):
+    def __init__(self, mafftPath, algorithm="auto", thread=1, maxiterate=0, molecule="auto"):
         self.exe = mafftPath
         self.algorithm = algorithm
         self.thread = thread
@@ -309,6 +310,16 @@ class MAFFT:
         assert value in MAFFT.ACCEPTED_ALGS, \
             f"algorithm '{value}' not recognized; please choose from {MAFFT.ACCEPTED_ALGS}"
         self._algorithm = value
+    
+    @property
+    def molecule(self):
+        return self._molecule
+    
+    @molecule.setter
+    def molecule(self, value):
+        assert value in MAFFT.ACCEPTED_MOLECULES, \
+            f"molecule '{value}' not recognized; please choose from {MAFFT.ACCEPTED_MOLECULES}"
+        self._molecule = value
     
     @property
     def thread(self):
@@ -362,6 +373,13 @@ class MAFFT:
         if self.algorithm != "auto":
             cmd += ["--maxiterate", str(self.maxiterate)]
         
+        # Handle molecule specification
+        if self.molecule != "auto":
+            if self.molecule == "nucleotide":
+                cmd += ["--nuc"]
+            else:
+                cmd += ["--amino"]
+        
         # Handle optional flags
         if reorder:
             cmd.append("--reorder")
@@ -413,12 +431,12 @@ class MAFFT:
         '''
         # Validate input value type
         if isinstance(fasta, str):
-            assert os.path.isfile(fasta), f"ERROR: MAFFT.run() could not find the FASTA file '{fasta}'"
+            assert os.path.isfile(fasta), f"ERROR: MAFFT.align() could not find the FASTA file '{fasta}'"
             fastaFileName, fastaIsTemporary = fasta, False
         elif hasattr(fasta, "isFASTA") and fasta.isFASTA is True:
             fastaFileName, fastaIsTemporary = ZS_SeqIO.Conversion.get_filename_for_input_sequences(fasta)
         else:
-            raise Exception(f"ERROR: MAFFT.run() requires a FASTA file or FASTA object as input; did not understand '{fasta}'")
+            raise Exception(f"ERROR: MAFFT.align() requires a FASTA file or FASTA object as input; did not understand '{fasta}'")
         
         # Run MAFFT alignment
         msaString = self._align(fastaFileName)

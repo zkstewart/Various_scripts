@@ -76,7 +76,8 @@ def polish_MSA_denovo(FASTA_obj, transcriptomeFile, mafftExe):
                       correspond to exon regions ordered as per _get_exon_coords().
     '''
     assert FASTA_obj[0].id == "Codons", "FASTA lacks a Codons line at its start!"
-    mafftAligner = ZS_AlignIO.MAFFT(mafftExe, "einsi", 1, 2) # exe, alg, threads, maxiterate
+    mafftAligner = ZS_AlignIO.MAFFT(mafftExe, algorithm="einsi", thread=1,
+                                    maxiterate=2) # exe, alg, threads, maxiterate
     
     # Get the coordinate spans of exons
     exonCoords = _get_exon_coords(FASTA_obj)

@@ -210,7 +210,8 @@ if __name__ == "__main__":
     
     # Align FASTA objects
     mafftAligner = ZS_AlignIO.MAFFT(args.mafft, thread=args.threads,
-                                    algorithm="einsi", maxiterate=5)
+                                    algorithm="einsi", maxiterate=5,
+                                    molecule="nucleotide" if args.is_nucleotide else "protein")
     alignedFastaObjs = []
     for FASTA_obj in fastaObjs:
         alignedFastaObjs.append(mafftAligner.align(FASTA_obj))
