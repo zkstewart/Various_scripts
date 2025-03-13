@@ -2,7 +2,8 @@
 # genome_annotation_circlos.py
 # Script to plot genome annotation data in a circular plot using pyCirclize
 
-import os, argparse
+import os, argparse, math
+import numpy as np
 from Bio import SeqIO, SeqFeature
 from matplotlib.patches import Patch
 
@@ -30,6 +31,12 @@ def validate_args(args):
         raise ValueError(f"Number of repeat families ({len(args.repeatFamilies)}) exceeds the number " + 
                          f"of supported colours ({len(colourPalette)})")
     
+    # Validate numeric values
+    if args.binSize < -1:
+        raise ValueError(f"--binSize '{args.binSize}' must be greater than or equal to -1")
+    elif args.binSize == 0:
+        raise ValueError(f"If setting --binSize, you must provide a positive integer")
+    
     # Validate output file
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"-o output file '{args.outputFileName}' already exists!")
@@ -37,6 +44,81 @@ def validate_args(args):
     
     if not os.path.isdir(os.path.dirname(args.outputFileName)):
         raise FileNotFoundError(f"-o parent directory '{os.path.dirname(args.outputFileName)}' does not exist!")
+
+def bin_values(features, contigSize, binSize):
+    '''
+    Parameters:
+        features -- a list of SeqFeature objects
+        contigSize -- an integer value indicating the length of the contig
+        binSize -- an integer value indicating the size of the bins/windows
+    Returns:
+        x -- a numpy array of bin midpoints
+        y -- a numpy array of the number of features in each bin
+    '''
+    if binSize > contigSize:
+        raise ValueError(f"binSize '{binSize}' is greater than contigSize '{contigSize}'")
+    
+    # Get the cleanest division of the contig into the bin size
+    remainder = (contigSize / binSize) % 1
+    leftover = (remainder * binSize) / (contigSize // binSize)
+    adjustedBinSize = binSize + math.ceil(leftover)
+    
+    y = np.array([
+        0 for _ in range(math.ceil((contigSize - 1) / adjustedBinSize)) # -1 for 0-based indexing
+    ])
+    for feature in features:
+        startBin = feature.location.start // adjustedBinSize
+        endBin = feature.location.end // adjustedBinSize
+        for binIndex in range(startBin, endBin+1):
+            y[binIndex] += 1
+    return np.arange(0, contigSize, adjustedBinSize), y
+
+def plot_gene_features(seqid2features, sector, colour, currentPosition,
+                       showOutline, TRACK_HEIGHT):
+    track = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition))
+    if showOutline:
+        track.axis()
+     
+    for feature in seqid2features[sector.name]:
+        if feature.type == "gene":
+            track.genomic_features([feature], fc=colour)
+    return track
+
+def plot_gene_density(seqid2features, sector, colour, currentPosition, contigSize, binSize,
+                      showOutline, TRACK_HEIGHT):
+    x, y = bin_values([ feature for feature in seqid2features[sector.name] if feature.type == "gene" ],
+                      contigSize, binSize)
+    
+    track = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition))
+    if showOutline:
+        track.axis()
+    
+    track.bar(x, y, vmax=max(y), width=binSize, fc=colour, align="edge")
+    return track
+
+def plot_repeat_features(seqid2features, sector, colour, currentPosition, repeatType,
+                         showOutline,TRACK_HEIGHT):
+    track = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition))
+    if showOutline:
+        track.axis()
+     
+    for feature in seqid2repeats[seqid]:
+        if feature.qualifiers["class"] == repeatType or feature.qualifiers["family"] == repeatType:
+            track.genomic_features([feature], fc=colour)
+    return track
+
+def plot_repeat_density(seqid2features, sector, colour, currentPosition, repeatType,
+                        contigSize, binSize, showOutline, TRACK_HEIGHT):
+    x, y = bin_values([ feature for feature in seqid2features[sector.name]
+                       if feature.qualifiers["class"] == repeatType or feature.qualifiers["family"] == repeatType ],
+                      contigSize, binSize)
+    
+    track = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition))
+    if showOutline:
+        track.axis()
+    
+    track.bar(x, y, vmax=max(y), width=binSize, fc=colour, align="edge")
+    return track
 
 def main():
     usage = """%(prog)s produces a circos plot representation of a genome and its gene annotations
@@ -63,6 +145,13 @@ def main():
                    help="""Optionally, specify the location of the legend as being at
                    the 'top', 'centre', or 'left'; default is 'centre'""",
                    default="centre")
+    p.add_argument("--binSize", dest="binSize",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the bin size for represnting features
+                   by their density; default is -1 which means no binning occurs
+                   and each feature is represented individually""",
+                   default=-1)
     p.add_argument("--repeats", dest="repeatMaskerOut",
                    required=False,
                    help="Optionally, specify the location of the RepeatMasker .out file")
@@ -72,6 +161,11 @@ def main():
                    help="""If you are plotting RepeatMasker output, specify
                    the repeat classes and/or families to plot.""",
                    default = [])
+    p.add_argument("--outline", dest="sectorOutline",
+                   required=False,
+                   action="store_true",
+                   help="Provide this flag to outline each sector in the plot",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -158,14 +252,16 @@ def main():
             outer_track.xticks_by_interval(minor_interval, tick_length=1, show_label=False)
         currentPosition -= (OUTER_HEIGHT + TRACK_GAP)
         
-        # Plot gene track
-        geneTrack = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition), r_pad_ratio=0.1)
-        geneTrack.axis()
-        for feature in seqid2features[sector.name]:
-            if feature.type == "gene":
-                geneTrack.genomic_features([feature], fc=colourPalette[trackIndex])
+        # Plot gene track data
+        if args.binSize == -1:
+            geneTrack = plot_gene_features(seqid2features, sector, colourPalette[trackIndex], currentPosition,
+                                           args.sectorOutline, TRACK_HEIGHT)
+        else:
+            geneTrack = plot_gene_density(seqid2features, sector, colourPalette[trackIndex], currentPosition,
+                                          seqid2size[sector.name], args.binSize, args.sectorOutline, TRACK_HEIGHT)
         currentPosition -= (TRACK_HEIGHT + TRACK_GAP)
         
+        # Plot gene track legend
         if sector.name == circos.sectors[0].name:
             if args.legendLocation == "top":
                 circos.text("Gene", r=geneTrack.r_center, color=colourPalette[trackIndex])
@@ -177,13 +273,17 @@ def main():
         # Plot each repeat track
         if args.repeatMaskerOut != None:
             for repeatType in args.repeatFamilies:
-                repeatTrack = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition), r_pad_ratio=0.1)
-                repeatTrack.axis()
-                for feature in seqid2repeats[sector.name]:
-                    if feature.qualifiers["class"] == repeatType or feature.qualifiers["family"] == repeatType:
-                        repeatTrack.genomic_features([feature], fc=colourPalette[trackIndex])
+                # Plot repeat track data
+                if args.binSize == -1:
+                    repeatTrack = plot_repeat_features(seqid2features, sector, colourPalette[trackIndex], currentPosition,
+                                                       repeatType, args.sectorOutline, TRACK_HEIGHT)
+                else:
+                    repeatTrack = plot_repeat_density(seqid2repeats, sector, colourPalette[trackIndex], currentPosition,
+                                                      repeatType, seqid2size[sector.name], args.binSize,
+                                                      args.sectorOutline, TRACK_HEIGHT)
                 currentPosition -= (TRACK_HEIGHT + TRACK_GAP)
                 
+                # Plot repeat track legend
                 if sector.name == circos.sectors[0].name:
                     if args.legendLocation == "top":
                         circos.text(repeatType, r=repeatTrack.r_center, color=colourPalette[trackIndex])
