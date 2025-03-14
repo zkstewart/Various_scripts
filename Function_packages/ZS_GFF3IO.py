@@ -462,7 +462,7 @@ class GFF3:
         with open(self.fileLocation, 'r') as fileIn:
             for line in fileIn:
                 lineCount += 1
-                line = line.replace('\r', '')
+                line = line.replace('\r', '').replace('"', '') # remove carriage returns and quotes
                 
                 # Skip filler and comment lines
                 if line == "\n" or line.startswith("#"):
