@@ -9,31 +9,22 @@ import os, argparse, re
 def validate_args(args):
     # Validate input file location
     if not os.path.isfile(args.fastaFile):
-        print('I am unable to locate the genome FASTA file (' + args.fastaFile + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
-    if not os.path.isfile(args.metadataCsv):
-        print('I am unable to locate the metadata CSV file (' + args.metadataCsv + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+        raise FileNotFoundError(f"I am unable to locate the genome FASTA file ({args.fastaFile})")
+    if not os.path.isfile(args.metadataFile):
+        raise FileNotFoundError(f"I am unable to locate the metadata file ({args.metadataFile})")
     if not os.path.isfile(args.bwa):
-        print('I am unable to locate the bwa executable file (' + args.bwa + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+        raise FileNotFoundError(f"I am unable to locate the bwa executable file ({args.bwa})")
     if not os.path.isdir(args.fastqDirectory):
-        print('I am unable to locate the FASTQ files directory (' + args.fastqDirectory + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+        raise FileNotFoundError(f"I am unable to locate the FASTQ files directory ({args.fastqDirectory})")
     # Validate numeric inputs
     if args.cpus < 1:
-        print("cpus should be a positive integer (greater than zero)")
-        quit()
+        raise ValueError(f"--cpus value '{args.cpus}' should be a positive integer (greater than zero)")
 
-def parse_metadata_csv(metadataCsv, prefixCol="prefix", idCol="id", smCol="sm"):
+def parse_metadata_csv(metadataFile, prefixCol="prefix", idCol="id", smCol="sm"):
     '''
     Parameters:
-        metadataCsv -- a string indicating the file location of a .csv file containing
-                       (at least) the three columns indicated by the other parameters.
+        metadataFile -- a string indicating the location of a comma or tab-delimited file containing
+                        (at least) the three columns indicated by the other parameters.
         prefixCol -- a string indicating the header for the column containing file prefixes
                      which uniquely identify single or paired end reads
         idCol -- a string indicating the header for the column containing unique IDs for samples
@@ -47,27 +38,48 @@ def parse_metadata_csv(metadataCsv, prefixCol="prefix", idCol="id", smCol="sm"):
     prefixes, IDs, SMs = [], [], []
     
     firstLine = True
-    with open(metadataCsv, "r") as fileIn:
+    with open(metadataFile, "r") as fileIn:
         for line in fileIn:
-            sl = line.rstrip("\r\n ").split(",")
+            l = line.rstrip("\r\n ")
+            if "," in line:
+                sl = l.split(",")
+            elif "\t" in line:
+                sl = l.split("\t")
+            else:
+                raise ValueError(f"Unable to parse line '{l}' in metadata CSV; please use tabs or commas to separate columns")
+            
             # Handle header line
             if firstLine == True:
-                if any([col not in sl for col in [prefixCol, idCol, smCol]]):
-                    print("Provided columns are not found in the metadata CSV")
-                    print("Make sure --prefix, --id, and --sample are specified correctly")
-                    quit()
+                if not prefixCol in sl:
+                    raise ValueError(f"--prefix '{prefixCol}' not found in metadata CSV")
+                elif not idCol in sl:
+                    raise ValueError(f"--id '{idCol}' not found in metadata CSV")
+                elif not smCol in sl:
+                    raise ValueError(f"--sample '{smCol}' not found in metadata CSV")
+                
                 prefixIndex = sl.index(prefixCol)
                 idIndex = sl.index(idCol)
                 smIndex = sl.index(smCol)
                 firstLine = False
             # Handle content lines
             else:
-                prefix, id, sm = sl[prefixIndex], sl[idIndex], sl[smIndex]
-                assert id not in IDs, "ID tag '{0}' isn't unique!".format(id)
+                prefixValue, idValue, smValue = sl[prefixIndex], sl[idIndex], sl[smIndex]
+                if prefixValue == "" or idValue == "" or smValue == "":
+                    raise ValueError(f"Empty values found in metadata CSV; please fill in all fields")
                 
-                prefixes.append(prefix)
-                IDs.append(id)
-                SMs.append(sm)
+                if prefix in prefixes:
+                    raise ValueError(f"Prefix tag '{prefix}' isn't unique!")
+                if id in IDs:
+                    raise ValueError(f"ID tag '{id}' isn't unique!")
+                
+                prefixes.append(prefixValue)
+                IDs.append(idValue)
+                SMs.append(smValue)
+    
+    # Alert user to how the metadata has been interpreted
+    if len(sm) != len(set(sm)):
+        print("# WARNING: Some samples have the same --sample ID; they may be pooled during variant calling")
+    
     return prefixes, IDs, SMs
 
 def get_files_from_prefix(fastqDirectory, prefixes):
@@ -85,16 +97,15 @@ def get_files_from_prefix(fastqDirectory, prefixes):
     numFoundWithPrefix = []
     fastqFiles = []
     
+    # Get all files in the directory
     files = os.listdir(fastqDirectory)
     for filePrefix in prefixes:
         filesWithPrefix = [os.path.join(fastqDirectory, f) for f in files if f.startswith(filePrefix)]
         
         if len(filesWithPrefix) == 0:
-            print(f"Error: Unable to find a file in '{fastqDirectory}' that starts with prefix '{filePrefix}'")
-            quit()
+            raise FileNotFoundError(f"Unable to find a file in '{fastqDirectory}' that starts with prefix '{filePrefix}'")
         elif len(filesWithPrefix) > 2:
-            print(f"Error: Found more than two matches in '{fastqDirectory}' for files that start with prefix '{filePrefix}'")
-            quit()
+            raise ValueError(f"Found more than two matches in '{fastqDirectory}' for files that start with prefix '{filePrefix}'")
         
         # Make sure files are ordered appropriately
         filesWithPrefix.sort(key = lambda x: list(map(int, fileSortRegex.findall(x))))
@@ -102,10 +113,20 @@ def get_files_from_prefix(fastqDirectory, prefixes):
         fastqFiles.append(filesWithPrefix)
         numFoundWithPrefix.append(len(filesWithPrefix))
     
+    # Check if all files are of the same type (single or paired end)
     if len(set(numFoundWithPrefix)) != 1:
-        print("Error: There seems to be a mix of single and paired end reads.")
-        print("Make sure your prefixes uniquely identify only one type of file and try again.")
-        quit()
+        raise ValueError(f"'{fastqDirectory}' seems to contain a mix of single and paired end reads; " + 
+                         "make sure your prefixes uniquely identify sample file(s) or ensure that " +
+                         "all samples have their corresponding paired end files.")
+    
+    # Alert user to the paired end nature of the files
+    if len(fastqFiles[0]) == 2:
+        print("# Reads are PAIRED end")
+    else:
+        print("# Reads are SINGLE end")
+    
+    # Alert user to how many samples were found
+    print(f"# Found {len(fastqFiles)} samples")
     
     return fastqFiles
 
@@ -118,7 +139,7 @@ def process_readgroups(speciesIds, genotypes, platform, library, unit):
 def create_cmd_file(fastqFiles, speciesIds, readgroups, genomeFile, bwa, outputFileName="cmd_illumina_map.txt", cpus=1):    
     # Validations
     if os.path.isfile(outputFileName):
-        raise FileExistsError("File name <{0}> already exists".format(outputFileName))
+        raise FileExistsError(f"'{outputFileName}' already exists; delete, move, or rename then try again")
     assert len(fastqFiles) == len(readgroups)
     
     # Write to file
@@ -144,8 +165,7 @@ def create_shell_script(cmdFile, numJobs, outputFileName="run_illumina_map.sh", 
     mem = "25G"
     
     # Setup the script's contents
-    formatStr = """
-#!/bin/bash -l
+    formatStr = """#!/bin/bash -l
 #PBS -N {jobname}
 #PBS -l walltime={walltime}
 #PBS -l mem={mem}
@@ -156,7 +176,6 @@ cd $PBS_O_WORKDIR
 
 eval $(cat {cmdFile} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
 """
-
     # Write to file
     with open(outputFileName, "w") as fileOut:
         fileOut.write(formatStr.format(
@@ -174,17 +193,19 @@ def main():
     tags for downstream popgen analysis. It will output a shell script amenable
     to batched job submission via PBS.
     
-    This script is suitable for use with single end and paired reads. It will automatically
-    infer this based on the prefixes given in the metadata file.
+    It will automatically infer whether your samples are single or paired end
+    based on the prefixes given in the metadata file.
     
-    The --prefix column should contain a unique value that identifies each sample's read files
-    (forward and reverse).
+    The --prefix column must contain a unique value that identifies each sample's read files
+    (forward and reverse). This is used solely to locate the files in the -d directory.
     
-    The --id column should contain unique values for each sample.
+    The --id column must contain unique values for each sample. This will dictate the output
+    SAM files and their embedded read group identifiers, which will dictate what the samples
+    are called in your VCF files.
     
-    The --sample column should contain genotype values which group together
-    samples that should be treated as coming from the same material; usually this
-    should be unique unless you want these samples to be (essentially) concatenated.
+    During variant calling, if two samples have the same --sample value, they may be pooled together.
+    You probably want this to be unique for each sample and be the same as your --id value unless
+    you have a good reason to pool samples.
     """
     # Required
     p = argparse.ArgumentParser(description=usage)
@@ -194,9 +215,9 @@ def main():
     p.add_argument("-f", dest="fastaFile",
                    required=True,
                    help="Input genome fasta file")
-    p.add_argument("-csv", dest="metadataCsv",
+    p.add_argument("-csv", dest="metadataFile",
                    required=True,
-                   help="Input Metadata CSV file")
+                   help="Input Metadata CSV or TSV file")
     p.add_argument("-b", dest="bwa",
                    required=True,
                    help="Input the full path to the bwa executable")
@@ -215,7 +236,7 @@ def main():
                    default="sm")
     p.add_argument("--platform", dest="platform",
                    required=False,
-                   choices=["illumina", "pacbio"], #incomplete list
+                   choices=["illumina", "pacbio", "nanopore"], #incomplete list
                    help="String to use for readgroup platform e.g., 'illumina' by default",
                    default="illumina")
     p.add_argument("--library", dest="library",
@@ -234,7 +255,7 @@ def main():
     validate_args(args)
     
     # Parse CSV file columns
-    prefixes, ids, samples = parse_metadata_csv(args.metadataCsv, args.prefixCol, args.idCol, args.sampleCol)
+    prefixes, ids, samples = parse_metadata_csv(args.metadataFile, args.prefixCol, args.idCol, args.sampleCol)
     
     # Validate that files exist and get their locations
     fastqFiles = get_files_from_prefix(args.fastqDirectory, prefixes)
