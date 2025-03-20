@@ -53,6 +53,7 @@ def main():
                     help="Specify the number of offspring to simulate",
                     default=10000)
     args = p.parse_args()
+    os.makedirs(args.outputDirectory, exist_ok=True)
     
     ########################
     # SIMULATE POPULATIONS #
@@ -195,8 +196,6 @@ def main():
         vcf = pd.DataFrame(vcfDict)
         
         # Generate files for psQTL analysis
-        os.makedirs(args.outputDirectory, exist_ok=True)
-        
         popOutDir = os.path.join(args.outputDirectory, str(size))
         os.makedirs(popOutDir, exist_ok=True)
         
