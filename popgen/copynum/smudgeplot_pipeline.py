@@ -307,7 +307,7 @@ def main():
                    help="Input directory containing FASTA/Q file(s)")
     p.add_argument("-f", dest="fileType",
                    required=True,
-                   choices=["fasta", "fasta_m" "fastq"],
+                   choices=["fasta", "fasta_m", "fastq"],
                    help="""Specify whether the input files are FASTA (single line),
                    FASTA (multi-line) or FASTQ""")
     p.add_argument("-o", dest="outputDirectory",
