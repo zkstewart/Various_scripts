@@ -21,7 +21,7 @@ def validate_args(args):
     
     # Impute file suffix if not specified
     if args.fileSuffix is None:
-        if args.fileType == "fasta":
+        if args.fileType == "fasta" or args.fileType == "fasta_m":
             args.fileSuffix = ".fasta"
         elif args.fileType == "fastq":
             args.fileSuffix = ".fq.gz"
@@ -88,7 +88,7 @@ def run_kmc(atFilesName, fileType, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
     Parameters:
         atFilesName -- a string indicating the location of the @FILES file containing
                        input file names
-        fileType -- a string indicating the type of input file(s) (fasta or fastq)
+        fileType -- a string indicating the type of input file(s) (fasta, fasta_m, or fastq)
         kmcdbPrefix -- a string indicating the basename for kmc to write the k-mer
                        database to (note: kmc will add .kmc_pre and .kmc_suf extension)
         cpus -- an integer indicating how many threads to run KMC with
@@ -99,7 +99,7 @@ def run_kmc(atFilesName, fileType, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
     # Construct the cmd for subprocess
     cmd = ZS_Utility.base_subprocess_cmd(kmcPath)
     cmd += [
-        "-fa" if fileType == "fasta" else "-fq",
+        "-fa" if fileType == "fasta" else "-fm" if fileType == "fasta_m" else "-fq",
         "-k21", f"-t{cpus}", f"-m{mem}", "-ci1", "-cs10000",
         "@" + ZS_Utility.convert_to_wsl_if_not_unix(atFilesName),
         ZS_Utility.convert_to_wsl_if_not_unix(kmcdbPrefix),
@@ -307,8 +307,9 @@ def main():
                    help="Input directory containing FASTA/Q file(s)")
     p.add_argument("-f", dest="fileType",
                    required=True,
-                   choices=["fasta", "fastq"],
-                   help="""Specify whether the input files are FASTA or FASTQ""")
+                   choices=["fasta", "fasta_m" "fastq"],
+                   help="""Specify whether the input files are FASTA (single line),
+                   FASTA (multi-line) or FASTQ""")
     p.add_argument("-o", dest="outputDirectory",
                    required=True,
                    help="Specify location to write output files to")
@@ -352,6 +353,11 @@ def main():
                    action="store_true",
                    help="Specify if files are single-ended",
                    default=False)
+    p.add_argument("--isMultiLine", dest="isMultiLine",
+                   required=False,
+                   action="store_true",
+                   help="If you are using multi-line FASTA files, specify this option",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -369,7 +375,7 @@ def main():
         pairedReads = [ [f] for f in forwardReads ]
     
     # Symlink FASTA/Q files into working directory
-    fastaqsDir = os.path.abspath(os.path.join(args.outputDirectory, "fastas" if args.fileType == "fasta" else "fastqs"))
+    fastaqsDir = os.path.abspath(os.path.join(args.outputDirectory, "fastqs" if args.fileType == "fastq" else "fastas"))
     os.makedirs(fastaqsDir, exist_ok=True)
     
     if not os.path.exists(os.path.join(args.outputDirectory, "fastaq_symlink_was_successful.flag")):
