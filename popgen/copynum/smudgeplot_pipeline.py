@@ -1,7 +1,7 @@
 #! python3
 # smudgeplot_pipeline.py
 # Script to automatically run smudgeplot analysis for the
-# prediction of genome ploidy values in a set of FASTQ files.
+# prediction of genome ploidy values in a set of FASTA/Q files.
 
 import os, argparse, sys, platform, subprocess
 
@@ -11,28 +11,31 @@ from Function_packages import ZS_Utility, ZS_SeqIO
 # Define functions
 def validate_args(args):
     def _not_specified_error(program):
-        print(f"ERROR: {program} not discoverable in your system PATH and was not specified as an argument.")
-        quit()
+        raise FileNotFoundError(f"{program} not discoverable in your system PATH and was not specified as an argument.")
     def _not_found_error(program, path):
-        print(f"ERROR: {program} was not found at the location indicated ('{path}')")
-        quit()
+        raise FileNotFoundError(f"{program} was not found at the location indicated ('{path}')")
     
     # Validate input file locations
-    if not os.path.isdir(args.fastqDirectory):
-        print('I am unable to locate the FASTQ directory (' + args.fastqDirectory + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    if not os.path.isdir(args.fileDirectory):
+        raise FileNotFoundError('I am unable to locate the FASTA/Q directory (' + args.fileDirectory + ')')
     
-    # Validate FASTQ suffix
-    foundAFASTQ = False
-    for file in os.listdir(args.fastqDirectory):
-        if file.endswith(args.fastqSuffix):
-            foundAFASTQ = True
+    # Impute file suffix if not specified
+    if args.fileSuffix is None:
+        if args.fileType == "fasta":
+            args.fileSuffix = ".fasta"
+        elif args.fileType == "fastq":
+            args.fileSuffix = ".fq.gz"
+        else:
+            raise NotImplementedError(f"File type '{args.fileType}' not recognized; please specify a file suffix.")
+    
+    # Validate file suffix
+    foundAFile = False
+    for file in os.listdir(args.fileDirectory):
+        if file.endswith(args.fileSuffix):
+            foundAFile = True
             break
-    if not foundAFASTQ:
-        print(f'No FASTQ files with suffix "{args.fastqSuffix}" found in directory "{args.fastqDirectory}"')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+    if not foundAFile:
+        raise FileNotFoundError(f'No FASTA/Q files with suffix "{args.fileSuffix}" found in directory "{args.fileDirectory}"')
     
     # Validate program discoverability
     if args.smudgeplot is None:
@@ -68,23 +71,24 @@ def validate_args(args):
         os.makedirs(args.outputDirectory)
         print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
 
-def generate_atfile_file(pair, fastqDir, atFilesName):
+def generate_atfile_file(pair, fastaqDir, atFilesName):
     '''
     Parameters:
-        pair -- a list containing one or two strings indicating the location of the FASTQ file(s)
+        pair -- a list containing one or two strings indicating the location of the FASTA/Q file(s)
                 making up a pair
-        fastqDir -- a string indicating the location of the FASTQ files in the pair
+        fastaqDir -- a string indicating the location of the FASTA/Q files in the pair
         atFilesName -- a string indicating the location to write the @FILES file to
     '''
     with open(atFilesName, "w") as fileOut:
-        for fastqFile in pair:
-            fileOut.write(os.path.join(fastqDir, fastqFile) + "\n")
+        for fastaqFile in pair:
+            fileOut.write(os.path.join(fastaqDir, fastaqFile) + "\n")
 
-def run_kmc(atFilesName, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
+def run_kmc(atFilesName, fileType, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
     '''
     Parameters:
         atFilesName -- a string indicating the location of the @FILES file containing
                        input file names
+        fileType -- a string indicating the type of input file(s) (fasta or fastq)
         kmcdbPrefix -- a string indicating the basename for kmc to write the k-mer
                        database to (note: kmc will add .kmc_pre and .kmc_suf extension)
         cpus -- an integer indicating how many threads to run KMC with
@@ -95,6 +99,7 @@ def run_kmc(atFilesName, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
     # Construct the cmd for subprocess
     cmd = ZS_Utility.base_subprocess_cmd(kmcPath)
     cmd += [
+        "-fa" if fileType == "fasta" else "-fq",
         "-k21", f"-t{cpus}", f"-m{mem}", "-ci1", "-cs10000",
         "@" + ZS_Utility.convert_to_wsl_if_not_unix(atFilesName),
         ZS_Utility.convert_to_wsl_if_not_unix(kmcdbPrefix),
@@ -292,14 +297,18 @@ def parse_smudge_ploidy(summaryFileName):
 ## Main
 def main():
     # User input
-    usage = """%(prog)s accepts a directory containing one or more FASTQ files in single or paired end.
+    usage = """%(prog)s accepts a directory containing one or more FASTA/Q files in single or paired end.
     It will run smudgeplot for each sample and tabulate their most likely ploidy.
     """
     p = argparse.ArgumentParser(description=usage)
     # Reqs
-    p.add_argument("-q", dest="fastqDirectory",
+    p.add_argument("-i", dest="fileDirectory",
                    required=True,
-                   help="Input directory containing FASTQ file(s)")
+                   help="Input directory containing FASTA/Q file(s)")
+    p.add_argument("-f", dest="fileType",
+                   required=True,
+                   choices=["fasta", "fastq"],
+                   help="""Specify whether the input files are FASTA or FASTQ""")
     p.add_argument("-o", dest="outputDirectory",
                    required=True,
                    help="Specify location to write output files to")
@@ -333,11 +342,11 @@ def main():
                    default == 64""",
                    default=64)
     # Opts (behavioural)
-    p.add_argument("--fastqSuffix", dest="fastqSuffix",
+    p.add_argument("--fileSuffix", dest="fileSuffix",
                    required=False,
-                   help="""Indicate the suffix of the FASTQ files to look for;
-                   default == '.fq.gz'""",
-                   default=".fq.gz")
+                   help="""Indicate the suffix of the FASTA/Q files to look for;
+                   default == '.fasta' if -f fasta else '.fq.gz'""",
+                   default=None)
     p.add_argument("--isSingleEnd", dest="isSingleEnd",
                    required=False,
                    action="store_true",
@@ -347,8 +356,8 @@ def main():
     args = p.parse_args()
     validate_args(args)
     
-    # Locate and validate FASTQ files
-    forwardReads, reverseReads = ZS_SeqIO.FASTA.get_rnaseq_files(args.fastqDirectory, args.fastqSuffix, args.isSingleEnd)
+    # Locate and validate FASTA/Q files
+    forwardReads, reverseReads = ZS_SeqIO.FASTA.get_rnaseq_files(args.fileDirectory, args.fileSuffix, args.isSingleEnd)
     
     # Reformat and tie paired reads together
     forwardReads = [ os.path.basename(f) for f in forwardReads ]
@@ -359,20 +368,20 @@ def main():
     else:
         pairedReads = [ [f] for f in forwardReads ]
     
-    # Symlink FASTQ files into working directory
-    fastqsDir = os.path.abspath(os.path.join(args.outputDirectory, "fastqs"))
-    os.makedirs(fastqsDir, exist_ok=True)
+    # Symlink FASTA/Q files into working directory
+    fastaqsDir = os.path.abspath(os.path.join(args.outputDirectory, "fastas" if args.fileType == "fasta" else "fastqs"))
+    os.makedirs(fastaqsDir, exist_ok=True)
     
-    if not os.path.exists(os.path.join(args.outputDirectory, "fastq_symlink_was_successful.flag")):
-        # Symlink each FASTQ file pair
+    if not os.path.exists(os.path.join(args.outputDirectory, "fastaq_symlink_was_successful.flag")):
+        # Symlink each FASTA/Q file pair
         for pair in pairedReads:
-            for fastqFile in pair:
-                outputFastqFile = os.path.join(fastqsDir, fastqFile)
-                if not os.path.exists(outputFastqFile):
-                    os.symlink(os.path.join(args.fastqDirectory, fastqFile), outputFastqFile)
-        open(os.path.join(args.outputDirectory, "fastq_symlink_was_successful.flag"), "w").close()
+            for fastaqFile in pair:
+                outputFastaqFile = os.path.join(fastaqsDir, fastaqFile)
+                if not os.path.exists(outputFastaqFile):
+                    os.symlink(os.path.join(args.fileDirectory, fastaqFile), outputFastaqFile)
+        open(os.path.join(args.outputDirectory, "fastaq_symlink_was_successful.flag"), "w").close()
     else:
-        print(f"fastq symlinking has already been performing; skipping.")
+        print(f"fastaq symlinking has already been performing; skipping.")
     
     # Set up the working directory structure
     kmcDir = os.path.abspath(os.path.join(args.outputDirectory, "kmc_files"))
@@ -384,16 +393,16 @@ def main():
     smudgeplotDir = os.path.abspath(os.path.join(args.outputDirectory, "smudgeplot_files"))
     os.makedirs(smudgeplotDir, exist_ok=True)
     
-    # Run kmc->smudgeplot for each FASTQ file pairing
+    # Run kmc->smudgeplot for each FASTA/Q file pairing
     if not os.path.exists(os.path.join(args.outputDirectory, "pipeline_was_successful.flag")):
-        # Iterate through each FASTQ file pair
+        # Iterate through each FASTA/Q file pair
         for pair in pairedReads:
-            samplePrefix = pair[0].replace(args.fastqSuffix, "")
+            samplePrefix = pair[0].replace(args.fileSuffix, "")
             
             # Write @FILES file for kmc
             atFilesName = os.path.join(kmcDir, samplePrefix + ".atfile")
             if not os.path.exists(atFilesName):
-                generate_atfile_file(pair, fastqsDir, atFilesName)
+                generate_atfile_file(pair, fastaqsDir, atFilesName)
             else:
                 print(f"@FILE generation has already been run for '{samplePrefix}'; skipping.")
             
@@ -402,7 +411,7 @@ def main():
             
             kmcdbPrefix = os.path.join(kmcDir, samplePrefix + "_db")
             if not all([ os.path.exists(kmcdbPrefix + suf) for suf in EXPECTED_SUFFIXES ]):
-                run_kmc(atFilesName, kmcdbPrefix, args.cpus, args.mem, kmcTmpDir, args.kmc)
+                run_kmc(atFilesName, args.fileType, kmcdbPrefix, args.cpus, args.mem, kmcTmpDir, args.kmc)
             else:
                 print(f"kmc db has already been generated for '{samplePrefix}'; skipping.")
             
@@ -455,7 +464,7 @@ def main():
             
             # Iterate through samples
             for pair in pairedReads:
-                samplePrefix = pair[0].replace(args.fastqSuffix, "")
+                samplePrefix = pair[0].replace(args.fileSuffix, "")
                 
                 # Parse the output summary file
                 summaryFileName = os.path.join(args.outputDirectory, samplePrefix + "_plot_verbose_summary.txt")
