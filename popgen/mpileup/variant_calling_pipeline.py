@@ -164,7 +164,7 @@ bcftools mpileup -Ou \\
     -f ${{GENOMEDIR}}/${{GENOME}} \\
     -r ${{CONTIG}} \\
     --bam-list ${{BAM_LIST}} \\
-    -q 10 -Q 20 -a AD | bcftools call -m -v -Oz -o ${{CONTIG}}.vcf.gz
+    -q 10 -Q 20 -a AD,DP | bcftools call -m -v -Oz -o ${{CONTIG}}.vcf.gz
 
 # STEP 3: Index the VCF file
 tabix ${{CONTIG}}.vcf.gz
