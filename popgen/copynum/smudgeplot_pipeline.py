@@ -430,7 +430,7 @@ def main():
             
             # Run kmc_tools dump
             dumpFileName = kmcdbPrefix + ".dump"
-            if not os.path.exists(dumpFileName):
+            if not os.path.exists(dumpFileName) or os.path.getsize(dumpFileName) == 0:
                 # Get lower and upper cutoffs from smudgeplot
                 lCutoff = run_smudgeplot_cutoff(histFileName, "L", args.smudgeplot)
                 uCutoff = run_smudgeplot_cutoff(histFileName, "U", args.smudgeplot)
