@@ -173,7 +173,7 @@ def run_smudgeplot_all(kmerPairsFile, outputPrefix, smudgeplotPath):
     
     # Check to see if there was an error
     if (smudgeout.decode("utf-8") != "") or (not "Done!" in smudgeerr.decode("utf-8")):
-        raise Exception(("ERROR: run_smudgeplot_hetmers encountered an error; have a look " +
+        raise Exception(("ERROR: run_smudgeplot_all encountered an error; have a look " +
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
                         f'({smudgeerr.decode("utf-8")}) to make sense of this.'))
 
