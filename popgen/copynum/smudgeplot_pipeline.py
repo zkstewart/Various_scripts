@@ -140,7 +140,7 @@ def run_smudgeplot_hetmers(fastkTableFile, kmerPairsFile, L, cpus, smudgeplotPat
     run_smudge_hetmers = subprocess.Popen(cmd, shell = True,
                                           stdout = subprocess.PIPE,
                                           stderr = subprocess.PIPE)
-    smudgeout, smudgeerr = run_smudge_hekmers.communicate()
+    smudgeout, smudgeerr = run_smudge_hetmers.communicate()
     
     # Check to see if there was an error
     if (smudgeout.decode("utf-8") != "") or (not "Done!" in smudgeerr.decode("utf-8")):
