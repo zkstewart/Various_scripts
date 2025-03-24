@@ -46,29 +46,31 @@ def validate_args(args):
         if not os.path.isfile(args.smudgeplot):
             _not_found_error("smudgeplot.py", args.smudgeplot)
     
-    if args.fastk is None:
-        args.fastk = ZS_Utility.wsl_which("FastK")
+    if args.kmerProgram == "fastk":
         if args.fastk is None:
-            _not_specified_error("FastK")
-    else:
-        if not os.path.isfile(args.fastk):
-            _not_found_error("FastK", args.fastk)
+            args.fastk = ZS_Utility.wsl_which("FastK")
+            if args.fastk is None:
+                _not_specified_error("FastK")
+        else:
+            if not os.path.isfile(args.fastk):
+                _not_found_error("FastK", args.fastk)
     
-    if args.kmc is None:
-        args.kmc = ZS_Utility.wsl_which("kmc")
+    if args.kmerProgram == "kmc":
         if args.kmc is None:
-            _not_specified_error("kmc")
-    else:
-        if not os.path.isfile(args.kmc):
-            _not_found_error("kmc", args.kmc)
-    
-    if args.kmc_tools is None:
-        args.kmc_tools = ZS_Utility.wsl_which("kmc_tools")
+            args.kmc = ZS_Utility.wsl_which("kmc")
+            if args.kmc is None:
+                _not_specified_error("kmc")
+        else:
+            if not os.path.isfile(args.kmc):
+                _not_found_error("kmc", args.kmc)
+        
         if args.kmc_tools is None:
-            _not_specified_error("kmc_tools")
-    else:
-        if not os.path.isfile(args.kmc_tools):
-            _not_found_error("kmc_tools", args.kmc_tools)
+            args.kmc_tools = ZS_Utility.wsl_which("kmc_tools")
+            if args.kmc_tools is None:
+                _not_specified_error("kmc_tools")
+        else:
+            if not os.path.isfile(args.kmc_tools):
+                _not_found_error("kmc_tools", args.kmc_tools)
     
     # Validate output file location
     if os.path.isdir(args.outputDirectory) and os.listdir(args.outputDirectory) != []:
