@@ -177,7 +177,7 @@ def run_smudgeplot_all(kmerPairsFile, outputPrefix, smudgeplotPath):
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
                         f'({smudgeerr.decode("utf-8")}) to make sense of this.'))
 
-def fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, kmerTmpDir, args):
+def fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, args):
     # Format pairs as string with square bracketed alternatives
     if len(pair) == 2:
         commonPrefix = os.path.commonprefix(pair)
@@ -185,9 +185,12 @@ def fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, kmerT
         commonSuffix = os.path.commonprefix([ s[::-1] for s in suffixes ])[::-1]
         alternatives = [ suffixes[i].rsplit(commonSuffix)[0] for i in range(len(suffixes)) ]
         
-        reads = f"{commonPrefix}[{alternatives[0]}{alternatives[1]}]{commonSuffix}"
+        reads = os.path.join(
+            fastaqsDir,  
+            f"{commonPrefix}[{alternatives[0]}{alternatives[1]}]{commonSuffix}"
+        )
     else:
-        reads = pair[0]
+        reads = os.path.join(fastaqsDir, pair[0])
     
     # Run FastK
     fastkTableFile = os.path.join(kmerDir, samplePrefix + "_table")
@@ -618,7 +621,7 @@ def main():
             if args.kmerProgram == "kmc":
                 kmc_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, kmerTmpDir, args)
             elif args.kmerProgram == "fastk":
-                fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, kmerTmpDir, args)
+                fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, args)
             
             
         
