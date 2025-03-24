@@ -174,10 +174,28 @@ def run_smudgeplot_all(kmerPairsFile, outputPrefix, smudgeplotPath):
     smudgeout, smudgeerr = run_smudge_all.communicate()
     
     # Check to see if there was an error
-    if (smudgeout.decode("utf-8") != "") or (not "Done!" in smudgeerr.decode("utf-8")):
+    if not "Done!" in smudgeerr.decode("utf-8"):
         raise Exception(("ERROR: run_smudgeplot_all encountered an error; have a look " +
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
                         f'({smudgeerr.decode("utf-8")}) to make sense of this.'))
+
+def parse_smudge_sizes(smudgeSizeFile):
+    '''
+    Parameters:
+        smudgeSizeFile -- a string indicating the location of the smudgepot sizes file
+    Returns:
+        ploidyNum -- string value of the most likely ploidy number according to smudgeplot
+    '''
+    ploidyProbability = []
+    with open(smudgeSizeFile, "r") as fileIn:
+        for line in fileIn:
+            l = line.rstrip("\r\n ")
+            if l != "":
+                ploidy, probability = l.split("\t")
+                ploidyProbability.append([ploidy, float(probability)])
+    ploidyProbability.sort(key=lambda x: x[1], reverse=True)
+    ploidyNum = len(ploidyProbability[0][0])
+    return ploidyNum
 
 def fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, args):
     # Format pairs as string with square bracketed alternatives
@@ -425,7 +443,7 @@ def run_smudgeplot_plot(smudgeCoveragesFile, outputPrefix, samplePrefix, smudgep
                         f'at the stdout ({smudgeout.decode("utf-8")}) and stderr ' + 
                         f'({smudgeerr.decode("utf-8")}) to make sense of this.'))
 
-def parse_smudge_ploidy(summaryFileName):
+def parse_smudge_summary(summaryFileName):
     '''
     Parameters:
         summaryFileName -- a string indicating the location of the smudgepot verbose summary file
@@ -625,12 +643,10 @@ def main():
                 kmc_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, kmerTmpDir, args)
             elif args.kmerProgram == "fastk":
                 fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, args)
-            
-            
         
         open(os.path.join(args.outputDirectory, "pipeline_was_successful.flag"), "w").close()
     else:
-        print(f"kmer->smudgeplot pipeline has already been performed; skipping.")
+        print(f"kmer counting->smudgeplot pipeline has already been performed; skipping.")
     
     # Tabulate ploidy number results
     ploidyTableFile = os.path.join(args.outputDirectory, "ploidy_numbers.tsv")
@@ -645,9 +661,13 @@ def main():
                 samplePrefix = pair[0].replace(args.fileSuffix, "")
                 
                 # Parse the output summary file
-                summaryFileName = os.path.join(args.outputDirectory, samplePrefix + "_plot_verbose_summary.txt")
-                ploidyNum = parse_smudge_ploidy(summaryFileName)
-                
+                if args.kmerProgram == "kmc":
+                    summaryFileName = os.path.join(args.outputDirectory, samplePrefix + "_plot_verbose_summary.txt")
+                    ploidyNum = parse_smudge_summary(summaryFileName)
+                else:
+                    smudgeSizeFile = os.path.join(smudgeplotDir, samplePrefix + "_fastkout_smudge_sizes.txt")
+                    ploidyNum = parse_smudge_sizes(smudgeSizeFile)
+                 
                 # Write result to file
                 fileOut.write(f"{samplePrefix}\t{ploidyNum}\n")
         
