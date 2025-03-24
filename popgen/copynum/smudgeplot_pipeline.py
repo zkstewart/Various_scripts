@@ -128,7 +128,7 @@ def run_smudgeplot_hetmers(fastkTableFile, kmerPairsFile, L, cpus, smudgeplotPat
     # Construct the cmd for subprocess
     cmd = ZS_Utility.base_subprocess_cmd(smudgeplotPath)
     cmd += [
-        "hetmers", "-L", str(L), "-t", str(cpus)
+        "hetmers", "-L", str(L), "-t", str(cpus),
         "-o", ZS_Utility.convert_to_wsl_if_not_unix(kmerPairsFile),
         ZS_Utility.convert_to_wsl_if_not_unix(fastkTableFile)
     ]
