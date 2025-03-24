@@ -109,7 +109,7 @@ def run_fastk(reads, fastkTableFile, cpus, mem, fastkPath):
     fastkout, fastkerr = run_fastk.communicate()
     
     # Check to see if there was an error
-    if not "Total Resources:" in fastkerr.decode("utf-8"):
+    if fastkout.decode("utf-8") != "" and fastkerr.decode("utf-8") != "":
         raise Exception(("ERROR: run_fastk encountered an error; have a look " +
                         f'at the stdout ({fastkout.decode("utf-8")}) and stderr ' + 
                         f'({fastkerr.decode("utf-8")}) to make sense of this.'))
