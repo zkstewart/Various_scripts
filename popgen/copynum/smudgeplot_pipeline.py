@@ -195,14 +195,15 @@ def fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, args)
     # Run FastK
     fastkTableFile = os.path.join(kmerDir, samplePrefix + "_table")
     if not os.path.exists(fastkTableFile):
-        run_fastk(reads, kmerpairs, fastkTableFile, args.cpus, args.mem, args.fastk)
+        run_fastk(reads, fastkTableFile, args.cpus, args.mem, args.fastk)
     else:
         print(f"FastK has already been run for '{samplePrefix}'; skipping.")
     
     # Run smudgeplot hetmers
     kmerPairsFile = os.path.join(smudgeplotDir, samplePrefix + "_kmerpairs")
     if not os.path.exists(kmerPairsFile + "_text.smu"):
-        run_smudgeplot_hetmers(fastkTableFile, kmerPairsFile, args.smudgeplot)
+        run_smudgeplot_hetmers(fastkTableFile, kmerPairsFile, args.smudgeErroneousLower,
+                               args.cpus, args.smudgeplot)
     else:
         print(f"smudgeplot hetmers has already been run for '{samplePrefix}'; skipping.")
     
