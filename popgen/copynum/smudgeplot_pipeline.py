@@ -194,7 +194,7 @@ def fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, args)
     
     # Run FastK
     fastkTableFile = os.path.join(kmerDir, samplePrefix + "_table")
-    if not os.path.exists(fastkTableFile):
+    if not os.path.exists(fastkTableFile + ".hist") and not os.path.exists(fastkTableFile + ".ktab"):
         run_fastk(reads, fastkTableFile, args.cpus, args.mem, args.fastk)
     else:
         print(f"FastK has already been run for '{samplePrefix}'; skipping.")
