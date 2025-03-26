@@ -13,8 +13,7 @@ passFailRegex = re.compile(r"alt=\"\[(\w+?)\]\"\/><a href=\"#M\d+\">([\w\s]+?)<\
 basicStatsRegex = re.compile(r"Total Sequences<\/td><td>(\d+)<\/td><\/tr><tr><td>Sequences flagged as poor quality<\/td><td>(\d+)<\/td>")
 
 # Stats regex for newer FASTQC versions
-basicStatsRegex2 = re.compile(r"Total Sequences<\/td><td>(\d+)<\/td><\/tr><tr><td>Total Bases<\/td><td>4.2 Gbp<\/td><\/tr><tr><td>Sequences flagged as poor quality<\/td><td>(\d+)<\/td>")
-
+basicStatsRegex2 = re.compile(r"Total Sequences<\/td><td>(\d+)<\/td><\/tr><tr><td>Total Bases<\/td><td>[\.\s\w]+?<\/td><\/tr><tr><td>Sequences flagged as poor quality<\/td><td>(\d+)<\/td>")
 
 # Define functions
 def validate_args(args):
