@@ -7,8 +7,14 @@ import os, argparse, re
 import pandas as pd
 from xlsxwriter.utility import xl_col_to_name
 
-basicStatsRegex = re.compile(r"Total Sequences<\/td><td>(\d+)<\/td><\/tr><tr><td>Sequences flagged as poor quality<\/td><td>(\d+)<\/td>")
 passFailRegex = re.compile(r"alt=\"\[(\w+?)\]\"\/><a href=\"#M\d+\">([\w\s]+?)<\/a>")
+
+# Stats regex for older FASTQC versions
+basicStatsRegex = re.compile(r"Total Sequences<\/td><td>(\d+)<\/td><\/tr><tr><td>Sequences flagged as poor quality<\/td><td>(\d+)<\/td>")
+
+# Stats regex for newer FASTQC versions
+basicStatsRegex2 = re.compile(r"Total Sequences<\/td><td>(\d+)<\/td><\/tr><tr><td>Total Bases<\/td><td>4.2 Gbp<\/td><\/tr><tr><td>Sequences flagged as poor quality<\/td><td>(\d+)<\/td>")
+
 
 # Define functions
 def validate_args(args):
@@ -45,7 +51,10 @@ def parse_fcq_file(fqcFile):
         contents = fileIn.read()
         
         # Parse results from file
-        numReads, poorQuality = basicStatsRegex.search(contents).groups()
+        try:
+            numReads, poorQuality = basicStatsRegex.search(contents).groups()
+        except:
+            numReads, poorQuality = basicStatsRegex2.search(contents).groups()
         passFail = passFailRegex.findall(contents)
         
         # Add in basic stats
