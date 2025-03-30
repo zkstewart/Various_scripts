@@ -7,6 +7,7 @@ import os, inspect, sys, time, random, re, math, subprocess, platform
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
 from copy import deepcopy
+from pyfaidx import Fasta
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import ZS_Utility
@@ -1745,6 +1746,64 @@ class FASTA:
         return "FASTA(seqs={0} <FastASeq> objs, consensus={1}, isAligned={2}, fileOrder={3})".format(
             len(self.seqs), self.consensus, self.isAligned,
             str(self.fileOrder) if len(str(self.fileOrder)) < 200 else "{0} ... {1}".format(str(self.fileOrder)[0:100], str(self.fileOrder)[-100:])
+        )
+
+class FastaCollection:
+    '''
+    Wrapper for pyfaidx Fasta objects which allows multiple to be combined
+    and queried as one logical entity.
+    
+    Parameters:
+        fastaFiles -- a list of strings pointing to the locations of FASTA files
+                      which are to be loaded in using pyfaidx.Fasta
+    '''
+    def __init__(self, fastaFiles):
+        self.fastaFiles = fastaFiles
+        self.records = []
+        self.pipePrefixes = []
+        
+        self._parse_fastas()
+    
+    def _parse_fastas(self):
+        for fastaFile in self.fastaFiles:
+            self.records.append(Fasta(fastaFile))
+            # Extract pipe prefixes from FASTA titles
+            pipePrefixes = set()
+            with open(fastaFile, "r") as fileIn:
+                for line in fileIn:
+                    if line.startswith(">"):
+                        seqPrefix = line[1:].split(None, 1)[0]
+                        if "|" in seqPrefix:
+                            pipePrefix = seqPrefix.split("|")[0] + "|"
+                            pipePrefixes.add(pipePrefix)
+            self.pipePrefixes.append(pipePrefixes)
+    
+    def __getitem__(self, key):
+        for i, records in enumerate(self.records):
+            try:
+                return records[key]
+            except:
+                for pipePrefix in self.pipePrefixes[i]:
+                    try:
+                        return records[pipePrefix + key]
+                    except:
+                        pass
+        raise KeyError(f"'{key}' not found in collection")
+    
+    def __contains__(self, key):
+        try:
+            self[key] # __getitem__ raises exception if the key isn't found
+            return True
+        except:
+            return False
+    
+    def __iter__(self):
+        for records in self.records:
+            yield from records
+    
+    def __repr__(self):
+        return (f"<FastaCollection object;num_records='{len(self.records)}';" +
+                f"fastaFiles={self.fastaFiles}"
         )
 
 class SeqIO_Tests:
