@@ -67,10 +67,10 @@ def parse_metadata_csv(metadataFile, prefixCol="prefix", idCol="id", smCol="sm")
                 if prefixValue == "" or idValue == "" or smValue == "":
                     raise ValueError(f"Empty values found in metadata CSV; please fill in all fields")
                 
-                if prefix in prefixes:
-                    raise ValueError(f"Prefix tag '{prefix}' isn't unique!")
-                if id in IDs:
-                    raise ValueError(f"ID tag '{id}' isn't unique!")
+                if prefixValue in prefixes:
+                    raise ValueError(f"Prefix tag '{prefixValue}' isn't unique!")
+                if idValue in IDs:
+                    raise ValueError(f"ID tag '{idValue}' isn't unique!")
                 
                 prefixes.append(prefixValue)
                 IDs.append(idValue)
