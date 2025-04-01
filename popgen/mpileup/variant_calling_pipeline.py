@@ -386,7 +386,7 @@ def main():
     
     # Index FASTA file (if necessary)
     if not os.path.exists(f"{args.fastaFile}.fai"):
-        ZS_SeqIO.StandardProgramRunners.samtools_faidx(args.fastaFile, args.samtools)
+        ZS_SeqIO.StandardProgramRunners.samtools_faidx(args.fastaFile, "samtools") # must be in PATH to pass arg validation
     
     # Parse FASTA file for sequence IDs
     contigIDs = get_fasta_ids(args.fastaFile)
