@@ -23,14 +23,18 @@ PREFIX=merged
 if [[ ! -f ${PREFIX}.filtered.vcf  ]]; then
     vcftools --gzvcf ${PREFIX}.vcf.gz --max-missing ${MISSING} --mac ${MAC} --minQ ${MINQ} --remove-filtered-all --recode --recode-INFO-all --maf ${MAF} --out ${PREFIX}.filtered.vcf;
     mv ${PREFIX}.filtered.vcf.recode.vcf ${PREFIX}.filtered.vcf;
+    bgzip ${PREFIX}.filtered.vcf;
+    tabix ${PREFIX}.filtered.vcf.gz;
 fi
 
 # STEP 2: Keep only biallelic sites
 if [[ ! -f ${PREFIX}.filtered.biallelic.vcf  ]]; then
-    bcftools view --max-alleles 2 -Ov -o ${PREFIX}.filtered.biallelic.vcf ${PREFIX}.filtered.vcf
+    bcftools view --max-alleles 2 -Oz -o ${PREFIX}.filtered.biallelic.vcf.gz ${PREFIX}.filtered.vcf.gz;
+    tabix ${PREFIX}.filtered.biallelic.vcf.gz;
 fi
 
 # STEP 3: Remove indels
 if [[ ! -f ${PREFIX}.filtered.biallelic.noindels.vcf  ]]; then
-    bcftools view --exclude-types indels -Ov -o ${PREFIX}.filtered.biallelic.noindels.vcf ${PREFIX}.filtered.biallelic.vcf
+    bcftools view --exclude-types indels -Oz -o ${PREFIX}.filtered.biallelic.noindels.vcf.gz ${PREFIX}.filtered.biallelic.vcf.gz;
+    tabix ${PREFIX}.filtered.biallelic.noindels.vcf.gz;
 fi
