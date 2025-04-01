@@ -77,7 +77,7 @@ def parse_metadata_csv(metadataFile, prefixCol="prefix", idCol="id", smCol="sm")
                 SMs.append(smValue)
     
     # Alert user to how the metadata has been interpreted
-    if len(sm) != len(set(sm)):
+    if len(SMs) != len(set(SMs)):
         print("# WARNING: Some samples have the same --sample ID; they may be pooled during variant calling")
     
     return prefixes, IDs, SMs
