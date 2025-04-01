@@ -21,5 +21,8 @@ for file in *.sorted.bam; do
         if [[ ! -f ${PREFIX}.sorted.md.bam  ]]; then
             java -jar $EBROOTPICARD/picard.jar MarkDuplicates I=$file O=${PREFIX}.sorted.md.bam M=${PREFIX}.md_metrics.txt;
         fi
+        if [[ ! -f ${PREFIX}.sorted.md.bam.bai  ]]; then
+            samtools index ${PREFIX}.sorted.md.bam;
+        fi
     fi
 done
