@@ -3,10 +3,10 @@
 # Script to automatically run smudgeplot analysis for the
 # prediction of genome ploidy values in a set of FASTA/Q files.
 
-import os, argparse, sys, platform, subprocess
+import os, argparse, sys, platform, subprocess, shutil
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find Function_packages
-from Function_packages import ZS_Utility, ZS_SeqIO
+from Function_packages import ZS_SeqIO
 
 # Define functions
 def validate_args(args):
@@ -39,7 +39,7 @@ def validate_args(args):
     
     # Validate program discoverability
     if args.smudgeplot is None:
-        args.smudgeplot = ZS_Utility.wsl_which("smudgeplot.py")
+        args.smudgeplot = shutil.which("smudgeplot.py")
         if args.smudgeplot is None:
             _not_specified_error("smudgeplot.py")
     else:
@@ -48,7 +48,7 @@ def validate_args(args):
     
     if args.kmerProgram == "fastk":
         if args.fastk is None:
-            args.fastk = ZS_Utility.wsl_which("FastK")
+            args.fastk = shutil.which("FastK")
             if args.fastk is None:
                 _not_specified_error("FastK")
         else:
@@ -57,7 +57,7 @@ def validate_args(args):
     
     if args.kmerProgram == "kmc":
         if args.kmc is None:
-            args.kmc = ZS_Utility.wsl_which("kmc")
+            args.kmc = shutil.which("kmc")
             if args.kmc is None:
                 _not_specified_error("kmc")
         else:
@@ -65,7 +65,7 @@ def validate_args(args):
                 _not_found_error("kmc", args.kmc)
         
         if args.kmc_tools is None:
-            args.kmc_tools = ZS_Utility.wsl_which("kmc_tools")
+            args.kmc_tools = shutil.which("kmc_tools")
             if args.kmc_tools is None:
                 _not_specified_error("kmc_tools")
         else:
@@ -94,18 +94,13 @@ def run_fastk(reads, fastkTableFile, cpus, mem, fastkPath):
         fastkPath -- a string indicating the location of the FastK executable
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(fastkPath)
-    cmd += [
-        f"-t4", "-k31", f"-M{mem}", f"-T{cpus}",
-        ZS_Utility.convert_to_wsl_if_not_unix(reads),
-        f"-N{ZS_Utility.convert_to_wsl_if_not_unix(fastkTableFile)}"
+    cmd = [
+        fastkPath, f"-t4", "-k31", f"-M{mem}", f"-T{cpus}",
+        reads, f"-N{fastkTableFile}"
     ]
     
-    if platform.system() != "Windows":
-        cmd = " ".join(cmd)
-    
     # Run the command
-    run_fastk = subprocess.Popen(cmd, shell = True,
+    run_fastk = subprocess.Popen(" ".join(cmd), shell = True,
                                  stdout = subprocess.PIPE,
                                  stderr = subprocess.PIPE)
     fastkout, fastkerr = run_fastk.communicate()
@@ -128,18 +123,13 @@ def run_smudgeplot_hetmers(fastkTableFile, kmerPairsFile, L, cpus, smudgeplotPat
         smudgeplotPath -- a string indicating the location of the smudgeplot.py executable
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(smudgeplotPath)
-    cmd += [
-        "hetmers", "-L", str(L), "-t", str(cpus),
-        "-o", ZS_Utility.convert_to_wsl_if_not_unix(kmerPairsFile),
-        ZS_Utility.convert_to_wsl_if_not_unix(fastkTableFile)
+    cmd = [
+        smudgeplotPath, "hetmers", "-L", str(L), "-t", str(cpus),
+        "-o", kmerPairsFile, fastkTableFile
     ]
     
-    if platform.system() != "Windows":
-        cmd = " ".join(cmd)
-    
     # Run the command
-    run_smudge_hetmers = subprocess.Popen(cmd, shell = True,
+    run_smudge_hetmers = subprocess.Popen(" ".join(cmd), shell = True,
                                           stdout = subprocess.PIPE,
                                           stderr = subprocess.PIPE)
     smudgeout, smudgeerr = run_smudge_hetmers.communicate()
@@ -158,17 +148,13 @@ def run_smudgeplot_all(kmerPairsFile, outputPrefix, smudgeplotPath):
         smudgeplotPath -- a string indicating the location of the smudgeplot.py executable
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(smudgeplotPath)
-    cmd += [
-        "all", "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputPrefix),
-        f"{ZS_Utility.convert_to_wsl_if_not_unix(kmerPairsFile)}_text.smu"
+    cmd = [
+        smudgeplotPath, "all", "-o", outputPrefix,
+        f"{kmerPairsFile}_text.smu"
     ]
     
-    if platform.system() != "Windows":
-        cmd = " ".join(cmd)
-    
     # Run the command
-    run_smudge_all = subprocess.Popen(cmd, shell = True,
+    run_smudge_all = subprocess.Popen(" ".join(cmd), shell = True,
                                       stdout = subprocess.PIPE,
                                       stderr = subprocess.PIPE)
     smudgeout, smudgeerr = run_smudge_all.communicate()
@@ -261,20 +247,14 @@ def run_kmc(atFilesName, fileType, kmcdbPrefix, cpus, mem, tmpDir, kmcPath):
         kmcPath -- a string indicating the location of the kmc executable
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(kmcPath)
-    cmd += [
-        "-fa" if fileType == "fasta" else "-fm" if fileType == "fasta_m" else "-fq",
+    cmd = [
+        kmcPath, "-fa" if fileType == "fasta" else "-fm" if fileType == "fasta_m" else "-fq",
         "-k21", f"-t{cpus}", f"-m{mem}", "-ci1", "-cs10000",
-        "@" + ZS_Utility.convert_to_wsl_if_not_unix(atFilesName),
-        ZS_Utility.convert_to_wsl_if_not_unix(kmcdbPrefix),
-        ZS_Utility.convert_to_wsl_if_not_unix(tmpDir)
+        "@" + atFilesName, kmcdbPrefix, tmpDir
     ]
     
-    if platform.system() != "Windows":
-        cmd = " ".join(cmd)
-    
     # Run the command
-    run_kmc = subprocess.Popen(cmd, shell = True,
+    run_kmc = subprocess.Popen(" ".join(cmd), shell = True,
                                stdout = subprocess.PIPE,
                                stderr = subprocess.PIPE)
     kmcout, kmcerr = run_kmc.communicate()
@@ -293,18 +273,13 @@ def run_kmctools_histogram(kmcdbPrefix, outFileName, kmc_toolsPath):
         kmc_toolsPath -- a string indicating the location of the kmc_tools executable
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(kmc_toolsPath)
-    cmd += [
-        "transform", ZS_Utility.convert_to_wsl_if_not_unix(kmcdbPrefix),
-        "histogram", ZS_Utility.convert_to_wsl_if_not_unix(outFileName),
-        "-cx10000"
+    cmd = [
+        kmc_toolsPath, "transform", kmcdbPrefix,
+        "histogram", outFileName, "-cx10000"
     ]
     
-    if platform.system() != "Windows":
-        cmd = " ".join(cmd)
-    
     # Run the command
-    run_kmc = subprocess.Popen(cmd, shell = True,
+    run_kmc = subprocess.Popen(" ".join(cmd), shell = True,
                                stdout = subprocess.PIPE,
                                stderr = subprocess.PIPE)
     kmcout, kmcerr = run_kmc.communicate()
@@ -325,17 +300,12 @@ def run_smudgeplot_cutoff(kmcHistogramFile, cutoff, smudgeplotPath):
         stdout -- a string indicating the stdout from the smudgeplot cutoff command
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(smudgeplotPath)
-    cmd += [
-        "cutoff", ZS_Utility.convert_to_wsl_if_not_unix(kmcHistogramFile),
-        cutoff
+    cmd = [
+        smudgeplotPath, "cutoff", kmcHistogramFile, cutoff
     ]
     
-    if platform.system() != "Windows":
-        cmd = " ".join(cmd)
-    
     # Run the command
-    run_smudge_cutoff = subprocess.Popen(cmd, shell = True,
+    run_smudge_cutoff = subprocess.Popen(" ".join(cmd), shell = True,
                                          stdout = subprocess.PIPE,
                                          stderr = subprocess.PIPE)
     smudgeout, smudgerr = run_smudge_cutoff.communicate()
@@ -359,18 +329,14 @@ def run_kmctools_dump(kmcdbPrefix, lCutoff, uCutoff, outFileName, kmc_toolsPath)
         kmc_toolsPath -- a string indicating the location of the kmc_tools executable
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(kmc_toolsPath)
-    cmd += [
-        "transform", ZS_Utility.convert_to_wsl_if_not_unix(kmcdbPrefix),
+    cmd = [
+        kmc_toolsPath, "transform", kmcdbPrefix,
         f"-ci{lCutoff}", f"-cx{uCutoff}",
-        "dump", "-s", ZS_Utility.convert_to_wsl_if_not_unix(outFileName)
+        "dump", "-s", outFileName
     ]
     
-    if platform.system() != "Windows":
-        cmd = " ".join(cmd)
-    
     # Run the command
-    run_kmc = subprocess.Popen(cmd, shell = True,
+    run_kmc = subprocess.Popen(" ".join(cmd), shell = True,
                                stdout = subprocess.PIPE,
                                stderr = subprocess.PIPE)
     kmcout, kmcerr = run_kmc.communicate()
@@ -389,19 +355,14 @@ def run_smudgeplot_hetkmers(kmcDumpFile, outputFileName, smudgeplotPath):
         smudgeplotPath -- a string indicating the location of the smudgeplot.py executable
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(smudgeplotPath)
-    cmd += [
-        "hetkmers", "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputFileName),
-        ZS_Utility.convert_to_wsl_if_not_unix(kmcDumpFile)
+    cmd = [
+        smudgeplotPath, "hetkmers", "-o", outputFileName, kmcDumpFile
     ]
     
-    if platform.system() != "Windows":
-        cmd = " ".join(cmd)
-    
     # Run the command
-    run_smudge_hetkmers = subprocess.Popen(cmd, shell = True,
-                                         stdout = subprocess.PIPE,
-                                         stderr = subprocess.PIPE)
+    run_smudge_hetkmers = subprocess.Popen(" ".join(cmd), shell = True,
+                                           stdout = subprocess.PIPE,
+                                           stderr = subprocess.PIPE)
     smudgeout, smudgeerr = run_smudge_hetkmers.communicate()
     
     # Check to see if there was an error
@@ -420,21 +381,15 @@ def run_smudgeplot_plot(smudgeCoveragesFile, outputPrefix, samplePrefix, smudgep
         smudgeplotPath -- a string indicating the location of the smudgeplot.py executable
     '''
     # Construct the cmd for subprocess
-    cmd = ZS_Utility.base_subprocess_cmd(smudgeplotPath)
-    cmd += [
-        "plot", "-t", samplePrefix,
-        "-o", ZS_Utility.convert_to_wsl_if_not_unix(outputPrefix),
-        ZS_Utility.convert_to_wsl_if_not_unix(smudgeCoveragesFile)
-        
+    cmd = [
+        smudgeplotPath, "plot", "-t", samplePrefix,
+        "-o", outputPrefix, smudgeCoveragesFile
     ]
     
-    if platform.system() != "Windows":
-        cmd = " ".join(cmd)
-    
     # Run the command
-    run_smudge_plot = subprocess.Popen(cmd, shell = True,
-                                         stdout = subprocess.PIPE,
-                                         stderr = subprocess.PIPE)
+    run_smudge_plot = subprocess.Popen(" ".join(cmd), shell = True,
+                                       stdout = subprocess.PIPE,
+                                       stderr = subprocess.PIPE)
     smudgeout, smudgeerr = run_smudge_plot.communicate()
     
     # Check to see if there was an error
@@ -530,8 +485,8 @@ def main():
     p.add_argument("-k", dest="kmerProgram",
                    required=True,
                    choices=["kmc", "fastk"],
-                   help="""Specify whether to use kmc
-                   or fastk for k-mer counting""")
+                   help="""Specify whether to use kmc (old smudgeplot)
+                   or fastk (new smudgeplot) for k-mer counting""")
     p.add_argument("-o", dest="outputDirectory",
                    required=True,
                    help="Specify location to write output files to")
@@ -539,22 +494,22 @@ def main():
     p.add_argument("--smudgeplot", dest="smudgeplot",
                    required=False,
                    help="""Optionally, specify the smudgeplot.py file
-                   if it is not discoverable in the path""",
+                   if it is not discoverable in your PATH variable""",
                    default=None)
     p.add_argument("--fastk", dest="fastk",
                    required=False,
                    help="""Optionally, specify the FastK file
-                   if it is not discoverable in the path""",
+                   if it is not discoverable in your PATH variable""",
                    default=None)
     p.add_argument("--kmc", dest="kmc",
                    required=False,
                    help="""Optionally, specify the kmc file
-                   if it is not discoverable in the path""",
+                   if it is not discoverable in your PATH variable""",
                    default=None)
     p.add_argument("--kmc_tools", dest="kmc_tools",
                    required=False,
                    help="""Optionally, specify the kmc_tools file
-                   if it is not discoverable in the path""",
+                   if it is not discoverable in your PATH variable""",
                    default=None)
     # Opts (computational)
     p.add_argument("--cpus", dest="cpus",
@@ -637,6 +592,8 @@ def main():
         # Iterate through each FASTA/Q file pair
         for pair in pairedReads:
             samplePrefix = pair[0].replace(args.fileSuffix, "")
+            if len(pair) == 2 and samplePrefix.endswith("1"):
+                samplePrefix = samplePrefix.rstrip("_1")
             
             # Run kmc or fastk
             if args.kmerProgram == "kmc":
@@ -664,7 +621,7 @@ def main():
                 if args.kmerProgram == "kmc":
                     summaryFileName = os.path.join(args.outputDirectory, samplePrefix + "_plot_verbose_summary.txt")
                     ploidyNum = parse_smudge_summary(summaryFileName)
-                else:
+                elif args.kmerProgram == "fastk":
                     smudgeSizeFile = os.path.join(smudgeplotDir, samplePrefix + "_fastkout_smudge_sizes.txt")
                     ploidyNum = parse_smudge_sizes(smudgeSizeFile)
                  
