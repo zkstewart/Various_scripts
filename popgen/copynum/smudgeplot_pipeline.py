@@ -172,6 +172,13 @@ def parse_smudge_sizes(smudgeSizeFile):
     Returns:
         ploidyNum -- string value of the most likely ploidy number according to smudgeplot
     '''
+    # Handle empty file case
+    if os.path.getsize(smudgeSizeFile) == 0:
+        print(f"WARNING: smudgeplot sizes file '{smudgeSizeFile}' is empty; " +
+              "therefore ploidy number cannot be determined; result will be 'undetermined'")
+        return "undetermined"
+    
+    # Parse the smudgeplot sizes file
     ploidyProbability = []
     with open(smudgeSizeFile, "r") as fileIn:
         for line in fileIn:
@@ -515,13 +522,13 @@ def main():
     p.add_argument("--cpus", dest="cpus",
                    required=False,
                    type=int,
-                   help="""Indicate how many threads to run KMC with;
+                   help="""Indicate how many threads to run FastK/KMC with;
                    default == 1""",
                    default=1)
     p.add_argument("--mem", dest="mem",
                    required=False,
                    type=int,
-                   help="""Indicate how many gigabytes of memory to run KMC with;
+                   help="""Indicate how many gigabytes of memory to run FastK/KMC with;
                    default == 64""",
                    default=64)
     # Opts (behavioural)
