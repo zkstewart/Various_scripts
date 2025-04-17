@@ -599,8 +599,8 @@ def main():
         # Iterate through each FASTA/Q file pair
         for pair in pairedReads:
             samplePrefix = pair[0].replace(args.fileSuffix, "")
-            if len(pair) == 2 and samplePrefix.endswith("1"):
-                samplePrefix = samplePrefix.rstrip("_1")
+            if len(pair) == 2 and samplePrefix.endswith("_1"):
+                samplePrefix = samplePrefix.rsplit("_1", maxsplit=1)[0]
             
             # Run kmc or fastk
             if args.kmerProgram == "kmc":
@@ -623,6 +623,8 @@ def main():
             # Iterate through samples
             for pair in pairedReads:
                 samplePrefix = pair[0].replace(args.fileSuffix, "")
+                if len(pair) == 2 and samplePrefix.endswith("_1"):
+                    samplePrefix = samplePrefix.rsplit("_1", maxsplit=1)[0]
                 
                 # Parse the output summary file
                 if args.kmerProgram == "kmc":
