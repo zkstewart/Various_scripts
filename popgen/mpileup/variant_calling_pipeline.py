@@ -361,7 +361,7 @@ def main():
                    help="""Indicate the suffix of the BAM files to look for;
                    default == '.sorted.bam'""",
                    default=".sorted.bam")
-     p.add_argument("--afterok", dest="afterok",
+    p.add_argument("--afterok", dest="afterok",
                    required=False,
                    help="""Optionally, indicate a job ID to wait for before starting this job;
                    default is to start immediately""",
