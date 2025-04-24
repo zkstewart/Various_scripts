@@ -22,20 +22,15 @@ OUTPUT_PREFIX = "merged"
 # Define functions
 def validate_args(args):
     def _not_discoverable_error(program):
-        print(f"ERROR: {program} not discoverable in your system PATH.")
-        quit()
+        raise FileNotFoundError(f"{program} not discoverable in your system PATH.")
     
     # Validate input file locations
     if not os.path.isfile(args.fastaFile):
-        print('I am unable to locate the genome FASTA file (' + args.fastaFile + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+        raise FileNotFoundError(f"I am unable to locate the genome FASTA file '{args.fastaFile}'")
     args.fastaFile = os.path.abspath(args.fastaFile)
     
     if not os.path.isdir(args.bamDirectory):
-        print('I am unable to locate the BAM directory (' + args.bamDirectory + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+        raise FileNotFoundError(f"I am unable to locate the BAM directory '{args.bamDirectory}'")
     
     # Validate BAM suffix
     foundABAM = False
@@ -44,9 +39,7 @@ def validate_args(args):
             foundABAM = True
             break
     if not foundABAM:
-        print(f'No BAM files with suffix "{args.bamSuffix}" found in directory "{args.bamDirectory}"')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+        raise FileNotFoundError(f"No BAM files with suffix '{args.bamSuffix}' found in directory '{args.bamDirectory}'")
     
     # Validate program discoverability
     if ZS_Utility.wsl_which("samtools") is None:
@@ -63,20 +56,21 @@ def validate_args(args):
     
     # Validate behavioural inputs
     if not re.match(r"^\d+:\d{2}:\d{2}$", args.walltime):
-        print("--walltime should be in the format of 'HH:MM:SS'")
-        quit()
+        raise ValueError("--walltime should be in the format of 'HH:MM:SS'")
     if not re.match(r"^\d+G$", args.mem):
-        print("--mem should be in the format of '*G' where * is a number")
-        quit()
+        raise ValueError("--mem should be in the format of '*G' where * is a number")
     if args.jobPrefix != "":
         if not args.jobPrefix.endswith("_"):
             args.jobPrefix += "_" # Add underscore if not present
+    if args.afterok != None:
+        if not re.match(r"^\d+(\[\])?\.\w+$", args.afterok):
+            raise ValueError("--afterok should be a PBS job ID")
     
     # Validate output file names
     if os.path.exists(CALLING_SCRIPT):
-        raise FileExistsError(f"ERROR: '{CALLING_SCRIPT}' already exists.")
+        raise FileExistsError(f"'{CALLING_SCRIPT}' already exists.")
     if os.path.exists(NORMALISE_SCRIPT):
-        raise FileExistsError(f"ERROR: '{NORMALISE_SCRIPT}' already exists.")
+        raise FileExistsError(f"'{NORMALISE_SCRIPT}' already exists.")
 
 def get_fasta_ids(fastaFile):
     '''
@@ -141,6 +135,7 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
 #PBS -l mem={MEM}
 #PBS -l ncpus=1
 #PBS -J 1-{numJobs}
+{afterokLine}
 
 cd {workingDir}
 
@@ -180,6 +175,7 @@ tabix -C ${{CONTIG}}.vcf.gz
     genome=argsContainer.genome,
     CONTIG_LIST=CONTIG_LIST, # global variable
     BAM_LIST=BAM_LIST # global variable
+    afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
 
     # Write script to file
@@ -365,6 +361,11 @@ def main():
                    help="""Indicate the suffix of the BAM files to look for;
                    default == '.sorted.bam'""",
                    default=".sorted.bam")
+     p.add_argument("--afterok", dest="afterok",
+                   required=False,
+                   help="""Optionally, indicate a job ID to wait for before starting this job;
+                   default is to start immediately""",
+                   default=None)
     p.add_argument("--walltime", dest="walltime",
                    required=False,
                    help="""Optionally, specify how much walltime you want the variant
@@ -421,18 +422,21 @@ def main():
                 fileOut.write(f"{bamFile}\n")
     
     # Write and qsub mpileup->call pipeline script
+    runningJobs = [args.afterok] if args.afterok != None else []
     make_calling_script(Container({
             "numJobs": len(contigIDs),
             "workingDir": os.getcwd(),
             "genomeDir": os.path.dirname(args.fastaFile),
             "genome": os.path.basename(args.fastaFile),
-            "outputFileName": CALLING_SCRIPT
+            "outputFileName": CALLING_SCRIPT,
+            "runningJobIDs": runningJobs
         }),
         PREFIX=args.jobPrefix,
         WALLTIME=args.walltime,
         MEM=args.mem
     )
     callingJobID = qsub(CALLING_SCRIPT)
+    runningJobs.append(callingJobID)
     
     # Write and qsub normalisation pipeline script
     make_normalise_script(Container({
@@ -441,18 +445,19 @@ def main():
             "genomeDir": os.path.dirname(args.fastaFile),
             "genome": os.path.basename(args.fastaFile),
             "outputFileName": NORMALISE_SCRIPT,
-            "runningJobIDs": [callingJobID]
+            "runningJobIDs": runningJobs
         }),
         PREFIX=args.jobPrefix
     )
     normaliseJobID = qsub(NORMALISE_SCRIPT)
+    runningJobs.append(normaliseJobID)
     
     # Write and qsub concatenation script
     make_concatenation_script(Container({
             "numJobs": len(contigIDs),
             "workingDir": os.getcwd(),
             "outputFileName": CONCAT_SCRIPT,
-            "runningJobIDs": [callingJobID, normaliseJobID]
+            "runningJobIDs": runningJobs
         }),
         PREFIX=args.jobPrefix
     )
@@ -461,6 +466,8 @@ def main():
     # Report job IDs
     print(f"Job IDs: calling={callingJobID}, normalisation={normaliseJobID}, " + 
           f"concatenation={concatenationJobID}")
+    if args.afterok != None:
+        print(f"Calling job will begin after {args.afterok} completes.")
     
     print("Program completed successfully!")
 
