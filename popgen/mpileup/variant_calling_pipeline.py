@@ -174,7 +174,7 @@ tabix -C ${{CONTIG}}.vcf.gz
     genomeDir=argsContainer.genomeDir,
     genome=argsContainer.genome,
     CONTIG_LIST=CONTIG_LIST, # global variable
-    BAM_LIST=BAM_LIST # global variable
+    BAM_LIST=BAM_LIST, # global variable
     afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
 
