@@ -60,7 +60,7 @@ def create_cmd_file(fastaqFiles, speciesIds, readgroups, genomeFile, minimap2Exe
     with open(outputFileName, "w") as fileOut:
         for i in range(len(fastaqFiles)):
             sid = speciesIds[i]
-            fq = fqFiles[i]
+            fq = fastaqFiles[i]
             rg = readgroups[i]
             
             # Format the cmd with any pre-processing QC steps
