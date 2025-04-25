@@ -199,6 +199,10 @@ def main():
                    required=False,
                    help="String to use for unit e.g., 'unit1' by default",
                    default="unit1")
+    p.add_argument("--cpus", dest="cpus", type=int,
+                   required=False,
+                   help="Optionally specify the number of CPUs to run for each file (default == 1)",
+                   default=1)
     args = p.parse_args()
     args.platform = "nanopore" # hard-coded as script is for nanopore data
     validate_args(args)
