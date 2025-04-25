@@ -127,7 +127,17 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
         MEM -- OPTIONAL; a string indicating how much memory to give the job;
                default == "40G"
     '''
+    # Produce a line indicating quality values depending on user input
+    if argsContainer.ontSup: # use defaults for -X ont-sup with bcftools version 1.20
+        qualityLine = ("-B -Q1 --max-BQ 35 --delta-BQ 99 -F0.2 -o15 -e1 -h110 --del-bias 0.4 " + 
+                       "--indel-bias 0.7 --poly-mqual --seqq-offset 130 --indel-size 80")
+    else: # use long-standing ZKS defaults
+        qualityLine = "-q 10 -Q 20"
     
+    if args.indelsCns:
+        qualityLine += " --indels-cns"
+    
+    # Generate the script text
     scriptText = \
 """#!/bin/bash -l
 #PBS -N {PREFIX}call
@@ -159,7 +169,8 @@ bcftools mpileup -Ou \\
     -f ${{GENOMEDIR}}/${{GENOME}} \\
     -r ${{CONTIG}} \\
     --bam-list ${{BAM_LIST}} \\
-    -q 10 -Q 20 -a AD,DP | bcftools call -m -v -Oz -o ${{CONTIG}}.vcf.gz
+    {qualityLine} \\
+    -a AD,DP | bcftools call -m -v -Oz -o ${{CONTIG}}.vcf.gz
 
 # STEP 3: Index the VCF file
 tabix ${{CONTIG}}.vcf.gz
@@ -175,6 +186,7 @@ tabix -C ${{CONTIG}}.vcf.gz
     genome=argsContainer.genome,
     CONTIG_LIST=CONTIG_LIST, # global variable
     BAM_LIST=BAM_LIST, # global variable
+    qualityLine=qualityLine,
     afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
 
@@ -355,12 +367,26 @@ def main():
     p.add_argument("-b", dest="bamDirectory",
                    required=True,
                    help="Input directory containing BAM file(s)")
-    # Opts (behavioural)
+    # Opts (file location)
     p.add_argument("--bamSuffix", dest="bamSuffix",
                    required=False,
                    help="""Indicate the suffix of the BAM files to look for;
                    default == '.sorted.bam'""",
                    default=".sorted.bam")
+    # Opts (behavioural)
+    p.add_argument("--indels-cns", dest="indelsCns",
+                   required=False,
+                   action="store_true",
+                   help="""Provide this flag to make use of the --indels-cns option as is 
+                   currently recommended by bcftools for diploid genomes""",
+                   default=False)
+    p.add_argument("--ont-sup", dest="ontSup",
+                   required=False,
+                   action="store_true",
+                   help="""Provide this flag to make use of the --ont-sup option for
+                   accurate ONT long-read variant calling""",
+                   default=False)
+    # Opts (PBS)
     p.add_argument("--afterok", dest="afterok",
                    required=False,
                    help="""Optionally, indicate a job ID to wait for before starting this job;
@@ -428,6 +454,8 @@ def main():
             "workingDir": os.getcwd(),
             "genomeDir": os.path.dirname(args.fastaFile),
             "genome": os.path.basename(args.fastaFile),
+            "indelsCns": args.indelsCns,
+            "ontSup": args.ontSup,
             "outputFileName": CALLING_SCRIPT,
             "runningJobIDs": runningJobs
         }),
