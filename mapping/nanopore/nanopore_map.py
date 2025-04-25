@@ -92,8 +92,14 @@ def create_cmd_file(fastaqFiles, speciesIds, readgroups, genomeFile, minimap2Exe
 def create_shell_script(cmdFile, numJobs, outputFileName="run_nanopore_map.sh", cpus=1):
     # Specify hard-coded script features
     jobname = "nanopore_map"
-    walltime = "12:00:00"
-    mem = "20G"
+    walltime = "24:00:00"
+    mem = "30G"
+    
+    # Format the PBS -J line
+    if numJobs > 1:
+        jobLine = f"#PBS -J 1-{numJobs}"
+    else:
+        jobLine = "PBS_ARRAY_INDEX=1"
     
     # Setup the script's contents
     formatStr = """#!/bin/bash -l
@@ -101,7 +107,7 @@ def create_shell_script(cmdFile, numJobs, outputFileName="run_nanopore_map.sh", 
 #PBS -l walltime={walltime}
 #PBS -l mem={mem}
 #PBS -l ncpus={cpus}
-#PBS -J 1-{numJobs}
+{jobLine}
 
 cd $PBS_O_WORKDIR
 
@@ -114,7 +120,7 @@ eval $(cat {cmdFile} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
             walltime=walltime,
             mem=mem,
             cpus=cpus,
-            numJobs=numJobs,
+            jobLine=jobLine,
             cmdFile=cmdFile
         ))
 
