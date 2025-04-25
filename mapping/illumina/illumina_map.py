@@ -164,13 +164,19 @@ def create_shell_script(cmdFile, numJobs, outputFileName="run_illumina_map.sh", 
     walltime = "12:00:00"
     mem = "25G"
     
+    # Format the PBS -J line
+    if numJobs > 1:
+        jobLine = f"#PBS -J 1-{numJobs}"
+    else:
+        jobLine = "PBS_ARRAY_INDEX=1"
+    
     # Setup the script's contents
     formatStr = """#!/bin/bash -l
 #PBS -N {jobname}
 #PBS -l walltime={walltime}
 #PBS -l mem={mem}
 #PBS -l ncpus={cpus}
-#PBS -J 1-{numJobs}
+{jobLine}
 
 cd $PBS_O_WORKDIR
 
@@ -183,7 +189,7 @@ eval $(cat {cmdFile} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
             walltime=walltime,
             mem=mem,
             cpus=cpus,
-            numJobs=numJobs,
+            jobLine=jobLine,
             cmdFile=cmdFile
         ))
 
