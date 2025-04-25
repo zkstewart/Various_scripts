@@ -196,11 +196,6 @@ def main():
                    required=False,
                    help="Column name where sample ID is located (default == 'sm')",
                    default="sm")
-    p.add_argument("--platform", dest="platform",
-                   required=False,
-                   choices=["illumina", "pacbio", "nanopore"], #incomplete list
-                   help="String to use for readgroup platform e.g., 'illumina' by default",
-                   default="illumina")
     p.add_argument("--library", dest="library",
                    required=False,
                    help="String to use for library e.g., 'lib1' by default",
@@ -209,8 +204,8 @@ def main():
                    required=False,
                    help="String to use for unit e.g., 'unit1' by default",
                    default="unit1")
-    
     args = p.parse_args()
+    args.platform = "nanopore" # hard-coded as script is for nanopore data
     validate_args(args)
     
     # Parse CSV file columns
