@@ -118,6 +118,8 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
             numJobs -- the number of jobs to submit to the HPC cluster;
                        should be equal to the number of contigs in the genome
             workingDir -- the directory to run the script in; should be the CWD
+            indelsCns -- a boolean indicating whether to use the --indels-cns option
+            ontSup -- a boolean indicating whether to use the -X ont-sup option
             genomeDir -- the directory containing the genome FASTA file
             genome -- the name of the genome FASTA file
             outputFileName -- the name of the script file to write
@@ -134,7 +136,7 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
     else: # use long-standing ZKS defaults
         qualityLine = "-q 10 -Q 20"
     
-    if args.indelsCns:
+    if argsContainer.indelsCns:
         qualityLine += " --indels-cns"
     
     # Generate the script text
