@@ -62,6 +62,10 @@ def create_cmd_file(fastaqFiles, speciesIds, readgroups, genomeFile, minimap2Exe
             sid = speciesIds[i]
             fq = fastaqFiles[i]
             rg = readgroups[i]
+            if len(fq) == 2:
+                raise ValueError(f"Nanopore mapping doesn't support paired reads; one of your " + 
+                                 f" sample prefixes is matching multiple values i.e., {fq}")
+            fq = fq[0] # get the string value from the list
             
             # Format the cmd with any pre-processing QC steps
             if runChopper:
