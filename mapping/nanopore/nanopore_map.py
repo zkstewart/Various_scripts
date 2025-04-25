@@ -211,14 +211,14 @@ def main():
     prefixes, ids, samples = parse_metadata_csv(args.metadataFile, args.prefixCol, args.idCol, args.sampleCol)
     
     # Validate that files exist and get their locations
-    fastqFiles = get_files_from_prefix(args.fastaqDirectory, prefixes)
+    fastaqFiles = get_files_from_prefix(args.fastaqDirectory, prefixes)
     
     # Create readgroups
     readgroups = process_readgroups(ids, samples, args.platform, args.library, args.unit)
     
     # Create cmd file
     cmdFileName = "cmd_nanopore_map.txt"
-    create_cmd_file(speciesIds, args.fastaqDirectory, readgroups, args.fastaFile,
+    create_cmd_file(fastaqFiles, ids, readgroups, args.fastaFile,
                     args.minimap2, args.preset, args.chopper, args.runChopper,
                     args.minLength, args.maxLength, cmdFileName, args.cpus)
     
