@@ -50,7 +50,7 @@ def is_gz(file):
 
 def create_cmd_file(fastaqFiles, speciesIds, readgroups, genomeFile, minimap2Exe, preset, 
                     chopperExe, runChopper, minLength, maxLength, outputFileName,
-                    readsSuffix=".fq.gz", cpus=1):    
+                    cpus=1):    
     # Validations
     if os.path.isfile(outputFileName):
         raise FileExistsError(f"'{outputFileName}' already exists; delete, move, or rename then try again")
@@ -162,11 +162,6 @@ def main():
                    help="""If chopper is not available in your PATH variable, input
                    the full path to the chopper executable here""",
                    default=None)
-    p.add_argument("--readsSuffix", dest="readsSuffix",
-                   required=False,
-                   help="""Specify the file suffix which ALL your FASTQ files have
-                   e.g., '.fq.gz' by default""",
-                   default=".fq.gz")
     ## Optional (behavioural)
     p.add_argument("--runChopper", dest="runChopper",
                    required=False,
@@ -221,8 +216,7 @@ def main():
     cmdFileName = "cmd_nanopore_map.txt"
     create_cmd_file(speciesIds, args.fastaqDirectory, readgroups, args.fastaFile,
                     args.minimap2, args.preset, args.chopper, args.runChopper,
-                    args.minLength, args.maxLength, cmdFileName,
-                    args.readsSuffix, args.cpus)
+                    args.minLength, args.maxLength, cmdFileName, args.cpus)
     
     # Create shell script
     create_shell_script(cmdFileName, len(readgroups), cpus=args.cpus)
