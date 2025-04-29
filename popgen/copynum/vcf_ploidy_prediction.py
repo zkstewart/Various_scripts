@@ -160,14 +160,21 @@ def main():
     
     # Parse the VCF files for each sample
     combinedDpDiff = {}
+    dupes = {}
     for vcfFile in args.vcfFiles:
         # Parse the VCF file
         dpDiff = parse_vcf_alleles(vcfFile)
         
         # Combine the results into a single dictionary
         for sample, diffs in dpDiff.items():
+            # Handle duplicate sample names
             if sample in combinedDpDiff:
-                raise ValueError(f"Duplicate sample name '{sample}' found in VCF files")
+                dupes.setdefault(sample, 0)
+                dupes[sample] += 1
+                print(f"Duplicate sample name '{sample}' found in VCF files; " +
+                      f"sample will be called f'{sample}_{dupes[sample]}'")
+                sample = f"{sample}_{dupes[sample]}"
+            # Add the sample to the combined dictionary
             combinedDpDiff[sample] = diffs
     
     # Write result stats to the output file
