@@ -1698,7 +1698,7 @@ class Minimap2:
             run_minimap2 = subprocess.Popen(cmd, shell = True,
                                             stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
         minimap2out, minimap2err = run_minimap2.communicate()
-        if minimap2err.decode("utf-8") != '':
+        if not "Real time:" in minimap2err.decode("utf-8"):
             raise Exception('minimap2 error text below\n' + minimap2err.decode("utf-8"))
         
         return logString
