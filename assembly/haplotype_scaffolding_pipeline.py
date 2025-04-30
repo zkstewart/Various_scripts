@@ -22,13 +22,13 @@ def validate_args(args):
         raise FileNotFoundError(f"Reference genome file '{args.referenceGenome}' not found.")
     
     # Validate program discoverability
-    if args.mmseqs2 == None:
-        args.mmseqs2 = shutil.which("mmseqs2")
-        if args.mmseqs2 == None:
-            _not_found_error("mmseqs2")
+    if args.minimap2 == None:
+        args.minimap2 = shutil.which("minimap2")
+        if args.minimap2 == None:
+            _not_found_error("minimap2")
     else:
-        if not os.path.isfile(args.mmseqs2):
-            _specified_wrong_error("mmseqs2", args.mmseqs2)
+        if not os.path.isfile(args.minimap2):
+            _specified_wrong_error("minimap2", args.minimap2)
     
     if args.samtools == None:
         args.samtools = shutil.which("samtools")
@@ -78,9 +78,9 @@ def main():
                    default == 1""",
                    default=1)
     # Opts (programs)
-    p.add_argument("--mmseqs2", dest="mmseqs2",
+    p.add_argument("--minimap2", dest="minimap2",
                    required=False,
-                   help="""Optionally, specify the mmseqs2 executable file
+                   help="""Optionally, specify the minimap2 executable file
                    if it is not discoverable in the path""",
                    default=None)
     p.add_argument("--samtools", dest="samtools",
@@ -123,12 +123,32 @@ def main():
     for hapDir, queryFile in zip([hap1Dir, hap2Dir], [hap1File, hap2File]):
         minimap2FlagName = os.path.join(hapDir, "minimap2_was_successful.flag")
         if not os.path.exists(minimap2FlagName):
-            outputfile = os.path.join(hapDir, "minimap2.paf")
-            runner = ZS_AlignIO.Minimap2(queryFile, referenceFile, args.preset, args.mmseqs2, args.threads)
-            runner.minimap2(outputfile, force=True) # allow overwriting since the flag was not created
+            outputFileName = os.path.join(hapDir, "minimap2.paf")
+            runner = ZS_AlignIO.Minimap2(queryFile, referenceFile, args.preset, args.minimap2, args.threads)
+            runner.minimap2(outputFileName, force=True) # allow overwriting since the flag was not created
             open(minimap2FlagName, "w").close()
         else:
             print(f"Minimap2 alignment has already been performed for {queryFile}; skipping.")
+    
+    # Parse minimap2 PAF files
+    pafDict = {}
+    for index, hapDir in enumerate([hap1Dir, hap2Dir]):
+        hapDict = {}
+        pafFile = os.path.join(hapDir, "minimap2.paf")
+        with open(pafFile, "r") as fileIn:
+            for line in fileIn:
+                # Extract relevant data
+                sl = line.rstrip("\r\n ").split("\t")
+                qid, qlen, qstart, qend, strand, tid, tlen, tstart, tend, \
+                    numresidues, lenalign, mapq = sl[0:12]
+                
+                # Convert to integers
+                qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq = \
+                    map(int, [qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq])
+                
+                # 
+        
+        #pafDict[index] = {}
     
     print("Program completed successfully!")
 
