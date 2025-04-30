@@ -16,10 +16,12 @@ def validate_args(args):
         raise FileNotFoundError(f"{program} was not found at the indicated location '{path}'")
     
     # Validate input file locations
-    if not os.path.isfile(args.inputGenome):
-        raise FileNotFoundError(f"Input genome file '{args.inputGenome}' not found.")
-    if not os.path.isfile(args.referenceGenome):
-        raise FileNotFoundError(f"Reference genome file '{args.referenceGenome}' not found.")
+    for inputFile in args.inputGenome:
+        if not os.path.isfile(inputFile):
+            raise FileNotFoundError(f"Input genome file '{inputFile}' not found.")
+    for referenceFile in args.referenceGenome:
+        if not os.path.isfile(referenceFile):
+            raise FileNotFoundError(f"Reference genome file '{referenceFile}' not found.")
     
     # Validate program discoverability
     if args.minimap2 == None:
@@ -51,20 +53,39 @@ def validate_args(args):
 ## Main
 def main():
     # User input
-    usage = """%(prog)s ...
+    usage = """%(prog)s
+    
+    Contigs for hap1 and hap2 of the reference genome must be equivalently named.
+    Defaults for --minQueryAlign and --minAlignLen are based on paf2dotplot.
     """
     p = argparse.ArgumentParser(description=usage)
     # Reqs
     p.add_argument("-i", dest="inputGenome",
                    required=True,
-                   help="Input genome FASTA requiring scaffolding")
+                   nargs=2,
+                   help="Input hap1 and hap2 genome FASTA files requiring scaffolding")
     p.add_argument("-r", dest="referenceGenome",
                    required=True,
-                   help="Input genome FASTA for use as a reference")
+                   nargs=2,
+                   help="Input hap1 and hap2 genome FASTA files for use as a reference")
     p.add_argument("-o", dest="outputDirectory",
                    required=True,
                    help="Specify location to write output files to")
     # Opts (behavioural)
+    p.add_argument("--minQueryAlign", dest="minQueryAlign",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the minimum cumulative alignment length for
+                   a query to be considered a match (i.e., the sum of all alignments
+                   that meet at least --minAlignLen); default == 400000""",
+                   default=400000)
+    p.add_argument("--minAlignLen", dest="minAlignLen",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the minimum alignment length to
+                   consider a match; default == 10000""",
+                   default=10000)
+    # Opts (minimap2)
     p.add_argument("--preset", dest="preset",
                    required=False,
                    choices=["asm5", "asm10", "asm20"],
@@ -96,6 +117,9 @@ def main():
     referenceDir = os.path.join(args.outputDirectory, "reference")
     os.makedirs(referenceDir, exist_ok=True)
     
+    inputDir = os.path.join(args.outputDirectory, "input")
+    os.makedirs(inputDir, exist_ok=True)
+    
     hap1Dir = os.path.join(args.outputDirectory, "hap1")
     os.makedirs(hap1Dir, exist_ok=True)
     
@@ -103,52 +127,72 @@ def main():
     os.makedirs(hap2Dir, exist_ok=True)
     
     # Symlink files to the working directory locations
-    referenceFile = os.path.join(referenceDir, "reference.fasta")
-    if not os.path.exists(referenceFile):
-        os.symlink(args.referenceGenome, referenceFile)
+    ref1File = os.path.join(referenceDir, "hap1.fasta")
+    if not os.path.exists(ref1File):
+        os.symlink(args.referenceGenome[0], ref1File)
     
-    hap1File = os.path.join(hap1Dir, "hap1.fasta")
-    if not os.path.exists(hap1File):
-        os.symlink(args.inputGenome, hap1File)
+    ref2File = os.path.join(referenceDir, "hap2.fasta")
+    if not os.path.exists(ref2File):
+        os.symlink(args.referenceGenome[1], ref2File)
     
-    hap2File = os.path.join(hap2Dir, "hap2.fasta")
-    if not os.path.exists(hap2File):
-        os.symlink(args.inputGenome, hap2File)
+    input1File = os.path.join(inputDir, "hap1.fasta")
+    if not os.path.exists(input1File):
+        os.symlink(args.inputGenome[0], input1File)
     
-    # Index the reference file
-    if not os.path.exists(f"{referenceFile}.fai"):
-        ZS_SeqIO.StandardProgramRunners.samtools_faidx(referenceFile, args.samtools)
+    input2File = os.path.join(inputDir, "hap2.fasta")
+    if not os.path.exists(input2File):
+        os.symlink(args.inputGenome[1], input2File)
     
-    # Run minimap2 of hap1/2 files against the reference file
-    for hapDir, queryFile in zip([hap1Dir, hap2Dir], [hap1File, hap2File]):
-        minimap2FlagName = os.path.join(hapDir, "minimap2_was_successful.flag")
-        if not os.path.exists(minimap2FlagName):
-            outputFileName = os.path.join(hapDir, "minimap2.paf")
-            runner = ZS_AlignIO.Minimap2(queryFile, referenceFile, args.preset, args.minimap2, args.threads)
-            runner.minimap2(outputFileName, force=True) # allow overwriting since the flag was not created
-            open(minimap2FlagName, "w").close()
-        else:
-            print(f"Minimap2 alignment has already been performed for {queryFile}; skipping.")
+    # Index the reference files
+    if not os.path.exists(f"{ref1File}.fai"):
+        ZS_SeqIO.StandardProgramRunners.samtools_faidx(ref1File, args.samtools)
+    
+    if not os.path.exists(f"{ref2File}.fai"):
+        ZS_SeqIO.StandardProgramRunners.samtools_faidx(ref2File, args.samtools)
+    
+    # Run minimap2 of input files against the reference files
+    minimap2FlagName = os.path.join(inputDir, "minimap2_was_successful.flag")
+    if not os.path.exists(minimap2FlagName):
+        for queryIndex, queryFile in enumerate([input1File, input2File]):
+            for refIndex, refFile in enumerate([ref1File, ref2File]):
+                outputFileName = os.path.join(inputDir, f"i{queryIndex+1}_vs_r{refIndex+1}.paf")
+                runner = ZS_AlignIO.Minimap2(queryFile, refFile, args.preset, args.minimap2, args.threads)
+                runner.minimap2(outputFileName, force=True) # allow overwriting since the flag was not created
+        open(minimap2FlagName, "w").close()
+    else:
+        print(f"Minimap2 alignment has already been performed; skipping.")
     
     # Parse minimap2 PAF files
     pafDict = {}
-    for index, hapDir in enumerate([hap1Dir, hap2Dir]):
-        hapDict = {}
-        pafFile = os.path.join(hapDir, "minimap2.paf")
-        with open(pafFile, "r") as fileIn:
-            for line in fileIn:
-                # Extract relevant data
-                sl = line.rstrip("\r\n ").split("\t")
-                qid, qlen, qstart, qend, strand, tid, tlen, tstart, tend, \
-                    numresidues, lenalign, mapq = sl[0:12]
-                
-                # Convert to integers
-                qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq = \
-                    map(int, [qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq])
-                
-                # 
-        
-        #pafDict[index] = {}
+    hap1Contigs = set()
+    hap2Contigs = set()
+    refContigs = set()
+    for refIndex in range(2):
+        pafDict[refIndex+1] = {}
+        for queryIndex in range(2):
+            pafFile = os.path.join(inputDir, f"i{queryIndex+1}_vs_r{refIndex+1}.paf")
+            with open(pafFile, "r") as fileIn:
+                for line in fileIn:
+                    # Extract relevant data
+                    sl = line.rstrip("\r\n ").split("\t")
+                    qid, qlen, qstart, qend, strand, tid, tlen, tstart, tend, \
+                        numresidues, lenalign, mapq = sl[0:12]
+                    
+                    # Convert to integers
+                    qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq = \
+                        map(int, [qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq])
+                    if queryIndex == 0:
+                        hap1Contigs.add(qid)
+                    else:
+                        hap2Contigs.add(qid)
+                    refContigs.add(tid)
+                    
+                    # Store the alignment length
+                    pafDict[refIndex+1].setdefault(tid, {})
+                    pafDict[refIndex+1][tid].setdefault(qid, 0)
+                    pafDict[refIndex+1][tid][qid] += lenalign
+    
+    # 
     
     print("Program completed successfully!")
 
