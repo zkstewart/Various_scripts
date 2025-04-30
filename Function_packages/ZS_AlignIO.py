@@ -1700,8 +1700,6 @@ class Minimap2:
         minimap2out, minimap2err = run_minimap2.communicate()
         if not "Real time:" in minimap2err.decode("utf-8"):
             raise Exception('minimap2 error text below\n' + minimap2err.decode("utf-8"))
-        
-        return logString
 
 if __name__ == "__main__":
     pass
