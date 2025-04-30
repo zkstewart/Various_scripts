@@ -3,7 +3,7 @@
 # Script to take in a hifiasm haplotype assembly and a reference haplotype assembly
 # to scaffold the hifiasm assembly using the reference assembly as a guide.
 
-import os, argparse, sys, shutil, re, subprocess
+import os, argparse, sys, shutil, re, subprocess, platform
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 3 dirs up is where we find GFF3IO
 from Function_packages import ZS_SeqIO, ZS_AlignIO
@@ -89,7 +89,7 @@ def run_ragtag(inputFile, referenceFile, outputDir, ragtagPath, threads=1):
 ## Main
 def main():
     # User input
-    usage = """%(prog)s
+    usage = """%(prog)s ...
     
     Contigs for hap1 and hap2 of the reference genome must be equivalently named.
     Defaults for --minQueryAlign and --minAlignLen are based on paf2dotplot.
@@ -354,12 +354,21 @@ def main():
                     
                     # Run ragtag to scaffold the sequences
                     run_ragtag(rawSequencesFile, refFile, os.path.join(chrDir, "ragtag_output"),
-                            args.ragtag, threads=1)
+                               args.ragtag, threads=1)
                     
-                    # Symlink the output file to the haplotype directory
+                    # Rewrite the output file to the haplotype directory
                     ragtagOutputFile = os.path.join(chrDir, "ragtag_output", f"ragtag.scaffold.fasta")
-                    if not os.path.exists(outputFileName):
-                        os.symlink(ragtagOutputFile, outputFileName)
+                    numIDs = 0
+                    with open(ragtagOutputFile, "r") as fileIn, open(outputFileName, "w") as fileOut:
+                        for line in fileIn:
+                            if line.startswith(">"):
+                                fileOut.write(f">{refContig}\n")
+                                numIDs += 1
+                            else:
+                                fileOut.write(line)
+                    if numIDs > 1:
+                        print(f"Warning: {numIDs} IDs were found in the ragtag output '{ragtagOutputFile}'")
+                        print("This will be an error after I am done testing this code.")
                 
                 # Create a flag to indicate that the file was created
                 open(outputFlagName, "w").close()
