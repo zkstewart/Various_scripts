@@ -1548,5 +1548,160 @@ class GMAP:
         
         return gmapGFF3
 
+class Minimap2:
+    '''
+    The Minimap2 Class provides access to the minimap2 search functionality.
+    
+    Attributes:
+        query (REQUIRED) -- a string pointing to a FASTA file to query against the target.
+        target (REQUIRED) -- a string point to a FASTA file to search against/be the reference.
+        preset (REQUIRED) -- a string value specifying the preset to use for the search.
+        minimap2Exe (REQUIRED) -- a string pointing to the location where the mmseqs executable
+                                  is found.
+        threads (OPTIONAL) -- an integer value specifying the number of threads to run when
+                              performing MMseqs2 search. Defaults to 1.
+    '''
+    PRESETS = [
+        "sr", # short read
+        "map-ont", "ava-ont", "lr:hq", # nanopore
+        "asm5", "asm10", "asm20", # assembly-to-assembly
+        "map-pb", "map-hifi", "ava-pb", "lr:pacbio", # pacbio
+        "splice", "splice:sr", "splice:hq", # spliced alignment
+        ]
+    FORMATS = ["sam", "paf"]
+    
+    def __init__(self, query, target, preset, minimap2Exe, threads=1):
+        # Set default attributes
+        self.threads = threads
+        self.cigar = False # set this now as preset may change it
+        self.format = "sam" # set this now as preset may change it
+        
+        # Set input attributes
+        self.query = query
+        self.target = target
+        self.preset = preset
+        self.minimap2Exe = minimap2Exe
+        
+        # Set helper attributes
+        self.isMinimap2 = True
+    
+    @property
+    def query(self):
+        return self._query
+    
+    @query.setter
+    def query(self, value):
+        if not os.path.isfile(value):
+            raise FileNotFoundError(f"query value '{value}' is not a file")
+        
+        self._query = os.path.abspath(value)
+    
+    @property
+    def target(self):
+        return self._target
+    
+    @target.setter
+    def target(self, value):
+        if not os.path.isfile(value):
+            raise FileNotFoundError(f"target value '{value}' is not a file")
+        
+        self._target = os.path.abspath(value)
+    
+    @property
+    def minimap2Exe(self):
+        return self._minimap2Exe
+    
+    @minimap2Exe.setter
+    def minimap2Exe(self, value):
+        if not os.path.isfile(value):
+            raise FileNotFoundError(f"minimap2 executable not found at location '{value}'")
+        
+        self.mmseqsExe = os.path.abspath(value)
+    
+    @property
+    def threads(self):
+        return self._threads
+    
+    @threads.setter
+    def threads(self, value):
+        assert isinstance(value, int), "threads must be an integer"
+        assert 0 < value, "threads must be a positive integer"
+
+        self._threads = value
+    
+    @property
+    def preset(self):
+        return self._preset
+    
+    @preset.setter
+    def preset(self, value):
+        assert value in Minimap2.PRESETS, \
+            f"preset must be a value in the list {Minimap2.PRESETS}"
+        
+        self._preset = value
+        
+        if value in ["asm5", "asm10", "asm20"]:
+            self.format = "paf"
+            self.cigar = True
+        elif value in ["ava-pb", "ava-ont"]:
+            self.format = "paf"
+    
+    @property
+    def format(self):
+        return self._format
+    
+    @format.setter
+    def format(self, value):
+        assert value in Minimap2.FORMATS, \
+            f"format must be a value in the list {Minimap2.FORMATS}"
+        
+        self._format = value
+    
+    @property
+    def cigar(self):
+        return self._cigar
+    
+    @cigar.setter
+    def cigar(self, value):
+        assert isinstance(value, bool), \
+            "cigar must be True or False"
+        
+        self._cigar = value
+    
+    def minimap2(self, outFile, force=False):
+        '''
+        Performs the minimap2 alignment operation.
+        
+        Parameters:
+            outFile -- a string indicating the location to write the output file to.
+            force -- a boolean indicating whether to overwrite the output file if it already
+                     exists; default is False (do not overwrite)
+        '''
+        # Check if output file already exists
+        if force == False and os.path.exists(outFile):
+            raise FileExistsError(f"minimap2 would overwrite file '{outFile}' and force is False")
+        
+        # Format I/O string
+        io = f"-{'a' if self.format == 'sam' else ''}{'c' if self.cigar else ''}x"
+        
+        # Format minimap2 command
+        cmd = [
+            self.mmseqsExe, io, self.preset, "-t", str(self.threads), "-o", outFile,
+            self.query, self.target
+        ]
+        
+        # Run minimap2
+        if platform.system() != "Windows":
+            run_minimap2 = subprocess.Popen(" ".join(cmd), shell = True,
+                                            stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        else:
+            run_minimap2 = subprocess.Popen(cmd, shell = True,
+                                            stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+        minimap2out, minimap2err = run_minimap2.communicate()
+        if minimap2err.decode("utf-8") != '':
+            raise Exception('minimap2 error text below\n' + minimap2err.decode("utf-8"))
+        
+        return logString
+
 if __name__ == "__main__":
     pass
