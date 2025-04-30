@@ -338,7 +338,7 @@ def main():
                     inputContig = inputContigs[0]
                     inputSeq = inputSequences[inputContig]
                     with open(outputFileName, "w") as fileOut:
-                        fileOut.write(f">{refContig}\n{inputSeq.seq}\n")
+                        fileOut.write(f">{refContig}\n{str(inputSeq)}\n")
                 # Ragtag scaffold multiple input contigs
                 else:
                     # Create a working directory for the files
@@ -350,7 +350,7 @@ def main():
                     with open(rawSequencesFile, "w") as fileOut:
                         for inputContig in inputContigs:
                             inputSeq = inputSequences[inputContig]
-                            fileOut.write(f">{inputContig}\n{inputSeq.seq}\n")
+                            fileOut.write(f">{inputContig}\n{str(inputSeq)}\n")
                     
                     # Run ragtag to scaffold the sequences
                     run_ragtag(rawSequencesFile, refFile, os.path.join(chrDir, "ragtag_output"),

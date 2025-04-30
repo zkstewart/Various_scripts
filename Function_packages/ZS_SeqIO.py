@@ -1753,6 +1753,14 @@ class FastaCollection:
     Wrapper for pyfaidx Fasta objects which allows multiple to be combined
     and queried as one logical entity.
     
+    Stores FastaRecord objects with attributes including:
+        long_name -- similar to Bio description
+        name -- similar to Bio id
+        unpadded_len -- gives the length minus 3' and 5' N padding.
+        variant_sites -- only relevant for FastaVariant which isn't used here
+    
+    To get the sequence, call str(record); record.seq is not available.
+    
     Parameters:
         fastaFiles -- a list of strings pointing to the locations of FASTA files
                       which are to be loaded in using pyfaidx.Fasta
