@@ -3,7 +3,7 @@
 # Script to take in a hifiasm haplotype assembly and a reference haplotype assembly
 # to scaffold the hifiasm assembly using the reference assembly as a guide.
 
-import os, argparse, sys, shutil
+import os, argparse, sys, shutil, re, subprocess
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 3 dirs up is where we find GFF3IO
 from Function_packages import ZS_SeqIO, ZS_AlignIO
@@ -40,6 +40,14 @@ def validate_args(args):
         if not os.path.isfile(args.samtools):
             _specified_wrong_error("samtools", args.samtools)
     
+    if args.ragtag == None:
+        args.ragtag = shutil.which("ragtag.py")
+        if args.ragtag == None:
+            _not_found_error("ragtag.py")
+    else:
+        if not os.path.isfile(args.ragtag):
+            _specified_wrong_error("ragtag.py", args.ragtag)
+    
     # Validate output file location
     args.outputDirectory = os.path.abspath(args.outputDirectory)
     if os.path.isdir(args.outputDirectory) and os.listdir(args.outputDirectory) != []:
@@ -49,6 +57,34 @@ def validate_args(args):
     if not os.path.isdir(args.outputDirectory):
         os.makedirs(args.outputDirectory)
         print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
+
+def run_ragtag(inputFile, referenceFile, outputDir, ragtagPath, threads=1):
+    '''
+    Runs RagTag to scaffold the input file using the reference file as a guide.
+    
+    Parameters:
+        inputFile -- a string indicating the location of the file to be scaffolded
+        referenceFile -- a string indicating the location of the reference file
+        outputDir -- a string indicating the location to write ragtag outputs
+        ragtagPath -- a string indicating the location of the ragtag.py file
+        threads -- (OPTIONAL) an integer indicating the number of threads when running ragtag
+    '''
+    # Format ragtag command
+    cmd = [
+        ragtagPath, "scaffold", "-t", str(threads), "-o", outputDir,
+        inputFile, referenceFile
+    ]
+    
+    # Run ragtag
+    if platform.system() != "Windows":
+        run_ragtag = subprocess.Popen(" ".join(cmd), shell = True,
+                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+    else:
+        run_ragtag = subprocess.Popen(cmd, shell = True,
+                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+    ragtagout, ragtagerr = run_ragtag.communicate()
+    if not "INFO: Finished running" in ragtagerr.decode("utf-8"):
+        raise Exception('ragtag error text below\n' + ragtagerr.decode("utf-8"))
 
 ## Main
 def main():
@@ -109,6 +145,11 @@ def main():
                    help="""Optionally, specify the samtools executable file
                    if it is not discoverable in the path""",
                    default=None)
+    p.add_argument("--ragtag", dest="ragtag",
+                   required=False,
+                   help="""Optionally, specify the ragtag.py file
+                   if it is not discoverable in the path""",
+                   default=None)
     
     args = p.parse_args()
     validate_args(args)
@@ -153,9 +194,9 @@ def main():
     # Run minimap2 of input files against the reference files
     minimap2FlagName = os.path.join(inputDir, "minimap2_was_successful.flag")
     if not os.path.exists(minimap2FlagName):
-        for queryIndex, queryFile in enumerate([input1File, input2File]):
+        for inputIndex, queryFile in enumerate([input1File, input2File]):
             for refIndex, refFile in enumerate([ref1File, ref2File]):
-                outputFileName = os.path.join(inputDir, f"i{queryIndex+1}_vs_r{refIndex+1}.paf")
+                outputFileName = os.path.join(inputDir, f"i{inputIndex+1}_vs_r{refIndex+1}.paf")
                 runner = ZS_AlignIO.Minimap2(queryFile, refFile, args.preset, args.minimap2, args.threads)
                 runner.minimap2(outputFileName, force=True) # allow overwriting since the flag was not created
         open(minimap2FlagName, "w").close()
@@ -163,14 +204,18 @@ def main():
         print(f"Minimap2 alignment has already been performed; skipping.")
     
     # Parse minimap2 PAF files
-    pafDict = {}
-    hap1Contigs = set()
-    hap2Contigs = set()
+    i1r1Dict = {}
+    i1r2Dict = {}
+    i2r1Dict = {}
+    i2r2Dict = {}
+    irDictList = [[i1r1Dict, i1r2Dict], [i2r1Dict, i2r2Dict]]
     refContigs = set()
-    for refIndex in range(2):
-        pafDict[refIndex+1] = {}
-        for queryIndex in range(2):
-            pafFile = os.path.join(inputDir, f"i{queryIndex+1}_vs_r{refIndex+1}.paf")
+    
+    for inputIndex in range(2):
+        for refIndex in range(2):
+            pafDict = irDictList[inputIndex][refIndex]
+            pafFile = os.path.join(inputDir, f"i{inputIndex+1}_vs_r{refIndex+1}.paf")
+            
             with open(pafFile, "r") as fileIn:
                 for line in fileIn:
                     # Extract relevant data
@@ -181,18 +226,143 @@ def main():
                     # Convert to integers
                     qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq = \
                         map(int, [qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq])
-                    if queryIndex == 0:
-                        hap1Contigs.add(qid)
-                    else:
-                        hap2Contigs.add(qid)
                     refContigs.add(tid)
                     
+                    # Skip if the alignment doesn't meet length minimum
+                    if lenalign < args.minAlignLen:
+                        continue
+                    
                     # Store the alignment length
-                    pafDict[refIndex+1].setdefault(tid, {})
-                    pafDict[refIndex+1][tid].setdefault(qid, 0)
-                    pafDict[refIndex+1][tid][qid] += lenalign
+                    pafDict.setdefault(tid, {})
+                    pafDict[tid].setdefault(qid, {"numresidues": 0, "lenalign": 0})
+                    pafDict[tid][qid]["numresidues"] += numresidues
+                    pafDict[tid][qid]["lenalign"] += lenalign
+    refContigs = sorted(list(refContigs), key=lambda x: int(" ".join(re.findall(r'\d+', x))))
     
-    # 
+    # Adjust the PAF dictionaries to discount multimapping & filter queries that fail the minimum criteria
+    for inputIndex in range(2):
+        for refIndex in range(2):
+            pafDict = irDictList[inputIndex][refIndex]
+            
+            # Iterate over each reference contig
+            for tid, qidDict in pafDict.items():
+                toDelete = []
+                # Iterate over each query ID
+                for qid in list(qidDict.keys()):
+                    # Calculate the identity before adjusting anything
+                    identity = qidDict[qid]["numresidues"] / qidDict[qid]["lenalign"]
+                    pafDict[tid][qid]["identity"] = identity
+                    
+                    # Sum up alignment length the query made to all other contigs
+                    otherAlignLen = 0
+                    for tid2, qidDict2 in pafDict.items():
+                        if tid == tid2 or (qid not in qidDict2):
+                            continue
+                        otherAlignLen += qidDict2[qid]["lenalign"]
+                    
+                    # Discount the alignment length made to other contigs
+                    pafDict[tid][qid]["lenalign"] -= otherAlignLen
+                    
+                    # If the cumulative query alignment length is less than the minimum, remove it
+                    if pafDict[tid][qid]["lenalign"] < args.minQueryAlign:
+                        toDelete.append(qid)
+                # Remove any query IDs that were discounted
+                for qid in toDelete:
+                    del pafDict[tid][qid]
+    
+    # Ensure that query contigs do not map to multiple reference contigs
+    for inputIndex in range(2):
+        for refIndex in range(2):
+            pafDict = irDictList[inputIndex][refIndex]
+            foundContigs = set()
+            
+            # Iterate over each reference contig
+            for tid, qidDict in pafDict.items():
+                for qid in qidDict.keys():
+                    # Behaviour one: error out
+                    if qid in foundContigs:
+                        raise ValueError(f"Query ID '{qid}' maps to multiple reference contigs; can't resolve this!")
+                    # Behaviour two: remove the query ID from all but the best reference contig
+                    ## TBD if the behaviour one condition ever occurs
+    
+    # Associate input haplotype sequences to a reference haplotype
+    hap1Dict = {}
+    hap2Dict = {}
+    for contig in refContigs:
+        # Get the alignment lengths for each input/reference pair
+        i1r1 = irDictList[0][0][contig]
+        i1r2 = irDictList[0][1][contig]
+        i2r1 = irDictList[1][0][contig]
+        i2r2 = irDictList[1][1][contig]
+        
+        # Get the keys which will allow comparison
+        i1 = set(i1r1.keys()).intersection(set(i1r2.keys()))
+        i2 = set(i2r1.keys()).intersection(set(i2r2.keys()))
+        
+        # Optimise the pairwise assignment of the haplotypes to the references
+        "Variable name refers to what the assignment would be e.g., i1 assigned to r1, i2 assigned to r2"
+        i1r1_i2r2_identity = sum([ i1r1[k]["identity"] - i1r2[k]["identity"] for k in i1 ]) + sum([ i2r2[k]["identity"] - i2r1[k]["identity"] for k in i2 ])
+        #i1r1_i2r2_len = sum([ i1r1[k]["lenalign"] - i1r2[k]["lenalign"] for k in i1 ]) + sum([ i2r2[k]["lenalign"] - i2r1[k]["lenalign"] for k in i2 ])
+        #i1r1_i2r2 = sum([ (i1r1[k]["lenalign"] * i1r1[k]["identity"]) - (i1r2[k]["lenalign"] * i1r2[k]["identity"]) for k in i1 ]) + \
+        #            sum([ (i2r2[k]["lenalign"] * i2r2[k]["identity"]) - (i2r1[k]["lenalign"] * i2r1[k]["identity"]) for k in i2 ])
+        
+        if i1r1_i2r2_identity > 0: # optimise for identity as this will give fewer variants
+            # Assign haplotype 1 to reference 1 and haplotype 2 to reference 2
+            hap1Dict[contig] = list(i1r1.keys())
+            hap2Dict[contig] = list(i2r2.keys())
+        else:
+            # Assign haplotype 1 to reference 2 and haplotype 2 to reference 1
+            hap1Dict[contig] = list(i2r1.keys())
+            hap2Dict[contig] = list(i1r2.keys())
+    
+    # Print estimated haplotype assignments
+    print("# Based on minimap2 alignments, the following haplotype assignments were made:")
+    print("## Haplotype 1:")
+    for contig in refContigs:
+        print(f"### {contig}: {', '.join(hap1Dict[contig])}")
+    print("# Haplotype 2:")
+    for contig in refContigs:
+        print(f"### {contig}: {', '.join(hap2Dict[contig])}")
+    
+    # Load in sequences as a FastaCollection object
+    inputSequences = ZS_SeqIO.FastaCollection([input1File, input2File])
+    
+    # Output 1:1 relationships, and ragtag scaffold the rest
+    for hapDir, hapDict, refFile in zip([hap1Dir, hap2Dir], [hap1Dict, hap2Dict], [ref1File, ref2File]):
+        for refContig, inputContigs in hapDict.items():
+            outputFileName = os.path.join(hapDir, f"{refContig}.fasta")
+            outputFlagName = os.path.join(hapDir, f"{refContig}.is.ok.flag")
+            if not os.path.exists(outputFlagName):
+                # Output 1:1 relationships
+                if len(inputContigs) == 1:
+                    inputContig = inputContigs[0]
+                    inputSeq = inputSequences[inputContig]
+                    with open(outputFileName, "w") as fileOut:
+                        fileOut.write(f">{refContig}\n{inputSeq.seq}\n")
+                # Ragtag scaffold multiple input contigs
+                else:
+                    # Create a working directory for the files
+                    chrDir = os.path.join(hapDir, refContig)
+                    os.makedirs(chrDir, exist_ok=True)
+                    
+                    # Write the sequences to a file
+                    rawSequencesFile = os.path.join(chrDir, f"{refContig}.raw.fasta")
+                    with open(rawSequencesFile, "w") as fileOut:
+                        for inputContig in inputContigs:
+                            inputSeq = inputSequences[inputContig]
+                            fileOut.write(f">{inputContig}\n{inputSeq.seq}\n")
+                    
+                    # Run ragtag to scaffold the sequences
+                    run_ragtag(rawSequencesFile, refFile, os.path.join(chrDir, "ragtag_output"),
+                            args.ragtag, threads=1)
+                    
+                    # Symlink the output file to the haplotype directory
+                    ragtagOutputFile = os.path.join(chrDir, "ragtag_output", f"ragtag.scaffold.fasta")
+                    if not os.path.exists(outputFileName):
+                        os.symlink(ragtagOutputFile, outputFileName)
+                
+                # Create a flag to indicate that the file was created
+                open(outputFlagName, "w").close()
     
     print("Program completed successfully!")
 
