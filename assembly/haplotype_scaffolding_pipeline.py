@@ -326,6 +326,7 @@ def main():
     
     # Load in sequences as a FastaCollection object
     inputSequences = ZS_SeqIO.FastaCollection([input1File, input2File])
+    refSequences = ZS_SeqIO.FastaCollection([ref1File, ref2File])
     
     # Output 1:1 relationships, and ragtag scaffold the rest
     for hapDir, hapDict, refFile in zip([hap1Dir, hap2Dir], [hap1Dict, hap2Dict], [ref1File, ref2File]):
@@ -345,15 +346,21 @@ def main():
                     chrDir = os.path.join(hapDir, refContig)
                     os.makedirs(chrDir, exist_ok=True)
                     
-                    # Write the sequences to a file
-                    rawSequencesFile = os.path.join(chrDir, f"{refContig}.raw.fasta")
+                    # Write the input sequences to a file
+                    rawSequencesFile = os.path.join(chrDir, f"{refContig}.input.fasta")
                     with open(rawSequencesFile, "w") as fileOut:
                         for inputContig in inputContigs:
                             inputSeq = inputSequences[inputContig]
                             fileOut.write(f">{inputContig}\n{str(inputSeq)}\n")
                     
+                    # Write the reference sequence to a file
+                    refSequenceFile = os.path.join(chrDir, f"{refContig}.ref.fasta")
+                    with open(refSequenceFile, "w") as fileOut:
+                        refSeq = refSequences[refContig]
+                        fileOut.write(f">{refContig}\n{str(refSeq)}\n")
+                    
                     # Run ragtag to scaffold the sequences
-                    run_ragtag(rawSequencesFile, refFile, os.path.join(chrDir, "ragtag_output"),
+                    run_ragtag(rawSequencesFile, refSequenceFile, os.path.join(chrDir, "ragtag_output"),
                                args.ragtag, threads=1)
                     
                     # Rewrite the output file to the haplotype directory
