@@ -5,7 +5,7 @@
 
 import os, argparse, sys, shutil
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # 3 dirs up is where we find GFF3IO
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 3 dirs up is where we find GFF3IO
 from Function_packages import ZS_SeqIO, ZS_AlignIO
 
 # Define functions
