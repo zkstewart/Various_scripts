@@ -1687,7 +1687,7 @@ class Minimap2:
         # Format minimap2 command
         cmd = [
             self.mmseqsExe, io, self.preset, "-t", str(self.threads), "-o", outFile,
-            self.query, self.target
+            self.target, self.query
         ]
         
         # Run minimap2
