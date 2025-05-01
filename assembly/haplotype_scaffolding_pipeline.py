@@ -87,6 +87,28 @@ def run_ragtag(inputFile, referenceFile, outputDir, ragtagPath, threads=1):
     if not "INFO: Finished running" in ragtagerr.decode("utf-8"):
         raise Exception('ragtag error text below\n' + ragtagerr.decode("utf-8"))
 
+def find_longest_seq(fastaFile):
+    '''
+    Parse a FASTA file (without loading it into memory) to find the longest sequence.
+    
+    Parameters:
+        fastaFile -- a string indicating the location of the FASTA file
+    Returns:
+        longestSeqID -- a string indicating the ID of the longest sequence
+        numSeqs -- an integer indicating the number of sequences in the FASTA file
+    '''
+    numSeqs = 0
+    with open(fastaFile, "r") as fastaFile:
+        records = SeqIO.parse(fastaFile, "fasta")
+        longestSeq = [None, 0] # [seq, length]
+        for record in records:
+            numSeqs += 1
+            length = len(record)
+            if length > longestSeq[1]:
+                longestSeq[0] = record.id
+                longestSeq[1] = length
+    return longestSeq[0], numSeqs
+
 ## Main
 def main():
     MULTILINE_LENGTH = 70
@@ -369,16 +391,17 @@ def main():
                     
                     # Rewrite the output file to the haplotype directory
                     ragtagOutputFile = os.path.join(chrDir, "ragtag_output", f"ragtag.scaffold.fasta")
-                    numIDs = 0
-                    with open(ragtagOutputFile, "r") as fileIn, open(outputFileName, "w") as fileOut:
-                        for line in fileIn:
-                            if line.startswith(">"):
-                                fileOut.write(f">{refContig}\n")
-                                numIDs += 1
-                            else:
-                                fileOut.write(line)
+                    seqID, numIDs = find_longest_seq(ragtagOutputFile) # detect if ragtag couldn't scaffold them all together
                     if numIDs > 1:
-                        raise ValueError(f"{numIDs} IDs were found in the ragtag output '{ragtagOutputFile}'")
+                        print(f"{numIDs} IDs were found in the ragtag output '{ragtagOutputFile}'; " + 
+                              f"we will just use the longest sequence '{seqID}'")
+                    
+                    with open(ragtagOutputFile, "r") as fileIn, open(outputFileName, "w") as fileOut:
+                        records = SeqIO.parse(fileIn, "fasta")
+                        for record in records:
+                            if record.id == seqID:
+                                fileOut.write(f">{refContig}\n")
+                                fileOut.write(str(record.seq) + "\n")
                 
                 # Create a flag to indicate that the file was created
                 open(outputFlagName, "w").close()
