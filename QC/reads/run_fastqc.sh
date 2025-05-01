@@ -9,7 +9,7 @@ cd $PBS_O_WORKDIR
 
 ### MANUAL SETUP BELOW
 ## SETUP: Load modules
-module load fastqc/0.11.7-java-1.8.0_92
+module load FastQC/0.12.1-Java-11
 
 ## SETUP: Specify RNAseq reads dir
 READSDIR=/home/stewarz2/banana_group/metabolome/reads
