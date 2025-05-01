@@ -4,6 +4,7 @@
 # to scaffold the hifiasm assembly using the reference assembly as a guide.
 
 import os, argparse, sys, shutil, re, subprocess, platform
+from Bio import SeqIO
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 3 dirs up is where we find GFF3IO
 from Function_packages import ZS_SeqIO, ZS_AlignIO
@@ -88,6 +89,8 @@ def run_ragtag(inputFile, referenceFile, outputDir, ragtagPath, threads=1):
 
 ## Main
 def main():
+    MULTILINE_LENGTH = 70
+    
     # User input
     usage = """%(prog)s ...
     
@@ -328,7 +331,7 @@ def main():
     inputSequences = ZS_SeqIO.FastaCollection([input1File, input2File])
     refSequences = ZS_SeqIO.FastaCollection([ref1File, ref2File])
     
-    # Output 1:1 relationships, and ragtag scaffold the rest
+    # Generate scaffolds for each haplotype chromosome
     for hapDir, hapDict, refFile in zip([hap1Dir, hap2Dir], [hap1Dict, hap2Dict], [ref1File, ref2File]):
         for refContig, inputContigs in hapDict.items():
             outputFileName = os.path.join(hapDir, f"{refContig}.fasta")
@@ -374,11 +377,38 @@ def main():
                             else:
                                 fileOut.write(line)
                     if numIDs > 1:
-                        print(f"Warning: {numIDs} IDs were found in the ragtag output '{ragtagOutputFile}'")
-                        print("This will be an error after I am done testing this code.")
+                        raise ValueError(f"{numIDs} IDs were found in the ragtag output '{ragtagOutputFile}'")
                 
                 # Create a flag to indicate that the file was created
                 open(outputFlagName, "w").close()
+            else:
+                print(f"contig '{refContig}' for '{os.path.basename(hapDir)}' already exists; skipping.")
+    
+    # Generate final output files
+    for hapIndex, hapDir in enumerate([hap1Dir, hap2Dir]):
+        combinedOutputFile = os.path.join(args.outputDirectory, f"hap{hapIndex+1}.fasta")
+        combinedOutputFlag = os.path.join(args.outputDirectory, f"hap{hapIndex+1}.is.ok.flag")
+        
+        if not os.path.exists(combinedOutputFlag):
+            # Generate a combined output file
+            with open(combinedOutputFile, "w") as fileOut:
+                for contig in refContigs:
+                    contigFile = os.path.join(hapDir, f"{contig}.fasta") # file is assumed to still exist
+                    with open(contigFile, "r") as fileIn:
+                        records = SeqIO.parse(fileIn, "fasta")
+                        for record in records:
+                            # Write multiline output
+                            fileOut.write(f">{contig}\n")
+                            fileOut.write("\n".join(
+                                [
+                                    sequence[i:i+MULTILINE_LENGTH]
+                                    for i in range(0, len(sequence), MULTILINE_LENGTH)
+                                ]
+                            ) + "\n")
+            # Create a flag to indicate that the file was created
+            open(combinedOutputFlag, "w").close()
+        else:
+            print(f"final output '{combinedOutputFile}' already exists; skipping.")
     
     print("Program completed successfully!")
 
