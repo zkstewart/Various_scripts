@@ -399,6 +399,7 @@ def main():
                         for record in records:
                             # Write multiline output
                             fileOut.write(f">{contig}\n")
+                            sequence = str(record.seq)
                             fileOut.write("\n".join(
                                 [
                                     sequence[i:i+MULTILINE_LENGTH]
