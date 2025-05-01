@@ -73,7 +73,7 @@ def run_ragtag(inputFile, referenceFile, outputDir, ragtagPath, threads=1):
     # Format ragtag command
     cmd = [
         ragtagPath, "scaffold", "-t", str(threads), "-o", outputDir,
-        inputFile, referenceFile
+        referenceFile, inputFile
     ]
     
     # Run ragtag
@@ -92,10 +92,11 @@ def main():
     MULTILINE_LENGTH = 70
     
     # User input
-    usage = """%(prog)s ...
-    
-    Contigs for hap1 and hap2 of the reference genome must be equivalently named.
-    Defaults for --minQueryAlign and --minAlignLen are based on paf2dotplot.
+    usage = """%(prog)s automates the scaffolding of a haplotype assembly using a reference assembly.
+    It first ensures that haplotypes are equivalently assigned (e.g., hap1 is, to the best of the program's ability,
+    consistently hap1 rather than hap2) and then uses ragtag to scaffold the haplotype assembly where
+    necessary. Note 1: Contigs for hap1 and hap2 of the reference genome must be equivalently named.
+    Note 2: Defaults for --minQueryAlign and --minAlignLen are based on paf2dotplot.
     """
     p = argparse.ArgumentParser(description=usage)
     # Reqs
