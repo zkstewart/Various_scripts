@@ -4,6 +4,7 @@
 # to scaffold the hifiasm assembly using the reference assembly as a guide.
 
 import os, argparse, sys, shutil, re, subprocess, platform
+from intervaltree import IntervalTree
 from Bio import SeqIO
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 3 dirs up is where we find GFF3IO
@@ -23,6 +24,16 @@ def validate_args(args):
     for referenceFile in args.referenceGenome:
         if not os.path.isfile(referenceFile):
             raise FileNotFoundError(f"Reference genome file '{referenceFile}' not found.")
+    
+    # Validate numeric arguments
+    if args.minQueryAlign < 0:
+        raise ValueError(f"--minQueryAlign must be greater than or equal to 0.")
+    if args.minAlignLen < 0:
+        raise ValueError(f"--minAlignLen must be greater than or equal to 0.")
+    if args.overlapCutoff < 0 or args.overlapCutoff > 1:
+        raise ValueError(f"--overlap must be between 0 and 1 (inclusive).")
+    if args.threads < 1:
+        raise ValueError(f"--threads must be greater than or equal to 1.")
     
     # Validate program discoverability
     if args.minimap2 == None:
@@ -147,6 +158,12 @@ def main():
                    help="""Optionally, specify the minimum alignment length to
                    consider a match; default == 10000""",
                    default=10000)
+    p.add_argument("--overlap", dest="overlapCutoff",
+                   required=False,
+                   type=float,
+                   help="""Optionally, specify the proportion of sequence that can overlap
+                   prior to scaffolding; default == 0.2 (20%)""",
+                   default=0.2)
     # Opts (minimap2)
     p.add_argument("--preset", dest="preset",
                    required=False,
@@ -260,9 +277,10 @@ def main():
                     
                     # Store the alignment length
                     pafDict.setdefault(tid, {})
-                    pafDict[tid].setdefault(qid, {"numresidues": 0, "lenalign": 0})
+                    pafDict[tid].setdefault(qid, {"numresidues": 0, "lenalign": 0, "coords": []})
                     pafDict[tid][qid]["numresidues"] += numresidues
                     pafDict[tid][qid]["lenalign"] += lenalign
+                    pafDict[tid][qid]["coords"].append([tstart, tend])
     refContigs = sorted(list(refContigs), key=lambda x: int(" ".join(re.findall(r'\d+', x))))
     
     # Adjust the PAF dictionaries to discount multimapping & filter queries that fail the minimum criteria
@@ -295,6 +313,54 @@ def main():
                 # Remove any query IDs that were discounted
                 for qid in toDelete:
                     del pafDict[tid][qid]
+    
+    # Purge any overlapping alignments
+    for inputIndex in range(2):
+        for refIndex in range(2):
+            pafDict = irDictList[inputIndex][refIndex]
+            
+            # Iterate over each reference contig
+            for tid, qidDict in pafDict.items():
+                # Sort contigs by alignment length
+                queries = sorted(list(qidDict.keys()), key=lambda x: qidDict[x]["lenalign"], reverse=True)
+                
+                # Check for overlaps from longest to shortest
+                currentIndex = 0
+                while currentIndex < len(queries)-1:
+                    current = queries[currentIndex]
+                    
+                    # Iterate over the other query IDs
+                    toDelete = []
+                    for otherIndex, otherQid in enumerate(queries[currentIndex+1:]):
+                        # Build an interval tree for the other query ID
+                        otherTree = IntervalTree.from_tuples(qidDict[otherQid]["coords"])
+                        otherTree.merge_overlaps(strict=False)
+                        
+                        # Remove overlaps of the current query ID
+                        for start, end in qidDict[current]["coords"]:
+                            otherTree.chop(start, end)
+                        
+                        # Check the length of overlapping sequence
+                        otherLength = sum([ y-x for x,y in qidDict[otherQid]["coords"] ])
+                        choppedLength = sum([ interval.end - interval.begin for interval in otherTree ])
+                        overlapLength = otherLength - choppedLength
+                        
+                        # If the overlap length exceeds a cutoff, remove the query ID
+                        if (overlapLength / otherLength) > args.overlapCutoff:
+                            toDelete.append(otherIndex + currentIndex + 1)
+                    
+                    # Delete the overlapping query IDs
+                    for index in sorted(toDelete, reverse=True):
+                        del queries[index]
+                    
+                    currentIndex += 1
+                
+                # Propagate the deletions to the PAF dictionary
+                for qid in list(qidDict.keys()):
+                    if qid in queries:
+                        continue
+                    # Remove the query ID from the PAF dictionary
+                    del qidDict[qid]
     
     # Ensure that query contigs do not map to multiple reference contigs
     for inputIndex in range(2):
