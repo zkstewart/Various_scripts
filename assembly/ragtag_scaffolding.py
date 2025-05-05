@@ -60,7 +60,7 @@ def run_ragtag(inputFile, referenceFile, outputDir, ragtagPath, threads=1):
     '''
     # Format ragtag command
     cmd = [
-        ragtagPath, "scaffold", "-t", str(threads), "-o", outputDir,
+        ragtagPath, "scaffold", "-t", str(threads), "-o", outputDir, "-r",
         referenceFile, inputFile
     ]
     
