@@ -21,9 +21,11 @@ def validate_args(args):
     for inputFile in args.inputGenome:
         if not os.path.isfile(inputFile):
             raise FileNotFoundError(f"Input genome file '{inputFile}' not found.")
+    args.inputGenome = [ os.path.abspath(inputFile) for inputFile in args.inputGenome ]
     for referenceFile in args.referenceGenome:
         if not os.path.isfile(referenceFile):
             raise FileNotFoundError(f"Reference genome file '{referenceFile}' not found.")
+    args.referenceGenome = [ os.path.abspath(referenceFile) for referenceFile in args.referenceGenome ]
     
     # Validate numeric arguments
     if args.minQueryAlign < 0:
