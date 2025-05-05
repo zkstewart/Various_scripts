@@ -36,6 +36,8 @@ def validate_args(args):
         raise ValueError(f"--overlap must be between 0 and 1 (inclusive).")
     if args.threads < 1:
         raise ValueError(f"--threads must be greater than or equal to 1.")
+    if args.minQ < 0:
+        raise ValueError(f"--minQ must be greater than or equal to 0.")
     
     # Validate program discoverability
     if args.minimap2 == None:
@@ -160,6 +162,12 @@ def main():
                    help="""Optionally, specify the minimum alignment length to
                    consider a match; default == 10000""",
                    default=10000)
+    p.add_argument("--minQ", dest="minQ",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the minimap map Q score for considering an alignment
+                   to be a match; default == 1""",
+                   default=1)
     p.add_argument("--overlap", dest="overlapCutoff",
                    required=False,
                    type=float,
@@ -275,6 +283,10 @@ def main():
                     
                     # Skip if the alignment doesn't meet length minimum
                     if lenalign < args.minAlignLen:
+                        continue
+                    
+                    # Skip if the alignment doesn't meet Q score minimum
+                    if mapq < args.minQ:
                         continue
                     
                     # Store the alignment length
