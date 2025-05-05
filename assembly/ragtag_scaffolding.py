@@ -142,8 +142,8 @@ def main():
     validate_args(args)
     
     # Load in sequences as a FastaCollection object
-    inputSequences = ZS_SeqIO.FastaCollection(args.inputGenome)
-    refSequences = ZS_SeqIO.FastaCollection([args.referenceGenome])
+    inputRecords = ZS_SeqIO.FastaCollection(args.inputGenome)
+    refRecords = ZS_SeqIO.FastaCollection([args.referenceGenome])
     
     # Generate scaffolds for each haplotype chromosome
     outputFileName = os.path.join(args.outputDirectory, f"{args.referenceSequence}.fasta")
@@ -159,8 +159,8 @@ def main():
         rawSequencesFlag = os.path.join(chrDir, f"{args.referenceSequence}.input.fasta.is.ok.flag")
         if not os.path.exists(rawSequencesFlag):
             with open(rawSequencesFile, "w") as fileOut:
-                for inputContig in inputSequences:
-                    inputSeq = inputSequences[inputContig]
+                for inputContig in args.inputSequences:
+                    inputSeq = inputRecords[inputContig]
                     fileOut.write(f">{inputContig}\n{str(inputSeq)}\n")
             open(rawSequencesFlag, "w").close()
         
@@ -169,7 +169,7 @@ def main():
         refSequenceFlag = os.path.join(chrDir, f"{args.referenceSequence}.ref.fasta.is.ok.flag")
         if not os.path.exists(refSequenceFlag):
             with open(refSequenceFile, "w") as fileOut:
-                refSeq = refSequences[args.referenceSequence]
+                refSeq = refRecords[args.referenceSequence]
                 fileOut.write(f">{args.referenceSequence}\n{str(refSeq)}\n")
             open(refSequenceFlag, "w").close()
         
