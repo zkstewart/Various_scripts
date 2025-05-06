@@ -36,6 +36,8 @@ def validate_args(args):
         # Handle other cases
         else:
             raise FileNotFoundError(f"Input FASTA file or directory '{location}' not found!")
+    if len(args.fastaFiles) < 2:
+        raise ValueError(f"At least two FASTA files are required for pairwise alignment; only {len(args.fastaFiles)} found.")
     
     # Validate numeric arguments
     if args.threads < 1:
@@ -271,7 +273,7 @@ def main():
     
     # Run minimap2 of input files against one another
     alignmentFiles = []
-    for i in range(0, len(args.fastaFiles), 2):
+    for i in range(0, len(args.fastaFiles)-1):
         # Get details of the two FASTA files to align
         fastaFile1 = args.fastaFiles[i]
         fastaFile2 = args.fastaFiles[i+1]
