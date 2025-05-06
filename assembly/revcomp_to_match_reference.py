@@ -2,12 +2,11 @@
 # revcomp_to_match_reference.py
 # Script to take in a directory of FASTA files and reverse-complement them to match a reference genome.
 
-import os, argparse, sys, shutil, re, subprocess, platform
-from intervaltree import IntervalTree
+import os, argparse, sys, shutil
 from Bio import SeqIO
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 3 dirs up is where we find GFF3IO
-from Function_packages import ZS_SeqIO, ZS_AlignIO
+from Function_packages import ZS_AlignIO
 
 # Define functions
 def validate_args(args):
@@ -151,13 +150,13 @@ def main():
         with open(fastaFile, "r") as fileIn:
             for line in fileIn:
                 if line.startswith(">"):
-                    # Extract the sequence ID from the header line
                     seqID = line.split()[0][1:]
                     inputSeqIDs.add(seqID)
+        
         # Check if the input sequence IDs match the reference sequence IDs
-        if inputSeqIDs != refSeqIDs:
-            raise ValueError(f"Input FASTA file '{fastaFile}' does not have the same sequence IDs " + 
-                             f"as the reference genome '{args.referenceGenome}'")
+        if inputSeqIDs.difference(refSeqIDs) != set():
+            raise ValueError(f"Input FASTA file '{fastaFile}' has sequence IDs not found in " + 
+                             f"the reference genome '{args.referenceGenome}'")
     
     # Set up the working directory structure
     alignmentsDir = os.path.join(args.outputDirectory, "alignments")
@@ -180,7 +179,7 @@ def main():
         
         # Parse PAF file and tally alignment length for each contig by strand
         pafFile = os.path.join(alignmentsDir, f"{os.path.basename(fastaFile)}.paf")
-        alignLen = { r: {"+": 0, "-": 0} for r in refSeqIDs }
+        alignLen = {}
         with open(pafFile, "r") as fileIn:
             for line in fileIn:
                 # Extract relevant data
@@ -206,10 +205,11 @@ def main():
                     continue
                 
                 # Store the alignment length
+                alignLen.setdefault(qid, {"+": 0, "-": 0})
                 alignLen[qid][strand] += lenalign
         
         # Check if the alignment length is greater for the reverse strand for each contig
-        for contig in refSeqIDs:
+        for contig in alignLen.keys():
             if alignLen[contig]["+"] == 0 and alignLen[contig]["-"] == 0:
                 print(f"Warning: No alignments found for contig '{contig}' in file '{fastaFile}'.")
                 continue
