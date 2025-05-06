@@ -194,7 +194,6 @@ def main():
                 # Convert to integers
                 qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq = \
                     map(int, [qlen, qstart, qend, tlen, tstart, tend, numresidues, lenalign, mapq])
-                refContigs.add(tid)
                 
                 # Skip if the alignment doesn't meet length minimum
                 if lenalign < args.minAlignLen:
