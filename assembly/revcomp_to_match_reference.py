@@ -27,7 +27,7 @@ def validate_args(args):
         elif os.path.isdir(location):
             foundAny = False
             for f in os.listdir(location):
-                if f.endswith(args.fastaSuffix):
+                if any([ f.endswith(x) for x in args.fastaSuffix ]):
                     fastaPrefix = os.path.basename(location).rsplit(".", maxsplit=1)[0]
                     if fastaPrefix in fastaPrefixes:
                         raise ValueError(f"Duplicate FASTA prefix found: '{fastaPrefix}'")
@@ -35,7 +35,7 @@ def validate_args(args):
                     args.fastaFiles.append(os.path.join(location, f))
                     foundAny = True
             if not foundAny:
-                raise FileNotFoundError(f"No FASTA files found in directory '{location}' ending with '{args.fastaSuffix}'")
+                raise FileNotFoundError(f"No FASTA files found in directory '{location}' ending with a suffix in '{args.fastaSuffix}'")
         # Handle other cases
         else:
             raise FileNotFoundError(f"Input FASTA file or directory '{location}' not found!")
