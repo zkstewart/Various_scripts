@@ -215,6 +215,7 @@ def main():
             
             if alignLen[contig]["-"] > alignLen[contig]["+"]:
                 needsRevComp[fastaPrefix].add(contig)
+                print(f"Contig '{contig}' in file '{fastaFile}' needs reverse-complementing.")
     
     # Write output files with reverse-complemented sequences where needed
     for fastaFile in args.fastaFiles:
