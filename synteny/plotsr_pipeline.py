@@ -3,7 +3,7 @@
 # Script to take in a directory of FASTA files and perform pairwise minimap2 alignments
 # with subsequent syri structural variant calling and plotting of results with plotsr.
 
-import os, argparse, sys, shutil, platform
+import os, argparse, sys, shutil, platform, subprocess
 
 # Define functions
 def validate_args(args):
