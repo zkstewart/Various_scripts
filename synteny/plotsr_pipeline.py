@@ -304,7 +304,7 @@ def main():
         
         # Run if the output file or flag file doesn't exist
         if not os.path.exists(syriOutputName) or not os.path.exists(flagName):
-            run_syri(bamFileName, fastaFile1, fastaFile2, prefix, syriDir, args.syri)
+            run_syri(bamFile, fastaFile1, fastaFile2, prefix, syriDir, args.syri)
             open(flagName, "w").close()
         
         # Store the file for plotsr processing
