@@ -3,11 +3,7 @@
 # Script to take in a directory of FASTA files and perform pairwise minimap2 alignments
 # with subsequent syri structural variant calling and plotting of results with plotsr.
 
-import os, argparse, sys, shutil
-from Bio import SeqIO
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 3 dirs up is where we find GFF3IO
-from Function_packages import ZS_AlignIO
+import os, argparse, sys, shutil, platform
 
 # Define functions
 def validate_args(args):
