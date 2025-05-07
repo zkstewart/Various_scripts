@@ -160,15 +160,14 @@ def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
     # Run syri
     if platform.system() != "Windows":
         runSyri = subprocess.Popen(" ".join(cmd), shell = True,
-                                   stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+                                   stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     else:
         runSyri = subprocess.Popen(cmd, shell = True,
-                                   stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+                                   stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     syriOut, syriErr = runSyri.communicate()
-    #print(f"stdout: {syriOut.decode('utf-8')}") # for debugging during script development
-    print(f"stderr: {syriErr.decode('utf-8')}")
-    #if not "INFO: Finished running" in syriErr.decode("utf-8"):
-    #    raise Exception('syri error text below\n' + syriErr.decode("utf-8"))
+    if syriOut.decode("utf-8") != "":
+        raise Exception('syri error; stdout = "' + syriOut.decode("utf-8") + '"; ' +
+                        'stderr = "' + syriErr.decode("utf-8") + '"')
 
 def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath):
     '''
@@ -194,15 +193,15 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath):
         runPlotsr = subprocess.Popen(cmd, shell = True,
                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
     plotsrOut, plotsrErr = runPlotsr.communicate()
-    #print(f"stdout: {plotsrOut.decode('utf-8')}") # for debugging during script development
-    print(f"stderr: {plotsrErr.decode('utf-8')}")
-    #if not "INFO: Finished running" in plotsrErr.decode("utf-8"):
-    #    raise Exception('plotsr error text below\n' + plotsrErr.decode("utf-8"))
+    if not "INFO - Finished" in plotsrErr.decode("utf-8"):
+        raise Exception('plotsr error text below\n' + plotsrErr.decode("utf-8"))
 
 ## Main
 def main():
     # User input
-    usage = """%(prog)s ...
+    usage = """%(prog)s pipelines the process of aligning FASTA files with minimap2, calling structural variants with syri,
+    and generating plots with plotsr. The script takes in a directory of FASTA files and performs pairwise alignments.
+    The output is a directory containing the alignments, syri output files, and plots as pdf and png files.
     """
     p = argparse.ArgumentParser(description=usage)
     # Reqs
