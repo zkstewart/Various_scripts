@@ -118,6 +118,26 @@ def run_sorted_minimap2(fasta1, fasta2, outputFileName, preset,
     if not "Real time:" in mm2Err.decode("utf-8"):
             raise Exception('minimap2 error text below\n' + mm2Err.decode("utf-8"))
 
+def run_samtools_index(bamFile, samtoolsPath):
+    '''
+    Parameters:
+        bamFile -- a string indicating the location of the BAM file to subset
+        samtoolsPath -- a string indicating the location of the samtools executable
+    '''
+    # Format samtools command
+    cmd = [samtoolsPath, "index", bamFile]
+    
+    # Run the command
+    if platform.system() != "Windows":
+        runSamtoolsIndex = subprocess.Popen(" ".join(cmd), shell = True,
+                                            stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+    else:
+        runSamtoolsIndex = subprocess.Popen(cmd, shell = True,
+                                            stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
+    indexOut, indexErr = runSamtoolsIndex.communicate()
+    if indexErr.decode("utf-8") != "":
+        raise Exception('samtools index error text below\n' + indexErr.decode("utf-8"))
+
 def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
     '''
     Runs syri to call structural variants between the two FASTA files.
@@ -290,6 +310,7 @@ def main():
         if not os.path.exists(flagName) or not os.path.exists(outputFileName):
             run_sorted_minimap2(fastaFile1, fastaFile2, outputFileName, args.preset,
                                 args.minimap2, args.samtools, args.threads)
+            run_samtools_index(outputFileName, args.samtools)
             open(flagName, "w").close()
         
         # Store the file for syri processing
@@ -324,7 +345,7 @@ def main():
     pngPlotFile = os.path.join(args.outputDirectory, "plotsr.png")
     pngFlagFile = os.path.join(args.outputDirectory, "plotsr.png.is.ok.flag")
     if not os.path.exists(pngPlotFile) or not os.path.exists(pngFlagFile):
-        run_plotsr(syriFiles, genomeTxtFile, pngPlotFile, plotsrPath)
+        run_plotsr(syriFiles, genomeTxtFile, pngPlotFile, args.plotsr)
         open(pngFlagFile, "w").close()
     else:
         print(f"png output file already exists; skipping.")
@@ -332,7 +353,7 @@ def main():
     pdfPlotFile = os.path.join(args.outputDirectory, "plotsr.pdf")
     pdfFlagFile = os.path.join(args.outputDirectory, "plotsr.pdf.is.ok.flag")
     if not os.path.exists(pdfPlotFile) or not os.path.exists(pdfFlagFile):
-        run_plotsr(syriFiles, genomeTxtFile, pdfPlotFile, plotsrPath)
+        run_plotsr(syriFiles, genomeTxtFile, pdfPlotFile, args.plotsr)
         open(pdfFlagFile, "w").close()
     else:
         print(f"pdf output file already exists; skipping.")
