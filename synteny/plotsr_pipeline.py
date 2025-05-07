@@ -145,7 +145,7 @@ def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
         runSyri = subprocess.Popen(cmd, shell = True,
                                    stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
     syriOut, syriErr = runSyri.communicate()
-    print(f"stdout: {syriOut.decode('utf-8')}") # for debugging during script development
+    #print(f"stdout: {syriOut.decode('utf-8')}") # for debugging during script development
     print(f"stderr: {syriErr.decode('utf-8')}")
     #if not "INFO: Finished running" in syriErr.decode("utf-8"):
     #    raise Exception('syri error text below\n' + syriErr.decode("utf-8"))
@@ -174,7 +174,7 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath):
         runPlotsr = subprocess.Popen(cmd, shell = True,
                                      stdout = subprocess.DEVNULL, stderr = subprocess.PIPE)
     plotsrOut, plotsrErr = runPlotsr.communicate()
-    print(f"stdout: {plotsrOut.decode('utf-8')}") # for debugging during script development
+    #print(f"stdout: {plotsrOut.decode('utf-8')}") # for debugging during script development
     print(f"stderr: {plotsrErr.decode('utf-8')}")
     #if not "INFO: Finished running" in plotsrErr.decode("utf-8"):
     #    raise Exception('plotsr error text below\n' + plotsrErr.decode("utf-8"))
