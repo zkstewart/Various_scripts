@@ -42,6 +42,10 @@ def validate_args(args):
     # Validate numeric arguments
     if args.threads < 1:
         raise ValueError(f"--threads must be greater than or equal to 1.")
+    if args.height != None and args.height < 1:
+        raise ValueError(f"--height must be greater than or equal to 1.")
+    if args.width != None and args.width < 1:
+        raise ValueError(f"--width must be greater than or equal to 1.")
     
     # Validate program discoverability
     if args.minimap2 == None:
@@ -169,7 +173,7 @@ def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
         raise Exception('syri error; stdout = "' + syriOut.decode("utf-8") + '"; ' +
                         'stderr = "' + syriErr.decode("utf-8") + '"')
 
-def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath):
+def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath, height=None, width=None):
     '''
     Runs plotsr to visualise structural variants between syri output files.
     
@@ -178,12 +182,20 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath):
         genomeTxtFile -- a string indicating the location of the genomes.txt file
         outputFileName -- a string indicating the location to write the plotsr output
         plotsrPath -- a string indicating the location of the plotsr executable file
+        height -- (OPTIONAL) an integer indicating the height of the plotsr output in inches
+        width -- (OPTIONAL) an integer indicating the width of the plotsr output in inches
     '''
     # Format syri command
     cmd = [plotsrPath]
     for syriFile in syriFiles:
         cmd += ["--sr", syriFile]
     cmd += ["--genomes", genomeTxtFile, "-o", outputFileName]
+    
+    # Add height and width if specified
+    if height != None:
+        cmd += ["-H", str(height)]
+    if width != None:
+        cmd += ["-W", str(width)]
     
     # Run syri
     if platform.system() != "Windows":
@@ -225,13 +237,28 @@ def main():
                    help="""Optionally, specify the number of threads to use for minimap2;
                    default == 1""",
                    default=1)
-    # Opts (programs)
+    # Opts (behavioural)
     p.add_argument("--fastaSuffix", dest="fastaSuffix",
                    required=False,
                    nargs="+",
                    help="""Optionally, specify one or more suffixes to use when scanning for FASTA
                    files in input directories; default == '.fasta'""",
                    default=[".fasta"])
+    # Opts (plotrs)
+    p.add_argument("--height", dest="height",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the height of the plotsr output in inches;
+                   default == None (plotsr will determine the height as being the number of
+                   chromosomes being plotted)""",
+                   default=None)
+    p.add_argument("--width", dest="width",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the width of the plotsr output in inches;
+                   default == None (plotsr will set the width to 3)""",
+                   default=None)
+    # Opts (programs)
     p.add_argument("--minimap2", dest="minimap2",
                    required=False,
                    help="""Optionally, specify the minimap2 executable file
@@ -344,7 +371,8 @@ def main():
     pngPlotFile = os.path.join(args.outputDirectory, "plotsr.png")
     pngFlagFile = os.path.join(args.outputDirectory, "plotsr.png.is.ok.flag")
     if not os.path.exists(pngPlotFile) or not os.path.exists(pngFlagFile):
-        run_plotsr(syriFiles, genomeTxtFile, pngPlotFile, args.plotsr)
+        run_plotsr(syriFiles, genomeTxtFile, pngPlotFile, args.plotsr, 
+                   args.height, args.width)
         open(pngFlagFile, "w").close()
     else:
         print(f"png output file already exists; skipping.")
@@ -352,7 +380,8 @@ def main():
     pdfPlotFile = os.path.join(args.outputDirectory, "plotsr.pdf")
     pdfFlagFile = os.path.join(args.outputDirectory, "plotsr.pdf.is.ok.flag")
     if not os.path.exists(pdfPlotFile) or not os.path.exists(pdfFlagFile):
-        run_plotsr(syriFiles, genomeTxtFile, pdfPlotFile, args.plotsr)
+        run_plotsr(syriFiles, genomeTxtFile, pdfPlotFile, args.plotsr,
+                   args.height, args.width)
         open(pdfFlagFile, "w").close()
     else:
         print(f"pdf output file already exists; skipping.")
