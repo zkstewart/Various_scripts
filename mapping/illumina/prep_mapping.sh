@@ -1,37 +1,35 @@
 #!/bin/bash -l
 
-# START SCRIPT SETUP
+####
 
-# > START MANUAL SPECIFICATION
-# >> Specify various scripts directory
+# Specify various scripts directory
 VARSCRIPTDIR=/home/stewarz2/scripts/Various_scripts
 
-# >> Specify location of BWA exe
+# Specify location of BWA exe
 BWA=/home/stewarz2/various_programs/bwa/bwa
 
-# >> Specify genome file location
-GENOMEDIR=/home/stewarz2/flies/mitch/genome
-GENOME=GCF_016617805.1_CSIRO_BtryS06_freeze2_genomic.fna
+# Specify genome file location
+GENOMEDIR=/home/stewarz2/location/of/genome
+GENOME=genome.fasta
 
-# >> Specify demultiplexed fastq file location
-FQDIR=/home/stewarz2/flies/mitch/prepared_reads
+# Specify fastq reads files location
+FQDIR=/home/stewarz2/location/of/trimmed_reads
 
-# >> Specify metadata csv location
-CSV=/home/stewarz2/flies/mitch/metadata/prep_metadata_concat_sp.csv
+# Specify metadata csv location
+CSV=/home/stewarz2/location/of/metadata/prep_metadata.csv
 
-# >> Specify the column names
-PREFIX=prefix
-ID=id
-SM=sm
+# Specify the column names
+PREFIX=prefix # used to identify read file locations
+ID=id # used to label your samples; VCF columns will contain this value as the header
+SM=sample # this is a group label; if non-unique, reads in the same group will be variant called together; if you don't want that to happen, make this the same as ID
 
-# > END MANUAL SPECIFICATION
+# Specify computational parameters
+CPUS=4
 
-# END SCRIPT SETUP
+####
 
-# START SCRIPT RUN
-
-# > STEP 1: Generate shell script for job submission
-python ${VARSCRIPTDIR}/popgen/Illumina/illumina_map.py -d ${FQDIR} -f ${GENOMEDIR}/${GENOME} -csv ${CSV} -b ${BWA} --prefix ${PREFIX} --id ${ID} --sample ${SM} --cpus 4
-
-# END SCRIPT RUN
-
+# STEP 1: Generate shell script for job submission
+python ${VARSCRIPTDIR}/mapping/illumina/illumina_map.py -b ${BWA} \
+    -d ${FQDIR} -f ${GENOMEDIR}/${GENOME} -csv ${CSV} \
+    --prefix ${PREFIX} --id ${ID} --sample ${SM} \
+    --cpus ${CPUS}
