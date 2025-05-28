@@ -275,7 +275,7 @@ def main():
             for repeatType in args.repeatFamilies:
                 # Plot repeat track data
                 if args.binSize == -1:
-                    repeatTrack = plot_repeat_features(seqid2features, sector, colourPalette[trackIndex], currentPosition,
+                    repeatTrack = plot_repeat_features(seqid2repeats, sector, colourPalette[trackIndex], currentPosition,
                                                        repeatType, args.sectorOutline, TRACK_HEIGHT)
                 else:
                     repeatTrack = plot_repeat_density(seqid2repeats, sector, colourPalette[trackIndex], currentPosition,
