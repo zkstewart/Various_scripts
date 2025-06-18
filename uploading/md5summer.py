@@ -25,7 +25,7 @@ def create_md5sum_cmd_file(fileNames, outputFileName="cmd_md5sums.txt"):
         for fileName in fileNames:
             fileOut.write(f"md5sum {fileName} > {fileName}.md5\n")
 
-def create_shell_script(listFile, numJobs, outputFileName="run_md5sums.sh"):
+def create_shell_script(cmdFile, numJobs, outputFileName="run_md5sums.sh"):
     # Specify hard-coded script features
     jobname = "md5sum"
     walltime = "16:00:00"
@@ -47,7 +47,7 @@ def create_shell_script(listFile, numJobs, outputFileName="run_md5sums.sh"):
 
 cd $PBS_O_WORKDIR
 
-eval $(cat {listFile} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
+eval $(cat {cmdFile} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
 """
     # Write to file
     with open(outputFileName, "w") as fileOut:
@@ -56,7 +56,7 @@ eval $(cat {listFile} | head -n ${{PBS_ARRAY_INDEX}} | tail -n 1)
             walltime=walltime,
             mem=mem,
             jobLine=jobLine,
-            listFile=listFile
+            cmdFile=cmdFile
         ))
 
 def main():
@@ -77,7 +77,7 @@ def main():
     p.add_argument("--cmd", dest="cmdFileName",
                    required=False,
                    help="Optionally specify list file name (default==cmd_md5sums.txt)",
-                   default="files_list.txt")
+                   default="cmd_md5sums.txt")
     p.add_argument("--sh", dest="shellScriptName",
                    required=False,
                    help="Optionally specify shell script name (default==run_md5sums.sh)",
@@ -94,6 +94,8 @@ def main():
     
     # Write the shell script to run md5sum on the located files
     create_shell_script(args.cmdFileName, len(filesForMd5), outputFileName=args.shellScriptName)
+    
+    print("Program completed successfully!")
 
 if __name__ == "__main__":
     main()
