@@ -89,6 +89,9 @@ def main():
                    to be processed (default==.md5)""",
                    default=".md5")
     
+    args = p.parse_args()
+    validate_args(args)
+    
     # Get .md5 files list
     md5Files = []
     for file in os.listdir(args.md5sDir):
