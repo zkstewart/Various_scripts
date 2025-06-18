@@ -16,12 +16,12 @@ def validate_args(args):
         raise FileExistsError(f"Output file '{args.outputFileName}' already exists. Please choose a different " + 
                               "name or move or delete the existing file.")
 
-def parse_md5_file(file, md5suffix=".md5"):
+def parse_md5_file(file, md5Suffix=".md5"):
     '''
     Parameters:
         file -- a string containing the path to a .md5 file
                 containing read md5 checksums.
-        md5suffix -- a string containing the suffix of the md5 file
+        md5Suffix -- a string containing the suffix of the md5 file
                      to be used if we need to derive the original
                      file's name (default=='.md5')
     Returns:
@@ -35,7 +35,7 @@ def parse_md5_file(file, md5suffix=".md5"):
             # Handle checksum only line
             if len(sl) == 1:
                 checksum = sl[0]
-                name = os.path.basename(file.rsplit(md5suffix, maxsplit=1)[0]) # derive original name from md5 file
+                name = os.path.basename(file.rsplit(md5Suffix, maxsplit=1)[0]) # derive original name from md5 file
             # Handle checksum and name line
             elif len(sl) == 2:
                 checksum = sl[0]
@@ -49,12 +49,12 @@ def parse_md5_file(file, md5suffix=".md5"):
     
     return checksum, name
 
-def get_md5_from_files(md5Files, md5suffix=".md5"):
+def get_md5_from_files(md5Files, md5Suffix=".md5"):
     '''
     Parameters:
         md5Files -- a list containing strings that point to .md5
                     files containing read md5 checksums.
-        md5suffix -- a string containing the suffix of the md5 file
+        md5Suffix -- a string containing the suffix of the md5 file
                      to be passed along to the parse_md5_file function
                      (default=='.md5')
     Returns:
@@ -64,7 +64,7 @@ def get_md5_from_files(md5Files, md5suffix=".md5"):
     '''
     md5sTable=["file\tchecksum"]
     for file in md5Files:
-        checksum, name = parse_md5_file(file)
+        checksum, name = parse_md5_file(file, md5Suffix=md5Suffix)
         md5sTable.append(f"{name}\t{checksum}")
     return md5sTable
 
