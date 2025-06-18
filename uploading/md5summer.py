@@ -25,10 +25,9 @@ def create_md5sum_cmd_file(fileNames, outputFileName="cmd_md5sums.txt"):
         for fileName in fileNames:
             fileOut.write(f"md5sum {fileName} > {fileName}.md5\n")
 
-def create_shell_script(cmdFile, numJobs, outputFileName="run_md5sums.sh"):
+def create_shell_script(cmdFile, numJobs, outputFileName="run_md5sums.sh", walltime="03:00:00"):
     # Specify hard-coded script features
     jobname = "md5sum"
-    walltime = "16:00:00"
     mem = "10G"
     
     # Format the PBS -J line
@@ -82,6 +81,10 @@ def main():
                    required=False,
                    help="Optionally specify shell script name (default==run_md5sums.sh)",
                    default="run_md5sums.sh")
+    p.add_argument("--walltime", dest="walltime",
+                   required=False,
+                   help="Optionally specify the walltime for the job (default==03:00:00)",
+                   default="03:00:00")
     
     args = p.parse_args()
     validate_args(args)
@@ -93,7 +96,9 @@ def main():
     create_md5sum_cmd_file(filesForMd5, outputFileName=args.cmdFileName)
     
     # Write the shell script to run md5sum on the located files
-    create_shell_script(args.cmdFileName, len(filesForMd5), outputFileName=args.shellScriptName)
+    create_shell_script(args.cmdFileName, len(filesForMd5),
+                        outputFileName=args.shellScriptName,
+                        walltime=args.walltime)
     
     print("Program completed successfully!")
 
