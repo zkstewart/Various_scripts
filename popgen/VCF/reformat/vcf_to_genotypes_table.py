@@ -5,7 +5,7 @@
 # Useful for manual inspection.
 
 import os, argparse, gzip
-from contextlib import contextmanager, ExitStack
+from contextlib import contextmanager
 
 # Define functions
 def validate_args(args):
@@ -107,20 +107,17 @@ def parse_vcf(filename, sampleOrder=None):
 ## Main
 def main():
     # User input
-    usage = """%(prog)s reads in the primary VCF containing only variant calls,
-    and a second VCF containing invariant sites. The invariant sites are then
-    merged into the primary VCF, and the output VCF is written to the specified
-    output file location.
+    usage = """%(prog)s reads in a VCF file and reformats it into a table with ref/alt genotypes
+    in human-readable format, rather than digit/digit genotypes.
     """
     p = argparse.ArgumentParser(description=usage)
     # Req
     p.add_argument("-i", dest="inputVCF",
                    required=True,
-                   help="""Input the first VCF file containing variant calls that
-                   you want variant sites to be merged into""")
+                   help="Input the VCF file to convert")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
-                   help="Output file name for the filtered SNPs")
+                   help="Output file name for genotypes table")
     # Opts
     p.add_argument("--sampleOrder", dest="sampleOrderFile",
                    required=False,
