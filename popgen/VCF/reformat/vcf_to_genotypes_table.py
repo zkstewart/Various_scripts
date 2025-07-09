@@ -12,7 +12,7 @@ def validate_args(args):
     # Validate input file locations
     if not os.path.isfile(args.inputVCF):
         raise FileNotFoundError(f"I am unable to locate the variant calls VCF file ({args.inputVCF})")
-    if not os.path.isfile(args.sampleOrderFile):
+    if (args.sampleOrderFile != None) and (not os.path.isfile(args.sampleOrderFile)):
         raise FileNotFoundError(f"I am unable to locate the sample order file ({args.sampleOrderFile})")
     # Validate output file location
     if os.path.exists(args.outputFileName):
