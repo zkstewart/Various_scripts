@@ -47,7 +47,7 @@ def parse_genotypes_table(filename, ploidy=2):
     # Check for ref/alt length
     if not all(df["REF"].apply(lambda x: len(x)) == df["ALT"].apply(lambda x: len(x))):
         raise ValueError("The reference and alternate alleles must have the same length for all variants; " +
-                         "I will need to modify the code to handle this case in the future if it is ever needed.")
+                         "you will need to use vcf_to_msa.py to handle this scenario.")
     
     # Store genotypes in a dictionary
     samplesDict = {}

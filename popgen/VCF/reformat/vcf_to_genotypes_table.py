@@ -35,6 +35,34 @@ def parse_sample_order(filename):
             sampleOrder.append(line.strip())
     return sampleOrder
 
+def recode_genotypes_as_refalt(sampleData, refAlt, gtIndex, sampleNames):
+    '''
+    Parameters:
+        sampleData -- a list of strings, each representing a sample's genotype data
+        refAlt -- a list of reference and alternate allele(s) as strings
+        gtIndex -- the index of the GT field in the sample data format
+        sampleNames -- a list of sample names corresponding to the sampleData
+    Returns:
+        sampleData -- a dictionary where keys are sample names and values are their
+                      recoded genotypes in ref/alt format (as opposed to digit/digit)
+    '''
+    reformattedSampleData = []
+    for sample in sampleData:
+        # Extract the genotype field
+        fields = sample.split(":")
+        gt = fields[gtIndex]
+        
+        # Recode the genotype
+        if "." in gt:
+            reformattedSampleData.append(".")
+        else:
+            alleles = gt.split("/")
+            reformattedGT = "/".join([ refAlt[int(allele)] for allele in alleles ])
+            reformattedSampleData.append(reformattedGT)
+    
+    sampleData = {sampleNames[i]: reformattedSampleData[i] for i in range(len(sampleNames))}
+    return sampleData
+
 def parse_vcf(filename, sampleOrder=None):
     '''
     Parameters:
@@ -76,21 +104,8 @@ def parse_vcf(filename, sampleOrder=None):
             gtIndex = formatField.split(":").index("GT")
             sampleData = sl[9:]
             
-            # Reformat GT digits to ref/alt letters
-            reformattedSampleData = []
-            for sample in sampleData:
-                fields = sample.split(":")
-                gt = fields[gtIndex]
-                if "." in gt:
-                    reformattedSampleData.append(".")
-                else:
-                    # Convert GT digits to ref/alt letters
-                    alleles = gt.split("/")
-                    reformattedGT = "/".join([ refAlt[int(allele)] for allele in alleles ])
-                    reformattedSampleData.append(reformattedGT)
-            
             # Format sample data into a dict for this variant
-            sampleData = {sampleNames[i]: reformattedSampleData[i] for i in range(len(sampleNames))}
+            sampleData = recode_genotypes_as_refalt(sampleData, refAlt, gtIndex, sampleNames)
             
             # Store the sample data in the dictionary
             key = f"{chrom}:{pos}:{ref}:{alt}" # ensure unique key
