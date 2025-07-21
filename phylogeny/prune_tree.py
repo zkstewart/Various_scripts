@@ -3,6 +3,7 @@
 # This script will prune a phylogenetic tree by removing specified samples.
 
 import os, argparse, shutil, subprocess, platform
+from Bio import Phylo
 
 # Define functions
 def validate_args(args):
@@ -26,6 +27,18 @@ def validate_args(args):
     # Validate output file
     if os.path.exists(args.outputTree):
         raise FileExistsError(f"Output tree file '{args.outputTree}' already exists.")
+
+def parse_leaf_names(tree):
+    '''
+    Parses the leaf names from a Phylo tree object.
+    
+    Parameters:
+        tree -- a Phylo tree object
+    
+    Returns:
+        A list of leaf names in the tree.
+    '''
+    return [leaf.name for leaf in tree.get_terminals()]
 
 def run_nwkit(treeFile, samples, outputFile, nwkitPath="nwkit"):
     '''
@@ -84,8 +97,24 @@ def main():
                    help="""Optionally, specify the nwkit executable file location
                    if it is not discoverable in the path""",
                    default=None)
+    p.add_argument("--keep", dest="keep",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, provide this flag to indicate that the samples
+                   provided through -p should be kept in the tree, rather than pruned.""",
+                   default=False)
     args = p.parse_args()
     validate_args(args)
+    
+    # If --keep, obtain the samples to prune
+    if args.keep:
+        # Parse leaf names from the tree
+        tree = Phylo.read(args.inputTree, "newick")
+        allSamples = parse_leaf_names(tree)
+        
+        # Determine which samples to prune
+        toPrune = [ s for s in allSamples if s not in args.prunedSamples ]
+        args.prunedSamples = toPrune
     
     run_nwkit(args.inputTree, args.prunedSamples, args.outputTree, nwkitPath=args.nwkit)
     
