@@ -1,93 +1,103 @@
 #! python3
 # find_orf_from_proteins.py
+# Takes matching FASTA files with mRNA and protein sequences,
+# and derives the CDS using this information. Sequence IDs can
+# differ between the mRNA and protein files, but they are otherwise
+# expected to be matching and equivalently ordered.
 
-# Load packages
-import re, os, argparse
+import os, argparse
 from Bio import SeqIO
 
-# ### USER INPUT
-# usage = """%(prog)s reads in a FASTA formatted transcriptome file and another FASTA file with proteins. It will search
-# through the transcriptome for matching CDS regions and output these as a new FASTA file. Note that this script assumes the 
-# sequence IDs are roughly equivalent between files, so it doesn't perform a deep search. Maybe I'll make that another time.
-# """
-# # Reqs
-# p = argparse.ArgumentParser(description=usage)
-# p.add_argument("-t", dest="transcriptomeFile",
-#     help="Input transcriptome fasta file name")
-# p.add_argument("-t", dest="proteinFile",
-#     help="Input protein fasta file name")
-# p.add_argument("-o", "-output", dest="outputFileName",
-#     help="Output fasta file name")
-# args = p.parse_args()
+STOP_CODONS = ["TAA", "TAG", "TGA"]
 
-## HARD-CODED TESTING
-class Args:
-    def __init__(self, t, p, o):
-        self.transcriptomeFile = t
-        self.proteinFile = p
-        self.outputFileName = o
+def validate_args(args):
+    # Validate input file locations
+    if not os.path.isfile(args.mrnaFile):
+        raise FileNotFoundError(f"-m '{args.mrnaFile} does not exist!")
+    if not os.path.isfile(args.proteinFile):
+        raise FileNotFoundError(f"-m '{args.proteinFile} does not exist!")
+    # Validate that input files match
+    for record1, record2 in iterate_paired_fastas(args.mrnaFile, args.proteinFile):
+        pass # will naturally raise an error if the files don't have an equal number of sequences
+    # Validate output file locations
+    if os.path.exists(args.cdsFile):
+        raise FileExistsError(f"-o '{args.cdsFile}' already exists! Move/rename/delete this file or set a different -o value.")
 
-args = Args(r"F:\toxins_annot\proteomes\nts\Telmatactis_transcriptome_nt.fasta", r"F:\toxins_annot\proteomes\telmatactis_secretome.fasta", "Telmatactis_CDSs_nt.fasta")
+def iterate_paired_fastas(fasta1, fasta2):
+    '''
+    Parameters:
+        fasta1 / fasta2 -- a string indicating the FASTA file location
+    Yields:
+        record1 / record2 -- Bio.SeqIO.Seq records for the two input FASTA files
+    '''
+    with open(fasta1, "r") as file1, open(fasta2, "r") as file2:
+        records1 = SeqIO.parse(file1, "fasta")
+        records2 = SeqIO.parse(file2, "fasta")
+        for record1, record2 in zip(records1, records2):
+            yield record1, record2
 
-# Load the protein fasta file as a generator objects
-proteinRecords = SeqIO.parse(open(args.proteinFile, 'r'), 'fasta')
-
-# Get the transcriptome as a dictionary
-transcriptomeDict = SeqIO.to_dict(SeqIO.parse(open(args.transcriptomeFile, 'r'), 'fasta'))
-
-# Get the nucleotide (record) out of our generator (records) and grab them ORFs!
-with open(args.outputFileName, "w") as fileOut:
-    for record in proteinRecords:
-        # Get relevant details
-        protein = str(record.seq)
-        seqid = record.description
-        # Handle TransDecoder IDs
-        if seqid.rsplit("|", maxsplit=1)[-1].startswith("CDS") or seqid.rsplit("|", maxsplit=1)[-1].startswith("Telmatactis"):
-            seqid = seqid.rsplit("|", maxsplit=1)[0]
-        # Find the transcript record
-        transcriptomeRecord = transcriptomeDict[seqid]
-        transcript = str(transcriptomeRecord.seq)
-        # Find frame where translation was obtained
-        found = False
-        for strand, nuc in [(+1, transcriptomeRecord.seq), (-1, transcriptomeRecord.seq.reverse_complement())]:
-            for frame in range(3):
-                length = 3 * ((len(transcriptomeRecord)-frame) // 3)
-                frameNuc = str(nuc[frame:frame+length])
-                frameProt = str(nuc[frame:frame+length].translate(table=1))
-                if protein[1:] in frameProt: # find the frame by a fragment, in cases where the start codon has been altered
-                    found = True
+def main():
+    usage = """%(prog)s will receive matching mRNA and protein FASTA files, and
+    use this to derive the CDS from the mRNA sequences. The CDS will be output
+    as its own FASTA file.
+    """
+    # Reqs
+    p = argparse.ArgumentParser(description=usage)
+    p.add_argument("-m", dest="mrnaFile",
+                   required=True,
+                   help="Specify the input mRNA FASTA file")
+    p.add_argument("-p", dest="proteinFile",
+                   required=True,
+                   help="Specify the input protein FASTA file")
+    p.add_argument("-o", dest="cdsFile",
+                   required=True,
+                   help="Specify the output CDS FASTA file name")
+    # Optional
+    p.add_argument("--proteinID", dest="proteinID",
+                   required=False,
+                   action="store_true",
+                   help="""Set this flag to take the ID from the protein,
+                   not the mRNA""",
+                   default=False)
+    
+    args = p.parse_args() # sets .conversionFile; .fastaFile
+    validate_args(args)
+    
+    with open(args.cdsFile, "w") as fileOut:
+        for mrnaRecord, proteinRecord in iterate_paired_fastas(args.mrnaFile, args.proteinFile):
+            proteinSeq = str(proteinRecord.seq)
+            
+            # Find strand and frame where translation was obtained
+            found = False
+            for strand, nuc in [(+1, mrnaRecord.seq), (-1, mrnaRecord.seq.reverse_complement())]:
+                for frame in range(3):
+                    length = 3 * ((len(mrnaRecord)-frame) // 3)
+                    frameNuc = str(nuc[frame:frame+length])
+                    frameProt = str(nuc[frame:frame+length].translate(table=1))
+                    if proteinSeq in frameProt:
+                        found = True
+                        
+                        # Extract just the region of the protein
+                        startPosition = frameProt.find(proteinSeq) * 3
+                        endPosition = startPosition + (len(proteinSeq) * 3)
+                        cdsSeq = frameNuc[startPosition:endPosition]
+                        
+                        # See if we can extend for a stop codon
+                        if proteinSeq[-1] != "*":
+                            extraCodon = frameNuc[endPosition:endPosition+3].upper()
+                            if extraCodon in STOP_CODONS:
+                                cdsSeq += extraCodon
+                        break
+                if found == True:
                     break
-            if found == True:
-                break
-        if found == False:
-            stophere
-        # Split protein/nucleotide into corresponding ORFs
-        ongoingLength = 0                                       # The ongoingLength will track where we are along the unresolvedProt sequence for getting the nucleotide sequence
-        splitNucleotide = []
-        splitProtein = []
-        frameProt = frameProt.split('*')
-        for i in range(len(frameProt)):
-                if len(frameProt) == 1 or i + 1 == len(frameProt):    # This means the splitProtein has no stop codons or we're looking at the last ORF which also has no stop codon
-                        splitProtein.append(frameProt[i])
-                        splitNucleotide.append(frameNuc[ongoingLength:ongoingLength+len(frameProt[i])*3])      # This will grab the corresponding nucleotide region
-                        ongoingLength += len(frameProt[i])*3
-                else:
-                        splitProtein.append(frameProt[i] + '*')
-                        splitNucleotide.append(frameNuc[ongoingLength:ongoingLength+len(frameProt[i] + '*')*3])       
-                        ongoingLength += (len(frameProt[i]) + 1)*3
-        # Find the index for the split segment
-        for splitIndex in range(len(splitProtein)):
-            if protein[1:] in splitProtein[splitIndex]: # [1:] for start codon alteration
-                break
-        nuclSegment = splitNucleotide[splitIndex]
-        protSegment = splitProtein[splitIndex]
-        # Find the start site
-        startCodon = protSegment.index(protein[1:]) - 1 # -1 to account for [1:]
-        nuclSegment = nuclSegment[startCodon*3:]
-        # Ensure equality
-        assert len(protSegment[startCodon:]) + 1 >= len(protein) # +1 incase the original protein didn't have an asterisk stop
-        # Output to file
-        fileOut.write(">{0}\n{1}\n".format(record.description, nuclSegment))
+            if found == False:
+                raise ValueError(f"Could not find '{proteinSeq}' within the mRNA '{str(mrnaRecord.seq)}'")
+            
+            # Write to file
+            outputID = proteinRecord.description if args.proteinID else mrnaRecord.description
+            fileOut.write(f">{outputID}\n{cdsSeq}\n")
+            
+    print("Program completed successfully!")
 
-#### SCRIPT ALL DONE
-print('Program completed successfully!')
+if __name__ == "__main__":
+    main()
