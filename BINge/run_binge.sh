@@ -1,32 +1,37 @@
 #!/bin/bash -l
-#PBS -N BINgeQcav
-#PBS -l walltime=60:00:00
-#PBS -l mem=80G
-#PBS -l ncpus=18
-#PBS -W depend=afterok:4835131.pbs
+#PBS -N BINge
+#PBS -l walltime=12:00:00
+#PBS -l mem=50G
+#PBS -l ncpus=12
 
 cd $PBS_O_WORKDIR
+
+####
 
 # Specify the location of the BINge directory
 BINGEDIR=/home/stewarz2/scripts/BINge
 
-# Specify the location of the transcriptome file
-FASTAFILES="/home/stewarz2/banana_group/qcav_dge/transcriptome/results/qcav_dge_okay-okalt.fasta /home/stewarz2/banana_group/annotations/Musa_acuminata_pahang_v4_main.trans /home/stewarz2/banana_group/annotations/Musa_balbisiana_main.trans"
-
-# Specify the locations of the annotation files
-ANNOTFILES="/home/stewarz2/banana_group/annotations/Musa_acuminata_pahang_v4.gff3 /home/stewarz2/banana_group/annotations/Musa_balbisiana.gff3"
-
-# Specify the locations of the GMAP alignment files
-GMAPFILES="/home/stewarz2/banana_group/qcav_dge/binge/gmap/qcav_to_A.6paths.gmap.gff3 /home/stewarz2/banana_group/qcav_dge/binge/gmap/qcav_to_B.6paths.gmap.gff3"
+# Specify the locations of the genome and annotation files
+GENOMEDIR=/home/stewarz2/plant_group/anuradha/upr_annotation/citrus_genomes
+SEQDIR=/home/stewarz2/plant_group/anuradha/upr_annotation/liftoff
 
 # Specify computational and behavioural parameters
-MMSEQSDIR=/home/stewarz2/various_programs/mmseqs/bin
-THREADS=18
-OUTPUTFILE=BINge_qcav_clusters.tsv
+THREADS=12
+IDENTITY=0.85 # 85% identity for MMseqs unbinned clustering
 
-#####
+# Specify the species to be analysed
+PREFIX=binge_results
 
-# Run BINge
-python ${BINGEDIR}/BINge.py -i ${FASTAFILES} -ga ${ANNOTFILES} -gm ${GMAPFILES} -o ${OUTPUTFILE} \
-    --threads ${THREADS} --clusterer mmseqs-cascade --mmseqs ${MMSEQSDIR}
+####
 
+# STEP 1: Initialise directory
+python ${BINGEDIR}/BINge.py initialise -d ${PREFIX} \
+    -i ${GENOMEDIR}/species_genome.gff3,${GENOMEDIR}/species_genome.fasta \
+    --ix ${SEQDIR}/species_sequences.mrna,${SEQDIR}/species_sequences.cds,${SEQDIR}/species_sequences.aa \
+    --threads ${THREADS}
+
+# STEP 2: Run BINge clustering [--gmapIdentity test]
+python ${BINGEDIR}/BINge.py cluster -d ${PREFIX} \
+    --threads ${THREADS} \
+    --identity ${IDENTITY} \
+    --debug;
