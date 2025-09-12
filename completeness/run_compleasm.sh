@@ -1,8 +1,8 @@
 #!/bin/bash -l
 #PBS -N casm
-#PBS -l walltime=03:30:00
-#PBS -l mem=35G
-#PBS -l ncpus=8
+#PBS -l walltime=06:00:00
+#PBS -l mem=55G
+#PBS -l ncpus=12
 
 cd $PBS_O_WORKDIR
 
@@ -10,26 +10,21 @@ cd $PBS_O_WORKDIR
 
 # Specify compleasm directory
 COMPLEASMDIR=/home/stewarz2/various_programs/compleasm_kit
+COMPLEASMDB=${COMPLEASMDIR}/db
 
-# Specify lineage to search
-LINEAGE=vertebrata
+# Specify protein FASTA file location
+FASTA=/location/to/sequences.aa
 
-# Specify computational parameters
-CPUS=8
+# Specify output location
+OUTDIR=compleasm_results
+
+# Specify program parameters
+LINEAGE=eudicotyledons
+CPUS=12
 
 #####
 
-COMPLEASMDB=${COMPLEASMDIR}/db
-
-# Run clustering evaluation
-FOLDER=vertebrates
-RUNDIR=${FOLDER}/analysis/run_6d08041e9e70fa297f6d
-BINGEFILE=${RUNDIR}/BINge_clustering_result.tsv;
-RUNNAME=$(basename ${RUNDIR});
-PROTEINFILE=${FOLDER}/representatives/${RUNNAME}/BINge_clustering_representatives.aa;
-OUTDIR=${FOLDER}/busco;
 mkdir -p ${OUTDIR};
-python ${COMPLEASMDIR}/compleasm.py protein -p ${PROTEINFILE} \
+python ${COMPLEASMDIR}/compleasm.py protein -p ${FASTA} \
     -L ${COMPLEASMDB} -l ${LINEAGE} -t ${CPUS} \
     -o ${OUTDIR};
-
