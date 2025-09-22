@@ -46,6 +46,8 @@ def validate_args(args):
         raise ValueError(f"--height must be greater than or equal to 1.")
     if args.width != None and args.width < 1:
         raise ValueError(f"--width must be greater than or equal to 1.")
+    if args.size != None and args.size < 1:
+        raise ValueError(f"--size must be greater than or equal to 1.")
     
     # Validate program discoverability
     if args.minimap2 == None:
@@ -110,6 +112,7 @@ def run_sorted_minimap2(fasta1, fasta2, outputFileName, preset,
         "|",
         samtoolsPath, "sort", "-O", "BAM",  "-o", outputFileName, "-"
     ]
+    print("# Running: " + " ".join(cmd))
     
     # Run syri
     if platform.system() != "Windows":
@@ -130,6 +133,7 @@ def run_samtools_index(bamFile, samtoolsPath):
     '''
     # Format samtools command
     cmd = [samtoolsPath, "index", bamFile]
+    print("# Running: " + " ".join(cmd))
     
     # Run the command
     if platform.system() != "Windows":
@@ -160,6 +164,7 @@ def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
         syriPath, "-c", bam, "-r", fasta1, "-q", fasta2,
         "-F", "B", "--prefix", prefix, "--dir", outputDir
     ]
+    print("# Running: " + " ".join(cmd))
     
     # Run syri
     if platform.system() != "Windows":
@@ -169,11 +174,12 @@ def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
         runSyri = subprocess.Popen(cmd, shell = True,
                                    stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     syriOut, syriErr = runSyri.communicate()
-    if syriOut.decode("utf-8") != "":
-        raise Exception('syri error; stdout = "' + syriOut.decode("utf-8") + '"; ' +
-                        'stderr = "' + syriErr.decode("utf-8") + '"')
+    "syri outputs information to stderr like FutureWarnings which make this check unreliable"
+    # if syriOut.decode("utf-8") != "":
+    #     raise Exception('syri error; stdout = "' + syriOut.decode("utf-8") + '"; ' +
+    #                     'stderr = "' + syriErr.decode("utf-8") + '"')
 
-def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath, height=None, width=None):
+def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath, size=None, height=None, width=None):
     '''
     Runs plotsr to visualise structural variants between syri output files.
     
@@ -182,6 +188,8 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath, height=None
         genomeTxtFile -- a string indicating the location of the genomes.txt file
         outputFileName -- a string indicating the location to write the plotsr output
         plotsrPath -- a string indicating the location of the plotsr executable file
+        size -- (OPTIONAL) an integer indicating the minimum size of a structural rearrangement
+                for plotting purposes
         height -- (OPTIONAL) an integer indicating the height of the plotsr output in inches
         width -- (OPTIONAL) an integer indicating the width of the plotsr output in inches
     '''
@@ -191,11 +199,14 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath, height=None
         cmd += ["--sr", syriFile]
     cmd += ["--genomes", genomeTxtFile, "-o", outputFileName]
     
-    # Add height and width if specified
+    # Add height+width+size if specified
     if height != None:
         cmd += ["-H", str(height)]
     if width != None:
         cmd += ["-W", str(width)]
+    if size != None:
+        cmd += ["-s", str(size)]
+    print("# Running: " + " ".join(cmd))
     
     # Run syri
     if platform.system() != "Windows":
@@ -257,6 +268,12 @@ def main():
                    type=int,
                    help="""Optionally, specify the width of the plotsr output in inches;
                    default == None (plotsr will set the width to 3)""",
+                   default=None)
+    p.add_argument("--size", dest="size",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the minimum size a structural rearrangement must
+                   be to be plotted; default == None (plotsr will set the size to 10000)""",
                    default=None)
     # Opts (programs)
     p.add_argument("--minimap2", dest="minimap2",
@@ -372,7 +389,7 @@ def main():
     pngFlagFile = os.path.join(args.outputDirectory, "plotsr.png.is.ok.flag")
     if not os.path.exists(pngPlotFile) or not os.path.exists(pngFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pngPlotFile, args.plotsr, 
-                   args.height, args.width)
+                   args.size, args.height, args.width)
         open(pngFlagFile, "w").close()
     else:
         print(f"png output file already exists; skipping.")
@@ -381,7 +398,7 @@ def main():
     pdfFlagFile = os.path.join(args.outputDirectory, "plotsr.pdf.is.ok.flag")
     if not os.path.exists(pdfPlotFile) or not os.path.exists(pdfFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pdfPlotFile, args.plotsr,
-                   args.height, args.width)
+                   args.size, args.height, args.width)
         open(pdfFlagFile, "w").close()
     else:
         print(f"pdf output file already exists; skipping.")
