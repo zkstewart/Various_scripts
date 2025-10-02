@@ -60,7 +60,8 @@ p.add_argument("-o", "-output", dest="outputFileName",
 # Optional
 p.add_argument("--blank", dest="blankCharacter",
                choices=[".", "0"],
-                help="Specify which character marks a blank (default=='.').")
+               help="Specify which character marks a blank (default=='.').",
+               default=".")
 
 args = p.parse_args()
 validate_args(args)
