@@ -1,28 +1,28 @@
 #!/bin/bash -l
-#PBS -N trim_hic
-#PBS -l walltime=01:00:00
-#PBS -l mem=35G
-#PBS -l ncpus=4
-#PBS -J 1-2
+#PBS -N fptrim
+#PBS -l walltime=01:30:00
+#PBS -l mem=20G
+#PBS -l ncpus=2
+#PBS -J 1-10
 
 cd $PBS_O_WORKDIR
 
+module load GCC/13.2.0
+module load fastp/0.23.4
+
 ####
 
-# Specify fastp location
-FPDIR=/home/stewarz2/various_programs/fastp
-
-# Specify reads dir
-READSDIR=/work/ePGL/sequencing/dna/hic/citrus/NGS_651/prepared_reads
+# Specify RNAseq reads dir
+READSDIR=/work/ePGL/sequencing/rna/rnaseq/macadamia/flowering_2021/prepared_reads
 R1SUFFIX=_1.fq.gz
 R2SUFFIX=_2.fq.gz
 
 # Specify computational parameters
-CPUS=4
+CPUS=2
 
-####
+#####
 
-# STEP 1: Find file prefixes
+# STEP 1: Find RNAseq file prefixes
 declare -a RNAFILES
 i=0
 for f in ${READSDIR}/*${R1SUFFIX}; do
@@ -35,7 +35,9 @@ ARRAY_INDEX=$((${PBS_ARRAY_INDEX}-1))
 FILEPREFIX=${RNAFILES[${ARRAY_INDEX}]}
 BASEPREFIX=$(basename ${FILEPREFIX})
 
-# STEP 3: Run fastp for trimming
-${FPDIR}/fastp -i ${FILEPREFIX}${R1SUFFIX} -I ${FILEPREFIX}${R2SUFFIX} \
+# STEP 3: Run fastp trimming
+fastp --thread ${CPUS} \
+    -i ${FILEPREFIX}${R1SUFFIX} -I ${FILEPREFIX}${R2SUFFIX} \
     -o ${BASEPREFIX}.trimmed_1P.fq.gz -O ${BASEPREFIX}.trimmed_2P.fq.gz \
-    --thread ${CPUS} --trim_poly_g
+    --detect_adapter_for_pe --trim_poly_x --cut_mean_quality 6 --length_required 25 \
+    --html ${BASEPREFIX}.fastp.html --json ${BASEPREFIX}.fastp.json
