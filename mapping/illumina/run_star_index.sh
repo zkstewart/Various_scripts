@@ -9,7 +9,7 @@ cd $PBS_O_WORKDIR
 ## MANUAL SETUP BELOW
 
 # >> SETUP: Specify STAR executable location
-STARDIR=/home/stewarz2/various_programs/STAR-2.7.10a/bin/Linux_x86_64_static
+STARDIR=/home/stewarz2/various_programs/STAR-2.7.11b/bin
 
 # >> SETUP: Specify genome location
 GENDIR=/home/stewarz2/plant_group/leena/genome
