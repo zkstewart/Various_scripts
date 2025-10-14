@@ -23,17 +23,17 @@ CPUS=8
 
 ####
 
-# STEP 1: Find RNAseq file prefixes
-declare -a RNAFILES
+# STEP 1: Find read file prefixes
+declare -a READFILES
 i=0
 for f in ${READSDIR}/*${R1SUFFIX}; do
-    RNAFILES[${i}]=$(echo "${f%%${R1SUFFIX}}");
+    READFILES[${i}]=$(echo "${f%%${R1SUFFIX}}");
     i=$((i+1));
 done
 
 # STEP 2: Get job details
 ARRAY_INDEX=$((${PBS_ARRAY_INDEX}-1))
-FILEPREFIX=${RNAFILES[${ARRAY_INDEX}]}
+FILEPREFIX=${READFILES[${ARRAY_INDEX}]}
 BASEPREFIX=$(basename ${FILEPREFIX})
 
 # STEP 3: Format readgroup
