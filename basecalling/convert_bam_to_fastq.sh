@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #PBS -N bam2fq
-#PBS -l walltime=03:30:00
-#PBS -l mem=10G
+#PBS -l walltime=12:00:00
+#PBS -l mem=20G
 #PBS -l ncpus=1
 
 cd $PBS_O_WORKDIR

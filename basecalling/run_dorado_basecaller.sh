@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #PBS -N dorado
-#PBS -l walltime=24:00:00
-#PBS -l mem=20G
+#PBS -l walltime=48:00:00
+#PBS -l mem=60G
 #PBS -l ncpus=1
 #PBS -l ngpus=1
 #PBS -l gputype=A100
