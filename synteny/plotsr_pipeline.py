@@ -180,7 +180,7 @@ def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
     #                     'stderr = "' + syriErr.decode("utf-8") + '"')
 
 def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
-               interchromosomal=False, size=None, height=None, width=None):
+               interchromosomal=False, region=None, size=None, height=None, width=None):
     '''
     Runs plotsr to visualise structural variants between syri output files.
     
@@ -191,6 +191,8 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
         plotsrPath -- a string indicating the location of the plotsr executable file
         interchromosomal -- (OPTIONAL) a boolean indicating whether the --itx argument should
                             be passed along to plotsr to plot interchromosomal rearrangements
+        region -- (OPTIONAL) a string with 'genome:chromosome:start-end' syntax to pass along to
+                  plotsr to limit plotting to just the specified region
         size -- (OPTIONAL) an integer indicating the minimum size of a structural rearrangement
                 for plotting purposes
         height -- (OPTIONAL) an integer indicating the height of the plotsr output in inches
@@ -203,6 +205,8 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
     for syriFile in syriFiles:
         cmd += ["--sr", syriFile]
     cmd += ["--genomes", genomeTxtFile, "-o", outputFileName]
+    if region != None:
+        cmd += ["--reg", region]
     
     # Add height+width+size if specified
     if height != None:
@@ -267,6 +271,11 @@ def main():
                    help="""Optionally, provide this flag to instruct plotsr to plot interchromosomal
                    rearrangements""",
                    default=False)
+    p.add_argument("--reg", dest="region",
+                   required=False,
+                   help="""Optionally, specify a region to specifically plot with
+                   genome:chromosome:start-end syntax""",
+                   default=None)
     p.add_argument("--height", dest="height",
                    required=False,
                    type=int,
@@ -400,7 +409,8 @@ def main():
     pngFlagFile = os.path.join(args.outputDirectory, "plotsr.png.is.ok.flag")
     if not os.path.exists(pngPlotFile) or not os.path.exists(pngFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pngPlotFile, args.plotsr, 
-                   args.interchromosomal, args.size, args.height, args.width)
+                   args.interchromosomal, args.region,
+                   args.size, args.height, args.width)
         open(pngFlagFile, "w").close()
     else:
         print(f"png output file already exists; skipping.")
@@ -409,7 +419,8 @@ def main():
     pdfFlagFile = os.path.join(args.outputDirectory, "plotsr.pdf.is.ok.flag")
     if not os.path.exists(pdfPlotFile) or not os.path.exists(pdfFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pdfPlotFile, args.plotsr,
-                   args.interchromosomal, args.size, args.height, args.width)
+                   args.interchromosomal, args.region,
+                   args.size, args.height, args.width)
         open(pdfFlagFile, "w").close()
     else:
         print(f"pdf output file already exists; skipping.")
