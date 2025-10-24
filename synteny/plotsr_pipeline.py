@@ -181,6 +181,7 @@ def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
 
 def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
                interchromosomal=False, region=None, chromosomes=[],
+               markers=None, tracks=None,
                size=None, height=None, width=None):
     '''
     Runs plotsr to visualise structural variants between syri output files.
@@ -195,6 +196,10 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
         region -- (OPTIONAL) a string with 'genome:chromosome:start-end' syntax to pass along to
                   plotsr to limit plotting to just the specified region
         chromosomes -- (OPTIONAL) a list of strings corresponding to contig IDs to limit plotting to
+        markers -- (OPTIONAL) a string pointing to a BED file to provide to plotsr to indicate locations
+                   to place markers for along the synteny track
+        tracks -- (OPTIONAL) string pointing to a file which points to BED files to serve as additional
+                  tracks surrounding the synteny visualisation
         size -- (OPTIONAL) an integer indicating the minimum size of a structural rearrangement
                 for plotting purposes
         height -- (OPTIONAL) an integer indicating the height of the plotsr output in inches
@@ -211,6 +216,10 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
         cmd += ["--reg", region]
     for chr in chromosomes:
         cmd += ["--chr", chr]
+    if markers != None:
+        cmd += ["--markers", markers]
+    if tracks != None:
+        cmd += ["--tracks", tracks]
     
     # Add height+width+size if specified
     if height != None:
@@ -284,6 +293,18 @@ def main():
                    required=False,
                    help="""Optionally, specify a region to specifically plot with
                    genome:chromosome:start-end syntax""",
+                   default=None)
+    p.add_argument("--markers", dest="markers",
+                   required=False,
+                   help="""Optionally, specify a 5-column BED format file with
+                   'chrom:start:end:genome_id:tags' syntax, where tags refers to plotsr
+                   formatted aesthetic values; see examples in the plotsr git wiki""",
+                   default=None)
+    p.add_argument("--tracks", dest="tracks",
+                   required=False,
+                   help="""Optionally, specify a 3-column TSV format file with
+                   'file:track_id:tags' syntax, where tags refers to plotsr
+                   formatted aesthetic values; see examples in the plotsr git wiki""",
                    default=None)
     p.add_argument("--height", dest="height",
                    required=False,
@@ -419,6 +440,7 @@ def main():
     if not os.path.exists(pngPlotFile) or not os.path.exists(pngFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pngPlotFile, args.plotsr, 
                    args.interchromosomal, args.region, args.chromosomes,
+                   args.markers, args.tracks,
                    args.size, args.height, args.width)
         open(pngFlagFile, "w").close()
     else:
@@ -429,6 +451,7 @@ def main():
     if not os.path.exists(pdfPlotFile) or not os.path.exists(pdfFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pdfPlotFile, args.plotsr,
                    args.interchromosomal, args.region, args.chromosomes,
+                   args.markers, args.tracks,
                    args.size, args.height, args.width)
         open(pdfFlagFile, "w").close()
     else:
