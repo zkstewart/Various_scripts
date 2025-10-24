@@ -179,7 +179,8 @@ def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
     #     raise Exception('syri error; stdout = "' + syriOut.decode("utf-8") + '"; ' +
     #                     'stderr = "' + syriErr.decode("utf-8") + '"')
 
-def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath, size=None, height=None, width=None):
+def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
+               interchromosomal=False, size=None, height=None, width=None):
     '''
     Runs plotsr to visualise structural variants between syri output files.
     
@@ -188,6 +189,8 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath, size=None, 
         genomeTxtFile -- a string indicating the location of the genomes.txt file
         outputFileName -- a string indicating the location to write the plotsr output
         plotsrPath -- a string indicating the location of the plotsr executable file
+        interchromosomal -- (OPTIONAL) a boolean indicating whether the --itx argument should
+                            be passed along to plotsr to plot interchromosomal rearrangements
         size -- (OPTIONAL) an integer indicating the minimum size of a structural rearrangement
                 for plotting purposes
         height -- (OPTIONAL) an integer indicating the height of the plotsr output in inches
@@ -195,6 +198,8 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath, size=None, 
     '''
     # Format syri command
     cmd = [plotsrPath]
+    if interchromosomal:
+        cmd += ["--itx"]
     for syriFile in syriFiles:
         cmd += ["--sr", syriFile]
     cmd += ["--genomes", genomeTxtFile, "-o", outputFileName]
@@ -256,6 +261,12 @@ def main():
                    files in input directories; default == '.fasta'""",
                    default=[".fasta"])
     # Opts (plotrs)
+    p.add_argument("--itx", dest="interchromosomal",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, provide this flag to instruct plotsr to plot interchromosomal
+                   rearrangements""",
+                   default=False)
     p.add_argument("--height", dest="height",
                    required=False,
                    type=int,
@@ -389,7 +400,7 @@ def main():
     pngFlagFile = os.path.join(args.outputDirectory, "plotsr.png.is.ok.flag")
     if not os.path.exists(pngPlotFile) or not os.path.exists(pngFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pngPlotFile, args.plotsr, 
-                   args.size, args.height, args.width)
+                   args.interchromosomal, args.size, args.height, args.width)
         open(pngFlagFile, "w").close()
     else:
         print(f"png output file already exists; skipping.")
@@ -398,7 +409,7 @@ def main():
     pdfFlagFile = os.path.join(args.outputDirectory, "plotsr.pdf.is.ok.flag")
     if not os.path.exists(pdfPlotFile) or not os.path.exists(pdfFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pdfPlotFile, args.plotsr,
-                   args.size, args.height, args.width)
+                   args.interchromosomal, args.size, args.height, args.width)
         open(pdfFlagFile, "w").close()
     else:
         print(f"pdf output file already exists; skipping.")
