@@ -4,6 +4,7 @@
 # with subsequent syri structural variant calling and plotting of results with plotsr.
 
 import os, argparse, sys, shutil, platform, subprocess
+from hashlib import sha256
 
 # Define functions
 def validate_args(args):
@@ -369,24 +370,38 @@ def main():
     for index, fastaFile in enumerate(args.fastaFiles):
         print(f"{index + 1}: {fastaFile}")
     
+    # Get a hash of the files
+    sha256Hash = sha256()
+    for fastaFile in args.fastaFiles:
+        sha256Hash.update(bytes(fastaFile, "utf-8"))
+    sha256Hash = sha256Hash.hexdigest()
+    
     # Validate that all files have the same sequence IDs
-    firstSeqIDs = set()
-    for index, fastaFile in enumerate(args.fastaFiles):
-        # Extract the sequence IDs from the input FASTA file
-        inputSeqIDs = set()
-        with open(fastaFile, "r") as fileIn:
-            for line in fileIn:
-                if line.startswith(">"):
-                    seqID = line.split()[0][1:]
-                    inputSeqIDs.add(seqID)
+    sequenceIdFlagsDir = os.path.join(args.outputDirectory, "sequence_ok_flags")
+    os.makedirs(sequenceIdFlagsDir, exist_ok=True)
+    
+    flagName = os.path.join(sequenceIdFlagsDir, f"{sha256Hash}.is.ok.flag")
+    if not os.path.isfile(flagName):
+        firstSeqIDs = set()
+        for index, fastaFile in enumerate(args.fastaFiles):
+            # Extract the sequence IDs from the input FASTA file
+            inputSeqIDs = set()
+            with open(fastaFile, "r") as fileIn:
+                for line in fileIn:
+                    if line.startswith(">"):
+                        seqID = line.split()[0][1:]
+                        inputSeqIDs.add(seqID)
+            
+            # Check if the input sequence IDs match the first file's sequence IDs
+            if index == 0:
+                firstSeqIDs = inputSeqIDs
+            else:
+                if firstSeqIDs != inputSeqIDs:
+                    raise ValueError(f"Input FASTA file '{fastaFile}' has sequence IDs not found in " + 
+                                    f"the first input file '{args.fastaFiles[0]}'")
         
-        # Check if the input sequence IDs match the first file's sequence IDs
-        if index == 0:
-            firstSeqIDs = inputSeqIDs
-        else:
-            if firstSeqIDs != inputSeqIDs:
-                raise ValueError(f"Input FASTA file '{fastaFile}' has sequence IDs not found in " + 
-                                f"the first input file '{args.fastaFiles[0]}'")
+        # Touch the OK file
+        open(flagName, "w").close()
     
     # Set up the working directory structure
     alignmentsDir = os.path.join(args.outputDirectory, "alignments")
