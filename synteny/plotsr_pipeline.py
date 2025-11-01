@@ -180,7 +180,8 @@ def run_syri(bam, fasta1, fasta2, prefix, outputDir, syriPath):
     #                     'stderr = "' + syriErr.decode("utf-8") + '"')
 
 def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
-               interchromosomal=False, region=None, chromosomes=[],
+               interchromosomal=False, vertical=False,
+               region=None, chromosomes=[],
                markers=None, tracks=None,
                size=None, height=None, width=None):
     '''
@@ -193,6 +194,8 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
         plotsrPath -- a string indicating the location of the plotsr executable file
         interchromosomal -- (OPTIONAL) a boolean indicating whether the --itx argument should
                             be passed along to plotsr to plot interchromosomal rearrangements
+        vertical -- (OPTIONAL) a boolean indicating whether the -v argument should be passed
+                    along to plotsr to plot vertically rather than horizontally
         region -- (OPTIONAL) a string with 'genome:chromosome:start-end' syntax to pass along to
                   plotsr to limit plotting to just the specified region
         chromosomes -- (OPTIONAL) a list of strings corresponding to contig IDs to limit plotting to
@@ -209,6 +212,8 @@ def run_plotsr(syriFiles, genomeTxtFile, outputFileName, plotsrPath,
     cmd = [plotsrPath]
     if interchromosomal:
         cmd += ["--itx"]
+    if vertical:
+        cmd += ["-v"]
     for syriFile in syriFiles:
         cmd += ["--sr", syriFile]
     cmd += ["--genomes", genomeTxtFile, "-o", outputFileName]
@@ -278,6 +283,12 @@ def main():
                    files in input directories; default == '.fasta'""",
                    default=[".fasta"])
     # Opts (plotrs)
+    p.add_argument("--vertical", dest="vertical",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, provide this flag to instruct plotsr to plot in vertical
+                   layout (horizontal is default)""",
+                   default=False)
     p.add_argument("--itx", dest="interchromosomal",
                    required=False,
                    action="store_true",
@@ -439,7 +450,8 @@ def main():
     pngFlagFile = os.path.join(args.outputDirectory, "plotsr.png.is.ok.flag")
     if not os.path.exists(pngPlotFile) or not os.path.exists(pngFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pngPlotFile, args.plotsr, 
-                   args.interchromosomal, args.region, args.chromosomes,
+                   args.interchromosomal, args.vertical,
+                   args.region, args.chromosomes,
                    args.markers, args.tracks,
                    args.size, args.height, args.width)
         open(pngFlagFile, "w").close()
@@ -450,7 +462,8 @@ def main():
     pdfFlagFile = os.path.join(args.outputDirectory, "plotsr.pdf.is.ok.flag")
     if not os.path.exists(pdfPlotFile) or not os.path.exists(pdfFlagFile):
         run_plotsr(syriFiles, genomeTxtFile, pdfPlotFile, args.plotsr,
-                   args.interchromosomal, args.region, args.chromosomes,
+                   args.interchromosomal, args.vertical,
+                   args.region, args.chromosomes,
                    args.markers, args.tracks,
                    args.size, args.height, args.width)
         open(pdfFlagFile, "w").close()
