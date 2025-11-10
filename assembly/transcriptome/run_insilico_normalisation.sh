@@ -25,22 +25,6 @@ MEM=700G
 
 ####
 
-# STEP 1: Locate all reads files for argument formatting
-declare -a R1FILES
-i=0
-for f in ${READSDIR}/*${R1SUFFIX}; do
-    R1FILES[${i}]=$(echo "${f}");
-    i=$((i+1));
-done
-
-declare -a R2FILES
-i=0
-for f in ${READSDIR}/*${R2SUFFIX}; do
-    R2FILES[${i}]=$(echo "${f}");
-    i=$((i+1));
-done
-
-# STEP 2: Run Trinity insilico normalisation
 ${TRINITYDIR}/util/insilico_read_normalization.pl \
     --seqType fq --max_cov 30 \
     --JM ${MEM} --CPU ${CPUS} \
