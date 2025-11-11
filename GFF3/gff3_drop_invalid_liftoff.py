@@ -51,6 +51,7 @@ def main():
     
     # Write to file
     liftoffExclusions = 0
+    childrenScolded = 0
     nonExclusions = 0
     noAttribute = 0
     with open(args.outputFileName, "w") as fileOut:
@@ -64,6 +65,15 @@ def main():
                 else:
                     noAttribute += 1
                 
+                # Delete any child mRNAs which lack a valid ORF
+                badChildren = []
+                for childFeature in parentFeature.children:
+                    if childFeature.valid_ORF == "False":
+                        childrenScolded += 1
+                        badChildren.append(childFeature.ID)
+                for badChildID in badChildren:
+                    parentFeature.del_child(badChildID, "mRNA")
+                
                 # Write current feature to file
                 ZS_GFF3IO.GFF3._recursively_write_feature_details(parentFeature, fileOut)
                 nonExclusions += 1
@@ -72,6 +82,7 @@ def main():
     print("# gff3_drop_invalid_liftoff.py output statistics:")
     print(f"# > {liftoffExclusions} genes were dropped due to having no valid ORFs.")
     print(f"# > {nonExclusions} genes were kept.")
+    print(f"# > {childrenScolded} mRNAs were dropped due to having no valid ORF")
     print(f"# > {noAttribute} genes were skipped due to not having a valid_ORFs attribute.")
     
     # All done!
