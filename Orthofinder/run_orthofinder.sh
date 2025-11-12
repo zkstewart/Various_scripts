@@ -1,22 +1,24 @@
 #!/bin/bash -l
-#PBS -N orthoF_citrus
-#PBS -l walltime=48:00:00
-#PBS -l mem=40G
-#PBS -l ncpus=8
+#PBS -N orthof
+#PBS -l walltime=32:00:00
+#PBS -l mem=80G
+#PBS -l ncpus=14
 
 cd $PBS_O_WORKDIR
 
-module load mafft/7.305-foss-2016a-with-extensions
+conda activate orthofinder3
 
-# Setup: Specify the location of OrthoFinder's python file
-ORTHODIR=/home/stewarz2/various_programs/OrthoFinder
+####
 
-# Setup: Specify input file locations
-FASTASDIR=/home/stewarz2/citrus/orthologs/orthofinder_fastas
+# Specify input file location
+FASTASDIR=/home/stewarz2/citrus/andrew_miles/powerpole/orthofinder/run
 
-# Setup: Manual specification of program resources
-CPUS=8
+# Specify program resources
+CPUS=14
 
+# Specify output directory
+OUTDIR=manual_v6_orthofinder
 
-# RUN PROGRAM
-python ${ORTHODIR}/orthofinder.py -t ${CPUS} -a ${CPUS} -f ${FASTASDIR}
+####
+
+orthofinder -t ${CPUS} -a ${CPUS} -f ${FASTASDIR} -o ${OUTDIR}
