@@ -39,10 +39,6 @@ BASEPREFIX=$(basename ${FILEPREFIX})
 
 # STEP 3: Run bbduk for trimming
 ${BBDIR}/bbduk.sh -Xmx10g in1=${FILEPREFIX}${R1SUFFIX} in2=${FILEPREFIX}${R2SUFFIX} \
-	out1=${BASEPREFIX}.trimmed_1P.fq out2=${BASEPREFIX}.trimmed_2P.fq \
+	out1=${BASEPREFIX}.trimmed_1P.fq.gz out2=${BASEPREFIX}.trimmed_2P.fq.gz \
 	ref=${BBDIR}/resources/adapters.fa threads=${CPUS} \
 	ktrim=r k=23 mink=11 hdist=1 qtrim=rl trimq=5 minlength=25 tpe tbo
-
-# STEP 4: gzip files
-gzip ${BASEPREFIX}.trimmed_1P.fq
-gzip ${BASEPREFIX}.trimmed_2P.fq
