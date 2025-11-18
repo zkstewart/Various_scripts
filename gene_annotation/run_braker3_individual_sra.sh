@@ -61,5 +61,5 @@ singularity exec --bind /work/ePGL,${SCRATCHDIR},${WORKDIR}/augustus/config:/aug
     --AUGUSTUS_CONFIG_PATH=/augustus_config
 
 # STEP 6: Move results back to origin
-mv braker/braker.gff ${PBS_O_WORKDIR}/${PREFIX}.braker.gff3
+mv braker/braker.gff3 ${PBS_O_WORKDIR}/${PREFIX}.braker.gff3
 mv braker/braker.gtf ${PBS_O_WORKDIR}/${PREFIX}.braker.gtf
