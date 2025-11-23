@@ -397,8 +397,8 @@ def main():
     p.add_argument("--walltime", dest="walltime",
                    required=False,
                    help="""Optionally, specify how much walltime you want the variant
-                   prediction job to have on the HPC cluster; default == '72:00:00'""",
-                   default="72:00:00")
+                   prediction job to have on the HPC cluster; default == '48:00:00'""",
+                   default="48:00:00")
     p.add_argument("--mem", dest="mem",
                    required=False,
                    help="""Optionally, specify how much memory you want the variant
