@@ -69,8 +69,8 @@ def main():
     file1BothPct = (len(both) / len(file1IDs)) * 100
     file2BothPct = (len(both) / len(file2IDs)) * 100
     stats = [
-        f"Files share {len(both)} reads in common"
-        f"File 1 has {len(file1IDs)} reads; common reads are {file1BothPct}%"
+        f"Files share {len(both)} reads in common",
+        f"File 1 has {len(file1IDs)} reads; common reads are {file1BothPct}%",
         f"File 2 has {len(file2IDs)} reads; common reads are {file2BothPct}%"
     ]
     
