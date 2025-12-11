@@ -28,6 +28,7 @@ def parse_md5_file(file, md5Suffix=".md5"):
         checksum -- a string containing the checksum
         name -- a string containing the name of the file
     '''
+    checksum = None
     with open(file, "r") as fileIn:
         for line in fileIn:
             sl = line.strip("\r\n\t ").split()
@@ -47,7 +48,10 @@ def parse_md5_file(file, md5Suffix=".md5"):
                 raise ValueError(f"Unexpected line format in file '{file}': {line.strip()}")
             break # we only need the first valid line
     
-    return checksum, name
+    if checksum != None:
+        return checksum, name
+    else:
+        raise ValueError(f"The file '{file}' appears to be empty or is not in the expected MD5 format")
 
 def get_md5_from_files(md5Files, md5Suffix=".md5"):
     '''
