@@ -4,24 +4,26 @@
 #PBS -l mem=60G
 #PBS -l ncpus=1
 #PBS -l ngpus=1
-#PBS -l gputype=A100
+#PBS -l gpu_id=A100
 
 cd $PBS_O_WORKDIR
+
+module load zlib/1.3.1
 
 ####
 
 # Specify the location of the dorado bin and lib folders
-DORADODIR=/home/stewarz2/various_programs/dorado/dorado-0.7.1-linux-x64
+DORADODIR=/home/stewarz2/various_programs/dorado/dorado-1.3.0-linux-x64
 
 # Specify directory containing pod5 files for basecalling
-POD5DIR=/work/ePGL/resequencing/nanopore/citrus_murcott_06_2024/Murcott_run2_a/pod5
+POD5DIR=/work/ePGL/sequencing/dna/nanopore/citrus/NGS_TAL_Pete_041225/NGS_TAL_Pete_18Q053_041225/pod5
 
 # Specify model/model-complex to use
 MODEL=sup
 
 # Specify output prefix and directory to write basecalled results to
-OUTDIR=/work/ePGL/resequencing/nanopore/citrus_murcott_06_2024/Murcott_run2_a/bam_sup
-OUTPREFIX=pete_murcott_run2a
+OUTDIR=/work/ePGL/sequencing/dna/nanopore/citrus/NGS_TAL_Pete_041225/NGS_TAL_Pete_18Q053_041225/bam_sup
+OUTPREFIX=18Q053
 
 ####
 
