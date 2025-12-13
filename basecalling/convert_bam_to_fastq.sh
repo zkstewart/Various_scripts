@@ -6,17 +6,19 @@
 
 cd $PBS_O_WORKDIR
 
+module load zlib/1.3.1
+
 ####
 
 # Specify the location of the Various_scripts folder
 VARSCRIPTDIR=/home/stewarz2/scripts/Various_scripts
 
 # Specify the location of the dorado bin and lib folders
-DORADODIR=/home/stewarz2/various_programs/dorado/dorado-0.9.0-linux-x64
+DORADODIR=/home/stewarz2/various_programs/dorado/dorado-1.3.0-linux-x64
 
 # Specify called BAM files from basecalling
-BAMDIR=/work/ePGL/resequencing/nanopore/glauca_shearing_tests/Pete_13Q027_sample7_16092024/bam_sup
-BAMPREFIX=glauca_shearing_13Q027
+BAMDIR=/work/ePGL/sequencing/dna/nanopore/citrus/NGS_TAL_Pete_041225/NGS_TAL_Pete_18Q053_041225/bam_sup
+BAMPREFIX=18Q053
 BAMSUFFIX=.sup.bam
 
 # Specify output file details
