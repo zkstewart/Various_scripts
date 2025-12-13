@@ -126,6 +126,8 @@ def make_cpu_script(argsContainer, PREFIX="", WALLTIME="72:00:00", CPU=10, MEM="
 
 cd {workingDir}
 
+module load zlib/1.3.1
+
 ####
 
 # Specify the location of the dorado bin and lib folders
@@ -207,11 +209,13 @@ def make_gpu_script(argsContainer, PREFIX="", WALLTIME="72:00:00", CPU=10, MEM="
 #PBS -l mem={MEM}
 #PBS -l ncpus={CPU}
 #PBS -l ngpus=1
-#PBS -l gputype=A100
+#PBS -l gpu_id=A100
 #PBS -W depend=afterok:{PREVJOB}
 {PBSJ}
 
 cd {workingDir}
+
+module load zlib/1.3.1
 
 ####
 
