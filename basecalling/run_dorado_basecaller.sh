@@ -12,27 +12,47 @@ module load zlib/1.3.1
 
 ####
 
-# Specify the location of the dorado bin and lib folders
+# Specify the program locations
 DORADODIR=/home/stewarz2/various_programs/dorado/dorado-1.3.0-linux-x64
+VARSCRIPTDIR=/home/stewarz2/scripts/Various_scripts
 
-# Specify directory containing pod5 files for basecalling
-POD5DIR=/work/ePGL/sequencing/dna/nanopore/citrus/NGS_TAL_Pete_041225/NGS_TAL_Pete_18Q053_041225/pod5
-
-# Specify model/model-complex to use
-MODEL=sup
-
-# Specify output prefix and directory to write basecalled results to
-OUTDIR=/work/ePGL/sequencing/dna/nanopore/citrus/NGS_TAL_Pete_041225/NGS_TAL_Pete_18Q053_041225/bam_sup
+# Specify the prefix for output files
 OUTPREFIX=18Q053
+
+# Specify program behavioural values
+MODEL=sup
+MINREADLEN=5000
 
 ####
 
-# STEP 0: Make sure LIB path is set and outdir exists
-export LD_LIBRARY_PATH=${DORADODIR}/lib:$LD_LIBRARY_PATH
-mkdir -p ${OUTDIR}
-
-# STEP 0.5: Format model value for inclusion in output file name
+# STEP 0: Export and set all hard-coded variables
+POD5DIR=pod5
+BAMDIR=bam_sup
+FQDIR=fastq
 MODELSUFFIX=$(echo ${MODEL} | tr , - | tr @ _)
+export LD_LIBRARY_PATH=${DORADODIR}/lib:${LD_LIBRARY_PATH}
 
 # STEP 1: Run dorado
-${DORADODIR}/bin/dorado basecaller ${MODEL} ${POD5DIR}/ > ${OUTDIR}/${OUTPREFIX}.${MODELSUFFIX}.bam
+mkdir -p ${BAMDIR}
+BAMRESULTFILE=${BAMDIR}/${OUTPREFIX}.${MODELSUFFIX}.bam
+if [[ ! -f ${BAMRESULTFILE} ]]; then
+    ${DORADODIR}/bin/dorado basecaller ${MODEL} ${POD5DIR}/ > ${BAMRESULTFILE};
+fi
+
+# STEP 2: Run samtools to convert BAM to FASTQ
+mkdir -p ${FQDIR}
+FQRESULTFILE=${FQDIR}/${OUTPREFIX}.fastq
+if [[ ! -f ${FQRESULTFILE} ]]; then
+    samtools fastq -T "*" ${BAMRESULTFILE} > ${FQRESULTFILE};
+fi
+
+# STEP 3: Filter FASTQ reads to minimum size cutoff
+FQFILTERFILE=${FQDIR}/${OUTPREFIX}.min${MINREADLEN}.fastq
+if [[ ! -f ${FQDIR}/${OUTPREFIX}.min${MINREADLEN}.fastq ]]; then
+    python ${VARSCRIPTDIR}/fasta_handling_master_code.py -f cullbelow -i ${FQRESULTFILE} -n ${MINREADLEN} -o ${FQFILTERFILE};
+fi
+
+# STEP 4: Figure out how many blocks we can chunk the FASTQ into for correction
+NUMBLOCKS=$(${DORADODIR}/bin/dorado correct ${FQFILTERFILE} --compute-num-blocks)
+echo "NUMBLOCKS = ${NUMBLOCKS}"
+echo "${NUMBLOCKS}" > ${FQDIR}/numblocks.txt
