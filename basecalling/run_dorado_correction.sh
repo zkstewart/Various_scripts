@@ -1,7 +1,6 @@
 #!/bin/bash -l
 
 JOBPREFIX=18Q053
-NUMBLOCKS=7
 MINREADLEN=5000
 
 ####
@@ -20,6 +19,8 @@ FQFILE=${JOBPREFIX}.min${MINREADLEN}.fastq
 OUTDIR=fastq_corrected
 
 ####
+
+NUMBLOCKS=$(cat ${FQDIR}/numblocks.txt)
 
 python ${VARSCRIPTDIR}/basecalling/dorado_correct_pipeline.py -f ${FQDIR}/${FQFILE} \
     -n ${NUMBLOCKS} -o ${OUTDIR} \
