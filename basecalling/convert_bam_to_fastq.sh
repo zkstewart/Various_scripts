@@ -43,3 +43,4 @@ fi
 # STEP 3: Figure out how many blocks we can chunk the FASTQ into for correction
 NUMBLOCKS=$(${DORADODIR}/bin/dorado correct ${FQDIR}/${BAMPREFIX}.min${MINREADLEN}.fastq --compute-num-blocks)
 echo "NUMBLOCKS = ${NUMBLOCKS}"
+echo "${NUMBLOCKS}" > ${FQDIR}/numblocks.txt
