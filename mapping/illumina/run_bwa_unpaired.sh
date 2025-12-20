@@ -40,5 +40,5 @@ BASEPREFIX=$(basename ${FILEPREFIX})
 RG="'@RG\\tID:${BASEPREFIX}\\tSM:${BASEPREFIX}\\tPL:illumina\\tLB:lib647\\tPU:unit1'"
 
 # STEP 4: Run bwa mem
-cmd=$(echo "bwa mem -t ${CPUS} -R $(echo ${RG}) -SP ${GENOMEDIR}/${GENOME} ${FILEPREFIX}${R1SUFFIX} ${FILEPREFIX}${R2SUFFIX} > ${BASEPREFIX}.sam")
+cmd=$(echo "bwa mem -t ${CPUS} -R $(echo ${RG}) ${GENOMEDIR}/${GENOME} ${FILEPREFIX}${R1SUFFIX} > ${BASEPREFIX}.sam")
 eval $cmd
