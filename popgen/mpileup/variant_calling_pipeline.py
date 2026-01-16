@@ -199,6 +199,7 @@ tabix -C ${{CONTIG}}.vcf.gz
     CONTIG_LIST=CONTIG_LIST, # global variable
     BAM_LIST=BAM_LIST, # global variable
     qualityLine=qualityLine,
+    variantLine=variantLine,
     afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
 
