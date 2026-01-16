@@ -144,7 +144,7 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
         qualityLine += " --gvcf 0"
     
     # Set call parameters depending on user input
-    if args.gvcf:
+    if argsContainer.gvcf:
         variantLine = "--gvcf 0"
     else:
         variantLine = "-v"
