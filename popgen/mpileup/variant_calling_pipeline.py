@@ -120,6 +120,7 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
             workingDir -- the directory to run the script in; should be the CWD
             indelsCns -- a boolean indicating whether to use the --indels-cns option
             ontSup -- a boolean indicating whether to use the -X ont-sup option
+            gvcf -- a boolean indicating whether to output GVCF or variants-only VCF
             genomeDir -- the directory containing the genome FASTA file
             genome -- the name of the genome FASTA file
             outputFileName -- the name of the script file to write
@@ -129,15 +130,24 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
         MEM -- OPTIONAL; a string indicating how much memory to give the job;
                default == "40G"
     '''
-    # Produce a line indicating quality values depending on user input
+    # Set quality parameters depending on user input
     if argsContainer.ontSup: # use defaults for -X ont-sup with bcftools version 1.20
         qualityLine = ("-B -Q1 --max-BQ 35 --delta-BQ 99 -F0.2 -o15 -e1 -h110 --del-bias 0.4 " + 
                        "--indel-bias 0.7 --poly-mqual --seqq-offset 130 --indel-size 80")
     else: # use long-standing ZKS defaults
         qualityLine = "-q 10 -Q 20"
     
+    # Add on optional arguments which control mpileup behaviour
     if argsContainer.indelsCns:
         qualityLine += " --indels-cns"
+    if argsContainer.gvcf:
+        qualityLine += " --gvcf 0"
+    
+    # Set call parameters depending on user input
+    if args.gvcf:
+        variantLine = "--gvcf 0"
+    else:
+        variantLine = "-v"
     
     # Generate the script text
     scriptText = \
@@ -172,7 +182,7 @@ bcftools mpileup -Ou \\
     -r ${{CONTIG}} \\
     --bam-list ${{BAM_LIST}} \\
     {qualityLine} \\
-    -a AD,DP | bcftools call -m -v -Oz -o ${{CONTIG}}.vcf.gz
+    -a AD,DP | bcftools call -m {variantLine} -Oz -o ${{CONTIG}}.vcf.gz
 
 # STEP 3: Index the VCF file
 tabix ${{CONTIG}}.vcf.gz
@@ -382,6 +392,12 @@ def main():
                    help="""Provide this flag to make use of the --indels-cns option as is 
                    currently recommended by bcftools for diploid genomes""",
                    default=False)
+    p.add_argument("--gvcf", dest="gvcf",
+                   required=False,
+                   action="store_true",
+                   help="""Provide this flag to make use of the --indels-cns option as is 
+                   currently recommended by bcftools for diploid genomes""",
+                   default=False)
     p.add_argument("--ont-sup", dest="ontSup",
                    required=False,
                    action="store_true",
@@ -458,6 +474,7 @@ def main():
             "genome": os.path.basename(args.fastaFile),
             "indelsCns": args.indelsCns,
             "ontSup": args.ontSup,
+            "gvcf": args.gvcf,
             "outputFileName": CALLING_SCRIPT,
             "runningJobIDs": runningJobs
         }),
