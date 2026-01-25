@@ -23,16 +23,16 @@ p.add_argument("-o", dest="outputName",
 args = p.parse_args()
 
 # Create the new PDF to add new PDFs into
-compiledPDF = PyPDF2.PdfFileWriter()
+compiledPDF = PyPDF2.PdfWriter()
 
 # Loop to add each PDFs contents into one main PDF
 for pdf in args.inputNames:
     pdfFile = open(pdf, 'rb')
-    pdfReader = PyPDF2.PdfFileReader(pdfFile)
+    pdfReader = PyPDF2.PdfReader(pdfFile)
     # Loop through each page and add to file without rotating
-    for pageNum in range(pdfReader.numPages):
-        page = pdfReader.getPage(pageNum)
-        compiledPDF.addPage(page)
+    for pageNum in range(len(pdfReader.pages)):
+        page = pdfReader.pages[pageNum]
+        compiledPDF.add_page(page)
 
 # Write to a file then save the compiled PDF
 with open(args.outputName, 'wb') as pdfOutput:
