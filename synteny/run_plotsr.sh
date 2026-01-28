@@ -1,45 +1,39 @@
 #!/bin/bash -l
 #PBS -N plotsrPipe
-#PBS -l walltime=03:30:00
+#PBS -l walltime=00:15:00
 #PBS -l mem=30G
-#PBS -l ncpus=8
+#PBS -l ncpus=1
 
 cd $PBS_O_WORKDIR
 
 conda activate synteny
 
-#################################
+####
 
-## This script DOES require you to change stuff outside of the '####' block here.
-## Specifically, step 3 will require you to specify the genomes.txt file appropriately.^S
+# Specify the Various_scripts location
+VARSCRIPTDIR=/home/stewarz2/scripts/Various_scripts
 
 # Specify the location of the input files
-GEN1=/home/stewarz2/plant_group/juel/genome/glauca.fasta
-GEN2=/home/stewarz2/plant_group/juel/genome/hindsii.fasta
+GENDIR=/home/stewarz2/plant_group/juel/glauca_progeny/synteny/citrus/chr2_citrus_sequences
+
+GEN1=${GENDIR}/reticulata_chr2.fasta
+GEN2=${GENDIR}/sinensis_1_chr2.fasta
+GEN3=${GENDIR}/limon_chr2.fasta
 
 # Specify how many CPUs to use
-CPUS=8
+CPUS=16
 
 # Specify prefix for outputs
-PREFIX=glauca_comparison
+PREFIX=chr2_ft3_plotsr
 
-#################################
+####
 
-# STEP 1: Align with minimap2
-minimap2 -ax asm5 -t ${CPUS} --eqx ${GEN1} ${GEN2} \
- | samtools sort -O BAM - > ${PREFIX}.bam
-samtools index ${PREFIX}.bam
+# STEP 1: Run the pipeline
+python ${VARSCRIPTDIR}/synteny/plotsr_pipeline.py --threads ${CPUS} \
+    -i ${GEN1} ${GEN2} ${GEN3} \
+    -o ${PREFIX} \
+    --width 7 --height 10
 
-# STEP 2: Use syri to find structural annotations between genomes
-syri -c ${PREFIX}.bam -r ${GEN1} -q ${GEN2} -F B --prefix ${PREFIX}
-
-# STEP 3: Generate genomes.txt file for plotsr to interpret
-echo "#file	name	tags" > genomes.txt
-echo "${GEN1}	glauca	lw:1.5" >> genomes.txt
-echo "${GEN2}	hindsii	lw:1.5" >> genomes.txt
-
-# STEP 4: Run plotsr
-plotsr \
-    --sr ${PREFIX}syri.out \
-    --genomes genomes.txt \
-    -o ${PREFIX}_plot.png
+#--chr <chr1 chr2>
+#--markers </location/of/markers.bed>
+#--reg <chr2:start-end>
