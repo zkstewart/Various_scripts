@@ -8,8 +8,8 @@ from collections import Counter
 
 def validate_args(args):
     args.instructions = parse_pdf(args.pdfs)
-    if os.path.exists(args.outputName):
-        raise FileExistsError(f"-o file '{args.outputName}' already exists and will not be overwritten")
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"-o file '{args.outputFileName}' already exists and will not be overwritten")
 
 def parse_pdf(pdfs):
     '''
@@ -120,7 +120,13 @@ def parse_pdf(pdfs):
                                 pageNum = int(p)
                             except ValueError:
                                 raise ValueError(f"The section of -i '{inputStr}' specifies a non-integer page value '{pageNum}'")
-
+                            
+                            if pageNum < 1:
+                                raise ValueError(f"The section of -i '{inputStr}' specifies a page number ('{pageNum}') which is less than 1 (i.e., the first page)")
+                            if pageNum > documentLength:
+                                raise ValueError(f"The section of -i '{inputStr}' specifies a page number ('{pageNum}') which exceeds " +
+                                                 f"the number of pages in the '{sections[0]}' file (i.e., '{documentLength}' pages)")
+                            
                             selectedPages.append(pageNum-1) # convert 1-based to 0-based
                     
                     # Store subsetting instruction
@@ -134,12 +140,12 @@ def parse_pdf(pdfs):
         
         if len(set(instructions[x]["pages"])) != len(instructions[x]["pages"]):
             duplicates = Counter(instructions[x]["pages"])
-            duplicates = [ pagenum for pagenum, count in duplicates.items() if count > 1 ]
-            
-            print(f"WARNING: the section of -i '{inputStr}' has page number duplications for: " +
-                  f"{duplicates}. If this is intended, ignore this warning. Otherwise, you may need " +
+            duplicates = [ pagenum+1 for pagenum, count in duplicates.items() if count > 1 ] # make pagenum 1-based for user display
+            formattedDuplicates = ", ".join(map(str, sorted(duplicates)))
+            print(f"WARNING: the section of -i '{inputStr}' has page number duplications for pages: " +
+                  f"{formattedDuplicates}. If this is intended, ignore this warning. Otherwise, you may need " +
                   "to fix your input instructions, as these pages will be written out as duplicates.")
-    
+    print(instructions)
     return instructions
 
 def main():
@@ -168,7 +174,7 @@ def main():
                    required=True,
                    nargs="+",
                    help="Input PDF file names to join")
-    p.add_argument("-o", dest="outputName",
+    p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="Output file name of concatenated document")
     args = p.parse_args()
@@ -178,8 +184,6 @@ def main():
     writer = PyPDF2.PdfWriter()
     for instruction in args.instructions.values():
         with open(instruction["file"], "rb") as fileIn:
-            # Interpret rotation angle as number of rotations
-            
             reader = PyPDF2.PdfReader(fileIn)
             for pageNum in instruction["pages"]:
                 page = reader.pages[pageNum]
@@ -189,7 +193,7 @@ def main():
                     writer.pages[-1].rotate(instruction["rotation"])
     
     # Write to a file then save the compiled PDF
-    with open(args.outputName, "wb") as fileOut:
+    with open(args.outputFileName, "wb") as fileOut:
         writer.write(fileOut)
     
     print("Program completed successfully!")
