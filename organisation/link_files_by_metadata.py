@@ -22,6 +22,8 @@ def validate_args(args):
     # Validate that argument values are sensible
     if args.fileSuffix == "":
         raise ValueError(f"-s value cannot be blank!")
+    if args.newSuffix == None:
+        args.newSuffix = args.fileSuffix
     
     # Validate output location
     args.outputDirectory = os.path.abspath(args.outputDirectory)
@@ -218,6 +220,11 @@ def main():
                    help="""Column numbers for left (original) and right (new) pairs;
                    use 1-based numbering (first column == 1); default=='1 2'""",
                    default=[1, 2])
+    p.add_argument("--newSuffix", dest="newSuffix",
+                   required=False,
+                   help="""Optionally specify a new suffix to append to symlinked files; default
+                   is to use whatever -s has""",
+                   default=None)
     args = p.parse_args()
     validate_args(args)
     
@@ -245,12 +252,12 @@ def main():
         newPrefix = metaDict[origPrefix]
         if isinstance(location, str):
             original = [ location ]
-            new = [ os.path.join(args.outputDirectory, f"{newPrefix}{args.fileSuffix}") ]
+            new = [ os.path.join(args.outputDirectory, f"{newPrefix}{args.newSuffix}") ]
         else:
             original = [ location[1], location[2] ]
             new = [
-                os.path.join(args.outputDirectory, f"{newPrefix}_1{args.fileSuffix}"),
-                os.path.join(args.outputDirectory, f"{newPrefix}_2{args.fileSuffix}")
+                os.path.join(args.outputDirectory, f"{newPrefix}_1{args.newSuffix}"),
+                os.path.join(args.outputDirectory, f"{newPrefix}_2{args.newSuffix}")
             ]
         
         for o, n in zip(original, new):
