@@ -39,7 +39,7 @@ def validate_args(args):
 
 def handle_file_name(file, fileSuffix, found):
     '''
-    Helper function for relate_metadata_to_files() to set values in its
+    Helper function for locate_files() to set values in its
     found dictionary.
     '''
     filePrefix = os.path.basename(file).rsplit(fileSuffix, maxsplit=1)[0].rstrip(". ")
@@ -76,7 +76,7 @@ def handle_file_name(file, fileSuffix, found):
         
         found[filePrefix] = file
 
-def relate_metadata_to_files(inputLocations, fileSuffix):
+def locate_files(inputLocations, fileSuffix):
     '''
     Returns:
         found -- a dictionary with structure like:
@@ -182,6 +182,61 @@ def parse_metadata(metadataFile, columnNumbers=[1, 2], hasHeader=False):
     
     return metaDict
 
+def match_files_to_metadata(metaDict, foundFiles):
+    '''
+    Updates the foundFiles dict to match up with the metaDict keys where minor disagreements might
+    exist, but where those disagreements to not prevent a 1-to-1 match between metadata and file names.
+    
+    Returns:
+        resolvedFoundFiles -- a dictionary with structure equivalent to the original foundFiles but with
+                              key values updated where relevant
+    '''
+    metaSet = set(metaDict.keys())
+    foundSet = set(foundFiles.keys())
+    
+    # Identify common overlaps which do not need resolution
+    foundInCommon = metaSet.intersection(foundSet)
+    resolvedFoundFiles = { key : metaDict[key] for key in foundInCommon } # to be further populated with keys which are matched to the metaDict keys
+    
+    # Identify file names which explainably differ from metadata labels [through a common base suffix]
+    metaDiff = metaSet.difference(foundSet)
+    foundDiff = foundSet.difference(metaSet)
+    if len(foundDiff) != 0:
+        # Drop our list of found differences to only those which could conceivably be rescued
+        foundDiff = list(set([ x for x in foundDiff for y in metaDiff if x.startswith(y) ])) # make it a list to ensure consistent iteration order
+        
+        # Find a common suffix among samples which could conceivably be rescued by removal of this suffix
+        commonSuffix = os.path.commonprefix([ x[::-1] for x in foundDiff ])[::-1]
+        foundSansSuffix = [ x.rsplit(commonSuffix, maxsplit=1)[0] for x in foundDiff ]
+        
+        # Rescue samples with differences if possible
+        if all([ x in metaDiff for x in foundSansSuffix ]) and ( not any([ x in foundSet or x in resolvedFoundFiles for x in foundSansSuffix ]) ):
+            # i.e., if all of these are among our 'not found in metadata' samples and they are not found in the original file names
+            for prefix, sansSuffix in zip(foundDiff, foundSansSuffix):
+                resolvedFoundFiles[sansSuffix] = foundFiles[prefix]
+                foundSet.remove(prefix)
+                if sansSuffix not in foundSet:
+                    foundSet.add(sansSuffix)
+                else:
+                    raise ValueError(f"In the process of rescuing '{prefix}' by considering it instead to be '{sansSuffix}', " +
+                                     "we ended up with sample name duplication. You should probably make sure your file name prefixes " +
+                                     "are maximally descriptive to prevent this rescuing process from being needed here.")
+    
+    # Raise error for any remaining unresolved differences
+    metaDiff = metaSet.difference(foundSet) # foundSet was updated so metaDiff needs to be recalculated
+    if len(metaDiff) != 0:
+        formattedDiff = ", ".join(sorted(metaDiff))
+        raise ValueError(f"Metadata file indicates file prefixes that were not found in any input location(s); " +
+                         f"these include '{formattedDiff}'. Maybe check that the --header flag is correctly set for your metadata file, " + 
+                         "or that your -s suffix value is appropriate.")
+    
+    # Drop any found files which are not noted in our metadata
+    foundDiff = foundSet.difference(metaSet)
+    if len(foundDiff) != 0:
+        resolvedFoundFiles = { key:value for key, value in resolvedFoundFiles.items() if key not in foundDiff }
+    
+    return resolvedFoundFiles
+
 def main():
     # User input
     usage = """%(prog)s handles the symlinking of files with generic/lab sample names into more informative
@@ -232,20 +287,11 @@ def main():
     metaDict = parse_metadata(args.metadataFile, args.columnNumbers, args.hasHeader)
     
     # Locate file(s) in the specified location(s)
-    foundFiles = relate_metadata_to_files(args.inputLocations, args.fileSuffix)
+    foundFiles = locate_files(args.inputLocations, args.fileSuffix)
     
-    # Relate file(s) to metadata values
-    metaSet = set(metaDict.keys())
-    foundSet = set(foundFiles.keys())
-    
-    metaDiff = metaSet.difference(foundSet)
-    if len(metaDiff) != 0:
-        formattedDiff = ", ".join(sorted(metaDiff))
-        raise ValueError(f"Metadata file indicates file prefixes that were not found in any input location(s); " +
-                         f"these include '{formattedDiff}'. Maybe check that the --header flag is correctly set for your metadata file?")
-    foundDiff = foundSet.difference(metaSet)
-    if len(foundDiff) != 0:
-        foundFiles = { key:value for key, value in foundFiles.items() if key not in foundDiff}
+    # Tolerantly match metadata and files where minor differences might occur
+    "For example, a suffix of 'S1' might be given in metadata but all files might look more like 'S1.trimmed'"
+    foundFiles = match_files_to_metadata(metaDict, foundFiles)
     
     # Link each file
     for origPrefix, location in foundFiles.items():
