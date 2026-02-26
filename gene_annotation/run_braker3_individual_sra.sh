@@ -14,7 +14,7 @@ SCRATCHDIR=/scratch/stewarz2
 B3SIF=/home/stewarz2/various_programs/BRAKER-3/braker3.sif
 
 # Specify protein evidence file location
-PROTSEQ=/work/ePGL/genomes/external/citrus/databases/citrus.plus.viridiplantae.proteins.fasta
+PROTSEQ=/work/ePGL/databases/proteins/odb_12/plus_citrus/citrus_viridiplantae_proteins.fasta
 
 # Specify the softmasked genome file
 GENOMEDIR=/work/ePGL/genomes/external/citrus/australasica/repeats/Fingerlime_genome_softmask

@@ -15,7 +15,7 @@ SCRATCHDIR=/scratch/stewarz2
 B3SIF=/home/stewarz2/various_programs/BRAKER-3/braker3.sif
 
 # Specify protein evidence file location
-PROTSEQ=/work/ePGL/sequencing/dna/nanopore/citrus/glauca_shearing_tests/diploid/results/braker3/proteins/citrus.plus.viridiplantae.proteins.fasta
+PROTSEQ=/work/ePGL/databases/proteins/odb_12/plus_citrus/citrus_viridiplantae_proteins.fasta
 
 # Specify the directory of softmasked genome files
 TARGETDIR=/work/ePGL/sequencing/dna/nanopore/citrus/glauca_shearing_tests/diploid/results/repeats/hap1
