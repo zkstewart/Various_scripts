@@ -196,7 +196,7 @@ def match_files_to_metadata(metaDict, foundFiles):
     
     # Identify common overlaps which do not need resolution
     foundInCommon = metaSet.intersection(foundSet)
-    resolvedFoundFiles = { key : metaDict[key] for key in foundFiles } # to be further populated with keys which are matched to the metaDict keys
+    resolvedFoundFiles = { key : foundFiles[key] for key in foundInCommon } # to be further populated with keys which are matched to the metaDict keys
     
     # Identify file names which explainably differ from metadata labels [through a common base suffix]
     metaDiff = metaSet.difference(foundSet)
