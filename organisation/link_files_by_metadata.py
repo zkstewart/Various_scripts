@@ -207,21 +207,22 @@ def match_files_to_metadata(metaDict, foundFiles):
         
         # Find a common suffix among samples which could conceivably be rescued by removal of this suffix
         commonSuffix = os.path.commonprefix([ x[::-1] for x in foundDiff ])[::-1]
-        foundSansSuffix = [ x.rsplit(commonSuffix, maxsplit=1)[0] for x in foundDiff ]
+        if commonSuffix != "":
+            foundSansSuffix = [ x.rsplit(commonSuffix, maxsplit=1)[0] for x in foundDiff ]
+            
+            # Rescue samples with differences if possible
+            if all([ x in metaDiff for x in foundSansSuffix ]) and ( not any([ x in foundSet or x in resolvedFoundFiles for x in foundSansSuffix ]) ):
+                # i.e., if all of these are among our 'not found in metadata' samples and they are not found in the original file names
+                for prefix, sansSuffix in zip(foundDiff, foundSansSuffix):
+                    resolvedFoundFiles[sansSuffix] = foundFiles[prefix]
+                    foundSet.remove(prefix)
+                    if sansSuffix not in foundSet:
+                        foundSet.add(sansSuffix)
+                    else:
+                        raise ValueError(f"In the process of rescuing '{prefix}' by considering it instead to be '{sansSuffix}', " +
+                                        "we ended up with sample name duplication. You should probably make sure your file name prefixes " +
+                                        "are maximally descriptive to prevent this rescuing process from being needed here.")
         
-        # Rescue samples with differences if possible
-        if all([ x in metaDiff for x in foundSansSuffix ]) and ( not any([ x in foundSet or x in resolvedFoundFiles for x in foundSansSuffix ]) ):
-            # i.e., if all of these are among our 'not found in metadata' samples and they are not found in the original file names
-            for prefix, sansSuffix in zip(foundDiff, foundSansSuffix):
-                resolvedFoundFiles[sansSuffix] = foundFiles[prefix]
-                foundSet.remove(prefix)
-                if sansSuffix not in foundSet:
-                    foundSet.add(sansSuffix)
-                else:
-                    raise ValueError(f"In the process of rescuing '{prefix}' by considering it instead to be '{sansSuffix}', " +
-                                     "we ended up with sample name duplication. You should probably make sure your file name prefixes " +
-                                     "are maximally descriptive to prevent this rescuing process from being needed here.")
-    
     # Raise error for any remaining unresolved differences
     metaDiff = metaSet.difference(foundSet) # foundSet was updated so metaDiff needs to be recalculated
     if len(metaDiff) != 0:
