@@ -9,6 +9,7 @@
 cd $PBS_O_WORKDIR
 
 module load zlib/1.3.1
+export LD_LIBRARY_PATH=/mnt/weka/pkg/rhel94/AuthenticAMD-25/software/zlib/1.3.1/lib:${LD_LIBRARY_PATH}
 
 ####
 
