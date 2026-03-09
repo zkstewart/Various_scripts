@@ -30,6 +30,7 @@ TMPDIR=hp_uniref
 CPUS=32
 NUM_ITERS=1
 SENS=5.7
+SEARCHTYPE=blastn
 
 ####
 
@@ -37,8 +38,8 @@ SENS=5.7
 export PATH=${MMSEQDIR}/:$PATH
 
 # Step 2: Run MMseqs2
-python ${VARSCRIPTDIR}/run_mmseqs2.py -q ${QUERYDIR}/${QUERYFILE} \
-    -t ${DBDIR}/${DBFILE} \
+python ${VARSCRIPTDIR}/run_mmseqs2.py -st ${SEARCHTYPE} \
+    -q ${QUERYDIR}/${QUERYFILE} -t ${DBDIR}/${DBFILE} \
     -o ${OUTPREFIX} \
     -m ${MMSEQDIR} \
     -c ${CPUS} \
