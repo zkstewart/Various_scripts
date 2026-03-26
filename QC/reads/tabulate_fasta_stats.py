@@ -14,26 +14,36 @@ def validate_args(args):
     if not os.path.isdir(args.parentDir):
         raise FileNotFoundError(f"The -i location ('{args.parentDir}') does not exist or is not a directory")
     
+    # Validate numeric args
+    if args.maxDepth < 0:
+        raise ValueError(f"--depth value must be greater than or equal to zero (0)")
+    
     # Validate output file location
     if os.path.exists(args.outputFileName):
         raise FileExistsError(f"The -o location ('{args.outputFileName}') already exists; this script will not overwrite any files.")
 
-def suffix_crawl(thisDir, suffix, foundFiles):
+def suffix_crawl(thisDir, suffix, thisDepth, maxDepth, foundFiles):
     '''
     Recursively locates all files with specified suffix nested under a parent directory.
     
     Parameters:
         thisDir -- a string indicating the full path of the location to crawl through
         suffix -- a string indicating the suffix that uniquely identifies all relevant files
+        thisDepth -- an integer tracking the recursion depth to limit search space
+        maxDepth -- an integer indicating the depth beyond which search should be stopped
         foundFiles -- a list storing any files found in a previous recursive loop, and to
                       be populated with any files found within thisDir.
     '''
+    thisDepth += 1
+    if (maxDepth > 0) and (thisDepth > maxDepth): # if maxDepth == 0, there is no limit
+        return
+    
     for location in os.listdir(thisDir):
         fullLocation = os.path.join(thisDir, location)
         if os.path.isfile(fullLocation) and fullLocation.endswith(suffix):
             foundFiles.append(fullLocation)
         elif os.path.isdir(fullLocation):
-            suffix_crawl(fullLocation, suffix, foundFiles)
+            suffix_crawl(fullLocation, suffix, thisDepth, maxDepth, foundFiles)
 
 def parse_stats_file(fileName):
     '''
@@ -172,13 +182,19 @@ def main():
                    help="""Optionally, indicate the file suffix that identifies files containing
                    statistical results (default=='.stats')""",
                    default=".stats")
+    p.add_argument("--depth", dest="maxDepth",
+                   required=False,
+                   type=int,
+                   help="""Optionally, indicate the depth to limit recursive directory crawling to;
+                   default==0 which means no limit is imposed""",
+                   default=0)
     
     args = p.parse_args()
     validate_args(args)
     
     # Locate all stats files
     statsFiles = []
-    suffix_crawl(args.parentDir, args.suffix, statsFiles)
+    suffix_crawl(args.parentDir, args.suffix, 0, args.maxDepth, statsFiles) # 0 == starting depth
     if len(statsFiles) == 0:
         raise FileNotFoundError(f"No files ending in '{args.suffix}' found in the -i directory ({args.parentDir}).")
     
