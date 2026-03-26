@@ -155,7 +155,7 @@ def main():
                    help="Input directory containing FASTQC result subdirs")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
-                   help="Output file name for the reads count table")
+                   help="Output file name for the FASTQC summary table")
     
     args = p.parse_args()
     validate_args(args)
