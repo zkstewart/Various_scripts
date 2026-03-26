@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #PBS -N 662_p1
 #PBS -l walltime=32:00:00
-#PBS -l mem=15G
+#PBS -l mem=30G
 #PBS -l ncpus=1
 #PBS -l ngpus=1
 #PBS -l gpu_id=A100
