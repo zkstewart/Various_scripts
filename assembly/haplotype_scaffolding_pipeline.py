@@ -172,7 +172,7 @@ def main():
                    required=False,
                    type=float,
                    help="""Optionally, specify the proportion of sequence that can overlap
-                   prior to scaffolding; default == 0.2 (20%)""",
+                   prior to scaffolding; default == 0.2 (20 percent)""",
                    default=0.2)
     # Opts (minimap2)
     p.add_argument("--preset", dest="preset",
