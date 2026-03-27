@@ -295,7 +295,7 @@ def main():
                     pafDict[tid][qid]["numresidues"] += numresidues
                     pafDict[tid][qid]["lenalign"] += lenalign
                     pafDict[tid][qid]["coords"].append([tstart, tend])
-    refContigs = sorted(list(refContigs), key=lambda x: int(" ".join(re.findall(r'\d+', x))))
+    refContigs = sorted(list(refContigs), key=lambda x: int("".join(re.findall(r'\d+', x))))
     
     # Adjust the PAF dictionaries to discount multimapping & filter queries that fail the minimum criteria
     for inputIndex in range(2):
