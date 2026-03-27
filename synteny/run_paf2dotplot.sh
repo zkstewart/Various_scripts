@@ -35,7 +35,7 @@ MINALNLEN=10000
 minimap2 -cx asm20 -t ${CPUS} \
     ${REF} ${QUERY} > ${PREFIX}.paf
 
-# STEP 2: Use syri to find structural annotations between genomes
+# STEP 2: Run paf2dotplot
 ${P2DPDIR}/paf2dotplot.r -f -b \
     --plot-size=${INCHES} \
     --min-ref-len=${MINREFLEN} \
