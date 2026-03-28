@@ -74,6 +74,19 @@ def validate_args(args):
         os.makedirs(args.outputDirectory)
         print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
 
+    # Validate that reference files have equivalent sequence identifiers
+    "This script assumes that hap1 and hap2 have the same identifiers for homologous chromosomes"
+    r1IDs = parse_fasta_identifiers(args.referenceGenome[0])
+    r2IDs = parse_fasta_identifiers(args.referenceGenome[1])
+    r1Only = r1IDs.difference(r2IDs)
+    r2Only = r2IDs.difference(r1IDs)
+    
+    if len(r1Only) != 0 or len(r2Only) != 0:
+        raise ValueError("Reference haplotype 1 and 2 do not have identical sequence identifiers; " +
+                         "this script requires this to be true to allow for later logic of separating " +
+                         "haplotypes according to their best match. Try to make sure both files " + 
+                         "have a naming schema where e.g., chromosome 1 in both haplotypes is named 'chr1'.")
+
 def run_ragtag(inputFile, referenceFile, outputDir, ragtagPath, threads=1):
     '''
     Runs RagTag to scaffold the input file using the reference file as a guide.
@@ -123,6 +136,23 @@ def find_longest_seq(fastaFile):
                 longestSeq[0] = record.id
                 longestSeq[1] = length
     return longestSeq[0], numSeqs
+
+def parse_fasta_identifiers(fastaFile):
+    '''
+    Parse a FASTA file and return a set of all sequence identifiers
+    
+    Parameters:
+        fastaFile -- a string indicating the location of the FASTA file
+    Returns:
+        seqIDs -- a set containing strings for each sequence identifier found
+                  within the FASTA file
+    '''
+    seqIDs = set()
+    with open(fastaFile, "r") as fastaFile:
+        records = SeqIO.parse(fastaFile, "fasta")
+        for record in records:
+            seqIDs.add(record.id)
+    return seqIDs
 
 ## Main
 def main():
