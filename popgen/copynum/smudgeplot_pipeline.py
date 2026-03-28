@@ -16,6 +16,7 @@ def validate_args(args):
         raise FileNotFoundError(f"{program} was not found at the location indicated ('{path}')")
     
     # Validate input file locations
+    args.fileDirectory = os.path.abspath(args.fileDirectory)
     if not os.path.isdir(args.fileDirectory):
         raise FileNotFoundError('I am unable to locate the FASTA/Q directory (' + args.fileDirectory + ')')
     
@@ -73,6 +74,7 @@ def validate_args(args):
                 _not_found_error("kmc_tools", args.kmc_tools)
     
     # Validate output file location
+    args.outputDirectory = os.path.abspath(args.outputDirectory)
     if os.path.isdir(args.outputDirectory) and os.listdir(args.outputDirectory) != []:
         print(f"Output directory '{args.outputDirectory}' already exists; I'll write output files here.")
         print("But, I won't overwrite any existing files, so beware that if a previous run had issues, " +
