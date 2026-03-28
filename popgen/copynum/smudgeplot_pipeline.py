@@ -222,7 +222,7 @@ def fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, args)
     
     # Run smudgeplot all
     resultsFile = os.path.join(smudgeplotDir, samplePrefix + "_fastkout")
-    if not os.path.exists(resultsFile):
+    if not os.path.exists(resultsFile + "_smudgeplot_log10.pdf"):
         run_smudgeplot_all(kmerPairsFile, resultsFile, args.smudgeplot)
     else:
         print(f"smudgeplot all has already been run for '{samplePrefix}'; skipping.")
