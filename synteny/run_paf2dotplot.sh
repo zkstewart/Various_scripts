@@ -35,8 +35,8 @@ MINALNLEN=10000
 minimap2 -cx asm20 -t ${CPUS} \
     ${REF} ${QUERY} > ${PREFIX}.paf
 
-# STEP 2: Run paf2dotplot
-${P2DPDIR}/paf2dotplot.r -f -b \
+# STEP 2: Run paf2dotplot [use -f if you want to view the alignment with complementation inferred]
+${P2DPDIR}/paf2dotplot.r -b \
     --plot-size=${INCHES} \
     --min-ref-len=${MINREFLEN} \
     --min-query-length=${MINQUERYLEN} \
