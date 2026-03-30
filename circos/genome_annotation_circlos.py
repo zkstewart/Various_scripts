@@ -210,7 +210,7 @@ def main():
                     feature = SeqFeature.SeqFeature(
                         location=SeqFeature.FeatureLocation(int(start), int(end)),
                         type="repeat",
-                        strand=None,
+                        #strand=None,
                         id=repeatID,
                         qualifiers={"class": repeatClass, "family": repeatFam}
                     )
