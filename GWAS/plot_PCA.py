@@ -146,7 +146,8 @@ def main():
         components,
         labels=pclabels,
         dimensions=range(pcdimensions),
-        color=families
+        color=families,
+        hover_name=sampleOrder
     )
     fig.update_traces(diagonal_visible=False)
     fig.write_html(args.outputFileName)
