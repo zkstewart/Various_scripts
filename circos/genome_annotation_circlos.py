@@ -235,7 +235,11 @@ def main():
     # Plot each chromosome / sector
     TRACK_GAP = 2
     OUTER_HEIGHT = 0.3
-    TRACK_HEIGHT = 10 if len(args.repeatFamilies) < 5 else 8
+    
+    TOTAL_HEIGHT = 50 # this should be made user configurable
+    NUM_TRACKS = 1 + len(args.repeatFamilies) # first track are the gene annotations
+    TRACK_HEIGHT = int(TOTAL_HEIGHT / NUM_TRACKS)
+    
     for sector in circos.sectors:
         handles = [] # it is okay if this gets reset each loop, we just need the last one
         currentPosition = 95
