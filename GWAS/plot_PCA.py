@@ -134,7 +134,7 @@ def main():
     pclabels = {
         str(i): f"PC {i+1} ({var*100:.1f}%)"
         for i, var in enumerate(explained)
-    }
+    } | { "color": "Family ID" }
     families = [
         sscoreDict[sampleID]["fid"]
         for sampleID in sampleOrder
