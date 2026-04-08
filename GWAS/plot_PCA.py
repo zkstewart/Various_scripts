@@ -115,6 +115,14 @@ def main():
                    help="""Optionally, specify the column header that denotes the family IDs;
                    default=='#FID'""",
                    default="FID")
+    p.add_argument("--pcs", dest="pcsToPlot",
+                   required=False,
+                   nargs="+",
+                   type=int,
+                   help="""Optionally, specify the PCs by their number (e.g., '--pcs 1 2 3') to limit
+                   plotting to just those components. The first PC is '1'. Default is to plot all PCs found in the
+                   .sscore file""",
+                   default=[])
     
     args = p.parse_args()
     validate_args(args)
@@ -139,17 +147,34 @@ def main():
         sscoreDict[sampleID]["fid"]
         for sampleID in sampleOrder
     ]
-    pcdimensions = len(explained)
+    #pcdimensions = len(explained)
+    if args.pcsToPlot == []:
+        pcdimensions = range(len(explained))
+    else:
+        pcdimensions = [ x - 1 for x in args.pcsToPlot ]
+        if any([ x < 0 for x in pcdimensions ]):
+            raise ValueError("The lowest value given to --pcs should be 1")
     
     # Generate the plot
-    fig = px.scatter_matrix(
-        components,
-        labels=pclabels,
-        dimensions=range(pcdimensions),
-        color=families,
-        hover_name=sampleOrder
-    )
-    fig.update_traces(diagonal_visible=False)
+    if len(pcdimensions) > 2:
+        fig = px.scatter_matrix(
+            components,
+            labels=pclabels,
+            dimensions=pcdimensions,
+            color=families,
+            hover_name=sampleOrder
+        )
+        fig.update_traces(diagonal_visible=False)
+    else:
+        fig = px.scatter(
+            components,
+            labels=pclabels,
+            x=pcdimensions[0],
+            y=pcdimensions[1],
+            color=families,
+            hover_name=sampleOrder
+        )
+    
     fig.write_html(args.outputFileName)
     
     print("Program completed successfully!")
