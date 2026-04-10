@@ -17,8 +17,9 @@ VARSCRIPTDIR=/home/stewarz2/scripts/Various_scripts
 FQDIR=/work/ePGL/resequencing/NGS_647_Pete_WGS/trimmed_reads
 FQSUFFIX=P.fq.gz
 
-# Specify the results directory
+# Specify the results and tmp directory
 OUTDIR=smudgeplot_results
+TMPDIR=/scratch/stewarz2/tmp
 
 # Specify computational parameters
 CPUS=8
@@ -31,5 +32,5 @@ python ${VARSCRIPTDIR}/popgen/copynum/smudgeplot_pipeline.py \
     -i ${FQDIR} \
     -f fastq -k fastk \
     --fileSuffix ${FQSUFFIX} \
-    -o ${OUTDIR} \
+    -o ${OUTDIR} --tmp ${TMPDIR} \
     --cpus ${CPUS} --mem ${MEM}

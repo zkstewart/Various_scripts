@@ -73,6 +73,17 @@ def validate_args(args):
             if not os.path.isfile(args.kmc_tools):
                 _not_found_error("kmc_tools", args.kmc_tools)
     
+    # Validate temporary directory (if applicable)
+    if args.kmerProgram == "fastk":
+        args.tmpPath = os.path.abspath(args.tmpPath)
+        if not os.path.isdir(args.tmpPath):
+            tmpParent = os.path.dirname(args.tmpPath)
+            if not os.path.isdir(tmpParent):
+                raise ValueError(f"Cannot create --tmp '{args.tmpPath}' as its parent dir '{tmpParent}' does not exist")
+            else:
+                os.makedirs(args.tmpPath, exist_ok=True) # exist_ok should do nothing, but no harm including it for bizarre edge cases
+                print(f"# Created --tmp directory '{args.tmpPath}' as part of argument validation")
+    
     # Validate output file location
     args.outputDirectory = os.path.abspath(args.outputDirectory)
     if os.path.isdir(args.outputDirectory) and os.listdir(args.outputDirectory) != []:
@@ -84,7 +95,7 @@ def validate_args(args):
         print(f"Output directory '{args.outputDirectory}' has been created as part of argument validation.")
 
 # Functions for newer FastK-based smudgeplot
-def run_fastk(reads, fastkTableFile, cpus, mem, fastkPath):
+def run_fastk(reads, fastkTableFile, cpus, mem, fastkPath, tmpPath):
     '''
     Parameters:
         reads -- a string indicating the location of the FASTA/Q file(s) to process; paired
@@ -98,7 +109,7 @@ def run_fastk(reads, fastkTableFile, cpus, mem, fastkPath):
     # Construct the cmd for subprocess
     cmd = [
         fastkPath, f"-t4", "-k31", f"-M{mem}", f"-T{cpus}",
-        reads, f"-N{fastkTableFile}"
+        reads, f"-N{fastkTableFile}", f"-P{tmpPath}"
     ]
     
     # Run the command
@@ -210,7 +221,7 @@ def fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, args)
     # Run FastK
     fastkTableFile = os.path.join(kmerDir, samplePrefix + "_table")
     if not os.path.exists(fastkTableFile + ".hist") and not os.path.exists(fastkTableFile + ".ktab"):
-        run_fastk(reads, fastkTableFile, args.cpus, args.mem, args.fastk)
+        run_fastk(reads, fastkTableFile, args.cpus, args.mem, args.fastk, args.tmpDir)
     else:
         print(f"FastK has already been run for '{samplePrefix}'; skipping.")
     
@@ -534,6 +545,12 @@ def main():
                    default == 64""",
                    default=64)
     # Opts (behavioural)
+    p.add_argument("--tmp", dest="tmpDir",
+                   required=False,
+                   type=int,
+                   help="""If using FastK, specify the directory to write temporary files
+                   to; default == '/scratch/stewarz2/tmp'""",
+                   default="/scratch/stewarz2/tmp")
     p.add_argument("--L", dest="smudgeErroneousLower",
                    required=False,
                    type=int,
