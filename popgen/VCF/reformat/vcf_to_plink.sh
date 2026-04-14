@@ -63,5 +63,5 @@ if [[ ! -f ${PREFIX}.step4.ok ]]; then
            --sort-vars --set-all-var-ids "@:#\$r,\$a" --rm-dup \
            ${MAXALEN} \
            --geno ${MAXSNPMISS} --maf ${MAF} \
-           --make-bgen --out ${PREFIX} && touch ${PREFIX}.step4.ok;
+           --make-bed --out ${PREFIX} && touch ${PREFIX}.step4.ok;
 fi;
