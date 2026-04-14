@@ -58,10 +58,7 @@ fi;
 
 # STEP 4: Generate BED representation of the data
 if [[ ! -f ${PREFIX}.step4.ok ]]; then
-    plink2 --vcf ${VCF} \
-           --fam ${FAM} \
-           --sort-vars --set-all-var-ids "@:#\$r,\$a" --rm-dup force-first \
-           ${MAXALEN} \
-           --geno ${MAXSNPMISS} --maf ${MAF} \
+    plink2 --pfile ${PREFIX} \
+           --max-alleles 2 \
            --make-bed --out ${PREFIX} && touch ${PREFIX}.step4.ok;
 fi;
