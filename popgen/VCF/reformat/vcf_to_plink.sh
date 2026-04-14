@@ -50,7 +50,7 @@ fi;
 if [[ ! -f ${PREFIX}.step3.ok ]]; then
     plink2 --vcf ${VCF} \
            --fam ${FAM} \
-           --sort-vars --set-all-var-ids "@:#\$r,\$a" --rm-dup \
+           --sort-vars --set-all-var-ids "@:#\$r,\$a" --rm-dup force-first \
            ${MAXALEN} \
            --geno ${MAXSNPMISS} --maf ${MAF} \
            --make-pgen --out ${PREFIX} && touch ${PREFIX}.step3.ok;
@@ -60,7 +60,7 @@ fi;
 if [[ ! -f ${PREFIX}.step4.ok ]]; then
     plink2 --vcf ${VCF} \
            --fam ${FAM} \
-           --sort-vars --set-all-var-ids "@:#\$r,\$a" --rm-dup \
+           --sort-vars --set-all-var-ids "@:#\$r,\$a" --rm-dup force-first \
            ${MAXALEN} \
            --geno ${MAXSNPMISS} --maf ${MAF} \
            --make-bed --out ${PREFIX} && touch ${PREFIX}.step4.ok;
