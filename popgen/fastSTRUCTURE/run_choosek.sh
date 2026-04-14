@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #PBS -N choosek
 #PBS -l walltime=00:30:00
-#PBS -l mem=8G
+#PBS -l mem=10G
 #PBS -l ncpus=1
 
 cd $PBS_O_WORKDIR
