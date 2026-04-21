@@ -20,7 +20,7 @@ MINREADLEN=5000
 DORADODIR=/home/stewarz2/various_programs/dorado/dorado-1.3.0-linux-x64
 
 # Specify the location of the Various_scripts folder
-VARSCRIPTDIR=/home/stewarz2/scripts/Various_scripts 
+VARSCRIPTDIR=/home/stewarz2/scripts/Various_scripts
 
 # Specify input and output read file locations
 FQDIR=fastq
@@ -36,4 +36,4 @@ NUMBLOCKS=$(cat ${FQDIR}/numblocks.txt)
 python ${VARSCRIPTDIR}/basecalling/dorado_correct_pipeline.py -f ${FQDIR}/${FQFILE} \
     -n ${NUMBLOCKS} -o ${OUTDIR} \
     --dorado ${DORADODIR}/bin/dorado \
-    --jobPrefix ${PREFIX} --memCPU 650G --walltimeCPU 48:00:00 --cpuCPU 22 --walltimeGPU 16:00:00 --memGPU 60G
+    --jobPrefix ${PREFIX} --memCPU 280G --walltimeCPU 24:00:00 --cpuCPU 22 --walltimeGPU 08:00:00 --memGPU 30G

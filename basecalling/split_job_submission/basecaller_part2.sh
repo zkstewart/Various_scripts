@@ -47,7 +47,13 @@ if [[ ! -f ${FQDIR}/${OUTPREFIX}.min${MINREADLEN}.fastq ]]; then
     python ${VARSCRIPTDIR}/fasta_handling_master_code.py -f cullbelow -i ${FQRESULTFILE} -n ${MINREADLEN} -o ${FQFILTERFILE};
 fi
 
-# STEP 4: Figure out how many blocks we can chunk the FASTQ into for correction
+# STEP 4: Index the FASTQ file
+FQINDEXFILE=${FQFILTERFILE}.fai
+if [[ ! -f ${FQINDEXFILE} ]]; then
+    samtools faidx ${FQFILTERFILE};
+fi
+
+# STEP 5: Figure out how many blocks we can chunk the FASTQ into for correction
 NUMBLOCKS=$(${DORADODIR}/bin/dorado correct ${FQFILTERFILE} --compute-num-blocks)
 echo "NUMBLOCKS = ${NUMBLOCKS}"
 echo "${NUMBLOCKS}" > ${FQDIR}/numblocks.txt
