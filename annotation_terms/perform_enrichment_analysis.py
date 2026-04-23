@@ -194,6 +194,126 @@ def FDR_correction(testResults, pvalueIndex, ALPHA=0.05):
     
     return significantResults
 
+####
+# The functions within this block have been obtained from a single-use script, but are
+# useful for here in 1) improving the layout and handling of this script, and 2)
+# fixing a potential issue with how the contingency table is constructed.
+
+def make_contingeny_table(annotationDict, degIDs):
+    # Obtain our ID sets
+    fullSet = set(annotationDict.keys())
+    degSet = set([ x for x in degIDs if x in fullSet ])
+    
+    # Partition counts
+    topleft = sum([ 1 if annotationDict[x] == 1 else 0 for x in degSet ]) # ncRNA DEG
+    bottomleft = sum([ 1 if annotationDict[x] == 0 else 0 for x in degSet ]) # protein DEG
+    topright = sum([ 1 if annotationDict[x] == 1 else 0 for x in fullSet if not x in degSet ]) # ncRNA non-DEG
+    bottomright = sum([ 1 if annotationDict[x] == 0 else 0 for x in fullSet if not x in degSet ]) # protein non-DEG
+    
+    # Format the 2x2 table
+    contingencyTable = [
+            #  DEG     non-DEG
+            [topleft, topright],      # ncRNA
+            [bottomleft, bottomright] # protein
+        ]
+    
+    return contingencyTable
+
+def run_enrichment_test(contingencyTable, test="fisher"):
+    '''
+    Assumes a table where the left column are the DEGs and the first row
+    are proteins. Or in more general terms, the top left cell is the
+    "most important" value and the bottom right cell is the "least important"
+    value.
+    '''
+    (topleft, topright), (bottomleft, bottomright) = contingencyTable
+    
+    # Run the exact test
+    if test == "fisher":
+        statistic, p = fisher_exact(contingencyTable)
+    elif test == "boschloo":
+        statistic, p = boschloo_exact(contingencyTable)
+    else:
+        raise ValueError(f"run_enrichment_test doesn't know what a '{test}' is")
+    
+    # Figure out if it's over or underrepresented
+    leftRatio = topleft / (topleft + bottomleft)
+    rightRatio = topright / (topright + bottomright)
+    
+    if leftRatio > rightRatio:
+        representation = "over"
+    else:
+        representation = "under"
+    
+    return statistic, p, representation
+
+def print_contingency_table(contingencyTable, leftColLabel, rightColLabel, firstRowLabel, secondRowLabel):
+    (topleft, topright), (bottomleft, bottomright) = contingencyTable
+    
+    leftColWidth = max(len(leftColLabel), len(str(topleft)), len(str(bottomleft)))
+    rightColWidth = max(len(rightColLabel), len(str(topright)), len(str(bottomright)))
+    
+    border = "+-" + ("-"*leftColWidth) + "-+-" + ("-"*rightColWidth) + "-+"
+    header = "".join(["| ", # buffer left
+                    " "*(leftColWidth-len(leftColLabel)),
+                    leftColLabel,
+                    " | ",
+                    " "*(rightColWidth-len(rightColLabel)),
+                    rightColLabel,
+                    " |" # buffer right
+                    ])
+    row1 = "".join(["| ", # buffer left
+                    " "*(leftColWidth-len(str(topleft))),
+                    str(topleft),
+                    " | ",
+                    " "*(rightColWidth-len(str(topright))),
+                    str(topright),
+                    " |" # buffer right
+                    ])
+    row2 = "".join(["| ", # buffer left
+                    " "*(leftColWidth-len(str(bottomleft))),
+                    str(bottomleft),
+                    " | ",
+                    " "*(rightColWidth-len(str(bottomright))),
+                    str(bottomright),
+                    " |" # buffer right
+                    ])
+    
+    maxRowWidth = max(len(firstRowLabel), len(secondRowLabel))
+    
+    yspace = " "*(2 + maxRowWidth + 1)
+    yborder = "+-" + ("-"*maxRowWidth) + "-"
+    ylabel1 = "| " + " "*(maxRowWidth-len(firstRowLabel)) + firstRowLabel + " "
+    ylabel2 = "| " + " "*(maxRowWidth-len(secondRowLabel)) + secondRowLabel + " "
+    
+    formattedTable = [
+        yspace + border,
+        yspace + header,
+        yborder + border,
+        ylabel1 + row1,
+        yborder + border,
+        ylabel2 + row2,
+        yborder + border
+    ]
+    for line in formattedTable:
+        print(line)
+    return formattedTable
+
+def interpret_enrichment_test(table, p, representation, experiment,
+                              leftColLabel, rightColLabel, firstRowLabel, secondRowLabel,
+                              testApplied="Fisher's exact", pCutoff=0.05):
+    print(f"# Contigency table for {experiment}")
+    print_contingency_table(table, leftColLabel, rightColLabel, firstRowLabel, secondRowLabel)
+    if p > pCutoff:
+        print(f"> No statistical difference in '{firstRowLabel}' vs. '{secondRowLabel}' proportions " + 
+              f"between the '{leftColLabel}' and {rightColLabel} groups")
+    else:
+        print(f"> '{firstRowLabel}' is {representation}represented relative to '{secondRowLabel}' " + 
+              f"when comparing the '{leftColLabel}' and {rightColLabel} groups")
+        print(f"> {testApplied} P-value = {p}")
+
+#####
+
 def main():
     # User input
     usage = """%(prog)s receives an annotation TSV pairing keys (e.g., orthogroups, gene families, DEGs, etc.)
@@ -245,6 +365,8 @@ def main():
                    default=False)
     args = p.parse_args()
     validate_args(args)
+    
+    raise NotImplementedError("This script needs to be redone, I have reason to believe it is faulty")
     
     # Parse the annotation TSV file
     annotDict = parse_annotation_file(args.annotationTSV, args.annotationDelimiter,
