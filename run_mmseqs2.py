@@ -140,7 +140,7 @@ def runmms2(mmseqs2dir, queryDB, targetDB, tmpdir, searchName, searchType, param
         params = [evalue, threads, num_iterations, sensitivity, alt_ali]
         '''
         assert searchType in ["auto", "blastn", "tblastx"]
-        searchType = "0" if searchType == "auto" else "2" if searchType == "blastn" else "3"
+        searchType = "0" if searchType == "auto" else "2" if searchType == "tblastx" else "3"
         
         import os, subprocess
         # Format command
