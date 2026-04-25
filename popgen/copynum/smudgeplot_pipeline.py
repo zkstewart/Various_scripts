@@ -221,7 +221,7 @@ def fastk_pipeline(smudgeplotDir, kmerDir, fastaqsDir, pair, samplePrefix, args)
     # Run FastK
     fastkTableFile = os.path.join(kmerDir, samplePrefix + "_table")
     if not os.path.exists(fastkTableFile + ".hist") and not os.path.exists(fastkTableFile + ".ktab"):
-        run_fastk(reads, fastkTableFile, args.cpus, args.mem, args.fastk, args.tmpDir)
+        run_fastk(reads, fastkTableFile, args.cpus, args.mem, args.fastk, args.tmpPath)
     else:
         print(f"FastK has already been run for '{samplePrefix}'; skipping.")
     
@@ -545,9 +545,8 @@ def main():
                    default == 64""",
                    default=64)
     # Opts (behavioural)
-    p.add_argument("--tmp", dest="tmpDir",
+    p.add_argument("--tmp", dest="tmpPath",
                    required=False,
-                   type=int,
                    help="""If using FastK, specify the directory to write temporary files
                    to; default == '/scratch/stewarz2/tmp'""",
                    default="/scratch/stewarz2/tmp")
