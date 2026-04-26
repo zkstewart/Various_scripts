@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #PBS -N markdup
 #PBS -l walltime=06:00:00
-#PBS -l mem=20G
+#PBS -l mem=60G
 #PBS -l ncpus=1
 #PBS -J 1-X
 
