@@ -39,7 +39,9 @@ bcftools mpileup -Ou -f ${GENOMEDIR}/${GENOME} \
     ${BAMFILE} | bcftools call -m --gvcf 0 -Oz -o ${BASEPREFIX}.gvcf.gz
 
 # STEP 4: Normalise variant call positions
-bcftools norm -f ${GENOMEDIR}/${GENOME} ${BASEPREFIX}.gvcf.gz > ${BASEPREFIX}.norm.gvcf.gz
+bcftools norm -f ${GENOMEDIR}/${GENOME} \
+    -Oz -o ${BASEPREFIX}.norm.gvcf.gz \
+    ${BASEPREFIX}.gvcf.gz
 
 # STEP 5: Index files
 tabix ${BASEPREFIX}.norm.gvcf.gz
