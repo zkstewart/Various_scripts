@@ -11,10 +11,9 @@ cd $PBS_O_WORKDIR
 # Specify BWA executable location
 BWADIR=/home/stewarz2/various_programs/bwa
 
-# Specify FASTA location
-FASTADIR=/home/stewarz2/plant_group/ted/genome
-FASTAFILE=CMJ.v1.0.gene.model_isos.trans
+# Specify reference genome FASTA location
+GENOMEFASTA=/work/ePGL/genomes/mango/indica/CATAS_Mindica_2.1/alphonso_catas_2.1.fasta
 
 ####
 
-${BWADIR}/bwa index ${FASTADIR}/${FASTAFILE}
+${BWADIR}/bwa index ${GENOMEFASTA}

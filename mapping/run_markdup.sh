@@ -10,6 +10,8 @@ cd $PBS_O_WORKDIR
 module load picard/3.0.0-Java-17
 
 ####
+# No parameters required; should run automatically
+####
 
 declare -i count
 count=0
