@@ -19,7 +19,7 @@ COMPLEASMDB=${COMPLEASMDIR}/db
 CPUS=14
 
 # Specify lineage to search
-LINEAGE=eudicots
+LINEAGE=eudicotyledons
 
 ####
 
