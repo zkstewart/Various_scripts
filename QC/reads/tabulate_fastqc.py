@@ -3,7 +3,7 @@
 # Simple script to read in the output directories from
 # FASTQC and tabulate the results for easy understanding
 
-import os, argparse, re
+import os, argparse, re, zipfile
 import pandas as pd
 from xlsxwriter.utility import xl_col_to_name
 
@@ -34,7 +34,7 @@ def validate_args(args):
         raise FileNotFoundError(f"Output directory does not exist ({os.path.dirname(args.outputFileName)}). " +
                                 "Make sure you specify a parent directory for your output file which already exists.")
 
-def parse_fcq_file(fqcFile):
+def parse_fqc_html(fqcFile):
     '''
     Parameters:
         fqcFile -- a string with the path to a FASTQC output file
@@ -69,6 +69,48 @@ def parse_fcq_file(fqcFile):
     
     return statsDict
 
+def parse_fqc_zip(zipFile):
+    '''
+    Parameters:
+        zipFile -- a string with the path to a FASTQC output file
+    Returns:
+        statsDict -- a dictionary with the following keys:
+                     total_reads, low_quality_reads, per_base_sequence_quality, per_tile_sequence_quality,
+                     per_sequence_quality_scores, per_base_sequence_content, per_sequence_gc_content,
+                     per_base_n_content, sequence_length_distribution, sequence_duplication_levels,
+                     overrepresented_sequences, adapter_content
+    '''
+    numbp = 0
+    with zipfile.ZipFile(zipFile, "r") as archive:
+        subfolderName = os.path.basename(zipFile).rsplit(".", maxsplit=1)[0]
+        contents = archive.read(os.path.join(subfolderName, "fastqc_data.txt"))
+        contents = contents.decode("utf-8")
+        
+        retain = False
+        for line in contents.split("\n"):
+            if line.startswith("#"):
+                continue
+            
+            if line.startswith(">>Sequence Length Distribution"):
+                retain = True
+                continue
+            if retain:
+                if line.startswith(">>END_MODULE"):
+                    retain = False
+                    continue
+                
+                # Parse out info
+                numrange, numreads = line.split("\t")
+                if "-" in numrange:
+                    start, end = map(int, numrange.split("-"))
+                    num = (start + end) / 2
+                else:
+                    num = int(numrange)
+                
+                numbp += num * float(numreads)
+    
+    return int(numbp)
+
 def get_results_from_fqc_files(fqcFiles):
     '''
     Parameters:
@@ -90,10 +132,17 @@ def get_results_from_fqc_files(fqcFiles):
     reverseDict = {}
     
     # Parse all files
-    for sample, (fHtml, rHtml) in fqcFiles.items():
+    for sample, ((fHtml, rHtml), (fZip, rZip)) in fqcFiles.items():
         # Parse forward/reverse reports
-        fDict = parse_fcq_file(fHtml)
-        rDict = parse_fcq_file(rHtml)
+        fDict = parse_fqc_html(fHtml)
+        rDict = parse_fqc_html(rHtml)
+        
+        # Parse forward/reverse zips
+        fBasePairs = parse_fqc_zip(fZip)
+        fDict["approx_bp"] = fBasePairs
+        
+        rBasePairs = parse_fqc_zip(rZip)
+        rDict["approx_bp"] = rBasePairs
         
         # Store in larger dictionary
         forwardDict[sample] = fDict
@@ -102,6 +151,13 @@ def get_results_from_fqc_files(fqcFiles):
     # Convert to table
     forwardTable = pd.DataFrame(forwardDict).T
     reverseTable = pd.DataFrame(reverseDict).T
+    
+    # Move position of the 'approx_bp' column
+    forwardApprox = forwardTable.pop("approx_bp")
+    forwardTable.insert(1, 'approx_bp', forwardApprox)
+    
+    reverseApprox = reverseTable.pop("approx_bp")
+    reverseTable.insert(1, 'approx_bp', reverseApprox)
     
     return forwardTable, reverseTable
 
@@ -174,8 +230,14 @@ def main():
                 commonPrefix = os.path.commonprefix(htmlFiles)
                 htmlFiles.sort(key=lambda x: int(x.replace(commonPrefix, "")[0]))
             
+            # Get the .zip files
+            zipFiles = [ f.rsplit(".", maxsplit=1)[0] + ".zip" for f in htmlFiles ]
+            
             # Store in dictionary
-            fqcFiles[os.path.basename(directory)] = [ os.path.join(directory, f) for f in htmlFiles ]
+            fqcFiles[os.path.basename(directory)] = [ 
+                [ os.path.join(directory, f) for f in htmlFiles ],
+                [ os.path.join(directory, f) for f in zipFiles ]
+            ]
     
     # Parse all files
     forwardTable, reverseTable = get_results_from_fqc_files(fqcFiles)
