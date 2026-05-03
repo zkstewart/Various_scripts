@@ -9,6 +9,11 @@ def validate_args(args):
     if not os.path.isfile(args.pcaFile):
         raise FileNotFoundError(f"-i value '{args.pcaFile}' is not a file or could not be located.")
     
+    # Validate numeric arguments
+    if args.pcsToPlot != []:
+        if len(args.pcsToPlot) == 1:
+            raise ValueError(f"Cannot plot a single component; provide at least 2!")
+    
     # Validate output file
     if not args.outputFileName.endswith(".html"):
         raise ValueError(f"-o value '{args.outputFileName}' must end in .html")
@@ -140,7 +145,25 @@ def main():
             raise ValueError("The lowest value given to --pcs should be 1")
     
     # Generate the plot
-    if len(pcdimensions) > 2:
+    if len(pcdimensions) == 2:
+        fig = px.scatter(
+            df,
+            labels=pclabels,
+            x=pcdimensions[0],
+            y=pcdimensions[1],
+            color=colourGroups,
+            hover_name=sampleOrder
+        )
+    elif len(pcdimensions) == 3:
+        fig = px.scatter_3d(
+            df,
+            x=pcdimensions[0], y=pcdimensions[1], z=pcdimensions[2],
+            labels=pclabels,
+            color=colourGroups,
+            hover_name=sampleOrder,
+            hover_data=phenoLabels
+        )
+    else:
         fig = px.scatter_matrix(
             df,
             labels=pclabels,
@@ -150,15 +173,6 @@ def main():
             hover_data=phenoLabels
         )
         fig.update_traces(diagonal_visible=False)
-    else:
-        fig = px.scatter(
-            df,
-            labels=pclabels,
-            x=pcdimensions[0],
-            y=pcdimensions[1],
-            color=colourGroups,
-            hover_name=sampleOrder
-        )
     
     fig.write_html(args.outputFileName)
     
