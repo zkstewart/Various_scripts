@@ -148,7 +148,7 @@ def get_results_from_fqc_files(fqcFiles):
         try:
             rDict = parse_fqc_html(rHtml)
         except:
-            pass
+            rDict = None
         
         # Parse forward/reverse zips
         fBasePairs = parse_fqc_zip(fZip)
@@ -158,12 +158,13 @@ def get_results_from_fqc_files(fqcFiles):
             rBasePairs = parse_fqc_zip(rZip)
             rDict["approx_bp"] = rBasePairs
         except:
-            pass
+            rDict = None
         
         # Store in larger dictionary
         forwardDict[sample] = fDict
         try:
-            reverseDict[sample] = rDict
+            if rDict != None:
+                reverseDict[sample] = rDict
         except:
             pass
     
