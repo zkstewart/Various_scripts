@@ -132,38 +132,65 @@ def get_results_from_fqc_files(fqcFiles):
     reverseDict = {}
     
     # Parse all files
-    for sample, ((fHtml, rHtml), (fZip, rZip)) in fqcFiles.items():
+    for sample, (html, zip) in fqcFiles.items():
+        if len(html) == 2:
+            fHtml, rHtml = html
+        else:
+            fHtml = html[0]
+        
+        if len(zip) == 2:
+            fZip, rZip = zip
+        else:
+            fZip = zip[0]
+        
         # Parse forward/reverse reports
         fDict = parse_fqc_html(fHtml)
-        rDict = parse_fqc_html(rHtml)
+        try:
+            rDict = parse_fqc_html(rHtml)
+        except:
+            pass
         
         # Parse forward/reverse zips
         fBasePairs = parse_fqc_zip(fZip)
         fDict["approx_bp"] = fBasePairs
         
-        rBasePairs = parse_fqc_zip(rZip)
-        rDict["approx_bp"] = rBasePairs
+        try:
+            rBasePairs = parse_fqc_zip(rZip)
+            rDict["approx_bp"] = rBasePairs
+        except:
+            pass
         
         # Store in larger dictionary
         forwardDict[sample] = fDict
-        reverseDict[sample] = rDict
+        try:
+            reverseDict[sample] = rDict
+        except:
+            pass
     
     # Convert to table
     forwardTable = pd.DataFrame(forwardDict).T
-    reverseTable = pd.DataFrame(reverseDict).T
+    if reverseDict != {}:
+        reverseTable = pd.DataFrame(reverseDict).T
     
     # Move position of the 'approx_bp' column
     forwardApprox = forwardTable.pop("approx_bp")
     forwardTable.insert(1, 'approx_bp', forwardApprox)
     
-    reverseApprox = reverseTable.pop("approx_bp")
-    reverseTable.insert(1, 'approx_bp', reverseApprox)
+    if reverseDict != {}:
+        reverseApprox = reverseTable.pop("approx_bp")
+        reverseTable.insert(1, 'approx_bp', reverseApprox)
+    else:
+        reverseTable = None
     
     return forwardTable, reverseTable
 
 def write_tables_to_excel(forwardTable, reverseTable, outputFileName):
     writer = pd.ExcelWriter(outputFileName, engine = "xlsxwriter")
     for table, sheetName in zip([forwardTable, reverseTable], ["Forward Reads", "Reverse Reads"]):
+        # Skip blank table (means there is no reverse read i.e., single end)
+        if table == None:
+            continue
+        
         table.to_excel(writer, sheet_name = sheetName)
         workbook = writer.book
         worksheet = writer.sheets[sheetName]
