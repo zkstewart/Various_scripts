@@ -49,6 +49,13 @@ def validate_args(args):
     if not os.path.isdir(parentDir):
         raise ValueError(f"The -o output location '{args.outputFileName}' points to a non-existent parent directory '{parentDir}'")
 
+def is_floatable(x):
+    try:
+        float(x)
+        return True
+    except:
+        return False
+
 def parse_coldata_file(fileName, groupingVariables):
     sampleGroups = {}
     with open(fileName, "r") as fileIn:
@@ -65,13 +72,35 @@ def parse_coldata_file(fileName, groupingVariables):
                         raise ValueError(f"-g value '{variable}' does not occur in the coldata header ({header})")
                 firstLine = False
             else:
-                group = "-".join([ sl[i] for i in groupIndices ])
-                sampleGroups.setdefault(group, set())
-                sampleGroups[group].add(sl[0]) # first column is expected to be the sample
-    return sampleGroups
+                groupParts = tuple(( sl[i] for i in groupIndices ))
+                
+                sampleGroups.setdefault(groupParts, set())
+                sampleGroups[groupParts].add(sl[0]) # first column is expected to be the sample
+    
+    # Figure out how we can sort the group parts in a logical way
+    sortingTypes = []
+    for parts in zip(*sampleGroups.keys()):
+        if all([ p.isdigit() for p in parts ]):
+            sortingTypes.append(int)
+        elif all([ is_floatable(p) for p in parts ]):
+            sortingTypes.append(float)
+        else:
+            sortingTypes.append(str)
+    
+    # Produce sorted groups that are not broken up into parts
+    keys = list(sampleGroups.keys())
+    keys.sort(key = lambda x: [sortingTypes[i](y) for i, y in enumerate(x)])
+    
+    # Produce a modified dict with ordered keys
+    sortedSampleGroups = {}
+    for groupParts in keys:
+        group = "-".join(groupParts)
+        sortedSampleGroups[group] = sampleGroups[groupParts]
+    
+    return sortedSampleGroups
 
 def parse_deseq2_file(fileName, fileSuffix):
-    IGNORE = ["baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"]
+    IGNORE = ["baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue"]
     
     # Derive the comparison name
     comparison = os.path.basename(fileName).rsplit(fileSuffix, maxsplit=1)[0]
@@ -182,13 +211,26 @@ def main():
     comparisons = {}
     for fileName in args.files:
         genesDict, comparison = parse_deseq2_file(fileName, args.inputSuffix)
-        genes.update(genesDict)
-        comparisons[comparison] = set(genesDict.keys())
+        genes.update({ g: {} for g in genesDict.keys() })
+        comparisons[comparison] = genesDict
     
     # Format a dictionary for df conversion
-    for comparison, geneSet in comparisons.items():
-        for gene, geneDict in genes.items():
-            genes[gene][comparison] = "Y" if gene in geneSet else "."
+    for comparison, genesDict in comparisons.items():
+        for gene in genes.keys():
+            if gene in genesDict:
+                geneDetails = genesDict[gene]
+                
+                # Handle P-value
+                genes[gene][comparison] = ["padj"]
+                
+                # Handle all non-Pvalue keys (expected to be redundant)
+                for key, value in geneDetails.items():
+                    if key == "padj":
+                        genes[gene][comparison] = geneDetails["padj"]
+                    else:
+                        genes[gene][key] = value
+            else:
+                genes[gene][comparison] = "."
     df = pd.DataFrame.from_dict(genes, orient="index")
     
     # Parse the normalised counts
