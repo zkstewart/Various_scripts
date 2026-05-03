@@ -130,12 +130,9 @@ def main():
         if not args.colourColumn in phenoLabels:
             raise ValueError(f"--colour value '{args.colourColumn}' not found in PCA metadata columns ({phenoLabels})")
         
-        pclabels["color"] = args.colourColumn
-        
-        colourGroups = [
-            pcaDict[sampleID]["phenos"][phenoLabels.index(args.colourColumn)]
-            for sampleID in sampleOrder
-        ]
+        colourOrder = sorted(pd.unique(df[args.colourColumn]))
+    else:
+        colourOrder = None
     
     if args.pcsToPlot == []:
         pcdimensions = range(len(pcaDict[exampleSampleID]["pcs"]))
@@ -151,7 +148,8 @@ def main():
             labels=pclabels,
             x=pcdimensions[0],
             y=pcdimensions[1],
-            color=colourGroups,
+            color=args.colourColumn if args.colourColumn != None else None,
+            category_orders={args.colourColumn: colourOrder} if args.colourColumn != None else None,
             hover_name=sampleOrder
         )
     elif len(pcdimensions) == 3:
@@ -159,7 +157,8 @@ def main():
             df,
             x=pcdimensions[0], y=pcdimensions[1], z=pcdimensions[2],
             labels=pclabels,
-            color=colourGroups,
+            color=args.colourColumn if args.colourColumn != None else None,
+            category_orders={args.colourColumn: colourOrder} if args.colourColumn != None else None,
             hover_name=sampleOrder,
             hover_data=phenoLabels
         )
@@ -168,7 +167,8 @@ def main():
             df,
             labels=pclabels,
             dimensions=pcdimensions,
-            color=colourGroups,
+            color=args.colourColumn if args.colourColumn != None else None,
+            category_orders={args.colourColumn: colourOrder} if args.colourColumn != None else None,
             hover_name=sampleOrder,
             hover_data=phenoLabels
         )
