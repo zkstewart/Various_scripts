@@ -188,7 +188,7 @@ def write_tables_to_excel(forwardTable, reverseTable, outputFileName):
     writer = pd.ExcelWriter(outputFileName, engine = "xlsxwriter")
     for table, sheetName in zip([forwardTable, reverseTable], ["Forward Reads", "Reverse Reads"]):
         # Skip blank table (means there is no reverse read i.e., single end)
-        if table == None:
+        if table is None:
             continue
         
         table.to_excel(writer, sheet_name = sheetName)
