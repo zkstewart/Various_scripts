@@ -1,19 +1,24 @@
-#! python3
+#!/usr/bin/env python3
 
 import os, argparse, re
 
-# Define functions for later use
-## Argument validation
+class DirectoryNotFoundError(Exception):
+    pass
+
+# Define functions
 def validate_args(args):
     # Validate input location
+    args.readsDir = os.path.abspath(args.readsDir)
     if not os.path.isdir(args.readsDir):
-        print('I am unable to locate the input FASTQs directory (' + args.readsDir + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
-    # Handle file overwrites
-    if os.path.isfile(args.outputFileName):
-        print(args.outputFileName + ' already exists. Specify a different output file name or delete, move, or rename this file and run the program again.')
-        quit()
+        raise DirectoryNotFoundError(f"-i '{args.readsDir}' does not exist or is not a directory!")
+    
+    # Handle output file location
+    args.outputFileName = os.path.abspath(args.outputFileName)
+    if os.path.exists(args.outputFileName):
+        raise FileExistsError(f"-o file ('{args.outputFileName}') already exists and will not be overwritten!")
+    parentDir = os.path.dirname(args.outputFileName)
+    if not os.path.isdir(parentDir):
+        raise ValueError(f"-o cannot write to '{args.outputFileName}' as its parent directory ({parentDir}) does not exist!")
 
 def get_rnaseq_files(readsDir, readsSuffix, isSingleEnd):
     # Locate files from the directory
@@ -106,7 +111,11 @@ def main():
     qsubbed to concatenate the FASTQs into a single forward/reverse file
     per sample.
     
-    Some notes: laneIdentifier by default is "_L00", which means we can expect
+    For -rs: the character in the file name immediately preceding this suffix
+    should be either '1' or '2' for paired end reads. If specifying
+    --singleEnd there is no requirement for a digit to immediately precede the suffix.
+    
+    For --laneIdentifier: the default is "_L00", which means we can expect
     files from different lanes to have values like "_L001" and "_L002" for example.
     Otherwise, these file names should have no differences.
     """
@@ -124,6 +133,12 @@ def main():
                    required=False,
                    help="Optionally specify shell script name (default==run_read_prep.sh)",
                    default="run_read_prep.sh")
+    p.add_argument("--nosymlink", dest="nosymlink",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally indicate whether the reads should ALWAYS be 'cat' copied, or if
+                   single lane datasets can simply be symlinked (which is the default behaviour)""",
+                   default=False)
     p.add_argument("--singleEnd", dest="isSingleEnd",
                    required=False,
                    action="store_true",
@@ -152,7 +167,7 @@ def main():
         # Format forward read commands
         forwardGroup = forwardReadGroups[i]
         
-        if len(forwardGroup) > 1:
+        if len(forwardGroup) > 1 or args.nosymlink:
             prefix = os.path.commonprefix([
                 laneRegex.split(os.path.basename(f))[0].rstrip("_")
                     for f in forwardGroup
@@ -176,8 +191,7 @@ def main():
             )
             catCmds.append(cmd1)
         else:
-            print(f"Error: no forward files (_1) found for a group; this shouldn't be possible?")
-            quit()
+            raise ValueError(f"Error: no forward files (_1) found for a group; this shouldn't be possible?")
         
         # Format reverse read commands
         reverseGroup = reverseReadGroups[i]
@@ -206,9 +220,8 @@ def main():
             )
             catCmds.append(cmd2)
         else:
-            print(f"Error: no reverse files (_2) found for a group; this shouldn't be possible?")
-            quit()
-    
+            raise ValueError(f"Error: no reverse files (_2) found for a group; this shouldn't be possible?")
+        
     # Write the script file
     script = f'''#!/bin/bash -l
 #PBS -N prep_reads
