@@ -1,8 +1,6 @@
-#! python3
+#!/usr/bin/env python3
 # variant_calling_pipeline.py
 # Script to call variants using the bcftools mpileup -> call pipeline.
-# Has some extra optional features like phasing with WhatsHap and
-# generating per-variant or per-sequence reports.
 
 import os, argparse, sys, re, subprocess
 
