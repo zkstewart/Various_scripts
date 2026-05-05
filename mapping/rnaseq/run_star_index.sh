@@ -6,30 +6,28 @@
 
 cd $PBS_O_WORKDIR
 
-## MANUAL SETUP BELOW
+####
 
-# >> SETUP: Specify STAR executable location
+# Specify STAR executable location
 STARDIR=/home/stewarz2/various_programs/STAR-2.7.11b/bin
 
-# >> SETUP: Specify genome location
-GENDIR=/home/stewarz2/plant_group/leena/genome
-GENFILE=NbLab360.genome.fasta
+# Specify genome file name
+GENOME=/home/stewarz2/plant_group/leena/genome/NbLab360.genome.fasta
 
-# >> SETUP: Specify gene annotation GTF location
+# Specify gene annotation GTF location
 ## If you have a GFF3, convert it to GTF with agat_convert_sp_gff2gtf.pl
-GTFDIR=/home/stewarz2/plant_group/leena/annotation
-GTFFILE=NbLab360.v103.gtf
+GTF=/home/stewarz2/plant_group/leena/annotation/NbLab360.v103.gtf
 
-# >> SETUP: Specify computational resources
+# Specify computational resources
 CPUS=1
 
-## MANUAL SETUP END
+# Specify output directory for the index
+INDEXDIR=STAR_gtf_index
 
-## RUN PROGRAM
-# STEP 1: Copy genome here and index it
-cp ${GENDIR}/${GENFILE} .
+####
+
 ${STARDIR}/STAR --runThreadN ${CPUS} \
-	--runMode genomeGenerate \
-	--genomeDir ${PBS_O_WORKDIR} \
-	--genomeFastaFiles ${GENFILE} \
-	--sjdbGTFfile ${GTFDIR}/${GTFFILE}
+                --runMode genomeGenerate \
+                --genomeDir ${INDEXDIR} \
+                --genomeFastaFiles ${GENOME} \
+                --sjdbGTFfile ${GTFDIR}/${GTFFILE}
