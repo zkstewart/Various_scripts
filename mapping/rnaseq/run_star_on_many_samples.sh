@@ -3,27 +3,27 @@
 #PBS -l walltime=04:00:00
 #PBS -l mem=100G
 #PBS -l ncpus=4
-#PBS -J 1-12
+#PBS -J 1-X
 
 cd $PBS_O_WORKDIR
 
-## MANUAL SETUP BELOW
+####
 
-# >> SETUP: Specify STAR executable location
+# Specify STAR executable location
 STARDIR=/home/stewarz2/various_programs/STAR-2.7.10a/bin/Linux_x86_64_static
 
-# >> SETUP: Specify reads location & file suffix
-## For the suffix, it's assumed that just prior to the given string there
-## is the 1 / 2 suffix differentiating forward / reverse reads
-READSDIR=/home/stewarz2/plant_group/leena/analysis_2/rnaseq_reads
-SUFFIX=.fq.gz
+# Specify reference index directory
+INDEXDIR=/work/ePGL/genomes/mango/indica/CATAS_Mindica_2.1/STAR_gtf_index
 
-# >> SETUP: Specify computational resources
+# Specify reads location & file suffix
+READSDIR=/scratch/stewarz2/mapping_steph/trimmed_reads
+SUFFIX=P.fq.gz
+
+# Specify computational resources
 CPUS=4
 
-## MANUAL SETUP END
+####
 
-## RUN PROGRAM
 # STEP 1: Locate all read prefixes for mapping
 declare -a RNAPREFIXES
 i=0
@@ -44,7 +44,7 @@ cd ${BASENAME}
 # STEP 4: Run mapping procedure for each sample
 ## We set up cmds in an array so we can conditionally add something to it
 cmd=(${STARDIR}/STAR --runThreadN ${CPUS} \
-        --genomeDir ${PBS_O_WORKDIR} \
+        --genomeDir ${INDEXDIR} \
         --readFilesIn ${PREFIX}1${SUFFIX} ${PREFIX}2${SUFFIX} \
         --outSAMtype BAM SortedByCoordinate \
         --outSAMunmapped Within \
