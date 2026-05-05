@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #PBS -N fixedCOY18436
-#PBS -l walltime=64:00:00
+#PBS -l walltime=48:00:00
 #PBS -l mem=35G
 #PBS -l ncpus=1
 
