@@ -1,16 +1,15 @@
 #!/bin/bash -l
 #PBS -N star
 #PBS -l walltime=04:00:00
-#PBS -l mem=100G
+#PBS -l mem=20G
 #PBS -l ncpus=4
 #PBS -J 1-X
 
 cd $PBS_O_WORKDIR
 
-####
+module load STAR/2.7.11b
 
-# Specify STAR executable location
-STARDIR=/home/stewarz2/various_programs/STAR-2.7.10a/bin/Linux_x86_64_static
+####
 
 # Specify reference index directory
 INDEXDIR=/work/ePGL/genomes/mango/indica/CATAS_Mindica_2.1/STAR_gtf_index
@@ -43,12 +42,12 @@ cd ${BASENAME}
 
 # STEP 4: Run mapping procedure for each sample
 ## We set up cmds in an array so we can conditionally add something to it
-cmd=(${STARDIR}/STAR --runThreadN ${CPUS} \
-        --genomeDir ${INDEXDIR} \
-        --readFilesIn ${PREFIX}1${SUFFIX} ${PREFIX}2${SUFFIX} \
-        --outSAMtype BAM SortedByCoordinate \
-        --outSAMunmapped Within \
-        --quantMode TranscriptomeSAM GeneCounts)
+cmd=(STAR --runThreadN ${CPUS} \
+          --genomeDir ${INDEXDIR} \
+          --readFilesIn ${PREFIX}1${SUFFIX} ${PREFIX}2${SUFFIX} \
+          --outSAMtype BAM SortedByCoordinate \
+          --outSAMunmapped Within \
+          --quantMode TranscriptomeSAM GeneCounts)
 if [[ ${SUFFIX} == *.gz ]] ; then
 	cmd+=(--readFilesCommand zcat);
 fi;

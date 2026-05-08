@@ -6,28 +6,27 @@
 
 cd $PBS_O_WORKDIR
 
+module load STAR/2.7.11b
+
 ####
 
-# Specify STAR executable location
-STARDIR=/home/stewarz2/various_programs/STAR-2.7.11b/bin
-
 # Specify genome file name
-GENOME=/home/stewarz2/plant_group/leena/genome/NbLab360.genome.fasta
+GENOME=alphonso_catas_2.1.fasta
 
 # Specify gene annotation GTF location
-## If you have a GFF3, convert it to GTF with agat_convert_sp_gff2gtf.pl
-GTF=/home/stewarz2/plant_group/leena/annotation/NbLab360.v103.gtf
+## Convert GFF3 to GTF like: agat_convert_sp_gff2gtf.pl --gff input.gff3 -o output.gtf
+GTF=alphonso_catas_2.1.gtf
 
 # Specify computational resources
 CPUS=1
 
 # Specify output directory for the index
-INDEXDIR=STAR_gtf_index
+INDEXDIR=/work/ePGL/genomes/mango/indica/CATAS_Mindica_2.1/STAR_gtf_index
 
 ####
 
-${STARDIR}/STAR --runThreadN ${CPUS} \
-                --runMode genomeGenerate \
-                --genomeDir ${INDEXDIR} \
-                --genomeFastaFiles ${GENOME} \
-                --sjdbGTFfile ${GTFDIR}/${GTFFILE}
+STAR --runThreadN ${CPUS} \
+     --runMode genomeGenerate \
+     --genomeDir ${INDEXDIR} \
+     --genomeFastaFiles ${GENOME} \
+     --sjdbGTFfile ${GTF}
