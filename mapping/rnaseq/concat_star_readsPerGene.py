@@ -1,22 +1,29 @@
 #! python3
-# merge_star_stats.py
-# A simple python program to combine STAR output ReadsPerGene.out.tab
-# files into a table that's amenable to my way of doing DGE analysis
+# concat_star_readsPerGene.py
+# Combines STAR output ReadsPerGene.out.tab files into a table that's amenable
+# to DGE analysis
 
 import os, argparse
+
+class DirectoryNotFoundError(Exception):
+    pass
 
 # Define functions
 def validate_args(args):
     # Validate input file locations
+    args.starOutputsDir = os.path.abspath(args.starOutputsDir)
     if not os.path.isdir(args.starOutputsDir):
-        print('I am unable to locate the parent directory where STAR subdirectories are (' + args.starOutputsDir + ')')
-        print('Make sure you\'ve typed the file name or location correctly and try again.')
-        quit()
+        raise DirectoryNotFoundError(f"-i location '{args.starOutputsDir}' does not exist or is not a directory!")
+    
     # Validate output file location
+    args.outputFileName = os.path.abspath(args.outputFileName)
     if os.path.isfile(args.outputFileName):
-        print('File already exists at output location (' + args.outputFileName + ')')
-        print('Make sure you specify a unique file name and try again.')
-        quit()
+        raise FileExistsError(f"-o file '{args.outputFileName}' already exists and will not be overwritten!")
+    
+    parentDir = os.path.dirname(args.outputFileName)
+    if not os.path.isdir(parentDir):
+        raise DirectoryNotFoundError(f"-o file '{args.outputFileName}' cannot be written as its parent directory " + 
+                                     f"({parentDir}) does not exist!")
 
 def get_counts_from_files(countsFiles):
     '''
@@ -76,14 +83,16 @@ def main():
     # User input
     usage = """%(prog)s accepts a directory containing subdirectories that house
     STAR output files, notably the ReadsPerGene.out.tab file, and writes a condensed
-    table of read counts to the specified output file.
+    table of read counts to the specified output location.
     """
     p = argparse.ArgumentParser(description=usage)
     ## Required
-    p.add_argument("-i", dest="starOutputsDir", required=True,
-        help="Input directory containing subdirectories where STAR was run")
-    p.add_argument("-o", dest="outputFileName", required=True,
-        help="Output file name for the reads count table")
+    p.add_argument("-i", dest="starOutputsDir",
+                   required=True,
+                   help="Input directory containing subdirectories where STAR was run")
+    p.add_argument("-o", dest="outputFileName",
+                   required=True,
+                   help="Output file name for the reads count table")
     
     args = p.parse_args()
     validate_args(args)
@@ -105,7 +114,6 @@ def main():
     with open(args.outputFileName, "w") as fileOut:
         fileOut.write("\n".join(statsTable))
     
-    # Alert user to program success
     print("Program completed successfully!")
 
 if __name__ == "__main__":
