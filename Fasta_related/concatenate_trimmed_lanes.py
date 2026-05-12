@@ -196,7 +196,7 @@ def main():
         # Format reverse read commands
         reverseGroup = reverseReadGroups[i]
         
-        if len(reverseGroup) > 1:
+        if len(reverseGroup) > 1 or args.nosymlink:
             prefix = os.path.commonprefix([
                 laneRegex.split(os.path.basename(f))[0].rstrip("_")
                     for f in reverseGroup
