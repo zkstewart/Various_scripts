@@ -97,6 +97,13 @@ def main():
                    help="""Optionally, specify the column index to insert data values
                    at (default=1)""",
                    default=1)
+    p.add_argument("--allowNoBlast", dest="allowNoBlast",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, provide this flag to allow missing values in the -a file
+                   to be handled rather than raising an error (which may indicate a genuine
+                   unexpected missing datapoint)""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
@@ -112,7 +119,10 @@ def main():
             df = pd.read_csv(file, sep="\t")
             df.rename(columns={"Unnamed: 0": "gene_id"}, inplace=True)
             for col in args.dataColumns[::-1]:
-                df.insert(args.insertIndex, col, [ annot[x][col] for x in df["gene_id"] ])
+                if args.allowNoBlast:
+                    df.insert(args.insertIndex, col, [ annot[x][col] if x in annot else "." for x in df["gene_id"]  ])
+                else:
+                    df.insert(args.insertIndex, col, [ annot[x][col] for x in df["gene_id"] ])
             df.to_csv(outputFileName, sep="\t", index=False)
         else:
             print(f"# WARNING: '{file}' appears to have an existing modified file at '{outputFileName}'; skipping ...")
