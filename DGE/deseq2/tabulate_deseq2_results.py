@@ -40,6 +40,12 @@ def validate_args(args):
     if not os.path.isfile(args.normalisedCountsFileName):
         raise FileNotFoundError(f"-n '{args.normalisedCountsFileName}' is not a file or does not exist!")
     
+    # Validate optional WGCNA directory location
+    if args.wgcnaDir != None:
+        args.wgcnaDir = os.path.abspath(args.wgcnaDir)
+        if not os.path.isdir(args.wgcnaDir):
+            raise FileNotFoundError(f"--wgcna '{args.wgcnaDir}' is not a directory or does not exist!")
+    
     # Validate output file location
     args.outputFileName = os.path.abspath(args.outputFileName)
     if os.path.exists(args.outputFileName):
@@ -55,6 +61,12 @@ def is_floatable(x):
         return True
     except:
         return False
+
+def make_sample_rcompatible(sample):
+    sample = sample.replace("-", ".") # R will change hyphens to dots internally
+    if sample[0].isdigit():
+        sample = "X" + sample # R will also add an 'X' prior to a sample identifier that starts with a digit
+    return sample
 
 def parse_coldata_file(fileName, groupingVariables):
     sampleGroups = {}
@@ -75,7 +87,7 @@ def parse_coldata_file(fileName, groupingVariables):
                 groupParts = tuple(( sl[i] for i in groupIndices ))
                 
                 sampleGroups.setdefault(groupParts, set())
-                sampleGroups[groupParts].add(sl[0]) # first column is expected to be the sample
+                sampleGroups[groupParts].add(make_sample_rcompatible(sl[0])) # first column is expected to be the sample
     
     # Figure out how we can sort the group parts in a logical way
     sortingTypes = []
@@ -161,6 +173,24 @@ def parse_normalised_counts(fileName, sampleGroups, toParse=None):
     
     return countsDf
 
+def parse_table_to_dict(fileName, indexColumn):
+    df = pd.read_csv(fileName, sep="\t")
+    header = list(df.keys()[1:])
+    tableDict = {
+        k: list(v.values()) 
+        for k, v 
+        in df.set_index(indexColumn).to_dict('index').items()
+    }
+    return tableDict, header
+
+def parse_candidates(fileName, valueColumn):
+    tableDict = {}
+    df = pd.read_csv(fileName, sep="\t")
+    for index, row in df.iterrows():
+        tableDict.setdefault(row["gene_id"], set())
+        tableDict[row["gene_id"]].add(row[valueColumn])
+    return tableDict
+
 def main():
     ##### USER INPUT SECTION
     usage = """%(prog)s will modify DESeq2 output files to include their best BLAST
@@ -190,15 +220,14 @@ def main():
     # Optional arguments
     p.add_argument("--is", dest="inputSuffix",
                    required=False,
-                   nargs="+",
                    help="""Optionally, specify the file ending of the DESeq2 output files
                    if a directory is given to -i (default='.edit.tsv')""",
                    default=".edit.tsv")
-    p.add_argument("--is", dest="inputSuffix",
+    p.add_argument("--wgcna", dest="wgcnaDir",
                    required=False,
-                   help="""Optionally, specify the file ending of the DESeq2 output files
-                   if a directory is given to -i (default='.edit.tsv')""",
-                   default=".edit.tsv")
+                   help="""Optionally, specify the directory where WGCNA files exist; if
+                   unspecified, these results will not be included""",
+                   default=None)
     
     args = p.parse_args()
     validate_args(args)
@@ -233,10 +262,146 @@ def main():
                 genes[gene][comparison] = "."
     df = pd.DataFrame.from_dict(genes, orient="index")
     
+    # Parse the WGCNA files (if applicable)
+    if args.wgcnaDir != None:
+        wgcna = {}
+        
+        # Parse each file
+        for file in os.listdir(args.wgcnaDir):
+            # Parse gene_colours files
+            if file.startswith("gene_colours") and file.endswith(".tsv"):
+                suffix = file.split("gene_colours", maxsplit=1)[-1].split(".tsv")[0].strip(".")
+                gcDict, _ = parse_table_to_dict(os.path.join(args.wgcnaDir, file), "gene_id")
+                
+                for geneID, colour in gcDict.items():
+                    wgcna.setdefault(geneID, {})
+                    wgcna[geneID].setdefault("colour", {})
+                    wgcna[geneID]["colour"][suffix] = colour[0]
+            
+            # Parse gene_significance files
+            if file.startswith("gene_significance") and file.endswith(".tsv"):
+                suffix = file.split("gene_significance", maxsplit=1)[-1].split(".tsv")[0].strip(".")
+                gsDict, _ = parse_table_to_dict(os.path.join(args.wgcnaDir, file), "Unnamed: 0")
+                gsDict = { k:max(v) for k,v in gsDict.items() }
+                
+                for geneID, gs in gsDict.items():
+                    wgcna.setdefault(geneID, {})
+                    wgcna[geneID].setdefault("gene_significance", {})
+                    wgcna[geneID]["gene_significance"][suffix] = gs
+            
+            # Parse module_kme files
+            if file.startswith("module_kme") and file.endswith(".tsv"):
+                suffix = file.split("module_kme", maxsplit=1)[-1].split(".tsv")[0].strip(".")
+                kmeDict, kmeHeader = parse_table_to_dict(os.path.join(args.wgcnaDir, file), "Unnamed: 0")
+                
+                for geneID, kme in kmeDict.items():
+                    orderedKme = sorted([ (kme[i], kmeHeader[i]) for i in range(len(kmeHeader)) ], key = lambda x: -x[0])
+                    bestKme, bestModule = orderedKme[0]
+                    
+                    wgcna.setdefault(geneID, {})
+                    wgcna[geneID].setdefault("colour_by_kme", {})
+                    wgcna[geneID]["colour_by_kme"][suffix] = bestModule.split("MM.")[-1]
+            
+            # Parse central_candidates files
+            if file.startswith("central_candidates") and file.endswith(".tsv"):
+                suffix = file.split("central_candidates", maxsplit=1)[-1].split(".tsv")[0].strip(".")
+                hubDict = parse_candidates(os.path.join(args.wgcnaDir, file), "trait")
+                
+                for geneID, traits in hubDict.items():
+                    wgcna.setdefault(geneID, {})
+                    wgcna[geneID].setdefault("central_candidates", {})
+                    wgcna[geneID]["central_candidates"][suffix] = "; ".join(traits)
+            
+            # Parse network_screening_candidates files
+            if file.startswith("network_screening_candidates") and file.endswith(".tsv"):
+                suffix = file.split("network_screening_candidates", maxsplit=1)[-1].split(".tsv")[0].strip(".")
+                networkDict = parse_candidates(os.path.join(args.wgcnaDir, file), "trait")
+                
+                for geneID, traits in networkDict.items():
+                    wgcna.setdefault(geneID, {})
+                    wgcna[geneID].setdefault("network_screening_candidates", {})
+                    wgcna[geneID]["network_screening_candidates"][suffix] = "; ".join(traits)
+
+        # Format into a dataframe-amenable dictionary
+        dummyKey = list(wgcna.keys())[0]
+        dummyDict = wgcna[dummyKey]
+        wgcnaDfDict = {}
+        for geneID in df.index:
+            # Obtain the data for this gene (or use a dummy value for iteration)
+            try:
+                geneDict = wgcna[geneID]
+                isDummy = False
+            except:
+                geneDict = dummyDict
+                isDummy = True
+            wgcnaDfDict[geneID] = {}
+            
+            # Store gene_colours value
+            for suffix, value in geneDict["colour"].items():
+                key = "colour" + f".{suffix}" if suffix != "" else ""
+                
+                if not isDummy:
+                    wgcnaDfDict[geneID][key] = value
+                else:
+                    wgcnaDfDict[geneID][key] = "."
+
+            # Store gene_significance value
+            for suffix, value in geneDict["gene_significance"].items():
+                key = "gene_significance" + f".{suffix}" if suffix != "" else ""
+                
+                if not isDummy:
+                    wgcnaDfDict[geneID][key] = value
+                else:
+                    wgcnaDfDict[geneID][key] = "."
+            
+            # Store colour_by_kme value
+            for suffix, value in geneDict["colour_by_kme"].items():
+                key = "colour_by_kme" + f".{suffix}" if suffix != "" else ""
+                
+                if not isDummy:
+                    wgcnaDfDict[geneID][key] = value
+                else:
+                    wgcnaDfDict[geneID][key] = "."
+            
+            # Store central_candidates value
+            if "central_candidates" in geneDict:
+                for suffix, value in geneDict["central_candidates"].items():
+                    key = "central_candidates" + f".{suffix}" if suffix != "" else ""
+                    
+                    if not isDummy:
+                        wgcnaDfDict[geneID][key] = value
+                    else:
+                        wgcnaDfDict[geneID][key] = "."
+            else:
+                for suffix in geneDict["colour"].keys():
+                    key = "central_candidates" + f".{suffix}" if suffix != "" else ""
+                    wgcnaDfDict[geneID][key] = "."
+            
+            # Store network_screening_candidates value
+            if "network_screening_candidates" in geneDict:
+                for suffix, value in geneDict["network_screening_candidates"].items():
+                    key = "network_screening_candidates" + f".{suffix}" if suffix != "" else ""
+                    
+                    if not isDummy:
+                        wgcnaDfDict[geneID][key] = value
+                    else:
+                        wgcnaDfDict[geneID][key] = "."
+            else:
+                for suffix in geneDict["colour"].keys():
+                    key = "network_screening_candidates" + f".{suffix}" if suffix != "" else ""
+                    wgcnaDfDict[geneID][key] = "."
+        
+        # Create a WGCNA dataframe
+        wgcnaDf = pd.DataFrame.from_dict(wgcnaDfDict, orient="index")
+        wgcnaDf.fillna(".", inplace=True)
+        
+        # Join the DGE and WGCNA dataframes together
+        df = df.join(wgcnaDf)
+    
     # Parse the normalised counts
     countsDf = parse_normalised_counts(args.normalisedCountsFileName, sampleGroups, set(genes.keys()))
     
-    # Join the DGE and counts dataframes together
+    # Join the DGE(+WGCNA) and counts dataframes together
     df = df.join(countsDf)
     
     # Write to file
