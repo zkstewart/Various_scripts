@@ -194,33 +194,34 @@ def main():
             raise ValueError(f"Error: no forward files (_1) found for a group; this shouldn't be possible?")
         
         # Format reverse read commands
-        reverseGroup = reverseReadGroups[i]
-        
-        if len(reverseGroup) > 1 or args.nosymlink:
-            prefix = os.path.commonprefix([
-                laneRegex.split(os.path.basename(f))[0].rstrip("_")
-                    for f in reverseGroup
-            ])
+        if reverseReadGroups != None:
+            reverseGroup = reverseReadGroups[i]
             
-            cmd2 = "cat {reverseFiles} > {prefix}{suffix}.fq.gz".format(
-                reverseFiles=" ".join(
-                    [f"${{TRIMMEDDIR}}/{os.path.basename(f)}" for f in reverseGroup]
-                ),
-                prefix=prefix,
-                suffix="_2" if not args.isSingleEnd else ""
-            )
-            catCmds.append(cmd2)
-        elif len(reverseGroup) == 1:
-            prefix = laneRegex.split(os.path.basename(reverseGroup[0]))[0].rstrip("_")
-            
-            cmd2 = "ln -s {reverseFiles[0]} {prefix}{suffix}.fq.gz".format(
-                reverseFiles=[f"${{TRIMMEDDIR}}/{os.path.basename(f)}" for f in reverseGroup],
-                prefix=prefix,
-                suffix="_2" if not args.isSingleEnd else ""
-            )
-            catCmds.append(cmd2)
-        else:
-            raise ValueError(f"Error: no reverse files (_2) found for a group; this shouldn't be possible?")
+            if len(reverseGroup) > 1 or args.nosymlink:
+                prefix = os.path.commonprefix([
+                    laneRegex.split(os.path.basename(f))[0].rstrip("_")
+                        for f in reverseGroup
+                ])
+                
+                cmd2 = "cat {reverseFiles} > {prefix}{suffix}.fq.gz".format(
+                    reverseFiles=" ".join(
+                        [f"${{TRIMMEDDIR}}/{os.path.basename(f)}" for f in reverseGroup]
+                    ),
+                    prefix=prefix,
+                    suffix="_2" if not args.isSingleEnd else ""
+                )
+                catCmds.append(cmd2)
+            elif len(reverseGroup) == 1:
+                prefix = laneRegex.split(os.path.basename(reverseGroup[0]))[0].rstrip("_")
+                
+                cmd2 = "ln -s {reverseFiles[0]} {prefix}{suffix}.fq.gz".format(
+                    reverseFiles=[f"${{TRIMMEDDIR}}/{os.path.basename(f)}" for f in reverseGroup],
+                    prefix=prefix,
+                    suffix="_2" if not args.isSingleEnd else ""
+                )
+                catCmds.append(cmd2)
+            else:
+                raise ValueError(f"Error: no reverse files (_2) found for a group; this shouldn't be possible?")
         
     # Write the script file
     script = f'''#!/bin/bash -l
