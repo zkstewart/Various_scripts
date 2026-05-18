@@ -68,7 +68,7 @@ def make_sample_rcompatible(sample):
         sample = "X" + sample # R will also add an 'X' prior to a sample identifier that starts with a digit
     return sample
 
-def parse_coldata_file(fileName, groupingVariables):
+def parse_coldata_file(fileName, groupingVariables, rCompatibility=False):
     sampleGroups = {}
     with open(fileName, "r") as fileIn:
         firstLine = True
@@ -87,7 +87,11 @@ def parse_coldata_file(fileName, groupingVariables):
                 groupParts = tuple(( sl[i] for i in groupIndices ))
                 
                 sampleGroups.setdefault(groupParts, set())
-                sampleGroups[groupParts].add(make_sample_rcompatible(sl[0])) # first column is expected to be the sample
+                sampleID = sl[0] # first column is expected to be the sample
+                if rCompatibility:
+                    sampleGroups[groupParts].add(make_sample_rcompatible(sampleID))
+                else:
+                    sampleGroups[groupParts].add(sampleID)
     
     # Figure out how we can sort the group parts in a logical way
     sortingTypes = []
@@ -166,6 +170,10 @@ def parse_normalised_counts(fileName, sampleGroups, toParse=None):
                     for s in sgroup:
                         if s in sampleIndices:
                             groupCounts.append(float(sl[sampleIndices[s]]))
+                    
+                    if groupCounts == []:
+                        raise ValueError(f"Group '{group}' with samples {sgroup} was not found within the normalised " +
+                                         "read counts. Do you need to turn --rCompatibility on or off?")
                     counts[geneID][group] = median(groupCounts)
     
     # Convert dict into pandas DataFrame
@@ -228,12 +236,19 @@ def main():
                    help="""Optionally, specify the directory where WGCNA files exist; if
                    unspecified, these results will not be included""",
                    default=None)
+    p.add_argument("--rCompatibility", dest="rCompatibility",
+                   required=False,
+                   action="store_true",
+                   help="""Optionally, provide this flag if the result files have had their
+                   sample identifiers changed by R e.g., to remove hyphens or add an 'X' at
+                   the start of any digit-prefixed samples""",
+                   default=False)
     
     args = p.parse_args()
     validate_args(args)
     
     # Parse coldata to derive the way to group samples for expression averaging
-    sampleGroups = parse_coldata_file(args.coldataFileName, args.groupingVariables)
+    sampleGroups = parse_coldata_file(args.coldataFileName, args.groupingVariables, args.rCompatibility)
     
     # Parse each DGE result file
     genes = {}
@@ -250,7 +265,7 @@ def main():
                 geneDetails = genesDict[gene]
                 
                 # Handle P-value
-                genes[gene][comparison] = ["padj"]
+                genes[gene][comparison] = ["padj"] # why do I do this??
                 
                 # Handle all non-Pvalue keys (expected to be redundant)
                 for key, value in geneDetails.items():
