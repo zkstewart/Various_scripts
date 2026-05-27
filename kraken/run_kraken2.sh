@@ -1,13 +1,13 @@
 #!/bin/bash -l
 #PBS -N k2classify
-#PBS -l walltime=48:00:00
+#PBS -l walltime=01:00:00
 #PBS -l mem=160G
 #PBS -l ncpus=8
 #PBS -J 1-X
 
 cd $PBS_O_WORKDIR
 
-conda activate kraken2
+conda activate kraken2 # should have bioconda::krakentools and bioconda::krona in this environment
 
 ####
 
@@ -45,3 +45,11 @@ k2 classify --threads ${CPUS} --db ${DBDIR} \
     --classified-out "${BASEPREFIX}/${BASEPREFIX}#_classified.fasta" \
     --report ${BASEPREFIX}/${BASEPREFIX}_report.txt \
     --paired ${FILEPREFIX}${R1SUFFIX} ${FILEPREFIX}${R2SUFFIX}
+
+# STEP 4: Generate a visual of the results
+python $(which kreport2krona.py) \
+    -r ${BASEPREFIX}/${BASEPREFIX}_report.txt \
+    -o ${BASEPREFIX}/${BASEPREFIX}_report.krona
+
+ktImportText ${BASEPREFIX}/${BASEPREFIX}_report.krona \
+             -o ${BASEPREFIX}/${BASEPREFIX}_report.html
