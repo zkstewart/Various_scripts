@@ -41,8 +41,8 @@ BASEPREFIX=$(basename ${FILEPREFIX})
 mkdir -p ${BASEPREFIX}
 k2 classify --threads ${CPUS} --db ${DBDIR} \
     --output ${BASEPREFIX}/${BASEPREFIX}_output.txt \
-    --unclassified-out "${BASEPREFIX}/${BASEPREFIX}#_unclassified.fasta" \
-    --classified-out "${BASEPREFIX}/${BASEPREFIX}#_classified.fasta" \
+    --unclassified-out "${BASEPREFIX}/${BASEPREFIX}#_unclassified.fastq" \
+    --classified-out "${BASEPREFIX}/${BASEPREFIX}#_classified.fastq" \
     --report ${BASEPREFIX}/${BASEPREFIX}_report.txt \
     --paired ${FILEPREFIX}${R1SUFFIX} ${FILEPREFIX}${R2SUFFIX}
 
