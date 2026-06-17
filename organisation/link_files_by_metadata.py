@@ -37,18 +37,19 @@ def validate_args(args):
                              f"this script won't create the -o location under these circumstances; " +
                              "please fix this issue manually before trying again.")
 
-def handle_file_name(file, fileSuffix, found):
+def handle_file_name(file, fileSuffix, pairSuffix, found):
     '''
     Helper function for locate_files() to set values in its
     found dictionary.
     '''
     filePrefix = os.path.basename(file).rsplit(fileSuffix, maxsplit=1)[0].rstrip(". ")
     
-    if filePrefix.endswith("_1") or filePrefix.endswith("_2"):
+    pair1, pair2 = pairSuffix
+    if filePrefix.endswith(pair1) or filePrefix.endswith(pair2):
         pairedPrefix = filePrefix.rsplit("_", maxsplit=1)[0]
         found.setdefault(pairedPrefix, {1: None, 2: None})
     
-    if filePrefix.endswith("_1"):
+    if filePrefix.endswith(pair1):
         if not isinstance(found[pairedPrefix], dict):
             raise KeyError(f"File '{file}' ends with paired sequencing suffix ('_1') but has a prefix that already " +
                            f"matches a seemingly unpaired file i.e., '{found[pairedPrefix]}'; duplicates cannot be tolerated")
@@ -58,7 +59,7 @@ def handle_file_name(file, fileSuffix, found):
                            f"but another matching file has already been found previously i.e., '{found[pairedPrefix][1]}'; " +
                            "duplicates cannot be tolerated")
         found[pairedPrefix][1] = file
-    elif filePrefix.endswith("_2"):
+    elif filePrefix.endswith(pair2):
         if not isinstance(found[pairedPrefix], dict):
             raise KeyError(f"File '{file}' ends with paired sequencing suffix ('_2') but has a prefix that already " +
                            f"matches a seemingly unpaired file i.e., '{found[pairedPrefix]}'; duplicates cannot be tolerated")
@@ -76,7 +77,7 @@ def handle_file_name(file, fileSuffix, found):
         
         found[filePrefix] = file
 
-def locate_files(inputLocations, fileSuffix):
+def locate_files(inputLocations, fileSuffix, pairSuffix):
     '''
     Returns:
         found -- a dictionary with structure like:
@@ -93,12 +94,12 @@ def locate_files(inputLocations, fileSuffix):
         location = os.path.abspath(location)
         if os.path.isfile(location):
             if location.endswith(fileSuffix):
-                handle_file_name(location, fileSuffix, found)
+                handle_file_name(location, fileSuffix, pairSuffix, found)
         elif os.path.isdir(location):
             for file in os.listdir(location):
                 file = os.path.join(location, file)
                 if file.endswith(fileSuffix):
-                    handle_file_name(file, fileSuffix, found)
+                    handle_file_name(file, fileSuffix, pairSuffix, found)
         else:
             raise TypeError(f"Unable to verify that '{location}' was a file or a directory; " +
                             "make sure this location exists and/or is entered correctly")
@@ -264,6 +265,13 @@ def main():
                    required=True,
                    help="Specify location to write symlinks")
     # Opts (minimap2)
+    p.add_argument("--pairSuffix", dest="pairSuffix",
+                   required=False,
+                   nargs=2,
+                   help="""If paired files exist, indicate the suffix that identifies the
+                   forward/first from the reverse/second file; this suffix should immediately
+                   precede whatever -s indicates; default=='_1 _2'""",
+                   default=["_1", "_2"])
     p.add_argument("--header", dest="hasHeader",
                    required=False,
                    action="store_true",
@@ -288,7 +296,7 @@ def main():
     metaDict = parse_metadata(args.metadataFile, args.columnNumbers, args.hasHeader)
     
     # Locate file(s) in the specified location(s)
-    foundFiles = locate_files(args.inputLocations, args.fileSuffix)
+    foundFiles = locate_files(args.inputLocations, args.fileSuffix, args.pairSuffix)
     
     # Tolerantly match metadata and files where minor differences might occur
     "For example, a suffix of 'S1' might be given in metadata but all files might look more like 'S1.trimmed'"
