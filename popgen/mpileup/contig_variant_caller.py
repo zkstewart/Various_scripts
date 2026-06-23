@@ -77,9 +77,6 @@ def validate_args(args):
         raise ValueError("--walltime should be in the format of 'HH:MM:SS'")
     if not re.match(r"^\d+G$", args.mem):
         raise ValueError("--mem should be in the format of '*G' where * is a number")
-    if args.jobPrefix != "":
-        if not args.jobPrefix.endswith("_"):
-            args.jobPrefix += "_" # Add underscore if not present
     if args.afterok != None:
         if not re.match(r"^\d+(\[\])?\.\w+$", args.afterok):
             raise ValueError("--afterok should be a PBS job ID")
