@@ -425,6 +425,7 @@ tabix -C ${{CONTIG}}.vcf.gz;
 """.format(
     WALLTIME=WALLTIME,
     MEM=MEM,
+    contig=argsContainer.contig,
     workingDir=argsContainer.workingDir,
     afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
@@ -598,6 +599,7 @@ def main():
     # Write and qsub concatenation script
     make_concatenation_script(Container({
             "workingDir": os.getcwd(),
+            "contig": args.contigName,
             "outputFileName": CONCAT_SCRIPT,
             "runningJobIDs": runningJobs
         })
