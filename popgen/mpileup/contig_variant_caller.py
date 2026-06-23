@@ -282,6 +282,7 @@ tabix -C ${{CONTIG}}_${{PBS_ARRAY_INDEX}}.vcf.gz
     genome=argsContainer.genome,
     contig=argsContainer.contig,
     BAM_LIST=BAM_LIST, # global variable
+    CHUNK_LIST=CHUNK_LIST, # global variable
     qualityLine=qualityLine,
     variantLine=variantLine,
     afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
