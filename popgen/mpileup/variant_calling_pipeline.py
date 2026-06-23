@@ -291,8 +291,6 @@ def make_concatenation_script(argsContainer, PREFIX="", WALLTIME="08:00:00", MEM
     
     Parameters:
         argsContainer -- an object containing the following keys:
-            numJobs -- the number of jobs to submit to the HPC cluster;
-                       should be equal to the number of contigs in the genome
             workingDir -- the directory to run the script in; should be the CWD
             outputFileName -- the name of the script file to write
             runningJobIDs -- a list of strings indicating the job IDs of jobs that
@@ -344,7 +342,6 @@ tabix -C ${{OUTPUT_PREFIX}}.vcf.gz;
     PREFIX=PREFIX,
     WALLTIME=WALLTIME,
     MEM=MEM,
-    numJobs=argsContainer.numJobs,
     workingDir=argsContainer.workingDir,
     CONTIG_LIST=CONTIG_LIST, # global variable
     OUTPUT_PREFIX=OUTPUT_PREFIX, # global variable
@@ -501,7 +498,6 @@ def main():
     
     # Write and qsub concatenation script
     make_concatenation_script(Container({
-            "numJobs": len(contigIDs),
             "workingDir": os.getcwd(),
             "outputFileName": CONCAT_SCRIPT,
             "runningJobIDs": runningJobs
