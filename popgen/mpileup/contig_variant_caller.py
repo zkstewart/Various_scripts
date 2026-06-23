@@ -95,6 +95,8 @@ def validate_args(args):
         raise FileExistsError(f"'{CALLING_SCRIPT}' already exists.")
     if os.path.exists(NORMALISE_SCRIPT):
         raise FileExistsError(f"'{NORMALISE_SCRIPT}' already exists.")
+    if os.path.exists(CONCAT_SCRIPT):
+        raise FileExistsError(f"'{CONCAT_SCRIPT}' already exists.")
 
 def get_contig_length(fastaFile, contigID):
     '''
@@ -194,7 +196,7 @@ def qsub(scriptFileName):
     else:
         raise Exception(f"qsub died with stderr == {stderr}")
 
-def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"):
+def make_calling_script(argsContainer, WALLTIME="48:00:00", MEM="40G"):
     '''
     Function to format a script for qsub submission to the HPC cluster to perform
     variant calling using the bcftools mpileup->call pipeline in parallel.
@@ -210,7 +212,6 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
             genomeDir -- the directory containing the genome FASTA file
             genome -- the name of the genome FASTA file
             outputFileName -- the name of the script file to write
-        PREFIX -- OPTIONAL; a string to prepend to the job name; default == ""
         WALLTIME -- OPTIONAL; a string indicating how much walltime to give
                     the job; default == "72:00:00"
         MEM -- OPTIONAL; a string indicating how much memory to give the job;
@@ -276,7 +277,6 @@ tabix ${{CONTIG}}_${{PBS_ARRAY_INDEX}}.vcf.gz
 tabix -C ${{CONTIG}}_${{PBS_ARRAY_INDEX}}.vcf.gz
 
 """.format(
-    PREFIX=PREFIX,
     WALLTIME=WALLTIME,
     MEM=MEM,
     numJobs=argsContainer.numJobs,
@@ -284,7 +284,6 @@ tabix -C ${{CONTIG}}_${{PBS_ARRAY_INDEX}}.vcf.gz
     genomeDir=argsContainer.genomeDir,
     genome=argsContainer.genome,
     contig=argsContainer.contig,
-    CONTIG_LIST=CONTIG_LIST, # global variable
     BAM_LIST=BAM_LIST, # global variable
     qualityLine=qualityLine,
     variantLine=variantLine,
@@ -295,7 +294,7 @@ tabix -C ${{CONTIG}}_${{PBS_ARRAY_INDEX}}.vcf.gz
     with open(argsContainer.outputFileName, "w") as fileOut:
         fileOut.write(scriptText)
 
-def make_normalise_script(argsContainer, PREFIX="", WALLTIME="08:00:00", MEM="15G"):
+def make_normalise_script(argsContainer, WALLTIME="08:00:00", MEM="15G"):
     '''
     Function to format a script for qsub submission to the HPC cluster to perform
     variant normalisation.
@@ -310,7 +309,6 @@ def make_normalise_script(argsContainer, PREFIX="", WALLTIME="08:00:00", MEM="15
             outputFileName -- the name of the script file to write
             runningJobIDs -- a list of strings indicating the job IDs of jobs that
                              must complete before this script can run
-        PREFIX -- OPTIONAL; a string to prepend to the job name; default == ""
         WALLTIME -- OPTIONAL; a string indicating how much walltime to give
                     the job; default == "08:00:00"
         MEM -- OPTIONAL; a string indicating how much memory to give the job;
@@ -359,7 +357,6 @@ bgzip -c ${{PREFIX}}.decomposed.vcf > ${{PREFIX}}.decomposed.vcf.gz
 bcftools index ${{PREFIX}}.decomposed.vcf.gz
 
 """.format(
-    PREFIX=PREFIX,
     WALLTIME=WALLTIME,
     MEM=MEM,
     numJobs=argsContainer.numJobs,
@@ -367,7 +364,6 @@ bcftools index ${{PREFIX}}.decomposed.vcf.gz
     genomeDir=argsContainer.genomeDir,
     genome=argsContainer.genome,
     contig=argsContainer.contig,
-    CONTIG_LIST=CONTIG_LIST, # global variable
     afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
 
@@ -375,7 +371,7 @@ bcftools index ${{PREFIX}}.decomposed.vcf.gz
     with open(argsContainer.outputFileName, "w") as fileOut:
         fileOut.write(scriptText)
 
-def make_concatenation_script(argsContainer, PREFIX="", WALLTIME="08:00:00", MEM="15G"):
+def make_concatenation_script(argsContainer, WALLTIME="08:00:00", MEM="15G"):
     '''
     Function to format a script for qsub submission to the HPC cluster to perform
     concatenation of multiple VCF files produced in parallel for the same genome.
@@ -388,7 +384,6 @@ def make_concatenation_script(argsContainer, PREFIX="", WALLTIME="08:00:00", MEM
             outputFileName -- the name of the script file to write
             runningJobIDs -- a list of strings indicating the job IDs of jobs that
                              must complete before this script can run
-        PREFIX -- OPTIONAL; a string to prepend to the job name; default == ""
         WALLTIME -- OPTIONAL; a string indicating how much walltime to give
                     the job; default == "08:00:00"
         MEM -- OPTIONAL; a string indicating how much memory to give the job;
@@ -432,13 +427,10 @@ tabix ${{CONTIG}}.vcf.gz;
 tabix -C ${{CONTIG}}.vcf.gz;
 
 """.format(
-    PREFIX=PREFIX,
     WALLTIME=WALLTIME,
     MEM=MEM,
     numJobs=argsContainer.numJobs,
     workingDir=argsContainer.workingDir,
-    CONTIG_LIST=CONTIG_LIST, # global variable
-    OUTPUT_PREFIX=OUTPUT_PREFIX, # global variable
     afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
 
@@ -529,11 +521,6 @@ def main():
                    help="""Optionally, specify how much memory you want the variant
                    prediction job to have on the HPC cluster; default == '40G'""",
                    default="40G")
-    p.add_argument("--jobPrefix", dest="jobPrefix",
-                   required=False,
-                   help="""Optionally, specify a prefix to append to each job;
-                   default == '' (no prefix); suggest keeping this short""",
-                   default="")
     
     args = p.parse_args()
     validate_args(args)
@@ -593,7 +580,6 @@ def main():
             "outputFileName": CALLING_SCRIPT,
             "runningJobIDs": runningJobs
         }),
-        PREFIX=args.jobPrefix,
         WALLTIME=args.walltime,
         MEM=args.mem
     )
@@ -609,8 +595,7 @@ def main():
             "contig": args.contigName,
             "outputFileName": NORMALISE_SCRIPT,
             "runningJobIDs": runningJobs
-        }),
-        PREFIX=args.jobPrefix
+        })
     )
     normaliseJobID = qsub(NORMALISE_SCRIPT)
     runningJobs.append(normaliseJobID)
@@ -621,8 +606,7 @@ def main():
             "workingDir": os.getcwd(),
             "outputFileName": CONCAT_SCRIPT,
             "runningJobIDs": runningJobs
-        }),
-        PREFIX=args.jobPrefix
+        })
     )
     concatenationJobID = qsub(CONCAT_SCRIPT)
     
