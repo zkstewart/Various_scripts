@@ -394,8 +394,9 @@ def main():
     p.add_argument("--gvcf", dest="gvcf",
                    required=False,
                    action="store_true",
-                   help="""Provide this flag to make use of the --indels-cns option as is 
-                   currently recommended by bcftools for diploid genomes""",
+                   help="""Provide this flag to call variants with gvcf output
+                   which enables merging of samples from separate analyses at the
+                   cost of larger files containing invariant sites""",
                    default=False)
     p.add_argument("--ont-sup", dest="ontSup",
                    required=False,
