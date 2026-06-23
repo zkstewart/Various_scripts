@@ -376,8 +376,6 @@ def make_concatenation_script(argsContainer, WALLTIME="08:00:00", MEM="15G"):
     
     Parameters:
         argsContainer -- an object containing the following keys:
-            numJobs -- the number of jobs to submit to the HPC cluster;
-                       should be equal to the number of contigs in the genome
             workingDir -- the directory to run the script in; should be the CWD
             outputFileName -- the name of the script file to write
             runningJobIDs -- a list of strings indicating the job IDs of jobs that
@@ -427,7 +425,6 @@ tabix -C ${{CONTIG}}.vcf.gz;
 """.format(
     WALLTIME=WALLTIME,
     MEM=MEM,
-    numJobs=argsContainer.numJobs,
     workingDir=argsContainer.workingDir,
     afterokLine = "#PBS -W depend=afterok:{0}".format(":".join(argsContainer.runningJobIDs)) if argsContainer.runningJobIDs != [] else ""
 )
@@ -586,7 +583,7 @@ def main():
     
     # Write and qsub normalisation pipeline script
     make_normalise_script(Container({
-            "numJobs": len(contigIDs),
+            "numJobs": len(chunkPoints),
             "workingDir": os.getcwd(),
             "genomeDir": os.path.dirname(args.fastaFile),
             "genome": os.path.basename(args.fastaFile),
@@ -600,7 +597,6 @@ def main():
     
     # Write and qsub concatenation script
     make_concatenation_script(Container({
-            "numJobs": len(contigIDs),
             "workingDir": os.getcwd(),
             "outputFileName": CONCAT_SCRIPT,
             "runningJobIDs": runningJobs
