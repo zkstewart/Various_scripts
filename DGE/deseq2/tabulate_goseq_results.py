@@ -127,10 +127,8 @@ def parse_candidates(fileName, valueColumn):
 
 def main():
     ##### USER INPUT SECTION
-    usage = """%(prog)s will modify DESeq2 output files to include their best BLAST
-    name as found within a standard ZKS format annotation table (e.g., as produced by
-    BINge). Existing files will NOT be overwritten, and warnings will be emitted where
-    that is enforced.
+    usage = """%(prog)s will combine the results of goseq into a 'big table of everything'
+    data layout.
     """
     # Required arguments
     p = argparse.ArgumentParser(description=usage)
