@@ -135,7 +135,7 @@ def main():
     p.add_argument("-i", dest="inputLocations",
                    required=True,
                    nargs="+",
-                   help="Location of files or directories for DESeq2 results files to collate")
+                   help="Location of files or directories for goseq results files to collate")
     p.add_argument("-g", dest="oboFileName",
                    required=True,
                    help="Location of the go.obo file")
@@ -145,9 +145,9 @@ def main():
     # Optional arguments
     p.add_argument("--is", dest="inputSuffix",
                    required=False,
-                   help="""Optionally, specify the file ending of the DESeq2 output files
-                   if a directory is given to -i (default='.edit.tsv')""",
-                   default=".edit.tsv")
+                   help="""Optionally, specify the file ending of the goseq output files
+                   if a directory is given to -i (default='.tsv')""",
+                   default=".tsv")
     
     args = p.parse_args()
     validate_args(args)
