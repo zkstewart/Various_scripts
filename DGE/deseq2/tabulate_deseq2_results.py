@@ -201,10 +201,8 @@ def parse_candidates(fileName, valueColumn):
 
 def main():
     ##### USER INPUT SECTION
-    usage = """%(prog)s will modify DESeq2 output files to include their best BLAST
-    name as found within a standard ZKS format annotation table (e.g., as produced by
-    BINge). Existing files will NOT be overwritten, and warnings will be emitted where
-    that is enforced.
+    usage = """%(prog)s will combine the results of DESeq2 alongwide normalised read counts
+    and WGCNA outputs into a 'big table of everything' data layout.
     """
     # Required arguments
     p = argparse.ArgumentParser(description=usage)
@@ -282,6 +280,7 @@ def main():
         wgcna = {}
         
         # Parse each file
+        foundColours, foundSignificance, foundKME, foundCentral, foundScreen = False, False, False, False, False
         for file in os.listdir(args.wgcnaDir):
             # Parse gene_colours files
             if file.startswith("gene_colours") and file.endswith(".tsv"):
@@ -292,6 +291,7 @@ def main():
                     wgcna.setdefault(geneID, {})
                     wgcna[geneID].setdefault("colour", {})
                     wgcna[geneID]["colour"][suffix] = colour[0]
+                foundColours = True
             
             # Parse gene_significance files
             if file.startswith("gene_significance") and file.endswith(".tsv"):
@@ -303,6 +303,7 @@ def main():
                     wgcna.setdefault(geneID, {})
                     wgcna[geneID].setdefault("gene_significance", {})
                     wgcna[geneID]["gene_significance"][suffix] = gs
+                foundSignificance = True
             
             # Parse module_kme files
             if file.startswith("module_kme") and file.endswith(".tsv"):
@@ -316,6 +317,7 @@ def main():
                     wgcna.setdefault(geneID, {})
                     wgcna[geneID].setdefault("colour_by_kme", {})
                     wgcna[geneID]["colour_by_kme"][suffix] = bestModule.split("MM.")[-1]
+                foundKME = True
             
             # Parse central_candidates files
             if file.startswith("central_candidates") and file.endswith(".tsv"):
@@ -326,6 +328,7 @@ def main():
                     wgcna.setdefault(geneID, {})
                     wgcna[geneID].setdefault("central_candidates", {})
                     wgcna[geneID]["central_candidates"][suffix] = "; ".join(traits)
+                foundCentral = True
             
             # Parse network_screening_candidates files
             if file.startswith("network_screening_candidates") and file.endswith(".tsv"):
@@ -336,7 +339,18 @@ def main():
                     wgcna.setdefault(geneID, {})
                     wgcna[geneID].setdefault("network_screening_candidates", {})
                     wgcna[geneID]["network_screening_candidates"][suffix] = "; ".join(traits)
+                foundScreen = True
 
+        # Verify that we found all the expected files
+        if not foundColours:
+            raise FileNotFoundError(f"Failed to locate 'gene_significance.tsv' within '{args.wgcnaDir}'")
+        if not foundSignificance:
+            raise FileNotFoundError(f"Failed to locate 'module_kme.tsv' within '{args.wgcnaDir}'")
+        if not foundCentral:
+            raise FileNotFoundError(f"Failed to locate 'central_candidates.tsv' within '{args.wgcnaDir}'")
+        if not foundScreen:
+            raise FileNotFoundError(f"Failed to locate 'network_screening_candidates.tsv' within '{args.wgcnaDir}'")
+        
         # Format into a dataframe-amenable dictionary
         dummyKey = list(wgcna.keys())[0]
         dummyDict = wgcna[dummyKey]
@@ -359,7 +373,7 @@ def main():
                     wgcnaDfDict[geneID][key] = value
                 else:
                     wgcnaDfDict[geneID][key] = "."
-
+            
             # Store gene_significance value
             for suffix, value in geneDict["gene_significance"].items():
                 key = "gene_significance" + f".{suffix}" if suffix != "" else ""
