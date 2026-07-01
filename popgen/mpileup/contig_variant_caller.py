@@ -565,7 +565,7 @@ def main():
     # Write and qsub mpileup->call pipeline script
     runningJobs = [args.afterok] if args.afterok != None else []
     make_calling_script(Container({
-            "numJobs": len(chunkPoints),
+            "numJobs": args.threads,
             "workingDir": os.getcwd(),
             "genomeDir": os.path.dirname(args.fastaFile),
             "genome": os.path.basename(args.fastaFile),
@@ -584,7 +584,7 @@ def main():
     
     # Write and qsub normalisation pipeline script
     make_normalise_script(Container({
-            "numJobs": len(chunkPoints),
+            "numJobs": args.threads,
             "workingDir": os.getcwd(),
             "genomeDir": os.path.dirname(args.fastaFile),
             "genome": os.path.basename(args.fastaFile),
