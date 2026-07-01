@@ -306,10 +306,10 @@ def interpret_enrichment_test(table, p, representation, experiment,
     print_contingency_table(table, leftColLabel, rightColLabel, firstRowLabel, secondRowLabel)
     if p > pCutoff:
         print(f"> No statistical difference in '{firstRowLabel}' vs. '{secondRowLabel}' proportions " + 
-              f"between the '{leftColLabel}' and {rightColLabel} groups")
+              f"between the '{leftColLabel}' and '{rightColLabel}' groups")
     else:
         print(f"> '{firstRowLabel}' is {representation}represented relative to '{secondRowLabel}' " + 
-              f"when comparing the '{leftColLabel}' and {rightColLabel} groups")
+              f"when comparing the '{leftColLabel}' and '{rightColLabel}' groups")
         print(f"> {testApplied} P-value = {p}")
 
 #####
