@@ -416,7 +416,7 @@ SEPARATOR=" "
 VCFTOOLS_ARG="$( printf "${{SEPARATOR}}%s" "${{VCFFILES[@]}}" )"
 
 # STEP 3: Merge individual VCFs
-bcftools concat --allow-overlaps --rm-dups -Oz -o ${{CONTIG}}.vcf.gz ${{VCFTOOLS_ARG}}
+bcftools concat --allow-overlaps --rm-dups all -Oz -o ${{CONTIG}}.vcf.gz ${{VCFTOOLS_ARG}}
 
 # STEP 4: Index VCF
 tabix ${{CONTIG}}.vcf.gz;
