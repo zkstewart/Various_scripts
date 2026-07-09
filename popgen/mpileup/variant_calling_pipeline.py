@@ -64,6 +64,10 @@ def validate_args(args):
         if not re.match(r"^\d+(\[\])?\.\w+$", args.afterok):
             raise ValueError("--afterok should be a PBS job ID")
     
+    # Validate logical consistency of argument combinations
+    if args.ontSup and args.isHic:
+        raise ValueError("You set both --ont-sup and --hic which doesn't make sense")
+    
     # Validate output file names
     if os.path.exists(CALLING_SCRIPT):
         raise FileExistsError(f"'{CALLING_SCRIPT}' already exists.")
@@ -134,6 +138,8 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
                        "--indel-bias 0.7 --poly-mqual --seqq-offset 130 --indel-size 80")
     else: # use long-standing ZKS defaults
         qualityLine = "-q 10 -Q 20"
+    if args.isHic: # allow read flagged with PAIRED and not just PROPER_PAIR
+        qualityLine += " -A"
     
     # Add on optional arguments which control mpileup behaviour
     if argsContainer.indelsCns:
@@ -401,6 +407,14 @@ def main():
                    help="""Provide this flag to make use of the --ont-sup option for
                    accurate ONT long-read variant calling""",
                    default=False)
+    p.add_argument("--hic", dest="isHic",
+                   required=False,
+                   action="store_true",
+                   help="""Provide this flag if your reads were mapped with bwa mem -5SP
+                   as typical for Hi-C data; this will enable bcftools mpileup -A which
+                   allows for alignments with PAIRED flag to be used rather than
+                   PROPER_PAIR which won't have been set by bwa mem""",
+                   default=False)
     # Opts (PBS)
     p.add_argument("--afterok", dest="afterok",
                    required=False,
@@ -471,6 +485,7 @@ def main():
             "genome": os.path.basename(args.fastaFile),
             "indelsCns": args.indelsCns,
             "ontSup": args.ontSup,
+            "isHic": args.isHic,
             "gvcf": args.gvcf,
             "outputFileName": CALLING_SCRIPT,
             "runningJobIDs": runningJobs
