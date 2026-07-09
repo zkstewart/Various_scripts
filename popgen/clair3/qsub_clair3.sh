@@ -46,9 +46,9 @@ PREFIX=$(basename ${INPUTFILE} ${BAMSUFFIX})
 run_clair3.sh \
 	--bam_fn=${INPUTFILE} \
 	--ref_fn=${GENOME} \
-	--model_path=${MODELDIR} \
-	--ctg_name=${CONTIGS} \
+	--model_path=${MODELDIR}/${MODEL} \
 	--threads=${CPUS} \
 	--platform="ont" \
 	--output=${PREFIX} \
-	--enable_phasing
+	--enable_phasing \
+    --include_all_ctgs
