@@ -138,7 +138,7 @@ def make_calling_script(argsContainer, PREFIX="", WALLTIME="72:00:00", MEM="40G"
                        "--indel-bias 0.7 --poly-mqual --seqq-offset 130 --indel-size 80")
     else: # use long-standing ZKS defaults
         qualityLine = "-q 10 -Q 20"
-    if args.isHic: # allow read flagged with PAIRED and not just PROPER_PAIR
+    if argsContainer.isHic: # allow read flagged with PAIRED and not just PROPER_PAIR
         qualityLine += " -A"
     
     # Add on optional arguments which control mpileup behaviour
