@@ -4,6 +4,7 @@
 # and tabulate the results for easy understanding
 
 import os, argparse
+from pathlib import PureWindowsPath
 
 # Define functions
 def validate_args(args):
@@ -30,23 +31,26 @@ def parse_md5_file(file, md5Suffix=".md5"):
     '''
     checksum = None
     with open(file, "r") as fileIn:
-        for line in fileIn:
-            sl = line.strip("\r\n\t ").split()
-            
-            # Handle checksum only line
-            if len(sl) == 1:
-                checksum = sl[0]
-                name = os.path.basename(file.rsplit(md5Suffix, maxsplit=1)[0]) # derive original name from md5 file
-            # Handle checksum and name line
-            elif len(sl) == 2:
-                checksum = sl[0]
-                name = os.path.basename(sl[1])
-                if not os.path.isfile(sl[1]):
-                    print(f"WARNING: File '{sl[1]}' specified in md5sum file '{file}' does not exist?")
-            # Handle unexpected line format
-            else:
-                raise ValueError(f"Unexpected line format in file '{file}': {line.strip()}")
-            break # we only need the first valid line
+        firstLine = fileIn.readline()
+        sl = firstLine.strip("\r\n\t ").split()
+        
+        # Handle checksum only line
+        if len(sl) == 1:
+            checksum = sl[0]
+            name = os.path.basename(file.rsplit(md5Suffix, maxsplit=1)[0]) # derive original name from md5 file
+        # Handle checksum and name line
+        elif len(sl) == 2:
+            checksum = sl[0]
+            name = os.path.basename(sl[1])
+            if not os.path.isfile(sl[1]):
+                print(f"WARNING: File '{sl[1]}' specified in md5sum file '{file}' does not exist?")
+        # Handle Windows CertUtil checksum
+        elif firstLine.startswith("MD5 hash of "):
+            name = PureWindowsPath(sl[3].rstrip(":")).name
+            checksum = fileIn.readline().rstrip("\r\n ")
+        # Handle unexpected line format
+        else:
+            raise ValueError(f"Unexpected line format in file '{file}': {line.strip()}")
     
     if checksum != None:
         return checksum, name
