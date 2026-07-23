@@ -21,4 +21,4 @@ CPUS=8
 
 ${SALMONDIR}/salmon index --threads ${CPUS} \
                           --transcripts ${FASTAFILE} \
-                          --index ${FASTADIR}/${FASTAFILE}_salmon_index
+                          --index ${FASTAFILE}_salmon_index
