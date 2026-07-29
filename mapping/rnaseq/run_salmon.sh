@@ -19,8 +19,8 @@ INDEXDIR=/work/ePGL/genomes/citrus/murcott/henry_upuli_2025/murcott_hap1.exon.fa
 ## For the suffix, it's assumed that just prior to the given string there
 ## is the 1 / 2 suffix differentiating forward / reverse reads
 READSDIR=/scratch/stewarz2/citrus/andrew_miles/dge_experiments/ngs713/trimmed_reads
-R1SUFFIX=.trimmed_1P.fq
-R2SUFFIX=.trimmed_2P.fq
+R1SUFFIX=.trimmed_1P.fq.gz
+R2SUFFIX=.trimmed_2P.fq.gz
 
 # Specify computational resources
 CPUS=4
