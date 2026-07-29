@@ -367,7 +367,7 @@ def main():
             
             # Store gene_colours value
             for suffix, value in geneDict["colour"].items():
-                key = "colour" + f".{suffix}" if suffix != "" else ""
+                key = "colour" + (f".{suffix}" if suffix != "" else "")
                 
                 if not isDummy:
                     wgcnaDfDict[geneID][key] = value
@@ -376,7 +376,7 @@ def main():
             
             # Store gene_significance value
             for suffix, value in geneDict["gene_significance"].items():
-                key = "gene_significance" + f".{suffix}" if suffix != "" else ""
+                key = "gene_significance" + (f".{suffix}" if suffix != "" else "")
                 
                 if not isDummy:
                     wgcnaDfDict[geneID][key] = value
@@ -385,7 +385,7 @@ def main():
             
             # Store colour_by_kme value
             for suffix, value in geneDict["colour_by_kme"].items():
-                key = "colour_by_kme" + f".{suffix}" if suffix != "" else ""
+                key = "colour_by_kme" + (f".{suffix}" if suffix != "" else "")
                 
                 if not isDummy:
                     wgcnaDfDict[geneID][key] = value
@@ -395,7 +395,7 @@ def main():
             # Store central_candidates value
             if "central_candidates" in geneDict:
                 for suffix, value in geneDict["central_candidates"].items():
-                    key = "central_candidates" + f".{suffix}" if suffix != "" else ""
+                    key = "central_candidates" + (f".{suffix}" if suffix != "" else "")
                     
                     if not isDummy:
                         wgcnaDfDict[geneID][key] = value
@@ -403,13 +403,13 @@ def main():
                         wgcnaDfDict[geneID][key] = "."
             else:
                 for suffix in geneDict["colour"].keys():
-                    key = "central_candidates" + f".{suffix}" if suffix != "" else ""
+                    key = "central_candidates" + (f".{suffix}" if suffix != "" else "")
                     wgcnaDfDict[geneID][key] = "."
             
             # Store network_screening_candidates value
             if "network_screening_candidates" in geneDict:
                 for suffix, value in geneDict["network_screening_candidates"].items():
-                    key = "network_screening_candidates" + f".{suffix}" if suffix != "" else ""
+                    key = "network_screening_candidates" + (f".{suffix}" if suffix != "" else "")
                     
                     if not isDummy:
                         wgcnaDfDict[geneID][key] = value
@@ -417,7 +417,7 @@ def main():
                         wgcnaDfDict[geneID][key] = "."
             else:
                 for suffix in geneDict["colour"].keys():
-                    key = "network_screening_candidates" + f".{suffix}" if suffix != "" else ""
+                    key = "network_screening_candidates" + (f".{suffix}" if suffix != "" else "")
                     wgcnaDfDict[geneID][key] = "."
         
         # Create a WGCNA dataframe
