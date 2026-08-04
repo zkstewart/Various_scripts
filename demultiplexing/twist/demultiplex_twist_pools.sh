@@ -45,7 +45,7 @@ if [[ ! -f ${BASEPREFIX}.ok ]]; then
         --max-mismatches 1 \
         --read-structures 6B2S+T 6B2S+T \
         --inputs ${FILEPREFIX}${R1SUFFIX} ${FILEPREFIX}${R2SUFFIX} \
-        --output ${PREFIX} \
+        --output ${BASEPREFIX} \
         --output-type Fastq \
-        --metrics ${PREFIX}.tsv && touch ${BASEPREFIX}.ok;
+        --metrics ${BASEPREFIX}.tsv && touch ${BASEPREFIX}.ok;
 fi;
