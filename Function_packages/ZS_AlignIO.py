@@ -13,8 +13,8 @@ import ZS_SeqIO
 from ZS_GFF3IO import Feature, GFF3
 
 import parasail
-if platform.system() != 'Windows':
-    from skbio.alignment import pair_align
+# if platform.system() != 'Windows':
+#     from skbio.alignment import pair_align
 
 def _create_file_from_FASTA_object(FASTA_obj, useExistingFile=True):
     '''
@@ -799,23 +799,23 @@ class SSW:
         result = SSW_Result(queryAlign, targetAlign, alignment.score, queryStartIndex, targetStartIndex)
         return result
     
-    @staticmethod
-    def ssw_skbio(queryString, targetString):
-        if platform.system() == 'Windows':
-            print("skbio is not supported on Windows yet (as of last time this code was touched); won't proceed")
-            return
+    # @staticmethod
+    # def ssw_skbio(queryString, targetString):
+    #     if platform.system() == 'Windows':
+    #         print("skbio is not supported on Windows yet (as of last time this code was touched); won't proceed")
+    #         return
         
-        # Perform SSW with scikit.bio implementation
-        score, paths, matrices = pair_align(queryString, targetString, mode="local")
-        targetAlign, queryAlign = paths[0].to_aligned([queryString, targetString])
+    #     # Perform SSW with scikit.bio implementation
+    #     score, paths, matrices = pair_align(queryString, targetString, mode="local")
+    #     targetAlign, queryAlign = paths[0].to_aligned([queryString, targetString])
         
-        # Figure out where we're starting for the alignments
-        queryStartIndex = queryString.find(queryAlign.replace('-', ''))
-        targetStartIndex = targetString.find(targetAlign.replace('-', ''))
+    #     # Figure out where we're starting for the alignments
+    #     queryStartIndex = queryString.find(queryAlign.replace('-', ''))
+    #     targetStartIndex = targetString.find(targetAlign.replace('-', ''))
         
-        # Make and return an object containing all our results
-        result = SSW_Result(queryAlign, targetAlign, score, queryStartIndex, targetStartIndex)
-        return result
+    #     # Make and return an object containing all our results
+    #     result = SSW_Result(queryAlign, targetAlign, score, queryStartIndex, targetStartIndex)
+    #     return result
 
 class Exonerate:
     '''
