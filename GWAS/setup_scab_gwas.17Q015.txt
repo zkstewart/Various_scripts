@@ -1,0 +1,59 @@
+conda activate plink2
+
+####
+
+VCFDIR=/mnt/e/tmp
+FAM=/mnt/f/plant_group/malcolm_smith/scab/metadata/gwas_metadata.sorted.17Q015.fam
+TUTDIR=/mnt/f/plant_group/malcolm_smith/daniel_analysis/gwa/GWA_tutorial-master
+
+SPECIES1=17Q015_h1
+SPECIES2=17Q015_h2
+
+MAXSNPMISS=0.1 # 10%
+MAF=0.01 # 1%
+
+####
+
+# Generate PLINK2 representation of the data ## --new-id-max-allele-len 63
+plink2 --vcf ${VCFDIR}/${SPECIES1}.psQTL_call.filtered.gwas.vcf.gz --fam ${FAM} --sort-vars --set-all-var-ids "@:#\$r,\$a" --new-id-max-allele-len 63 --geno ${MAXSNPMISS} --maf ${MAF} --make-pgen --out ${SPECIES1}
+plink2 --vcf ${VCFDIR}/${SPECIES2}.psQTL_call.filtered.gwas.vcf.gz --fam ${FAM} --sort-vars --set-all-var-ids "@:#\$r,\$a" --new-id-max-allele-len 68 --geno ${MAXSNPMISS} --maf ${MAF} --make-pgen --out ${SPECIES2}
+
+# Investigate missingness per individual and per SNP and make histograms
+plink2 --pfile ${SPECIES1} --missing --out ${SPECIES1}
+Rscript hist_miss.R ${SPECIES1}.smiss ${SPECIES1}.vmiss ${SPECIES1}
+
+plink2 --pfile ${SPECIES2} --missing --out ${SPECIES2}
+Rscript hist_miss.R ${SPECIES2}.smiss ${SPECIES2}.vmiss ${SPECIES2}
+
+# Drop individuals which do not fit within experimental scheme
+plink2 --pfile ${SPECIES1} --remove remove_samples.txt --make-pgen --out ${SPECIES1}_sampledrop --maf ${MAF}
+plink2 --pfile ${SPECIES2} --remove remove_samples.txt --make-pgen --out ${SPECIES2}_sampledrop --maf ${MAF}
+
+# Perform LD pruning of variants
+plink2 --pfile ${SPECIES1}_sampledrop --indep-pairwise 50 5 0.05 --make-founders --out ${SPECIES1}
+plink2 --pfile ${SPECIES1}_sampledrop --extract ${SPECIES1}.prune.in --make-bed --out ${SPECIES1}_pruned
+
+plink2 --pfile ${SPECIES2}_sampledrop --indep-pairwise 50 5 0.05 --make-founders --out ${SPECIES2}
+plink2 --pfile ${SPECIES2}_sampledrop --extract ${SPECIES2}.prune.in --make-bed --out ${SPECIES2}_pruned
+
+## See https://cloufield.github.io/GWASTutorial/05_PCA/#sample-codes for following
+
+# Remove related samples using king-cutoff
+plink2 --bfile ${SPECIES1}_pruned --king-cutoff 0.01 --out ${SPECIES1}_kingFilt # 0.17 cut-off tuned to try to get one exemplar from each family
+plink2 --bfile ${SPECIES2}_pruned --king-cutoff 0.01 --out ${SPECIES2}_kingFilt # 0.16
+
+# Obtain allele frequencies for the entire dataset
+plink2 --bfile ${SPECIES1}_pruned --nonfounders --freq counts --out ${SPECIES1}_counts
+plink2 --bfile ${SPECIES2}_pruned --nonfounders --freq counts --out ${SPECIES2}_counts
+
+# Run PCA after removal of related samples
+plink2 --bfile ${SPECIES1}_pruned --keep ${SPECIES1}_kingFilt.king.cutoff.in.id --nonfounders --read-freq ${SPECIES1}_counts.acount --pca allele-wts 10 --out ${SPECIES1}_pca
+plink2 --bfile ${SPECIES2}_pruned --keep ${SPECIES2}_kingFilt.king.cutoff.in.id --nonfounders --read-freq ${SPECIES2}_counts.acount --pca allele-wts 10 --out ${SPECIES2}_pca
+
+# Project samples onto PCA or something
+plink2 --bfile ${SPECIES1}_pruned --read-freq ${SPECIES1}_counts.acount --score ${SPECIES1}_pca.eigenvec.allele 2 6 header-read no-mean-imputation variance-standardize --score-col-nums 7-16 --out ${SPECIES1}_projected
+plink2 --bfile ${SPECIES2}_pruned --read-freq ${SPECIES2}_counts.acount --score ${SPECIES2}_pca.eigenvec.allele 2 6 header-read no-mean-imputation variance-standardize --score-col-nums 7-16 --out ${SPECIES2}_projected
+
+# Plot the PCA
+## Use plot_PCA.py adapted from https://github.com/Cloufield/GWASTutorial/blob/main/05_PCA/plot_PCA.ipynb
+

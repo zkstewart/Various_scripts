@@ -1,0 +1,28 @@
+conda activate plink2
+
+####
+
+VCF=/location/of/file.vcf.gz
+FAM=/location/of/metadata/gwas_metadata.fam
+
+PREFIX=myprojectname
+
+MAXSNPMISS=0.1 # 10%
+MAF=0.01 # 1%
+
+####
+
+# Run initial PLINK2 conversion, expecting an error to occur
+plink2 --vcf ${VCF} --fam ${FAM} --sort-vars --set-all-var-ids "@:#\$r,\$a" --geno ${MAXSNPMISS} --maf ${MAF} --make-pgen --out ${PREFIX}
+## when you run the above, you should expect PLINK2 to tell you to set '--new-id-max-allele-len' with a particular value. Take its advice and configure the below command accordingly.
+
+plink2 --vcf ${VCF} --fam ${FAM} --sort-vars --set-all-var-ids "@:#\$r,\$a" --new-id-max-allele-len 63 --geno ${MAXSNPMISS} --maf ${MAF} --make-pgen --out ${PREFIX}
+## change '63' above to whatever number PLINK2 wanted you to set
+
+# Investigate missingness per individual and per SNP and make histograms
+plink2 --pfile ${PREFIX} --missing --out ${PREFIX}
+Rscript ${VARSCRIPTDIR}/GWAS/hist_miss.R ${PREFIX}.smiss ${PREFIX}.vmiss ${PREFIX}
+
+# Perform LD pruning of variants
+plink2 --pfile ${PREFIX} --indep-pairwise 50 5 0.2 --out ${PREFIX} # set '--make-founders' if PLINK indicates an issue with founders
+plink2 --pfile ${PREFIX} --extract ${PREFIX}.prune.in --make-pgen --out ${PREFIX}_pruned
