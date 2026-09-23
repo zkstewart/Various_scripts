@@ -218,6 +218,7 @@ cd {workingDir}
 
 module load zlib/1.3.1
 export LD_LIBRARY_PATH=/mnt/weka/pkg/rhel94/AuthenticAMD-25/software/zlib/1.3.1/lib:${{LD_LIBRARY_PATH}}
+module load CUDA/12.8.0
 
 ####
 
