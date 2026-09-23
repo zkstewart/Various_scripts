@@ -43,18 +43,18 @@ hifiasm -o ${PREFIX}.asm \
 
 # STEP 2: Generate the FASTA files
 ## Add hap3... if needed
-awk '/^S/{print ">"$2;print $3}' ${PREFIX}.asm.bp.hap1.p_ctg.gfa > ${PREFIX}.asm.bp.hap1.p_ctg.fasta
-awk '/^S/{print ">"$2;print $3}' ${PREFIX}.asm.bp.hap2.p_ctg.gfa > ${PREFIX}.asm.bp.hap2.p_ctg.fasta
-awk '/^S/{print ">"$2;print $3}' ${PREFIX}.asm.bp.p_ctg.gfa > ${PREFIX}.asm.bp.p_ctg.fasta
+awk '/^S/{print ">"$2;print $3}' ${PREFIX}.asm.hic.hap1.p_ctg.gfa > ${PREFIX}.asm.hic.hap1.p_ctg.fasta
+awk '/^S/{print ">"$2;print $3}' ${PREFIX}.asm.hic.hap2.p_ctg.gfa > ${PREFIX}.asm.hic.hap2.p_ctg.fasta
+awk '/^S/{print ">"$2;print $3}' ${PREFIX}.asm.hic.p_ctg.gfa > ${PREFIX}.asm.hic.p_ctg.fasta
 
 # STEP 3: Get the assembly statistics
-python ${GENSCRIPTDIR}/genome_stats.py -i ${PREFIX}.asm.bp.hap1.p_ctg.fasta -o ${PREFIX}.asm.bp.hap1.p_ctg.stats
-python ${GENSCRIPTDIR}/genome_stats.py -i ${PREFIX}.asm.bp.hap2.p_ctg.fasta -o ${PREFIX}.asm.bp.hap2.p_ctg.stats
-python ${GENSCRIPTDIR}/genome_stats.py -i ${PREFIX}.asm.bp.p_ctg.fasta -o ${PREFIX}.asm.bp.p_ctg.stats
+python ${GENSCRIPTDIR}/genome_stats.py -i ${PREFIX}.asm.hic.hap1.p_ctg.fasta -o ${PREFIX}.asm.hic.hap1.p_ctg.stats
+python ${GENSCRIPTDIR}/genome_stats.py -i ${PREFIX}.asm.hic.hap2.p_ctg.fasta -o ${PREFIX}.asm.hic.hap2.p_ctg.stats
+python ${GENSCRIPTDIR}/genome_stats.py -i ${PREFIX}.asm.hic.p_ctg.fasta -o ${PREFIX}.asm.hic.p_ctg.stats
 
 # STEP 4: Run completeness scoring of assemblies
 ## Add hap3... if needed
-for assembly in ${PREFIX}.asm.bp.hap1.p_ctg.fasta ${PREFIX}.asm.bp.hap2.p_ctg.fasta ${PREFIX}.asm.bp.p_ctg.fasta; do
+for assembly in ${PREFIX}.asm.hic.hap1.p_ctg.fasta ${PREFIX}.asm.hic.hap2.p_ctg.fasta ${PREFIX}.asm.hic.p_ctg.fasta; do
     mkdir -p ${assembly}.compleasm
     python ${COMPLEASMDIR}/compleasm.py run -a ${assembly} \
         -L ${COMPLEASMDB} -l ${LINEAGE} -t ${CPUS} \
