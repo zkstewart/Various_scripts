@@ -36,4 +36,5 @@ NUMBLOCKS=$(cat ${FQDIR}/numblocks.txt)
 python ${VARSCRIPTDIR}/basecalling/dorado_correct_pipeline.py -f ${FQDIR}/${FQFILE} \
     -n ${NUMBLOCKS} -o ${OUTDIR} \
     --dorado ${DORADODIR}/bin/dorado \
-    --jobPrefix ${PREFIX} --memCPU 280G --walltimeCPU 24:00:00 --cpuCPU 22 --walltimeGPU 08:00:00 --memGPU 30G
+    --jobPrefix ${PREFIX} --memCPU 380G --walltimeCPU 32:00:00 --cpuCPU 22 --walltimeGPU 24:00:00 --memGPU 30G
+## Smaller jobs: --memCPU 280G --walltimeCPU 24:00:00 --cpuCPU 22 --walltimeGPU 12:00:00 --memGPU 30G
