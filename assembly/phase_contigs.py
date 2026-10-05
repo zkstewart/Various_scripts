@@ -387,7 +387,7 @@ def print_partition_result(hap1, hap2):
     
     TOTAL = BUFFER + 1 + 11 + 11 # 11 since it is " :>10", +1 for unknown reason
     
-    print("Phasing groups were defined as below:\n")
+    print("# Phasing groups were defined as below:\n")
     print("Group 1")
     print("-" * TOTAL)
     for start, end, contig in sorted(hap1):
@@ -437,7 +437,7 @@ def print_ragtag_result(ragtagAgpFile, groupNum):
     ]) + 2
     TOTAL = BUFFER + 1 + 11 + 11 # 11 since it is " :>10", +1 for unknown reason
     
-    print(f"RagRag scaffolding for group {groupNum+1} was:")
+    print(f"# RagRag scaffolding for group {groupNum+1} was:")
     prevScaff = None
     for scaffID, componentID, scaffStart, scaffEnd in data:
         if scaffID != prevScaff:
@@ -653,9 +653,19 @@ def main():
                        os.path.join(runDir),
                        args.ragtag, threads=args.threads)
             
+            # Rewrite the output file to the haplotype directory
+            rawFastaFile = os.path.join(runDir, f"ragtag.scaffold.fasta")
+            resultFastaFile = os.path.join(runDir, f"result.scaffold.fasta")
+            with open(rawFastaFile, "r") as fileIn, open(resultFastaFile, "w") as fileOut:
+                ragtagRecords = SeqIO.parse(fileIn, "fasta")
+                for record in ragtagRecords:
+                    if record.id == f"{args.referenceContig}_RagTag":
+                        fileOut.write(f">{args.referenceContig}\n")
+                        fileOut.write(str(record.seq) + "\n")
+            
             # Create a flag to indicate that RagTag was successful
             open(runDir + ".ok", "w").close()
-            
+        
         # Print RagTag scaffolding result for comparison to the phasing expectation
         ragtagAgpFile = os.path.join(runDir, f"ragtag.scaffold.agp")
         print_ragtag_result(ragtagAgpFile, i)
