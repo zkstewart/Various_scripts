@@ -13,9 +13,6 @@ cd $PBS_O_WORKDIR
 CONDAENV=haphic
 HAPHICDIR=/home/stewarz2/various_programs/HapHiC
 
-# Specify reference genome FASTA location
-GENOMEFASTA=/work/ePGL/genomes/citrus/murcott/henry_upuli_2025/murcott_hap1.fasta
-
 # Specify reads dir
 READSDIR=/scratch/stewarz2/phase_variants/trimmed_hic
 R1SUFFIX=.trimmed_1P.fq.gz
