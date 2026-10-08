@@ -31,11 +31,15 @@ PREFIX=292
 TMPDIR=${PBS_O_WORKDIR}/${PREFIX}_tmp
 mkdir -p ${TMPDIR}
 
-# STEP 1: Extract pairs from BAM, sort them, and save as a .pairs file
+# STEP 1: Create .assembly file
+python ${JBSCRIPTS}/makeAgpFromFasta.py ${GENOMEFASTA} ${PREFIX}.agp
+python ${JBSCRIPTS}/agp2assembly.py ${PREFIX}.agp ${PREFIX}.assembly
+
+# STEP 2: Extract pairs from BAM, sort them, and save as a .pairs file
 pairtools parse --chroms-path ${SIZES} ${BAM} | \
 pairtools sort --tmpdir=${TMPDIR} -o ${PREFIX}.pairs
 
-# STEP 2: Convert .pairs to .links format
+# STEP 3: Convert .pairs to .links format
 grep -v '^#' ${PREFIX}.pairs |
 awk '
 BEGIN{OFS="\t"}
@@ -51,11 +55,11 @@ $2!="!" && $4!="!" {
 
 sort -k2,2 -k6,6 ${PREFIX}.links > ${PREFIX}.sorted.links
 
-# STEP 3: Create .hic file from 3d-dna utilities
+# STEP 4: Create .hic file from 3d-dna utilities
 bash ${THREEDDNA}/visualize/run-assembly-visualizer.sh \
     -p false \
     ${PREFIX}.assembly \
-    ${PREFIX}.sorted.links.txt
+    ${PREFIX}.sorted.links
 
 ####
 
