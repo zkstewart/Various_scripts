@@ -68,6 +68,45 @@ def parse_sscore(fileName, iidCol="IID", fidCol="#FID"):
     
     return sscoreDict, phenoTypes
 
+def parse_eigenvec(fileName, iidCol="IID", fidCol="#FID"):
+    '''
+    Parse the PLINK2 .eigenvec file into a dictionary with inference of corresponding phenotype measurement types.
+    
+    Returns:
+        eigenvecDict -- a dictionary where keys are sample IDs and values give the family ID (fid)
+                        and principal components (PC*)
+        phenoTypes -- a list containing booleans indicating whether each phenotype (in ascending
+                      numerical order) is a categorical value (True) or is a continuous
+                      measurement (False)
+    '''
+    eigenvecDict = {}
+    with open(fileName, "r") as fileIn:
+        firstLine = True
+        for line in fileIn:
+            sl = line.rstrip().split("\t")
+            if firstLine:
+                # Identify user-specifiable column indices
+                try:
+                    iidIndex = sl.index(iidCol)
+                except ValueError:
+                    raise ValueError(f"--sampleid '{iidCol}' does not appear in the sscore header '{sl}'")
+                try:
+                    fidIndex = sl.index(fidCol)
+                except ValueError:
+                    raise ValueError(f"--familyid '{fidCol}' does not appear in the sscore header '{sl}'")
+                
+                # Identify any other columns which may exist in variable number
+                pcIndices = [ i for i, value in enumerate(sl) if value.startswith("PC") ]
+                
+                firstLine = False
+            else:
+                sl = line.rstrip().split("\t")
+                sampleID, familyID = sl[iidIndex], sl[fidIndex]
+                pcs = [ float(sl[x]) for x in pcIndices ]
+                eigenvecDict[sampleID] = { "fid": familyID, "pcs": pcs }
+    
+    return eigenvecDict
+
 def parse_eigenval(fileName):
     '''
     Parses the .eigenval file produced by PLINK2 to identify the amount of variance explained
@@ -88,7 +127,7 @@ def parse_eigenval(fileName):
     return explained
 
 def main():
-    usage = """%(prog)s receives a .sscore file produced by PLINK2 and visualises the principal components
+    usage = """%(prog)s receives a .sscore or .eigenvec file produced by PLINK2 and visualises the principal components
     to allow identification of how many PCs are needed to explain any variance relevant to a e.g., subsequent
     GWAS analysis. Note that the --sampleid and --familyid values can be configured if the .sscore format has
     slight differences across versions, but its default is set to the PLINK2 behaviour as of this script's writing.
@@ -97,7 +136,7 @@ def main():
     p = argparse.ArgumentParser(description=usage)
     p.add_argument("-s", dest="sscoreFile",
                    required=True,
-                   help="Location of .sscore file")
+                   help="Location of .sscore (or .eigenvec) file")
     p.add_argument("-e", dest="eigenvalFile",
                    required=True,
                    help="Location of .eigenval file")
@@ -105,6 +144,11 @@ def main():
                    required=True,
                    help="Location to write output plot; file must end in .html")
     # Optional arguments
+    p.add_argument("--eigenvec", dest="isEigenvec",
+                   required=False,
+                   action="store_true",
+                   help="Specify if the file provided to -s is of .eigenvec formtat",
+                   default=False)
     p.add_argument("--sampleid", dest="sampleIDCol",
                    required=False,
                    help="""Optionally, specify the column header that denotes the sample IDs;
@@ -114,7 +158,7 @@ def main():
                    required=False,
                    help="""Optionally, specify the column header that denotes the family IDs;
                    default=='#FID'""",
-                   default="FID")
+                   default="#FID")
     p.add_argument("--pcs", dest="pcsToPlot",
                    required=False,
                    nargs="+",
@@ -128,13 +172,16 @@ def main():
     validate_args(args)
     
     # Parse input files
-    sscoreDict, phenoTypes = parse_sscore(args.sscoreFile, iidCol="IID", fidCol="#FID")
+    if args.isEigenvec:
+        pcaDict = parse_eigenvec(args.sscoreFile, iidCol=args.sampleIDCol, fidCol=args.familyIDCol)
+    else:
+        pcaDict, phenoTypes = parse_sscore(args.sscoreFile, iidCol=args.sampleIDCol, fidCol=args.familyIDCol)
     explained = parse_eigenval(args.eigenvalFile)
-    sampleOrder = sorted(sscoreDict.keys())
+    sampleOrder = sorted(pcaDict.keys())
     
-    # Convert sscoreDict into a numpy array amenable to plotly handling
+    # Convert pcaDict into a numpy array amenable to plotly handling
     components = np.array([
-        sscoreDict[sampleID]["pcs"]
+        pcaDict[sampleID]["pcs"]
         for sampleID in sampleOrder
     ])
     
@@ -144,7 +191,7 @@ def main():
         for i, var in enumerate(explained)
     } | { "color": "Family ID" }
     families = [
-        sscoreDict[sampleID]["fid"]
+        pcaDict[sampleID]["fid"]
         for sampleID in sampleOrder
     ]
     #pcdimensions = len(explained)
