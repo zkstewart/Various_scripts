@@ -38,6 +38,12 @@ def validate_args(args):
         raise ValueError(f"--threads must be greater than or equal to 1.")
     if args.minQ < 0:
         raise ValueError(f"--minQ must be greater than or equal to 0.")
+    if args.plotSize < 1:
+        raise ValueError(f"--plotSize must be greater than or equal to 1.")
+    for value, flag in [(args.minRefLen, "--minRefLen"), (args.minQueryLen, "--minQueryLen"),
+                        (args.minPlotAlignLen, "--minPlotAlignLen")]:
+        if value < 0:
+            raise ValueError(f"{flag} must be greater than or equal to 0.")
     
     # Validate program discoverability
     if args.minimap2 == None:
@@ -63,6 +69,17 @@ def validate_args(args):
     else:
         if not os.path.isfile(args.ragtag):
             _specified_wrong_error("ragtag.py", args.ragtag)
+    
+    # Validate paf2dotplot discoverability; dotplots are skipped if it cannot be found
+    if args.paf2dotplot == None:
+        args.paf2dotplot = shutil.which("paf2dotplot.r")
+        if args.paf2dotplot == None:
+            print("paf2dotplot.r not discoverable in your system PATH and --paf2dotplot was not " +
+                  "specified; dotplots of the scaffolded haplotypes will not be generated.")
+    else:
+        args.paf2dotplot = os.path.join(args.paf2dotplot, "paf2dotplot.r")
+        if not os.path.isfile(args.paf2dotplot):
+            _specified_wrong_error("paf2dotplot.r", args.paf2dotplot)
     
     # Validate output file location
     args.outputDirectory = os.path.abspath(args.outputDirectory)
@@ -114,6 +131,33 @@ def run_ragtag(inputFile, referenceFile, outputDir, ragtagPath, threads=1):
     ragtagout, ragtagerr = run_ragtag.communicate()
     if not "INFO: Finished running" in ragtagerr.decode("utf-8"):
         raise Exception('ragtag error text below\n' + ragtagerr.decode("utf-8"))
+
+def run_paf2dotplot(pafFile, outputPrefix, paf2dotplotPath, plotSize, minRefLen,
+                    minQueryLen, minAlignLen):
+    '''
+    Runs paf2dotplot to generate a dotplot from a minimap2 PAF file.
+    
+    Parameters:
+        pafFile -- a string indicating the location of the PAF file to plot
+        outputPrefix -- a string indicating the prefix for paf2dotplot output files
+        paf2dotplotPath -- a string indicating the location of the paf2dotplot.r file
+        plotSize -- an integer indicating the size of the plot in inches
+        minRefLen -- an integer indicating the minimum reference sequence length to plot
+        minQueryLen -- an integer indicating the minimum query sequence length to plot
+        minAlignLen -- an integer indicating the minimum alignment length to plot
+    '''
+    cmd = [
+        paf2dotplotPath, "-b",
+        f"--plot-size={plotSize}",
+        f"--min-ref-len={minRefLen}",
+        f"--min-query-length={minQueryLen}",
+        f"--min-alignment-length={minAlignLen}",
+        "-o", outputPrefix,
+        pafFile
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        raise Exception('paf2dotplot error text below\n' + result.stderr.decode("utf-8"))
 
 def find_longest_seq(fastaFile):
     '''
@@ -217,6 +261,37 @@ def main():
                    help="""Optionally, specify the number of threads to use for minimap2;
                    default == 1""",
                    default=1)
+    # Opts (paf2dotplot)
+    p.add_argument("--paf2dotplot", dest="paf2dotplot",
+                   required=False,
+                   help="""Optionally, specify the directory containing paf2dotplot.r
+                   if it is not discoverable in the path; if it cannot be found, dotplots
+                   of the scaffolded haplotypes against the reference will not be made""",
+                   default=None)
+    p.add_argument("--plotSize", dest="plotSize",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the dotplot size in inches;
+                   default == 15""",
+                   default=15)
+    p.add_argument("--minRefLen", dest="minRefLen",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the minimum reference sequence length
+                   to include in dotplots; default == 1000000""",
+                   default=1000000)
+    p.add_argument("--minQueryLen", dest="minQueryLen",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the minimum query sequence length
+                   to include in dotplots; default == 400000""",
+                   default=400000)
+    p.add_argument("--minPlotAlignLen", dest="minPlotAlignLen",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the minimum alignment length
+                   to include in dotplots; default == 10000""",
+                   default=10000)
     # Opts (programs)
     p.add_argument("--minimap2", dest="minimap2",
                    required=False,
@@ -544,6 +619,28 @@ def main():
             open(combinedOutputFlag, "w").close()
         else:
             print(f"final output '{combinedOutputFile}' already exists; skipping.")
+    
+    # Generate dotplots of the scaffolded haplotypes against their reference haplotype
+    if args.paf2dotplot != None:
+        for hapIndex, refFile in enumerate([ref1File, ref2File]):
+            combinedOutputFile = os.path.join(args.outputDirectory, f"hap{hapIndex+1}.fasta")
+            dotplotPrefix = os.path.join(args.outputDirectory, f"hap{hapIndex+1}.scaffolded")
+            dotplotFlag = os.path.join(args.outputDirectory, f"hap{hapIndex+1}.dotplot.is.ok.flag")
+            
+            if not os.path.exists(dotplotFlag):
+                # Align the scaffolded haplotype against its reference
+                pafFile = f"{dotplotPrefix}.paf"
+                runner = ZS_AlignIO.Minimap2(combinedOutputFile, refFile, args.preset, args.minimap2, args.threads)
+                runner.minimap2(pafFile, force=True) # allow overwriting since the flag was not created
+                
+                # Plot the alignment
+                run_paf2dotplot(pafFile, dotplotPrefix, args.paf2dotplot, args.plotSize,
+                                args.minRefLen, args.minQueryLen, args.minPlotAlignLen)
+                
+                # Create a flag to indicate that the dotplot was created
+                open(dotplotFlag, "w").close()
+            else:
+                print(f"dotplot for '{combinedOutputFile}' already exists; skipping.")
     
     print("Program completed successfully!")
 
