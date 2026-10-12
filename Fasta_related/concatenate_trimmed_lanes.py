@@ -19,6 +19,11 @@ def validate_args(args):
     parentDir = os.path.dirname(args.outputFileName)
     if not os.path.isdir(parentDir):
         raise ValueError(f"-o cannot write to '{args.outputFileName}' as its parent directory ({parentDir}) does not exist!")
+    
+    # Validate RPID format
+    if args.rpid != None:
+        if not re.match(r"^[A-Za-z]{6}\d{4}$", args.rpid):
+            raise ValueError(f"--rpid '{args.rpid}' should be 6 letters followed by 4 numbers (e.g., 'ABCDEF1234')")
 
 def get_rnaseq_files(readsDir, readsSuffix, isSingleEnd):
     # Locate files from the directory
@@ -150,6 +155,11 @@ def main():
                    it is assumed this value will be followed by a single digit that identifies
                    the lane""",
                    default="_L00")
+    p.add_argument("--rpid", dest="rpid",
+                   required=False,
+                   help="""Optionally specify the Research Project ID (RPID) to attach to
+                   the job via '#PBS -P' (default==not specified)""",
+                   default=None)
     
     args = p.parse_args()
     validate_args(args)
@@ -224,11 +234,12 @@ def main():
                 raise ValueError(f"Error: no reverse files (_2) found for a group; this shouldn't be possible?")
         
     # Write the script file
+    rpidLine = f"\n#PBS -P {args.rpid}" if args.rpid != None else ""
     script = f'''#!/bin/bash -l
 #PBS -N prep_reads
 #PBS -l walltime=32:00:00
 #PBS -l mem=25G
-#PBS -l ncpus=1
+#PBS -l ncpus=1{rpidLine}
 
 cd $PBS_O_WORKDIR
 
