@@ -63,6 +63,11 @@ def validate_args(args):
         print("--memGPU should be in the format of '*G' where * is a number")
         quit()
     
+    if args.rpid != None:
+        if not re.match(r"^[A-Za-z]{6}\d{4}$", args.rpid):
+            print("--rpid should be 6 letters followed by 4 numbers (e.g., 'ABCDEF1234')")
+            quit()
+    
     if args.jobPrefix != "":
         if not args.jobPrefix.endswith("_"):
             args.jobPrefix += "_" # Add underscore if not present
@@ -109,6 +114,7 @@ def make_cpu_script(argsContainer, PREFIX="", WALLTIME="72:00:00", CPU=10, MEM="
             dorado -- the full path to the dorado executable
             lib -- the full path to the dorado lib directory
             outputFileName -- the name of the script file to write
+            rpid -- the Research Project ID to attach to the job, or None
         PREFIX -- OPTIONAL; a string to prepend to the job name; default == ""
         WALLTIME -- OPTIONAL; a string indicating how much walltime to give
                     the job; default == "72:00:00"
@@ -121,7 +127,7 @@ def make_cpu_script(argsContainer, PREFIX="", WALLTIME="72:00:00", CPU=10, MEM="
 #PBS -N {PREFIX}s1
 #PBS -l walltime={WALLTIME}
 #PBS -l mem={MEM}
-#PBS -l ncpus={CPU}
+#PBS -l ncpus={CPU}{PBSP}
 {PBSJ}
 
 cd {workingDir}
@@ -167,6 +173,7 @@ ${{DORADOEXE}} correct --device cpu \\
     WALLTIME=WALLTIME,
     CPU=CPU,
     MEM=MEM,
+    PBSP=f"\n#PBS -P {argsContainer.rpid}" if argsContainer.rpid != None else "",
     PBSJ=f"#PBS -J 1-{argsContainer.numBlocks}" if argsContainer.numBlocks > 1 else "PBS_ARRAY_INDEX=1",
     workingDir=argsContainer.workingDir,
     FQDIR=argsContainer.fastqDir,
@@ -196,6 +203,7 @@ def make_gpu_script(argsContainer, PREFIX="", WALLTIME="72:00:00", CPU=10, MEM="
             lib -- the full path to the dorado lib directory
             outputFileName -- the name of the script file to write
             step1JobID -- the job ID of the CPU-bound dorado correct job
+            rpid -- the Research Project ID to attach to the job, or None
         PREFIX -- OPTIONAL; a string to prepend to the job name; default == ""
         WALLTIME -- OPTIONAL; a string indicating how much walltime to give
                     the job; default == "72:00:00"
@@ -208,7 +216,7 @@ def make_gpu_script(argsContainer, PREFIX="", WALLTIME="72:00:00", CPU=10, MEM="
 #PBS -N {PREFIX}s2
 #PBS -l walltime={WALLTIME}
 #PBS -l mem={MEM}
-#PBS -l ncpus={CPU}
+#PBS -l ncpus={CPU}{PBSP}
 #PBS -l ngpus=1
 #PBS -l gpu_id=A100
 #PBS -W depend=afterok:{PREVJOB}
@@ -269,6 +277,7 @@ ${{DORADOEXE}} correct ${{FQDIR}}/${{FQFILE}} \\
     CPU=CPU,
     MEM=MEM,
     PREVJOB=argsContainer.step1JobID,
+    PBSP=f"\n#PBS -P {argsContainer.rpid}" if argsContainer.rpid != None else "",
     PBSJ=f"#PBS -J 1-{argsContainer.numBlocks}" if argsContainer.numBlocks > 1 else "PBS_ARRAY_INDEX=1",
     workingDir=argsContainer.workingDir,
     PAFDIR=argsContainer.pafDir,
@@ -350,6 +359,11 @@ def main():
                    help="""Optionally, specify how much memory you want the GPU-bound
                    job to have on the HPC cluster; default == '60G'""",
                    default="60G")
+    p.add_argument("--rpid", dest="rpid",
+                   required=False,
+                   help="""Optionally, specify the Research Project ID (RPID) to attach
+                   to each job via '#PBS -P'; default == not specified""",
+                   default=None)
     p.add_argument("--jobPrefix", dest="jobPrefix",
                    required=False,
                    help="""Optionally, specify a prefix to append to each job;
@@ -371,7 +385,8 @@ def main():
             "numBlocks": args.numBlocks,
             "dorado": args.dorado,
             "lib": args.lib,
-            "outputFileName": cpuScriptName
+            "outputFileName": cpuScriptName,
+            "rpid": args.rpid
         }),
         PREFIX=args.jobPrefix,
         WALLTIME=args.walltimeCPU,
@@ -394,7 +409,8 @@ def main():
             "dorado": args.dorado,
             "lib": args.lib,
             "outputFileName": gpuScriptName,
-            "step1JobID": cpuJobID
+            "step1JobID": cpuJobID,
+            "rpid": args.rpid
         }),
         PREFIX=args.jobPrefix,
         WALLTIME=args.walltimeGPU,
