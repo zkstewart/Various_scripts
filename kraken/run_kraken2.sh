@@ -1,8 +1,8 @@
 #!/bin/bash -l
 #PBS -N k2classify
-#PBS -l walltime=01:00:00
+#PBS -l walltime=00:30:00
 #PBS -l mem=160G
-#PBS -l ncpus=8
+#PBS -l ncpus=4
 #PBS -J 1-X
 
 cd $PBS_O_WORKDIR
@@ -20,7 +20,7 @@ R1SUFFIX=.trimmed_1P.fq.gz
 R2SUFFIX=.trimmed_2P.fq.gz
 
 # Specify number of threads to use
-CPUS=8
+CPUS=4
 
 ####
 
