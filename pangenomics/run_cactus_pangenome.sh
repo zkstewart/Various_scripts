@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #PBS -N cactus
-#PBS -l walltime=48:00:00
+#PBS -l walltime=32:00:00
 #PBS -l mem=120G
 #PBS -l ncpus=16
 
@@ -8,18 +8,18 @@ cd $PBS_O_WORKDIR
 
 conda activate cactus
 
-#################################
+####
 
 # Specify parameters
-CPUS=316
-PREFIX=glauca # output directory name
-REFERENCE=14Q021.1 # sample as specified in 'cactus_samples.txt' that should be treated as the reference/backbone of the pangenome
+CPUS=16
+PREFIX=14Q021_18Q053_pangenome
 
-#################################
+####
 
 JOBSTOREPATH=${PWD}/cactus_intermediate
 SEQFILE=${PWD}/cactus_samples.txt
 OUTDIR=${PWD}/cactus_output
+REFERENCE=reference
 
 # STEP 1: Run cactus-pangenome
 cactus-pangenome ${JOBSTOREPATH} ${SEQFILE} \
