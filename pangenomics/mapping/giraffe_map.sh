@@ -4,19 +4,19 @@
 #PBS -l mem=100G
 #PBS -l ncpus=8
 #PBS -J 1-X
+#PBS -P <RPID>
 
 cd $PBS_O_WORKDIR
+set -euo pipefail
 
 conda activate cactus
+module load SAMtools/1.18 # get a working samtools, not conda's broken one
 
 ####
 
-# Specify pangenome location
-PANGENOMEDIR=/scratch/stewarz2/pangenomics/13Q019x18Q049/cactus_output
-PANGENOMEPREFIX=13Q019_18Q049_pangenome
-
-# Specify the prepared giraffe reference
-REF=/scratch/stewarz2/pangenomics/13Q019x18Q049/giraffe_reference/13Q019_18Q049_giraffe.graphref.fa
+# Specify the giraffe reference location
+REFDIR=/scratch/stewarz2/pangenomics/13Q019x18Q049/giraffe_reference
+REFPREFIX=13Q019_18Q049_giraffe
 
 # Specify reads dir
 READSDIR=/scratch/stewarz2/pangenomics/13Q019x18Q049/reads
@@ -48,9 +48,9 @@ BASEPREFIX=$(basename ${FILEPREFIX})
 #   -N/-R set SM and RG so bcftools can tell samples apart
 #   collate -> fixmate -> sort -> markdup is the standard duplicate-marking chain
 vg giraffe -t ${CPUS} \
-  -Z ${PANGENOMEDIR}/${PANGENOMEPREFIX}.d2.gbz \
-  -m ${PANGENOMEDIR}/${PANGENOMEPREFIX}.d2.min \
-  -d ${PANGENOMEDIR}/${PANGENOMEPREFIX}.d2.dist \
+  -Z ${REFDIR}/${REFPREFIX}.d2.gbz \
+  -m ${REFDIR}/${REFPREFIX}.d2.min \
+  -d ${REFDIR}/${REFPREFIX}.d2.dist \
   -f ${FILEPREFIX}${R1SUFFIX} -f ${FILEPREFIX}${R2SUFFIX} \
   -N ${BASEPREFIX} -R ${BASEPREFIX} \
   -o BAM \
@@ -63,9 +63,9 @@ samtools index -@ ${CPUS} ${BASEPREFIX}.giraffe.md.bam
 
 # STEP 4: Confirm BAM contig names match the reference FASTA exactly
 diff <(samtools view -H ${BASEPREFIX}.giraffe.md.bam | awk '$1=="@SQ"{sub("SN:","",$2); print $2}' | sort) \
-     <(cut -f1 ${REF}.fai | sort) > ${BASEPREFIX}.contig_check.txt \
+     <(cut -f1 ${REFDIR}/${REFPREFIX}.graphref.fa.fai | sort) > ${BASEPREFIX}.contig_check.txt \
   && echo "Contig names match reference" \
-  || echo "WARNING: contig names differ from reference; see ${BASEPREFIX}.contig_check.txt"
- 
+  || echo "WARNING: contig names differ from reference; see ${BASEPREFIX}.contig_check.txt";
+
 # STEP 5: Quick mapping QC
 samtools flagstat -@ ${CPUS} ${BASEPREFIX}.giraffe.md.bam > ${BASEPREFIX}.flagstat.txt

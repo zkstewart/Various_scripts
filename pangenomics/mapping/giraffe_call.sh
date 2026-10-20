@@ -4,8 +4,10 @@
 #PBS -l mem=20G
 #PBS -l ncpus=4
 #PBS -J 1-numContigs
+#PBS -P <RPID>
 
 cd ${PBS_O_WORKDIR}
+set -euo pipefail
 
 ####
 
