@@ -14,22 +14,74 @@ colourPalette = ['#377eb8', '#ff7f00', '#4daf4a',
                  '#f781bf', '#a65628', '#984ea3'] #,
                  #'#999999', '#e41a1c', '#dede00']
 
+def detect_annotation_type(fileName, NUM_LINES_TO_CHECK=100):
+    '''
+    Sniffs the contents of an annotation file to determine whether it is a GFF3
+    or a RepeatMasker .out file.
+    
+    Parameters:
+        fileName -- a string indicating the location of the annotation file
+        NUM_LINES_TO_CHECK -- an integer indicating how many non-blank lines to
+                              inspect before giving up
+    Returns:
+        fileType -- a string with value "gff3" or "repeatmasker"
+    '''
+    with open(fileName, "r") as fileIn:
+        numChecked = 0
+        for line in fileIn:
+            l = line.rstrip("\r\n")
+            if l.strip() == "":
+                continue
+            numChecked += 1
+            if numChecked > NUM_LINES_TO_CHECK:
+                break
+            
+            # Check for GFF3 indicators
+            if l.startswith("##gff-version"):
+                return "gff3"
+            if l.startswith("#"):
+                continue
+            sl = l.split("\t")
+            if len(sl) == 9 and sl[3].isdigit() and sl[4].isdigit():
+                return "gff3"
+            
+            # Check for RepeatMasker indicators
+            sl = l.strip().split()
+            if sl[0] == "SW" and "score" in sl:
+                return "repeatmasker"
+            if len(sl) >= 14 and sl[0].isdigit() and sl[5].isdigit() and sl[6].isdigit():
+                return "repeatmasker"
+    raise ValueError(f"-a '{fileName}' could not be recognised as a GFF3 or RepeatMasker .out file!")
+
 def validate_args(args):
     # Validate input files
     if not os.path.isfile(args.genomeFasta):
         raise FileNotFoundError(f"-f '{args.genomeFasta}' is not a file!")
-    if not os.path.isfile(args.genomeGFF3):
-        raise FileNotFoundError(f"-g '{args.genomeGFF3}' is not a file!")
-    if args.repeatMaskerOut != None:
-        if not os.path.isfile(args.repeatMaskerOut):
-            raise FileNotFoundError(f"--repeats '{args.repeatMaskerOut}' is not a file!")
-        if args.repeatFamilies == []:
-            raise ValueError(f"--repeats specified but no --families provided!")
     
-    # Validate that number of repeat families is supported
-    if (len(args.repeatFamilies)-1) > len(colourPalette):
-        raise ValueError(f"Number of repeat families ({len(args.repeatFamilies)}) exceeds the number " + 
+    args.annotationTypes = []
+    for annotationFile in args.annotationFiles:
+        if not os.path.isfile(annotationFile):
+            raise FileNotFoundError(f"-a '{annotationFile}' is not a file!")
+        args.annotationTypes.append(detect_annotation_type(annotationFile))
+    
+    numGFF3 = args.annotationTypes.count("gff3")
+    numRepeats = args.annotationTypes.count("repeatmasker")
+    if numRepeats > 0 and args.repeatFamilies == []:
+        raise ValueError(f"RepeatMasker file(s) provided to -a but no --families provided!")
+    if numRepeats == 0 and args.repeatFamilies != []:
+        print("WARNING: --families was provided but no RepeatMasker files were given to -a; " +
+              "it will be ignored")
+    
+    # Validate that number of tracks is supported
+    args.numTracks = numGFF3 + (numRepeats * len(args.repeatFamilies))
+    if args.numTracks > len(colourPalette):
+        raise ValueError(f"Number of tracks to plot ({args.numTracks}) exceeds the number " + 
                          f"of supported colours ({len(colourPalette)})")
+    
+    # Validate that legend labels line up with the tracks
+    if args.legendLabels != [] and len(args.legendLabels) != args.numTracks:
+        raise ValueError(f"Number of --labels ({len(args.legendLabels)}) does not match the number " +
+                         f"of tracks to plot ({args.numTracks})")
     
     # Validate numeric values
     if args.binSize < -1:
@@ -44,6 +96,111 @@ def validate_args(args):
     
     if not os.path.isdir(os.path.dirname(args.outputFileName)):
         raise FileNotFoundError(f"-o parent directory '{os.path.dirname(args.outputFileName)}' does not exist!")
+
+def parse_gff3(fileName):
+    '''
+    Parameters:
+        fileName -- a string indicating the location of the GFF3 file
+    Returns:
+        seqid2features -- a dictionary with structure like:
+                          {
+                              seqid1: [ SeqFeature1, SeqFeature2, ... ],
+                              ...
+                          }
+    '''
+    parser = Gff(fileName)
+    return parser.get_seqid2features(feature_type=None)
+
+def parse_repeatmasker(fileName, repeatFamilies, seqid2size):
+    '''
+    Parameters:
+        fileName -- a string indicating the location of the RepeatMasker .out file
+        repeatFamilies -- a list of strings indicating the repeat classes and/or
+                          families to retain
+        seqid2size -- a dictionary of contig IDs to their lengths; repeats on
+                      contigs not in this dictionary are skipped
+    Returns:
+        seqid2repeats -- a dictionary with structure like:
+                         {
+                             seqid1: [ SeqFeature1, SeqFeature2, ... ],
+                             ...
+                         }
+    '''
+    seqid2repeats = {}
+    with open(fileName, "r") as fileIn:
+        for line in fileIn:
+            # Skip header lines
+            sl = line.strip().split()
+            if sl == [] or sl[0] == "SW" or sl[0] == "score":
+                continue
+            
+            # Parse relevant info
+            seqid, start, end, repeatID, classFam = *sl[4:7], sl[9], sl[10]
+            if "/" in classFam:
+                repeatClass, repeatFam = classFam.split("/", 1)
+            else:
+                repeatClass, repeatFam = classFam, classFam
+            if not seqid in seqid2size:
+                continue
+            
+            # Store repeat info if requested
+            if repeatClass in repeatFamilies or repeatFam in repeatFamilies:
+                if seqid not in seqid2repeats:
+                    seqid2repeats[seqid] = []
+                
+                # Format and store a SeqFeature
+                feature = SeqFeature.SeqFeature(
+                    location=SeqFeature.FeatureLocation(int(start) - 1, int(end)), # 1-based to 0-based
+                    type="repeat",
+                    id=repeatID,
+                    qualifiers={"class": repeatClass, "family": repeatFam}
+                )
+                
+                seqid2repeats[seqid].append(feature)
+    return seqid2repeats
+
+def build_track_specs(args, seqid2size):
+    '''
+    Parses each annotation file and produces a list of track specifications in
+    the order they should be plotted (outermost to innermost).
+    
+    Parameters:
+        args -- the argparse Namespace object after validate_args() has been run
+        seqid2size -- a dictionary of contig IDs to their lengths
+    Returns:
+        trackSpecs -- a list of dictionaries with keys "type" ("gene" or "repeat"),
+                      "features" (a seqid2features dictionary), "repeatType"
+                      (a string, or None for gene tracks), "label", and "colour"
+    '''
+    # Only disambiguate labels with file names if needed
+    numGFF3 = args.annotationTypes.count("gff3")
+    numRepeats = args.annotationTypes.count("repeatmasker")
+    
+    trackSpecs = []
+    for annotationFile, annotationType in zip(args.annotationFiles, args.annotationTypes):
+        baseName = os.path.basename(annotationFile)
+        if annotationType == "gff3":
+            trackSpecs.append({
+                "type": "gene",
+                "features": parse_gff3(annotationFile),
+                "repeatType": None,
+                "label": "Gene" if numGFF3 == 1 else f"Gene ({baseName})"
+            })
+        else:
+            seqid2repeats = parse_repeatmasker(annotationFile, args.repeatFamilies, seqid2size)
+            for repeatType in args.repeatFamilies:
+                trackSpecs.append({
+                    "type": "repeat",
+                    "features": seqid2repeats,
+                    "repeatType": repeatType,
+                    "label": repeatType if numRepeats == 1 else f"{repeatType} ({baseName})"
+                })
+    
+    for trackIndex, spec in enumerate(trackSpecs):
+        spec["colour"] = colourPalette[trackIndex]
+        if args.legendLabels != []:
+            spec["label"] = args.legendLabels[trackIndex]
+    return trackSpecs
 
 def bin_values(features, contigSize, binSize):
     '''
@@ -63,77 +220,82 @@ def bin_values(features, contigSize, binSize):
     leftover = (remainder * binSize) / (contigSize // binSize)
     adjustedBinSize = binSize + math.ceil(leftover)
     
-    y = np.array([
-        0 for _ in range(math.ceil((contigSize - 1) / adjustedBinSize)) # -1 for 0-based indexing
-    ])
+    x = np.arange(0, contigSize, adjustedBinSize)
+    y = np.zeros(len(x), dtype=int)
     for feature in features:
-        startBin = feature.location.start // adjustedBinSize
-        endBin = feature.location.end // adjustedBinSize
+        startBin = int(feature.location.start) // adjustedBinSize
+        endBin = min((int(feature.location.end) - 1) // adjustedBinSize, len(y) - 1) # -1 since end is exclusive
         for binIndex in range(startBin, endBin+1):
             y[binIndex] += 1
-    return np.arange(0, contigSize, adjustedBinSize), y
+    return x, y
 
-def plot_gene_features(seqid2features, sector, colour, currentPosition,
-                       showOutline, TRACK_HEIGHT):
-    track = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition))
-    if showOutline:
-        track.axis()
-     
-    for feature in seqid2features[sector.name]:
-        if feature.type == "gene":
-            track.genomic_features([feature], fc=colour)
-    return track
+def select_track_features(spec, seqid):
+    '''
+    Parameters:
+        spec -- a track specification dictionary as produced by build_track_specs()
+        seqid -- a string indicating the contig to obtain features for
+    Returns:
+        features -- a list of SeqFeature objects to plot on this track
+    '''
+    features = spec["features"].get(seqid, [])
+    if spec["type"] == "gene":
+        return [ feature for feature in features if feature.type == "gene" ]
+    else:
+        repeatType = spec["repeatType"]
+        return [ feature for feature in features
+                if feature.qualifiers["class"] == repeatType or feature.qualifiers["family"] == repeatType ]
 
-def plot_gene_density(seqid2features, sector, colour, currentPosition, contigSize, binSize,
-                      showOutline, TRACK_HEIGHT):
-    x, y = bin_values([ feature for feature in seqid2features[sector.name] if feature.type == "gene" ],
-                      contigSize, binSize)
+def plot_track(spec, sector, currentPosition, contigSize, binSize,
+               showOutline, TRACK_HEIGHT):
+    '''
+    Plots a single track for a sector either as individual features (binSize == -1)
+    or as a density bar chart.
+    
+    Parameters:
+        spec -- a track specification dictionary as produced by build_track_specs()
+        sector -- a pyCirclize Sector object
+        currentPosition -- a number indicating the outer radius of this track
+        contigSize -- an integer value indicating the length of the contig
+        binSize -- an integer value indicating the size of the bins/windows, or -1
+        showOutline -- a boolean indicating whether to outline the track
+        TRACK_HEIGHT -- a number indicating the radial height of the track
+    Returns:
+        track -- the pyCirclize Track object
+    '''
+    features = select_track_features(spec, sector.name)
     
     track = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition))
     if showOutline:
         track.axis()
     
-    track.bar(x, y, vmax=max(y), width=binSize, fc=colour, align="edge")
-    return track
-
-def plot_repeat_features(seqid2features, sector, colour, currentPosition, repeatType,
-                         showOutline,TRACK_HEIGHT):
-    track = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition))
-    if showOutline:
-        track.axis()
-     
-    for feature in seqid2repeats[seqid]:
-        if feature.qualifiers["class"] == repeatType or feature.qualifiers["family"] == repeatType:
-            track.genomic_features([feature], fc=colour)
-    return track
-
-def plot_repeat_density(seqid2features, sector, colour, currentPosition, repeatType,
-                        contigSize, binSize, showOutline, TRACK_HEIGHT):
-    x, y = bin_values([ feature for feature in seqid2features[sector.name]
-                       if feature.qualifiers["class"] == repeatType or feature.qualifiers["family"] == repeatType ],
-                      contigSize, binSize)
-    
-    track = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition))
-    if showOutline:
-        track.axis()
-    
-    track.bar(x, y, vmax=max(y), width=binSize, fc=colour, align="edge")
+    if binSize == -1:
+        if features != []:
+            track.genomic_features(features, fc=spec["colour"])
+    else:
+        x, y = bin_values(features, contigSize, binSize)
+        track.bar(x, y, vmax=max(1, max(y)), width=binSize, fc=spec["colour"], align="edge")
     return track
 
 def main():
-    usage = """%(prog)s produces a circos plot representation of a genome and its gene annotations
-    with optional repeat annotation through RepeatMasker output.
+    usage = """%(prog)s produces a circos plot representation of a genome and its annotations.
+    Annotations are provided as one or more GFF3 and/or RepeatMasker .out files to -a,
+    with each file being plotted as track(s) in the order given, from outermost to innermost.
+    GFF3 files produce one track of gene features, while RepeatMasker files produce one
+    track for each value given to --families.
     """
     # Establish main parser
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description=usage)
     
     # Required arguments
     p.add_argument("-f", dest="genomeFasta",
                    required=True,
                    help="Specify the location of the genome FASTA file")
-    p.add_argument("-g", dest="genomeGFF3",
+    p.add_argument("-a", dest="annotationFiles",
                    required=True,
-                   help="Specify the location of the genome FASTA file")
+                   nargs="+",
+                   help="""Specify the location of one or more GFF3 and/or RepeatMasker
+                   .out files; tracks are plotted in the order given, from outermost
+                   to innermost""")
     p.add_argument("-o", dest="outputFileName",
                    required=True,
                    help="""Specify the location to write the output file; this must
@@ -152,14 +314,20 @@ def main():
                    by their density; default is -1 which means no binning occurs
                    and each feature is represented individually""",
                    default=-1)
-    p.add_argument("--repeats", dest="repeatMaskerOut",
-                   required=False,
-                   help="Optionally, specify the location of the RepeatMasker .out file")
     p.add_argument("--families", dest="repeatFamilies",
                    required=False,
                    nargs="+",
                    help="""If you are plotting RepeatMasker output, specify
-                   the repeat classes and/or families to plot.""",
+                   the repeat classes and/or families to plot; these apply to
+                   all RepeatMasker files given to -a""",
+                   default = [])
+    p.add_argument("--labels", dest="legendLabels",
+                   required=False,
+                   nargs="+",
+                   help="""Optionally, specify the legend label for each track in
+                   plotting order; the number of labels must match the number of
+                   tracks plotted (one per GFF3, and one per --families value for
+                   each RepeatMasker file)""",
                    default = [])
     p.add_argument("--outline", dest="sectorOutline",
                    required=False,
@@ -178,51 +346,15 @@ def main():
     if seqid2size == {}:
         raise ValueError(f"No contigs found in genome FASTA '{args.genomeFasta}'; is it actually a FASTA file?")
     
-    # Parse GFF3 file
-    parser = Gff(args.genomeGFF3)
-    seqid2features = parser.get_seqid2features(feature_type=None)
-    
-    # Parse RepeatMasker output
-    seqid2repeats = {}
-    if args.repeatMaskerOut != None:
-        with open(args.repeatMaskerOut, "r") as fileIn:
-            for line in fileIn:
-                # Skip header lines
-                sl = line.strip().split()
-                if sl == [] or sl[0] == "SW" or sl[0] == "score":
-                    continue
-                
-                # Parse relevant info
-                seqid, start, end, repeatID, classFam = *sl[4:7], sl[9], sl[10]
-                if "/" in sl[10]:
-                    repeatClass, repeatFam = classFam.split("/")
-                else:
-                    repeatClass, repeatFam = sl[10], sl[10]
-                if not seqid in seqid2size:
-                    continue
-                
-                # Store repeat info if requested
-                if repeatClass in args.repeatFamilies or repeatFam in args.repeatFamilies:
-                    if seqid not in seqid2repeats:
-                        seqid2repeats[seqid] = []
-                    
-                    # Format and store a SeqFeature
-                    feature = SeqFeature.SeqFeature(
-                        location=SeqFeature.FeatureLocation(int(start), int(end)),
-                        type="repeat",
-                        #strand=None,
-                        id=repeatID,
-                        qualifiers={"class": repeatClass, "family": repeatFam}
-                    )
-                    
-                    seqid2repeats[seqid].append(feature)
+    # Parse annotation files into ordered track specifications
+    trackSpecs = build_track_specs(args, seqid2size)
     
     # Initialise circos instance
     space = 0 if len(seqid2size) == 1 else 2
     if args.legendLocation == "top":
         circos = Circos(seqid2size, space=space,
-                        start=10 if len(args.repeatFamilies) < 5 else 20,
-                        end=350 if len(args.repeatFamilies) < 5 else 340,
+                        start=10 if len(trackSpecs) < 5 else 20,
+                        end=350 if len(trackSpecs) < 5 else 340,
                         endspace=False)
     elif args.legendLocation == "centre":
         circos = Circos(seqid2size, space=space)
@@ -237,13 +369,10 @@ def main():
     OUTER_HEIGHT = 0.3
     
     TOTAL_HEIGHT = 50 # this should be made user configurable
-    NUM_TRACKS = 1 + len(args.repeatFamilies) # first track are the gene annotations
-    TRACK_HEIGHT = int(TOTAL_HEIGHT / NUM_TRACKS)
+    TRACK_HEIGHT = int(TOTAL_HEIGHT / len(trackSpecs))
     
     for sector in circos.sectors:
-        handles = [] # it is okay if this gets reset each loop, we just need the last one
         currentPosition = 95
-        trackIndex = 0
         
         # Plot outer chromosome track
         sector.text(sector.name, size=10)
@@ -256,49 +385,23 @@ def main():
             outer_track.xticks_by_interval(minor_interval, tick_length=1, show_label=False)
         currentPosition -= (OUTER_HEIGHT + TRACK_GAP)
         
-        # Plot gene track data
-        if args.binSize == -1:
-            geneTrack = plot_gene_features(seqid2features, sector, colourPalette[trackIndex], currentPosition,
-                                           args.sectorOutline, TRACK_HEIGHT)
-        else:
-            geneTrack = plot_gene_density(seqid2features, sector, colourPalette[trackIndex], currentPosition,
-                                          seqid2size[sector.name], args.binSize, args.sectorOutline, TRACK_HEIGHT)
-        currentPosition -= (TRACK_HEIGHT + TRACK_GAP)
-        
-        # Plot gene track legend
-        if sector.name == circos.sectors[0].name:
-            if args.legendLocation == "top":
-                circos.text("Gene", r=geneTrack.r_center, color=colourPalette[trackIndex])
-            elif args.legendLocation == "left":
-                circos.text("Gene", r=geneTrack.r_center, deg=-90, color=colourPalette[trackIndex])
-        handles.append(Patch(color=colourPalette[trackIndex], label="Gene"))
-        trackIndex += 1
-        
-        # Plot each repeat track
-        if args.repeatMaskerOut != None:
-            for repeatType in args.repeatFamilies:
-                # Plot repeat track data
-                if args.binSize == -1:
-                    repeatTrack = plot_repeat_features(seqid2repeats, sector, colourPalette[trackIndex], currentPosition,
-                                                       repeatType, args.sectorOutline, TRACK_HEIGHT)
-                else:
-                    repeatTrack = plot_repeat_density(seqid2repeats, sector, colourPalette[trackIndex], currentPosition,
-                                                      repeatType, seqid2size[sector.name], args.binSize,
-                                                      args.sectorOutline, TRACK_HEIGHT)
-                currentPosition -= (TRACK_HEIGHT + TRACK_GAP)
-                
-                # Plot repeat track legend
-                if sector.name == circos.sectors[0].name:
-                    if args.legendLocation == "top":
-                        circos.text(repeatType, r=repeatTrack.r_center, color=colourPalette[trackIndex])
-                    elif args.legendLocation == "left":
-                        circos.text(repeatType, r=repeatTrack.r_center, deg=-90, color=colourPalette[trackIndex])
-                handles.append(Patch(color=colourPalette[trackIndex], label=repeatType))
-                trackIndex += 1
+        # Plot each annotation track in order
+        for spec in trackSpecs:
+            track = plot_track(spec, sector, currentPosition, seqid2size[sector.name], args.binSize,
+                               args.sectorOutline, TRACK_HEIGHT)
+            currentPosition -= (TRACK_HEIGHT + TRACK_GAP)
+            
+            # Plot track legend
+            if sector.name == circos.sectors[0].name:
+                if args.legendLocation == "top":
+                    circos.text(spec["label"], r=track.r_center, color=spec["colour"])
+                elif args.legendLocation == "left":
+                    circos.text(spec["label"], r=track.r_center, deg=-90, color=spec["colour"])
     
     # Generate the plot
     fig = circos.plotfig()
     if args.legendLocation == "centre":
+        handles = [ Patch(color=spec["colour"], label=spec["label"]) for spec in trackSpecs ]
         _ = circos.ax.legend(
             handles=handles,
             bbox_to_anchor=(0.5, 0.5),
