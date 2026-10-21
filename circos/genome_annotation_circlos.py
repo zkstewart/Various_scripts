@@ -88,6 +88,8 @@ def validate_args(args):
         raise ValueError(f"--binSize '{args.binSize}' must be greater than or equal to -1")
     elif args.binSize == 0:
         raise ValueError(f"If setting --binSize, you must provide a positive integer")
+    if args.binSize == -1 and args.scaleMode != "sector":
+        print("WARNING: --scale only applies when --binSize is set; it will be ignored")
     
     # Validate output file
     if os.path.exists(args.outputFileName):
@@ -245,7 +247,51 @@ def select_track_features(spec, seqid):
         return [ feature for feature in features
                 if feature.qualifiers["class"] == repeatType or feature.qualifiers["family"] == repeatType ]
 
-def plot_track(spec, sector, currentPosition, contigSize, binSize,
+def bin_track_features(trackSpecs, seqid2size, binSize):
+    '''
+    Bins the features of each track for each contig, storing the result in each
+    track specification under the "bins" key as a dictionary of seqid: (x, y).
+    
+    Parameters:
+        trackSpecs -- a list of track specification dictionaries as produced by
+                      build_track_specs()
+        seqid2size -- a dictionary of contig IDs to their lengths
+        binSize -- an integer value indicating the size of the bins/windows
+    '''
+    for spec in trackSpecs:
+        spec["bins"] = {
+            seqid: bin_values(select_track_features(spec, seqid), contigSize, binSize)
+            for seqid, contigSize in seqid2size.items()
+        }
+
+def set_scale_limits(trackSpecs, scaleMode):
+    '''
+    Sets the "vmax" key of each binned track specification so that the density
+    scale maximum is shared across contigs ("track") or across all tracks and
+    contigs ("global"). With "sector" mode, nothing is set and each track is
+    scaled for each contig individually during plotting. The scale minimum is
+    always 0.
+    
+    Parameters:
+        trackSpecs -- a list of track specification dictionaries that have been
+                      through bin_track_features()
+        scaleMode -- a string with value "sector", "track", or "global"
+    '''
+    if scaleMode == "sector":
+        return
+    
+    def get_max(specs):
+        return max(1, max( int(y.max()) for spec in specs for _, y in spec["bins"].values() )) # avoid a zero-height scale
+    
+    if scaleMode == "global":
+        vmax = get_max(trackSpecs)
+        for spec in trackSpecs:
+            spec["vmax"] = vmax
+    else:
+        for spec in trackSpecs:
+            spec["vmax"] = get_max([spec])
+
+def plot_track(spec, sector, currentPosition, binSize,
                showOutline, TRACK_HEIGHT):
     '''
     Plots a single track for a sector either as individual features (binSize == -1)
@@ -255,25 +301,24 @@ def plot_track(spec, sector, currentPosition, contigSize, binSize,
         spec -- a track specification dictionary as produced by build_track_specs()
         sector -- a pyCirclize Sector object
         currentPosition -- a number indicating the outer radius of this track
-        contigSize -- an integer value indicating the length of the contig
         binSize -- an integer value indicating the size of the bins/windows, or -1
         showOutline -- a boolean indicating whether to outline the track
         TRACK_HEIGHT -- a number indicating the radial height of the track
     Returns:
         track -- the pyCirclize Track object
     '''
-    features = select_track_features(spec, sector.name)
-    
     track = sector.add_track((currentPosition-TRACK_HEIGHT, currentPosition))
     if showOutline:
         track.axis()
     
     if binSize == -1:
+        features = select_track_features(spec, sector.name)
         if features != []:
             track.genomic_features(features, fc=spec["colour"])
     else:
-        x, y = bin_values(features, contigSize, binSize)
-        track.bar(x, y, vmax=max(1, max(y)), width=binSize, fc=spec["colour"], align="edge")
+        x, y = spec["bins"][sector.name]
+        vmax = spec["vmax"] if "vmax" in spec else max(1, max(y))
+        track.bar(x, y, vmax=vmax, width=binSize, fc=spec["colour"], align="edge")
     return track
 
 def main():
@@ -314,6 +359,15 @@ def main():
                    by their density; default is -1 which means no binning occurs
                    and each feature is represented individually""",
                    default=-1)
+    p.add_argument("--scale", dest="scaleMode",
+                   required=False,
+                   choices=["sector", "track", "global"],
+                   help="""Optionally, when --binSize is set, specify how the density
+                   scale maximum is determined (the minimum is always 0); 'sector'
+                   scales each track for each contig individually, 'track' shares
+                   the maximum across all contigs for each track, and 'global'
+                   shares it across all tracks and contigs; default is 'sector'""",
+                   default="sector")
     p.add_argument("--families", dest="repeatFamilies",
                    required=False,
                    nargs="+",
@@ -348,6 +402,11 @@ def main():
     
     # Parse annotation files into ordered track specifications
     trackSpecs = build_track_specs(args, seqid2size)
+    
+    # Bin features and determine density scale limits
+    if args.binSize != -1:
+        bin_track_features(trackSpecs, seqid2size, args.binSize)
+        set_scale_limits(trackSpecs, args.scaleMode)
     
     # Initialise circos instance
     space = 0 if len(seqid2size) == 1 else 2
@@ -387,7 +446,7 @@ def main():
         
         # Plot each annotation track in order
         for spec in trackSpecs:
-            track = plot_track(spec, sector, currentPosition, seqid2size[sector.name], args.binSize,
+            track = plot_track(spec, sector, currentPosition, args.binSize,
                                args.sectorOutline, TRACK_HEIGHT)
             currentPosition -= (TRACK_HEIGHT + TRACK_GAP)
             
