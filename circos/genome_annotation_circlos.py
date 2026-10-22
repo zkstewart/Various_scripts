@@ -90,6 +90,8 @@ def validate_args(args):
         raise ValueError(f"If setting --binSize, you must provide a positive integer")
     if args.binSize == -1 and args.scaleMode != "sector":
         print("WARNING: --scale only applies when --binSize is set; it will be ignored")
+    if not (10 < args.totalHeight <= 85):
+        raise ValueError(f"--totalHeight must be a value between 10 and 85 (lower or higher gives nonsensical output)")
     
     # Validate output file
     if os.path.exists(args.outputFileName):
@@ -388,6 +390,14 @@ def main():
                    action="store_true",
                    help="Provide this flag to outline each sector in the plot",
                    default=False)
+    p.add_argument("--totalHeight", dest="totalHeight",
+                   required=False,
+                   type=int,
+                   help="""Optionally, specify the total height (as a value from 10
+                   to 85) indicating how much space the circle tracks should occupy;
+                   the remaining portion of 100 is empty space at the circle centre;
+                   default is 50""",
+                   default=50)
     
     args = p.parse_args()
     validate_args(args)
@@ -426,9 +436,7 @@ def main():
     # Plot each chromosome / sector
     TRACK_GAP = 2
     OUTER_HEIGHT = 0.3
-    
-    TOTAL_HEIGHT = 50 # this should be made user configurable
-    TRACK_HEIGHT = int(TOTAL_HEIGHT / len(trackSpecs))
+    TRACK_HEIGHT = int(args.totalHeight / len(trackSpecs))
     
     for sector in circos.sectors:
         currentPosition = 95
