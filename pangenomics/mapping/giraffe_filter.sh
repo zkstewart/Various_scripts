@@ -28,3 +28,6 @@ if [[ ! -f ${PREFIX}.wave.giraffe.filtered.vcf  ]]; then
   bgzip ${PREFIX}.wave.giraffe.filtered.vcf;
   tabix ${PREFIX}.wave.giraffe.filtered.vcf.gz;
 fi
+
+# STEP 2: Generate statistics on the final filtered file
+bcftools stats -s - ${PREFIX}.wave.giraffe.filtered.vcf.gz > ${PREFIX}.wave.giraffe.filtered.stats.txt
