@@ -48,14 +48,27 @@ echo "Contigs: $(wc -l < ${REFDIR}/${OUTPREFIX}.graphref.fa.fai)"
 vg version > ${REFDIR}/vg.version
 
 vg index \
--t ${CPUS} \
--j ${REFDIR}/${OUTPREFIX}.d2.dist ${GBZ};
+  -t ${CPUS} \
+  -j ${REFDIR}/${OUTPREFIX}.d2.dist ${GBZ};
 
 vg minimizer \
--t ${CPUS} \
--k 29 \
--w 11 \
--d ${REFDIR}/${OUTPREFIX}.d2.dist \
--z ${REFDIR}/${OUTPREFIX}.d2.zipcodes \
--o ${REFDIR}/${OUTPREFIX}.d2.min \
-${GBZ};
+  -t ${CPUS} \
+  -k 29 \
+  -w 11 \
+  -d ${REFDIR}/${OUTPREFIX}.d2.dist \
+  -z ${REFDIR}/${OUTPREFIX}.d2.zipcodes \
+  -o ${REFDIR}/${OUTPREFIX}.d2.min \
+  ${GBZ};
+
+# STEP 5: Reformat the pangenome for conformity to the later giraffe output
+cut -f1 ${REFDIR}/${OUTPREFIX}.graphref.fa.fai | awk '{n=$1; sub(/^reference#0#/,"",n); print n"\t"$1}' > ${REFDIR}/rename.txt
+
+TEMP=${REFDIR}/giraffe_prep_tmp
+mkdir -p ${TEMP}
+
+bcftools annotate --rename-chrs ${REFDIR}/rename.txt \
+  ${PANGENOMEDIR}/${PANGENOMEPREFIX}.wave.vcf.gz -Ou \
+  | bcftools norm -f ${REF} -c e -m -any -Ou \
+  | bcftools sort -T ${TEMP}/bcfsort -m 4G -Oz -o ${REFDIR}/${OUTPREFIX}.wave.renamed.norm.vcf.gz
+
+bcftools index -t ${REFDIR}/${OUTPREFIX}.wave.renamed.norm.vcf.gz

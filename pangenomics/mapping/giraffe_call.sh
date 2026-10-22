@@ -6,6 +6,8 @@
 #PBS -J 1-numContigs
 #PBS -P <RPID>
 
+## Get numContigs from: wc -l ${REF}.fai
+
 cd ${PBS_O_WORKDIR}
 set -euo pipefail
 
@@ -15,7 +17,7 @@ set -euo pipefail
 REF=/scratch/stewarz2/pangenomics/13Q019x18Q049/giraffe_reference/13Q019_18Q049_giraffe.graphref.fa
 
 # Specify the file listing all BAMs for joint calling
-## Create this with "ls ${BAMDIR}/*{BAMSUFFIX} > ${BAMLIST}
+## Create this with "ls ${BAMDIR}/*${BAMSUFFIX} > ${BAMLIST}
 BAMLIST=bamlist.txt
 
 # Specify computational and behavioural params

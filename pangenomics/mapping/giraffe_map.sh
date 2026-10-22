@@ -35,8 +35,8 @@ mkdir -p ${TMPD}
 declare -a READFILES
 i=0
 for f in ${READSDIR}/*${R1SUFFIX}; do
-    READFILES[${i}]=$(echo "${f%%${R1SUFFIX}}");
-    i=$((i+1));
+  READFILES[${i}]=$(echo "${f%%${R1SUFFIX}}");
+  i=$((i+1));
 done
 
 # STEP 2: Get job details
@@ -54,10 +54,10 @@ vg giraffe -t ${CPUS} \
   -f ${FILEPREFIX}${R1SUFFIX} -f ${FILEPREFIX}${R2SUFFIX} \
   -N ${BASEPREFIX} -R ${BASEPREFIX} \
   -o BAM \
-| samtools collate -@ ${CPUS} -O -u - ${TMPD}/${BASEPREFIX}.collate \
-| samtools fixmate -@ ${CPUS} -m -u - - \
-| samtools sort -@ ${CPUS} -m 2G -T ${TMPD}/${BASEPREFIX}.sort -u - \
-| samtools markdup -@ ${CPUS} -T ${TMPD}/${BASEPREFIX}.md - ${BASEPREFIX}.giraffe.md.bam;
+  | samtools collate -@ ${CPUS} -O -u - ${TMPD}/${BASEPREFIX}.collate \
+  | samtools fixmate -@ ${CPUS} -m -u - - \
+  | samtools sort -@ ${CPUS} -m 2G -T ${TMPD}/${BASEPREFIX}.sort -u - \
+  | samtools markdup -@ ${CPUS} -T ${TMPD}/${BASEPREFIX}.md - ${BASEPREFIX}.giraffe.md.bam;
 
 samtools index -@ ${CPUS} ${BASEPREFIX}.giraffe.md.bam
 
