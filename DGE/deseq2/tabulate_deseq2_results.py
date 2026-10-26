@@ -34,7 +34,7 @@ def validate_args(args):
     # Validate coldata and normalised count file locations
     args.coldataFileName = os.path.abspath(args.coldataFileName)
     if not os.path.isfile(args.coldataFileName):
-        raise FileNotFoundError(f"-c '{args.outputFileName}' is not a file or does not exist!")
+        raise FileNotFoundError(f"-c '{args.coldataFileName}' is not a file or does not exist!")
     
     args.normalisedCountsFileName = os.path.abspath(args.normalisedCountsFileName)
     if not os.path.isfile(args.normalisedCountsFileName):

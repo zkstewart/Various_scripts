@@ -122,7 +122,10 @@ def main():
                 if args.allowNoBlast:
                     df.insert(args.insertIndex, col, [ annot[x][col] if x in annot else "." for x in df["gene_id"]  ])
                 else:
-                    df.insert(args.insertIndex, col, [ annot[x][col] for x in df["gene_id"] ])
+                    try:
+                        df.insert(args.insertIndex, col, [ annot[x][col] for x in df["gene_id"] ])
+                    except KeyError:
+                        raise KeyError("A gene in your DGE results is missing from the BLAST file; you may need to specify --allowNoBlast if this is possible")
             df.to_csv(outputFileName, sep="\t", index=False)
         else:
             print(f"# WARNING: '{file}' appears to have an existing modified file at '{outputFileName}'; skipping ...")
