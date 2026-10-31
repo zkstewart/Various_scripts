@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #PBS -N mgiraffe
 #PBS -l walltime=24:00:00
-#PBS -l mem=100G
+#PBS -l mem=40G
 #PBS -l ncpus=8
 #PBS -J 1-X
 #PBS -P <RPID>

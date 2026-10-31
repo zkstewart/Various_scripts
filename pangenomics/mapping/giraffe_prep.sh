@@ -27,22 +27,22 @@ CPUS=8
 ####
 
 REFSAMPLE=reference
+GBZ=${REFDIR}/${OUTPREFIX}.d2.gbz
+REF=${REFDIR}/${OUTPREFIX}.graphref.fa
 
 # STEP 0: Set up the new reference location
 mkdir -p ${REFDIR}
-ln -sf ${PANGENOMEDIR}/${PANGENOMEPREFIX}.d2.gbz ${REFDIR}/${OUTPREFIX}.d2.gbz
-
-GBZ=${REFDIR}/${OUTPREFIX}.d2.gbz # for variable filling later
+ln -sf ${PANGENOMEDIR}/${PANGENOMEPREFIX}.d2.gbz ${GBZ}
 
 # STEP 1: List the reference-sample paths in the graph (sanity check)
 vg paths -x ${GBZ} -L -S ${REFSAMPLE} > ${REFDIR}/ref_paths.txt
 
 # STEP 2: Write those paths as FASTA and index it
-vg paths -x ${GBZ} -F -S ${REFSAMPLE} > ${REFDIR}/${OUTPREFIX}.graphref.fa
-samtools faidx ${REFDIR}/${OUTPREFIX}.graphref.fa
+vg paths -x ${GBZ} -F -S ${REFSAMPLE} > ${REF}
+samtools faidx ${REF}
 
 # STEP 3: Report the number of contigs (use this for the -J range in 03_bcftools_call.sh)
-echo "Contigs: $(wc -l < ${REFDIR}/${OUTPREFIX}.graphref.fa.fai)"
+echo "Contigs: $(wc -l < ${REF}.fai)"
 
 # STEP 4: Rebuild the vg index
 vg version > ${REFDIR}/vg.version
@@ -61,7 +61,7 @@ vg minimizer \
   ${GBZ};
 
 # STEP 5: Reformat the pangenome for conformity to the later giraffe output
-cut -f1 ${REFDIR}/${OUTPREFIX}.graphref.fa.fai | awk '{n=$1; sub(/^reference#0#/,"",n); print n"\t"$1}' > ${REFDIR}/rename.txt
+cut -f1 ${REF}.fai | awk '{n=$1; sub(/^reference#0#/,"",n); print n"\t"$1}' > ${REFDIR}/rename.txt
 
 TEMP=${REFDIR}/giraffe_prep_tmp
 mkdir -p ${TEMP}
