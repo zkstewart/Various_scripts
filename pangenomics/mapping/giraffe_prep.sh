@@ -32,7 +32,8 @@ REF=${REFDIR}/${OUTPREFIX}.graphref.fa
 
 # STEP 0: Set up the new reference location
 mkdir -p ${REFDIR}
-ln -sf ${PANGENOMEDIR}/${PANGENOMEPREFIX}.d2.gbz ${GBZ}
+cp ${PANGENOMEDIR}/${PANGENOMEPREFIX}.d2.gbz ${GBZ}
+echo "${PANGENOMEDIR}/${PANGENOMEPREFIX}.d2.gbz -> ${GBZ}" > ${REFDIR}/ORIGINAL_PANGENOME_LOCATION.txt
 
 # STEP 1: List the reference-sample paths in the graph (sanity check)
 vg paths -x ${GBZ} -L -S ${REFSAMPLE} > ${REFDIR}/ref_paths.txt
