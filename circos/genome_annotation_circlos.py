@@ -320,7 +320,15 @@ def plot_track(spec, sector, currentPosition, binSize,
     else:
         x, y = spec["bins"][sector.name]
         vmax = spec["vmax"] if "vmax" in spec else max(1, max(y))
-        track.bar(x, y, vmax=vmax, width=binSize, fc=spec["colour"], align="edge")
+
+        # Draw the density as one stepped polygon rather than one bar per bin;
+        # adjacent anti-aliased bars leave faint seams that show up as banding
+        # at high DPI. Each bin spans from its start to the next bin's start
+        # (the last bin ends at the contig end), so there are no gaps.
+        binEdges = np.append(x, sector.size)
+        stepX = np.column_stack([binEdges[:-1], binEdges[1:]]).ravel()
+        stepY = np.repeat(y, 2)
+        track.fill_between(stepX, stepY, vmax=vmax, fc=spec["colour"], lw=0)
     return track
 
 def main():
@@ -476,7 +484,7 @@ def main():
             ncols=2,
         )
     
-    fig.savefig(args.outputFileName)
+    fig.savefig(args.outputFileName, dpi=300)
     
     # Print completion flag if we reach this point
     print("Program completed successfully!")
