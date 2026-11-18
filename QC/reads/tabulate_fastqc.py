@@ -9,11 +9,9 @@ from xlsxwriter.utility import xl_col_to_name
 
 passFailRegex = re.compile(r"alt=\"\[(\w+?)\]\"\/><a href=\"#M\d+\">([\w\s]+?)<\/a>")
 
-# Stats regex for older FASTQC versions
-basicStatsRegex = re.compile(r"Total Sequences<\/td><td>(\d+)<\/td><\/tr><tr><td>Sequences flagged as poor quality<\/td><td>(\d+)<\/td>")
-
-# Stats regex for newer FASTQC versions
-basicStatsRegex2 = re.compile(r"Total Sequences<\/td><td>(\d+)<\/td><\/tr><tr><td>Total Bases<\/td><td>[\.\s\w]+?<\/td><\/tr><tr><td>Sequences flagged as poor quality<\/td><td>(\d+)<\/td>")
+# Basic statistics regexes; FASTQC 0.13 no longer reports sequences flagged as poor quality
+totalSequencesRegex = re.compile(r"Total Sequences<\/td><td>(\d+)<\/td>")
+poorQualityRegex = re.compile(r"Sequences flagged as poor quality<\/td><td>(\d+)<\/td>")
 
 # Define functions
 def validate_args(args):
@@ -43,23 +41,25 @@ def parse_fqc_html(fqcFile):
                      total_reads, low_quality_reads, per_base_sequence_quality, per_tile_sequence_quality,
                      per_sequence_quality_scores, per_base_sequence_content, per_sequence_gc_content,
                      per_base_n_content, sequence_length_distribution, sequence_duplication_levels,
-                     overrepresented_sequences, adapter_content
+                     overrepresented_sequences, adapter_content; low_quality_reads is absent
+                     for FASTQC 0.13 onwards, which no longer reports it
     '''
     statsDict = {}
     with open(fqcFile, "r") as fileIn:
         contents = fileIn.read()
         
         # Parse results from file
-        try:
-            numReads, poorQuality = basicStatsRegex.search(contents).groups()
-        except:
-            numReads, poorQuality = basicStatsRegex2.search(contents).groups()
+        numReads = totalSequencesRegex.search(contents)
+        if numReads == None:
+            raise ValueError(f"Unable to find the total number of sequences in '{fqcFile}'")
+        poorQuality = poorQualityRegex.search(contents)
         passFail = passFailRegex.findall(contents)
         
         # Add in basic stats
         statsDict = {}
-        statsDict["total_reads"] = int(numReads)
-        statsDict["low_quality_reads"] = int(poorQuality)
+        statsDict["total_reads"] = int(numReads.group(1))
+        if poorQuality != None:
+            statsDict["low_quality_reads"] = int(poorQuality.group(1))
         
         # Convert pass/fail results to dictionary
         statsDict.update({
@@ -173,13 +173,18 @@ def get_results_from_fqc_files(fqcFiles):
     if reverseDict != {}:
         reverseTable = pd.DataFrame(reverseDict).T
     
-    # Move position of the 'approx_bp' column
+    # Move position of the 'approx_bp' column, and of 'low_quality_reads' if present (it
+    # can otherwise end up last when FASTQC 0.13 reports, which lack it, are listed first)
     forwardApprox = forwardTable.pop("approx_bp")
     forwardTable.insert(1, 'approx_bp', forwardApprox)
+    if "low_quality_reads" in forwardTable.columns:
+        forwardTable.insert(2, "low_quality_reads", forwardTable.pop("low_quality_reads"))
     
     if reverseDict != {}:
         reverseApprox = reverseTable.pop("approx_bp")
         reverseTable.insert(1, 'approx_bp', reverseApprox)
+        if "low_quality_reads" in reverseTable.columns:
+            reverseTable.insert(2, "low_quality_reads", reverseTable.pop("low_quality_reads"))
     else:
         reverseTable = None
     
@@ -201,7 +206,7 @@ def write_tables_to_excel(forwardTable, reverseTable, outputFileName):
         worksheet.set_column(0, 0, columnLength+1)
         
         for i, header in enumerate(table.columns):
-            columnLength = max(table[header].astype(str).map(len).max(), len(header))
+            columnLength = max(table[header].map(lambda x: len(str(x))).max(), len(header)) # str() handles blank (NaN) cells
             worksheet.set_column(i+1, i+1, columnLength+1)
         
         # Figure out the shape/column indices where data is stored
